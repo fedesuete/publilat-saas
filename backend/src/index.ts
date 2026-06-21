@@ -19,6 +19,7 @@ import { analyticsRouter } from "./routes/analytics.js";
 import { billingRouter, billingWebhookRouter, usdtWebhookRouter, stripeWebhookHandler } from "./routes/billing.js";
 import { landingsRouter } from "./routes/landings.js";
 import { integrationsRouter } from "./routes/integrations.js";
+import { pixelRouter } from "./routes/pixel.js";
 import { requireAuth } from "./middleware/requireAuth.js";
 import { verifyToken } from "./lib/auth.js";
 import { setIo } from "./lib/io.js";
@@ -82,6 +83,7 @@ app.use("/api/analytics", apiLimiter, requireAuth, analyticsRouter);
 app.use("/api/billing", apiLimiter, requireAuth, billingRouter);
 app.use("/api/landings", apiLimiter, requireAuth, landingsRouter);
 app.use("/api/integrations", apiLimiter, requireAuth, integrationsRouter);
+app.use("/api/pixels", apiLimiter, requireAuth, pixelRouter);
 
 // 404 para rutas de API desconocidas (antes del fallback del SPA).
 app.use("/api", (_req, res) => res.status(404).json({ error: "No encontrado" }));

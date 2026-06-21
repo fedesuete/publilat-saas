@@ -16,6 +16,7 @@ export function validateEnv(): void {
   if (isProd) {
     if (!process.env.PANEL_BASE_URL) problems.push("PANEL_BASE_URL (origen del panel para CORS)");
     if (!process.env.APP_BASE_URL) problems.push("APP_BASE_URL (URL pública del backend)");
+    if (!process.env.APP_ENCRYPTION_KEY) problems.push("APP_ENCRYPTION_KEY (cifra los tokens de CAPI por usuario)");
     if (!process.env.META_PIXEL_ID || !process.env.META_CAPI_TOKEN)
       warn.push("META_PIXEL_ID/META_CAPI_TOKEN (sin esto el loop de atribución no matchea)");
     if (!process.env.EVOLUTION_WEBHOOK_TOKEN)

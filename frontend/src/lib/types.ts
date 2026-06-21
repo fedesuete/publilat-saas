@@ -40,3 +40,12 @@ export interface Msg {
   body: string;
   createdAt: string;
 }
+
+export interface Pixel {
+  id: string;
+  pixelId: string;
+  eventType: "Lead" | "Purchase";
+  siteUrl: string | null;
+  tokenMask: string;
+  createdAt: string;
+}

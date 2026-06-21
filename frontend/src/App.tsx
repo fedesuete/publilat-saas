@@ -12,6 +12,7 @@ import LinksPage from "./pages/LinksPage";
 import LandingsPage from "./pages/LandingsPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import BillingPage from "./pages/BillingPage";
+import PixelPage from "./pages/PixelPage";
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
             <Route path="/inbox" element={<InboxPage />} />
             <Route path="/whatsapp" element={<WhatsappPage />} />
             <Route path="/billing" element={<BillingPage />} />
+            <Route path="/pixel" element={<PixelPage />} />
             <Route path="/links" element={<LinksPage />} />
             <Route path="/landings" element={<LandingsPage />} />
             <Route path="/integraciones" element={<IntegrationsPage />} />

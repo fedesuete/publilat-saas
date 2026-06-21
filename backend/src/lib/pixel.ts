@@ -2,6 +2,7 @@
 // Prefiere un Pixel con eventType == eventName; si no, cualquiera del usuario.
 // Si el usuario no tiene Pixel, devuelve undefined y sendCapiEvent cae al .env.
 import { prisma } from "./prisma.js";
+import { decryptSecret } from "./crypto.js";
 
 export interface ResolvedPixel {
   pixelId: string;
@@ -17,5 +18,6 @@ export async function resolveUserPixel(
     (await prisma.pixel.findFirst({ where: { userId } }));
 
   if (!pixel) return undefined;
-  return { pixelId: pixel.pixelId, capiToken: pixel.capiToken };
+  // El token está cifrado en reposo; lo desciframos antes de usarlo en la CAPI.
+  return { pixelId: pixel.pixelId, capiToken: decryptSecret(pixel.capiToken) };
 }

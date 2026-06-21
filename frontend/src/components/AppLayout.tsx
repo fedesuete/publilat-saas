@@ -9,6 +9,7 @@ const NAV = [
   { to: "/inbox", label: "Inbox" },
   { to: "/whatsapp", label: "WhatsApp" },
   { to: "/billing", label: "Créditos" },
+  { to: "/pixel", label: "Mi Pixel" },
   { to: "/links", label: "Links" },
   { to: "/landings", label: "Landings" },
   { to: "/integraciones", label: "Integraciones" },
