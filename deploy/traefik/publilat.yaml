@@ -1,0 +1,26 @@
+http:
+  routers:
+    publilat:
+      rule: "Host(`app.publi.lat`)"
+      service: publilat
+      entryPoints:
+        - https
+      tls:
+        certResolver: letsencrypt
+    publilat-http:
+      rule: "Host(`app.publi.lat`)"
+      service: publilat
+      entryPoints:
+        - http
+      middlewares:
+        - publilat-redirect
+  services:
+    publilat:
+      loadBalancer:
+        servers:
+          - url: "http://187.77.33.164:4010"
+  middlewares:
+    publilat-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
