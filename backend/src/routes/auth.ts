@@ -8,12 +8,10 @@ import { hashPassword, verifyPassword, signToken, slugify } from "../lib/auth.js
 export const authRouter = Router();
 
 const registerSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8, "Mínimo 8 caracteres"),
+  email: z.string().email("Email inválido"),
+  password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres"),
   name: z.string().min(1).optional(),
-  // Pixel propio del usuario (opcional). El form puede mandar "" -> lo tratamos como vacío.
-  pixelId: z.string().optional(),
-  capiToken: z.string().optional(),
+  phone: z.string().max(30).optional(), // WhatsApp del usuario (opcional)
 });
 
 const loginSchema = z.object({
@@ -38,7 +36,7 @@ authRouter.post("/register", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
   }
-  const { email, password, name, pixelId, capiToken } = parsed.data;
+  const { email, password, name, phone } = parsed.data;
 
   try {
     const slug = await uniqueSlug(name ?? email.split("@")[0]);
@@ -47,11 +45,8 @@ authRouter.post("/register", async (req, res) => {
         email,
         slug,
         name,
+        phone,
         password: await hashPassword(password),
-        // Si vienen ambos, creamos el Pixel del usuario (se usa en /go y purchase).
-        ...(pixelId && capiToken
-          ? { pixels: { create: { pixelId, capiToken, eventType: "Lead" } } }
-          : {}),
       },
       select: { id: true, email: true, slug: true, name: true },
     });

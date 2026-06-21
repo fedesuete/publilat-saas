@@ -14,8 +14,7 @@ export interface RegisterPayload {
   email: string;
   password: string;
   name?: string;
-  pixelId?: string;
-  capiToken?: string;
+  phone?: string;
 }
 
 interface AuthContextValue {

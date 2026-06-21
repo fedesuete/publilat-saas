@@ -16,6 +16,7 @@ model User {
   slug      String   @unique          // identifica al usuario en /go?u=<slug>
   password  String
   name      String?
+  phone     String?                    // WhatsApp del usuario (registro)
   createdAt DateTime @default(now())
 
   lines       WaLine[]

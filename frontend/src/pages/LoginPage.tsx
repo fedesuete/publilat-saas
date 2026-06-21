@@ -12,8 +12,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
-  const [pixelId, setPixelId] = useState("");
-  const [capiToken, setCapiToken] = useState("");
+  const [phone, setPhone] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -29,13 +28,12 @@ export default function LoginPage() {
           email,
           password,
           name: name || undefined,
-          pixelId: pixelId || undefined,
-          capiToken: capiToken || undefined,
+          phone: phone || undefined,
         });
       } else {
         await login(email, password);
       }
-      navigate("/leads");
+      navigate("/dashboard");
     } catch (err) {
       setError(apiError(err));
     } finally {
@@ -78,7 +76,7 @@ export default function LoginPage() {
           {isRegister && (
             <Input
               type="text"
-              placeholder="Nombre (opcional)"
+              placeholder="Nombre"
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
@@ -90,32 +88,21 @@ export default function LoginPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
+          {isRegister && (
+            <Input
+              type="tel"
+              placeholder="WhatsApp (ej: 595... )"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+          )}
           <Input
             type="password"
-            placeholder="Contraseña"
+            placeholder={isRegister ? "Contraseña (mín. 6)" : "Contraseña"}
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
-          {isRegister && (
-            <>
-              <Input
-                type="text"
-                placeholder="Pixel ID (opcional)"
-                value={pixelId}
-                onChange={(e) => setPixelId(e.target.value)}
-              />
-              <Input
-                type="text"
-                placeholder="CAPI Token (opcional)"
-                value={capiToken}
-                onChange={(e) => setCapiToken(e.target.value)}
-              />
-              <p className="text-xs text-slate-500">
-                Opcional, para enviar eventos con tu propio Pixel.
-              </p>
-            </>
-          )}
 
           {error && <ErrorMsg>{error}</ErrorMsg>}
 
