@@ -11,9 +11,9 @@ const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8, "Mínimo 8 caracteres"),
   name: z.string().min(1).optional(),
-  // Pixel propio del usuario (opcional en el registro, requerido para que el loop matchee).
-  pixelId: z.string().min(1).optional(),
-  capiToken: z.string().min(1).optional(),
+  // Pixel propio del usuario (opcional). El form puede mandar "" -> lo tratamos como vacío.
+  pixelId: z.string().optional(),
+  capiToken: z.string().optional(),
 });
 
 const loginSchema = z.object({
