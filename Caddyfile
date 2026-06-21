@@ -1,0 +1,7 @@
+# Reverse proxy con HTTPS automático (Let's Encrypt) para Publi.lat.
+# El dominio sale de la env var APP_DOMAIN (definida en .env). Caddy saca y renueva
+# el certificado solo, y hace de proxy al backend (que sirve API + panel + Socket.IO).
+{$APP_DOMAIN} {
+	encode gzip
+	reverse_proxy app:4000
+}

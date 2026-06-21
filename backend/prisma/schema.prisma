@@ -1,0 +1,182 @@
+// Publi.lat — esquema de datos
+// El modelo cubre el loop de atribución completo + líneas, tokens y landings.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  slug      String   @unique          // identifica al usuario en /go?u=<slug>
+  password  String
+  name      String?
+  createdAt DateTime @default(now())
+
+  lines       WaLine[]
+  contacts    Contact[]
+  landings    Landing[]
+  pixels      Pixel[]
+  events      MetaEvent[]
+  credit      Credit?
+  integration Integration?
+  payments    Payment[]
+}
+
+// Pixel de Meta + token CAPI. Una entrada por evento (Lead / Purchase), como ScaleOS.
+model Pixel {
+  id          String   @id @default(cuid())
+  userId      String
+  pixelId     String
+  capiToken   String
+  eventType   String   // "Lead" | "Purchase"
+  siteUrl     String?
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+// Línea de WhatsApp (sesión Baileys/Evolution).
+model WaLine {
+  id          String    @id @default(cuid())
+  userId      String
+  phone       String    // ej: 5492944684573
+  label       String?
+  status      String    @default("inactive") // inactive | active | paused
+  sessionId   String?   // id de sesión Baileys/Evolution
+  connected   Boolean   @default(false)
+  expiresAt   DateTime? // se desactiva al vencer (consumo de días)
+  lastUsedAt  DateTime? // para rotación LRU de clics entre líneas activas
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id])
+  contacts    Contact[]
+  messages    Message[]
+}
+
+// Crédito prepago: "días disponibles" (1 día = 1 línea activa 24h).
+model Credit {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  days      Int      @default(0)
+  user      User     @relation(fields: [userId], references: [id])
+  ledger    CreditLedger[]
+}
+
+model CreditLedger {
+  id        String   @id @default(cuid())
+  creditId  String
+  delta     Int      // +compra / -consumo
+  reason    String
+  createdAt DateTime @default(now())
+  credit    Credit   @relation(fields: [creditId], references: [id])
+}
+
+// Contacto/lead con TODA la atribución. external_id es la clave del match con Meta.
+model Contact {
+  id          String   @id @default(cuid())
+  userId      String
+  externalId  String   @unique          // se envía a Meta (hasheado) para el match
+  phone       String?
+  waJid       String?                   // JID crudo de WhatsApp (soporta @lid) para responder
+  name        String?
+  source      String?                   // fb | ig | an | ...
+  campaignId  String?                   // id de campaña de Meta
+  adId        String?
+  pixelId     String?
+  fbp         String?                   // cookie _fbp
+  fbc         String?                   // cookie _fbc (derivada de fbclid)
+  fbclid      String?
+  code        String?  @unique          // código corto incrustado en el msg de WA
+  landingUrl  String?
+  lineId      String?
+  stage       Stage    @default(NUEVO)
+  amount      Int?                       // monto de la venta (en centavos o unidad menor)
+  purchasedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id])
+  line        WaLine?  @relation(fields: [lineId], references: [id])
+  messages    Message[]
+}
+
+enum Stage {
+  NUEVO
+  CONTACTADO
+  INTERESADO
+  COMPRO
+  PERDIDO
+}
+
+// Mensajes del Inbox.
+model Message {
+  id         String   @id @default(cuid())
+  contactId  String
+  lineId     String
+  direction  String   // in | out
+  body       String
+  waMessageId String?
+  createdAt  DateTime @default(now())
+  contact    Contact  @relation(fields: [contactId], references: [id])
+  line       WaLine   @relation(fields: [lineId], references: [id])
+}
+
+// Landing alojada (S3/CloudFront), una o varias por usuario.
+model Landing {
+  id         String   @id @default(cuid())
+  userId     String
+  name       String
+  slug       String   @unique
+  html       String   @db.Text
+  config     Json?                       // campos del editor (headline, msg, etc.) para re-editar
+  isPrimary  Boolean  @default(false)
+  published  Boolean  @default(false)
+  publishedUrl String?
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id])
+}
+
+// Integración con CRM externo (Fase 5): dispara webhooks por evento.
+model Integration {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  mode       String   @default("nativo") // nativo | webhook | kommo
+  webhookUrl String?
+  secret     String?                     // para firmar el payload (HMAC)
+  onLead     Boolean  @default(true)
+  onPurchase Boolean  @default(true)
+  enabled    Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id])
+}
+
+// Pago de días/tokens (Fase 5). Real con pasarela (MercadoPago) o stub en dev.
+model Payment {
+  id         String   @id @default(cuid())
+  userId     String
+  provider   String                      // mercadopago | stub
+  externalId String?                     // id de preferencia/pago en la pasarela
+  days       Int
+  amount     Int?                        // centavos
+  currency   String   @default("ARS")
+  status     String   @default("pending") // pending | approved | rejected
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id])
+}
+
+// Log de eventos enviados a Meta (para auditoría y reintentos).
+model MetaEvent {
+  id         String   @id @default(cuid())
+  userId     String
+  contactId  String?
+  eventName  String   // Lead | Purchase
+  pixelId    String
+  payload    Json
+  status     String   @default("pending") // pending | sent | failed
+  response   Json?
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id])
+}

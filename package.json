@@ -1,0 +1,11 @@
+{
+  "name": "publilat-saas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SaaS de atribución WhatsApp -> Meta Ads",
+  "workspaces": ["backend", "frontend"],
+  "scripts": {
+    "dev:backend": "npm run dev --workspace backend",
+    "dev:frontend": "npm run dev --workspace frontend"
+  }
+}

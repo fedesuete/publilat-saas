@@ -1,0 +1,73 @@
+# Stack local de Publi.lat — igual a lo que usa ScaleOS.
+# Levanta Postgres + Redis + Evolution API (WhatsApp) con un comando:
+#   docker compose up -d
+#
+# Apagar:   docker compose down
+# Ver logs: docker compose logs -f evolution-api
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: publilat-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    container_name: publilat-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+
+  # WhatsApp — Evolution API (corre sobre Baileys). Lo usás desde la Fase 2.
+  evolution-api:
+    image: atendai/evolution-api:v2.1.1
+    container_name: publilat-evolution
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    environment:
+      - SERVER_URL=http://localhost:8080
+      # Cambiá esta API key y poné la misma en tu .env (EVOLUTION_API_KEY)
+      - AUTHENTICATION_API_KEY=publilat-dev-key-cambiame
+      # Versión de WhatsApp Web que usa Baileys. La que trae la imagen queda vieja
+      # y WhatsApp rechaza el handshake con 405 (no genera QR). Actualizar cuando
+      # vuelva a fallar: ver https://raw.githubusercontent.com/WhiskeySockets/Baileys/master/src/Defaults/baileys-version.json
+      - CONFIG_SESSION_PHONE_VERSION=2.3000.1035194821
+      - DATABASE_ENABLED=true
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://postgres:postgres@postgres:5432/evolution?schema=public
+      - DATABASE_CONNECTION_CLIENT_NAME=evolution
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://redis:6379
+      - CACHE_REDIS_PREFIX_KEY=evolution
+      - CACHE_LOCAL_ENABLED=false
+      - DEL_INSTANCE=false
+      - QRCODE_LIMIT=30
+    volumes:
+      - evolution_instances:/evolution/instances
+
+volumes:
+  pgdata:
+  redisdata:
+  evolution_instances:
