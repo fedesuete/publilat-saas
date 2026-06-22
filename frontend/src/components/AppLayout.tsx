@@ -14,6 +14,7 @@ const NAV = [
   { to: "/links", label: "Links" },
   { to: "/landings", label: "Landings" },
   { to: "/integraciones", label: "Integraciones" },
+  { to: "/configuracion", label: "Configuración" },
 ];
 
 export default function AppLayout() {
