@@ -48,7 +48,8 @@ async function pickLine(userId: string) {
     orderBy: { createdAt: "asc" },
   });
   if (anyLine?.phone) return { phone: anyLine.phone, lineId: anyLine.id as string | undefined };
-  return { phone: process.env.DEMO_LINE_PHONE ?? "5492944684573", lineId: anyLine?.id };
+  // Sin número: sólo DEMO_LINE_PHONE si está explícito en .env (dev). Nunca un número fijo.
+  return { phone: process.env.DEMO_LINE_PHONE ?? "", lineId: anyLine?.id };
 }
 
 // Envía el Lead por CAPI y registra el MetaEvent. No bloquea la redirección.
@@ -180,6 +181,18 @@ goRouter.get("/go", async (req: Request, res: Response) => {
       userAgent: req.get("user-agent") ?? undefined,
       eventSourceUrl: req.get("referer") ?? undefined,
     });
+
+    // Sin línea de WhatsApp configurada: NO mandamos a un número ajeno. El lead ya quedó
+    // registrado y el evento disparado; mostramos un aviso simple.
+    if (!linePhone) {
+      res.set("Content-Type", "text/html; charset=utf-8");
+      return res.status(200).send(
+        `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
+        `<div style="font-family:system-ui;background:#0b141a;color:#e9edef;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px">` +
+        `<div><h1 style="font-size:22px;margin:0 0 8px">WhatsApp no disponible</h1>` +
+        `<p style="color:#8696a0;max-width:360px">Este negocio todavía no tiene una línea de WhatsApp configurada. Probá de nuevo más tarde.</p></div></div>`
+      );
+    }
 
     // Mensaje con el código incrustado para re-identificar al contacto.
     const text = encodeURIComponent(`${msg} (ref: ${code})`);
