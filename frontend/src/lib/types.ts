@@ -41,6 +41,11 @@ export interface Msg {
   createdAt: string;
 }
 
+export interface LeadDetail extends Lead {
+  phone: string | null;
+  line: { phone: string; label: string | null } | null;
+}
+
 export interface Pixel {
   id: string;
   pixelId: string;

@@ -2,6 +2,7 @@
 // Protegido por requireAuth -> opera sólo sobre los contactos del usuario logueado.
 import { Router } from "express";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { sendCapiEvent } from "../lib/meta-capi.js";
 import { resolveUserPixel } from "../lib/pixel.js";
@@ -9,11 +10,25 @@ import { fireIntegration } from "../lib/integrations.js";
 
 export const leadsRouter = Router();
 
-// GET /api/leads — lista los contactos del usuario con su atribución.
+// GET /api/leads?q=&filter=todos|conversiones|leads — lista (sin teléfono).
 leadsRouter.get("/", async (req, res) => {
   const userId = req.userId!;
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  const filter = String(req.query.filter ?? "todos");
+
+  const where: Prisma.ContactWhereInput = { userId };
+  if (filter === "conversiones") where.stage = "COMPRO";
+  else if (filter === "leads") where.stage = { not: "COMPRO" };
+  if (q) {
+    where.OR = [
+      { name: { contains: q, mode: "insensitive" } },
+      { phone: { contains: q } },
+      { code: { contains: q, mode: "insensitive" } },
+    ];
+  }
+
   const leads = await prisma.contact.findMany({
-    where: { userId },
+    where,
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
@@ -34,6 +49,36 @@ leadsRouter.get("/", async (req, res) => {
     },
   });
   return res.json({ leads });
+});
+
+// GET /api/leads/:id — ficha de atribución completa (incluye teléfono y línea WA).
+leadsRouter.get("/:id", async (req, res) => {
+  const userId = req.userId!;
+  const c = await prisma.contact.findFirst({
+    where: { id: req.params.id, userId },
+    include: { line: { select: { phone: true, label: true } } },
+  });
+  if (!c) return res.status(404).json({ error: "Lead no encontrado" });
+  return res.json({
+    lead: {
+      id: c.id,
+      externalId: c.externalId,
+      name: c.name,
+      phone: c.phone,
+      stage: c.stage,
+      source: c.source,
+      campaignId: c.campaignId,
+      adId: c.adId,
+      pixelId: c.pixelId,
+      fbclid: c.fbclid,
+      code: c.code,
+      landingUrl: c.landingUrl,
+      amount: c.amount,
+      purchasedAt: c.purchasedAt,
+      createdAt: c.createdAt,
+      line: c.line ? { phone: c.line.phone, label: c.line.label } : null,
+    },
+  });
 });
 
 // amount: monto en unidad mayor (ej 1500.50 ARS). Se guarda en centavos (Int) y se

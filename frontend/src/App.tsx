@@ -13,6 +13,7 @@ import LandingsPage from "./pages/LandingsPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import BillingPage from "./pages/BillingPage";
 import PixelPage from "./pages/PixelPage";
+import AgendaPage from "./pages/AgendaPage";
 
 export default function App() {
   return (
@@ -29,6 +30,7 @@ export default function App() {
           >
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/leads" element={<LeadsPage />} />
+            <Route path="/agenda" element={<AgendaPage />} />
             <Route path="/kanban" element={<KanbanPage />} />
             <Route path="/inbox" element={<InboxPage />} />
             <Route path="/whatsapp" element={<WhatsappPage />} />
