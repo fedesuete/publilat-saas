@@ -10,3 +10,8 @@ auth_sessions/
 wa-sessions/
 .prisma/
 coverage/
+
+# build artifacts
+frontend/*.tsbuildinfo
+frontend/vite.config.d.ts
+frontend/vite.config.js

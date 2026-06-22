@@ -3,6 +3,7 @@ import { slugify } from "./auth.js";
 import { signPayload } from "./integrations.js";
 import { priceFor } from "./payments.js";
 import { renderTrackedLanding } from "./landing-template.js";
+import { textSignalsPayment } from "./payment-detect.js";
 
 describe("slugify", () => {
   it("normaliza acentos, espacios y mayúsculas", () => {
@@ -59,5 +60,19 @@ describe("renderTrackedLanding", () => {
   it("escapa HTML en el contenido (anti-XSS)", () => {
     expect(html).toContain("Hola &lt;b&gt;");
     expect(html).not.toContain("Hola <b>");
+  });
+});
+
+describe("textSignalsPayment", () => {
+  it("detecta avisos de pago", () => {
+    expect(textSignalsPayment("Ya pagué, te paso el comprobante")).toBe(true);
+    expect(textSignalsPayment("Hice la transferencia recién")).toBe(true);
+    expect(textSignalsPayment("listo el pago")).toBe(true);
+    expect(textSignalsPayment("aboné los 150000")).toBe(true);
+  });
+  it("no marca mensajes que no son de pago (evita Purchase falso)", () => {
+    expect(textSignalsPayment("Hola, cuánto cuesta?")).toBe(false);
+    expect(textSignalsPayment("Me interesa el producto")).toBe(false);
+    expect(textSignalsPayment("")).toBe(false);
   });
 });

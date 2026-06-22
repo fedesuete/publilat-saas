@@ -5,6 +5,7 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
 import { fetchOwnerNumber } from "../lib/evolution.js";
+import { detectPayment } from "../lib/payment-detect.js";
 
 export const webhookRouter = Router();
 
@@ -82,6 +83,13 @@ webhookRouter.post("/", async (req, res) => {
       const raw = body.data;
       const items: any[] = Array.isArray(raw) ? raw : raw?.messages ?? [raw];
 
+      // Modo de detección de pago del usuario (off | assisted | auto).
+      const owner = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { paymentDetection: true },
+      });
+      const paymentMode = owner?.paymentDetection ?? "off";
+
       for (const item of items) {
         if (!item?.key) continue;
         if (item.key.fromMe) continue; // sólo entrantes
@@ -127,6 +135,21 @@ webhookRouter.post("/", async (req, res) => {
           contactId: contact.id,
           message: { id: message.id, direction: "in", body: text, createdAt: message.createdAt },
           stage: contact.stage,
+        });
+
+        // Detección de pago (texto + comprobante por imagen con IA). Best-effort.
+        void detectPayment({
+          mode: paymentMode,
+          userId,
+          contact: {
+            id: contact.id,
+            externalId: contact.externalId,
+            stage: contact.stage,
+            name: contact.name,
+          },
+          instance,
+          item,
+          text,
         });
       }
       return;

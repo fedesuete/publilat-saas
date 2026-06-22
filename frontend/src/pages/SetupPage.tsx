@@ -5,6 +5,21 @@ import { Button, Card, ErrorMsg } from "../components/ui";
 
 interface SetupStatus { pixel: boolean; landing: boolean; whatsapp: boolean; }
 type Mode = "nativo" | "webhook" | "kommo";
+type PayMode = "off" | "assisted" | "auto";
+
+const PAY_MODES: Array<{ key: PayMode; label: string; desc: string }> = [
+  { key: "off", label: "Manual", desc: "Marcás la compra a mano en Agenda/Leads. No detecta nada del chat." },
+  {
+    key: "assisted",
+    label: "Semi-automático",
+    desc: "Detecta el pago en el chat (texto o comprobante por imagen) y te lo resalta con el monto pre-cargado. Confirmás con 1 clic. Recomendado.",
+  },
+  {
+    key: "auto",
+    label: "Automático",
+    desc: "Al detectar el comprobante con monto y confianza alta, marca COMPRÓ y dispara el Purchase a Meta solo, sin tocar nada.",
+  },
+];
 
 const STEPS: Array<{ key: keyof SetupStatus; title: string; desc: string; to: string; cta: string }> = [
   { key: "pixel", title: "Cargá tu Pixel", desc: "Tu Pixel ID + token de CAPI para atribuir a tu cuenta de Meta.", to: "/pixel", cta: "Ir a Mi Pixel" },
@@ -21,6 +36,9 @@ const MODES: Array<{ key: Mode; label: string; desc: string }> = [
 export default function SetupPage() {
   const [status, setStatus] = useState<SetupStatus | null>(null);
   const [mode, setMode] = useState<Mode>("nativo");
+  const [payMode, setPayMode] = useState<PayMode>("off");
+  const [payAi, setPayAi] = useState(false);
+  const [savingPay, setSavingPay] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savingMode, setSavingMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,12 +48,15 @@ export default function SetupPage() {
     setLoading(true);
     setError(null);
     try {
-      const [s, i] = await Promise.all([
+      const [s, i, p] = await Promise.all([
         api.get<SetupStatus>("/api/setup/status"),
         api.get<{ integration: { mode: Mode } }>("/api/integrations"),
+        api.get<{ mode: PayMode; aiEnabled: boolean }>("/api/setup/payment-detection"),
       ]);
       setStatus(s.data);
       setMode(i.data.integration.mode);
+      setPayMode(p.data.mode);
+      setPayAi(p.data.aiEnabled);
     } catch (err) {
       setError(apiError(err));
     } finally {
@@ -57,6 +78,21 @@ export default function SetupPage() {
       setError(apiError(err));
     } finally {
       setSavingMode(false);
+    }
+  };
+
+  const savePayMode = async (m: PayMode) => {
+    setSavingPay(true);
+    setError(null);
+    setSavedMsg(null);
+    try {
+      await api.put("/api/setup/payment-detection", { mode: m });
+      setPayMode(m);
+      setSavedMsg("Modo de detección de pago guardado.");
+    } catch (err) {
+      setError(apiError(err));
+    } finally {
+      setSavingPay(false);
     }
   };
 
@@ -132,6 +168,44 @@ export default function SetupPage() {
               ))}
             </div>
             {savedMsg && <p className="mt-2 text-xs text-emerald-300">{savedMsg}</p>}
+          </Card>
+
+          {/* Detección de pago en el chat */}
+          <Card>
+            <div className="mb-1 text-sm font-semibold text-slate-200">Detección de pago en el chat</div>
+            <p className="mb-3 text-xs text-slate-500">
+              El CRM puede detectar cuándo un cliente pagó leyendo el chat: por texto
+              (“ya pagué”, “te paso el comprobante”) y por <b>comprobante en imagen con IA</b>.
+              Elegí cómo querés que actúe.
+            </p>
+            <div className="grid gap-2 md:grid-cols-3">
+              {PAY_MODES.map((m) => (
+                <button
+                  key={m.key}
+                  onClick={() => void savePayMode(m.key)}
+                  disabled={savingPay}
+                  className={`rounded-md border p-3 text-left transition disabled:opacity-60 ${
+                    payMode === m.key ? "border-wa-green bg-wa-green/10" : "border-slate-700 bg-slate-900/40 hover:border-slate-600"
+                  }`}
+                >
+                  <div className="text-sm font-semibold text-slate-100">{m.label}</div>
+                  <div className="mt-0.5 text-xs text-slate-500">{m.desc}</div>
+                </button>
+              ))}
+            </div>
+            {payMode !== "off" && !payAi && (
+              <p className="mt-2 rounded-md border border-amber-800 bg-amber-900/30 px-3 py-2 text-xs text-amber-200">
+                ⚠️ La lectura de comprobantes por imagen necesita una clave de IA
+                (<code>ANTHROPIC_API_KEY</code>) en el servidor. Sin ella, la detección por
+                <b> texto</b> igual funciona.
+              </p>
+            )}
+            {payMode === "auto" && (
+              <p className="mt-2 text-xs text-slate-500">
+                En automático sólo se dispara el Purchase cuando la IA lee el monto con
+                confianza alta. Si no, queda como “pago a confirmar”.
+              </p>
+            )}
           </Card>
         </div>
       )}

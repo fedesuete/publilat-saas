@@ -116,6 +116,33 @@ export async function sendText(instanceName: string, number: string, text: strin
   return data;
 }
 
+// Baja el contenido (base64) de un mensaje multimedia (ej imagen del comprobante).
+// Evolution v2: POST /chat/getBase64FromMediaMessage/{instance} con la key del mensaje.
+// Devuelve null si no se pudo (no rompe el flujo del webhook).
+export interface MediaBase64 {
+  base64: string;
+  mimetype?: string;
+}
+export async function getMediaBase64(
+  instanceName: string,
+  messageKeyId: string,
+): Promise<MediaBase64 | null> {
+  try {
+    const c = client();
+    const { data } = await c.post(`/chat/getBase64FromMediaMessage/${instanceName}`, {
+      message: { key: { id: messageKeyId } },
+      convertToMp4: false,
+    });
+    const base64: string | undefined = data?.base64 ?? data?.media ?? data?.data;
+    if (!base64) return null;
+    return { base64, mimetype: data?.mimetype ?? data?.mediaType };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("[evolution] getMediaBase64 error:", message);
+    return null;
+  }
+}
+
 // Cierra sesión (desvincula el teléfono) sin borrar la instancia.
 export async function logoutInstance(instanceName: string): Promise<void> {
   const c = client();

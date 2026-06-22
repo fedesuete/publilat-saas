@@ -4,9 +4,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
-import { sendCapiEvent } from "../lib/meta-capi.js";
-import { resolveUserPixel } from "../lib/pixel.js";
-import { fireIntegration } from "../lib/integrations.js";
+import { markPurchase } from "../lib/purchase.js";
 
 export const leadsRouter = Router();
 
@@ -44,6 +42,8 @@ leadsRouter.get("/", async (req, res) => {
       landingUrl: true,
       amount: true,
       purchasedAt: true,
+      paymentDetected: true,
+      paymentDetectedAmount: true,
       createdAt: true,
       // phone se omite a propósito (PII): no se expone en el listado.
     },
@@ -121,75 +121,15 @@ leadsRouter.post("/:id/purchase", async (req, res) => {
   }
   const { amount, currency } = parsed.data;
 
-  const contact = await prisma.contact.findFirst({ where: { id: req.params.id, userId } });
-  if (!contact) return res.status(404).json({ error: "Lead no encontrado" });
+  // Marca COMPRO + dispara el Purchase (mismo externalId/fbp/fbc + value).
+  const result = await markPurchase(userId, req.params.id, amount, currency);
+  if (!result) return res.status(404).json({ error: "Lead no encontrado" });
 
-  // Marca la venta (amount en centavos). El Purchase usa el valor en unidad mayor.
-  const updated = await prisma.contact.update({
-    where: { id: contact.id },
-    data: { stage: "COMPRO", amount: Math.round(amount * 100), purchasedAt: new Date() },
-  });
-
-  // Webhook saliente al CRM externo (si está configurado). Best-effort.
-  void fireIntegration(userId, "purchase", {
-    contactId: contact.id,
-    externalId: contact.externalId,
-    amount,
-    currency,
-    code: contact.code,
-    campaignId: contact.campaignId,
-    source: contact.source,
-  });
-
-  // Registra el MetaEvent y envía el Purchase con el MISMO externalId/fbp/fbc + value.
-  const creds = await resolveUserPixel(userId, "Purchase");
-  const metaEvent = await prisma.metaEvent.create({
-    data: {
-      userId,
-      contactId: contact.id,
-      eventName: "Purchase",
-      pixelId: creds?.pixelId ?? process.env.META_PIXEL_ID ?? "",
-      payload: {},
-      status: "pending",
-    },
-  });
-
-  try {
-    const result = await sendCapiEvent({
-      eventName: "Purchase",
-      externalId: contact.externalId, // <- mismo id que el Lead: habilita el match
-      fbp: contact.fbp ?? undefined,
-      fbc: contact.fbc ?? undefined,
-      phone: contact.phone ?? undefined,
-      value: amount,
-      currency,
-      eventId: `${contact.externalId}:purchase`,
-      eventSourceUrl: contact.landingUrl ?? undefined,
-      pixelId: creds?.pixelId,
-      capiToken: creds?.capiToken,
-    });
-    await prisma.metaEvent.update({
-      where: { id: metaEvent.id },
-      data: {
-        status: "sent",
-        pixelId: result.pixelId,
-        payload: result.payload as object,
-        response: result.response as object,
-      },
-    });
-    return res.json({
-      ok: true,
-      lead: { id: updated.id, stage: updated.stage, amount: updated.amount, purchasedAt: updated.purchasedAt },
-      capi: result.response,
-    });
-  } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : String(e);
-    console.error("[CAPI Purchase] error:", message);
-    await prisma.metaEvent.update({
-      where: { id: metaEvent.id },
-      data: { status: "failed", response: { error: message } },
-    });
-    // La venta queda marcada igual; el Purchase se puede reintentar (Fase 4: BullMQ).
-    return res.status(502).json({ ok: false, error: "Falló el envío del Purchase a Meta", detail: message });
+  if (result.ok) {
+    return res.json({ ok: true, lead: result.lead, capi: result.capi });
   }
+  // La venta queda marcada igual; el Purchase se reintenta (cola CAPI).
+  return res
+    .status(502)
+    .json({ ok: false, error: "Falló el envío del Purchase a Meta", detail: result.error, lead: result.lead });
 });

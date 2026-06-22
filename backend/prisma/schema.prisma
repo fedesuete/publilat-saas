@@ -17,6 +17,7 @@ model User {
   password  String
   name      String?
   phone     String?                    // WhatsApp del usuario (registro)
+  paymentDetection String @default("off") // off | assisted | auto (detección de pago en chat)
   createdAt DateTime @default(now())
 
   lines       WaLine[]
@@ -97,6 +98,9 @@ model Contact {
   stage       Stage    @default(NUEVO)
   amount      Int?                       // monto de la venta (en centavos o unidad menor)
   purchasedAt DateTime?
+  paymentDetected     Boolean   @default(false) // detección de pago en chat (a confirmar)
+  paymentDetectedAmount Int?                     // monto detectado (centavos), si la IA lo leyó
+  paymentDetectedAt   DateTime?
   createdAt   DateTime @default(now())
 
   user        User     @relation(fields: [userId], references: [id])

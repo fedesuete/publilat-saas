@@ -3,12 +3,13 @@ import { api, apiError } from "../lib/api";
 import type { Lead } from "../lib/types";
 import { fmtDate, fmtAmount, truncate } from "../lib/format";
 import { Button, Input, StageBadge, ErrorMsg, Card } from "../components/ui";
+import { getSocket } from "../lib/socket";
 
 export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [purchaseFor, setPurchaseFor] = useState<string | null>(null);
+  const [purchaseFor, setPurchaseFor] = useState<Lead | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -25,6 +26,15 @@ export default function LeadsPage() {
 
   useEffect(() => {
     void load();
+    // Refrescamos cuando se detecta un pago o se marca una compra (tiempo real).
+    const socket = getSocket();
+    const refresh = () => void load();
+    socket.on("payment:detected", refresh);
+    socket.on("lead:purchased", refresh);
+    return () => {
+      socket.off("payment:detected", refresh);
+      socket.off("lead:purchased", refresh);
+    };
   }, []);
 
   const onPurchased = (lead: Lead) => {
@@ -96,11 +106,24 @@ export default function LeadsPage() {
                     )}
                   </td>
                   <td className="px-3 py-2">
-                    {lead.stage !== "COMPRO" && (
-                      <Button onClick={() => setPurchaseFor(lead.id)}>
-                        Marcó compra
-                      </Button>
-                    )}
+                    {lead.stage !== "COMPRO" &&
+                      (lead.paymentDetected ? (
+                        <button
+                          onClick={() => setPurchaseFor(lead)}
+                          className="rounded-md border border-amber-500 bg-amber-500/15 px-3 py-1.5 text-sm font-semibold text-amber-200 hover:bg-amber-500/25"
+                        >
+                          💰 Confirmar pago
+                          {lead.paymentDetectedAmount != null && (
+                            <span className="ml-1 font-normal">
+                              ({fmtAmount(lead.paymentDetectedAmount)})
+                            </span>
+                          )}
+                        </button>
+                      ) : (
+                        <Button onClick={() => setPurchaseFor(lead)}>
+                          Marcó compra
+                        </Button>
+                      ))}
                   </td>
                 </tr>
               ))}
@@ -111,7 +134,12 @@ export default function LeadsPage() {
 
       {purchaseFor && (
         <PurchaseModal
-          leadId={purchaseFor}
+          leadId={purchaseFor.id}
+          prefillAmount={
+            purchaseFor.paymentDetectedAmount != null
+              ? purchaseFor.paymentDetectedAmount / 100
+              : null
+          }
           onClose={() => setPurchaseFor(null)}
           onDone={onPurchased}
         />
@@ -122,14 +150,16 @@ export default function LeadsPage() {
 
 function PurchaseModal({
   leadId,
+  prefillAmount,
   onClose,
   onDone,
 }: {
   leadId: string;
+  prefillAmount?: number | null;
   onClose: () => void;
   onDone: (lead: Lead) => void;
 }) {
-  const [amount, setAmount] = useState("");
+  const [amount, setAmount] = useState(prefillAmount ? String(prefillAmount) : "");
   const [currency, setCurrency] = useState("ARS");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);

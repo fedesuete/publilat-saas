@@ -21,6 +21,8 @@ export interface Lead {
   landingUrl: string | null;
   amount: number | null;
   purchasedAt: string | null;
+  paymentDetected?: boolean;
+  paymentDetectedAmount?: number | null; // centavos
   createdAt: string;
 }
 
