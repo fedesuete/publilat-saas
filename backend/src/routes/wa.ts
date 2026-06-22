@@ -149,6 +149,22 @@ waRouter.post("/lines/:id/activate", async (req, res) => {
   });
 });
 
+// POST /api/wa/lines/:id/pause — saca la línea de rotación (status=paused) sin desconectar.
+waRouter.post("/lines/:id/pause", async (req, res) => {
+  const line = await getOwnedLine(req.userId!, req.params.id);
+  if (!line) return res.status(404).json({ error: "Línea no encontrada" });
+  const updated = await prisma.waLine.update({ where: { id: line.id }, data: { status: "paused" } });
+  return res.json({ line: { id: updated.id, status: updated.status } });
+});
+
+// POST /api/wa/lines/:id/resume — vuelve a rotación (status=active).
+waRouter.post("/lines/:id/resume", async (req, res) => {
+  const line = await getOwnedLine(req.userId!, req.params.id);
+  if (!line) return res.status(404).json({ error: "Línea no encontrada" });
+  const updated = await prisma.waLine.update({ where: { id: line.id }, data: { status: "active" } });
+  return res.json({ line: { id: updated.id, status: updated.status } });
+});
+
 // POST /api/wa/lines/:id/logout — desvincula el teléfono (sin borrar la línea).
 waRouter.post("/lines/:id/logout", async (req, res) => {
   const line = await getOwnedLine(req.userId!, req.params.id);

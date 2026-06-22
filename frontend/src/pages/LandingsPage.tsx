@@ -1,8 +1,24 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, apiError } from "../lib/api";
 import { API_BASE } from "../lib/config";
 import { fmtDate } from "../lib/format";
+import { useAuth } from "../lib/auth";
 import { Button, Input, Card, ErrorMsg } from "../components/ui";
+
+// Plantillas de HTML libre. El CTA apunta al redirector /go (con el slug del usuario)
+// para que la atribución siga funcionando aunque el HTML sea propio.
+function templates(slug: string): Array<{ name: string; html: string }> {
+  const go = (msg: string) => `${API_BASE}/go?u=${slug}&msg=${encodeURIComponent(msg)}`;
+  const base = (title: string, body: string) =>
+    `<!doctype html><html lang="es"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${title}</title>
+<style>*{box-sizing:border-box}body{margin:0;font-family:system-ui,Segoe UI,Roboto,sans-serif;background:#0b141a;color:#e9edef;display:flex;min-height:100vh;align-items:center;justify-content:center}.c{max-width:440px;width:90%;text-align:center;padding:44px 28px;background:#111b21;border:1px solid #222d34;border-radius:16px}h1{font-size:26px;margin:0 0 10px}p{color:#8696a0;margin:0 0 28px;line-height:1.55}a.btn{display:block;text-decoration:none;border-radius:999px;padding:16px;font-size:17px;font-weight:600;background:#25d366;color:#03301a}</style>
+</head><body><div class="c">${body}</div></body></html>`;
+  return [
+    { name: "Simple", html: base("Contactanos", `<h1>Hablá con nosotros</h1><p>Te respondemos al toque por WhatsApp.</p><a class="btn" href="${go("Hola, quiero info")}">Escribir por WhatsApp</a>`) },
+    { name: "Promo", html: base("Promo", `<h1>🔥 Promo por tiempo limitado</h1><p>Escribinos y reservá tu descuento ahora.</p><a class="btn" href="${go("Hola, quiero la promo")}">Quiero la promo</a>`) },
+    { name: "Servicios", html: base("Servicios", `<h1>¿Necesitás ayuda?</h1><p>Contanos qué buscás y te asesoramos sin cargo.</p><a class="btn" href="${go("Hola, necesito asesoramiento")}">Pedir asesoramiento</a>`) },
+  ];
+}
 
 interface LandingConfig {
   title?: string;
@@ -64,15 +80,19 @@ const EMPTY_FORM: FormState = {
 };
 
 export default function LandingsPage() {
+  const { user } = useAuth();
   const [landings, setLandings] = useState<Landing[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [mode, setMode] = useState<"fields" | "html">("fields");
+  const [html, setHtml] = useState("");
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [lastSaved, setLastSaved] = useState<Landing | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const load = async () => {
     setLoading(true);
@@ -94,21 +114,43 @@ export default function LandingsPage() {
   const startCreate = () => {
     setEditingId(null);
     setForm(EMPTY_FORM);
+    setMode("fields");
+    setHtml("");
     setLastSaved(null);
   };
 
-  const startEdit = (l: Landing) => {
+  const startEdit = async (l: Landing) => {
     setEditingId(l.id);
     setLastSaved(null);
-    const c = l.config ?? {};
-    setForm({
-      name: l.name,
-      title: c.title ?? "",
-      headline: c.headline ?? "",
-      subtitle: c.subtitle ?? "",
-      buttonText: c.buttonText ?? "",
-      msg: c.msg ?? "",
-    });
+    const c = (l.config ?? {}) as LandingConfig & { raw?: boolean };
+    if (c.raw) {
+      // Landing de HTML libre: traemos el HTML guardado desde /p/:slug.
+      setMode("html");
+      setForm({ ...EMPTY_FORM, name: l.name });
+      try {
+        const r = await fetch(landingUrl(l.slug));
+        setHtml(await r.text());
+      } catch {
+        setHtml("");
+      }
+    } else {
+      setMode("fields");
+      setHtml("");
+      setForm({
+        name: l.name,
+        title: c.title ?? "",
+        headline: c.headline ?? "",
+        subtitle: c.subtitle ?? "",
+        buttonText: c.buttonText ?? "",
+        msg: c.msg ?? "",
+      });
+    }
+  };
+
+  const onUploadHtml = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => setHtml(String(reader.result ?? ""));
+    reader.readAsText(file);
   };
 
   const buildConfig = (): LandingConfig => ({
@@ -125,24 +167,27 @@ export default function LandingsPage() {
       setError("El nombre es obligatorio.");
       return;
     }
+    if (mode === "html" && !html.trim()) {
+      setError("El HTML no puede estar vacío.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
-      const config = buildConfig();
+      const payload =
+        mode === "html"
+          ? { name: form.name.trim(), html }
+          : { name: form.name.trim(), config: buildConfig() };
       if (editingId) {
-        const { data } = await api.put<{ landing: Landing }>(
-          `/api/landings/${editingId}`,
-          { name: form.name.trim(), config }
-        );
+        const { data } = await api.put<{ landing: Landing }>(`/api/landings/${editingId}`, payload);
         setLastSaved(data.landing);
       } else {
-        const { data } = await api.post<{ landing: Landing }>("/api/landings", {
-          name: form.name.trim(),
-          config,
-        });
+        const { data } = await api.post<{ landing: Landing }>("/api/landings", payload);
         setLastSaved(data.landing);
       }
       setForm(EMPTY_FORM);
+      setHtml("");
+      setMode("fields");
       setEditingId(null);
       await load();
     } catch (err) {
@@ -320,7 +365,7 @@ export default function LandingsPage() {
                     >
                       Ver
                     </Button>
-                    <Button variant="secondary" onClick={() => startEdit(l)}>
+                    <Button variant="secondary" onClick={() => void startEdit(l)}>
                       Editar
                     </Button>
                     <Button
@@ -374,46 +419,62 @@ export default function LandingsPage() {
                 placeholder="Promo verano"
               />
             </div>
-            <div>
-              <label className="mb-1 block text-xs text-slate-400">Título (title)</label>
-              <Input
-                value={form.title}
-                onChange={(e) => setField("title", e.target.value)}
-                placeholder="Título de la pestaña"
-              />
+            <div className="inline-flex rounded-md bg-slate-900 p-1 text-xs">
+              <button type="button" onClick={() => setMode("fields")} className={`rounded px-3 py-1 font-medium ${mode === "fields" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Campos</button>
+              <button type="button" onClick={() => setMode("html")} className={`rounded px-3 py-1 font-medium ${mode === "html" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>HTML libre</button>
             </div>
-            <div>
-              <label className="mb-1 block text-xs text-slate-400">Encabezado (headline)</label>
-              <Input
-                value={form.headline}
-                onChange={(e) => setField("headline", e.target.value)}
-                placeholder="¡Aprovechá la promo!"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs text-slate-400">Subtítulo (subtitle)</label>
-              <Input
-                value={form.subtitle}
-                onChange={(e) => setField("subtitle", e.target.value)}
-                placeholder="Escribinos y te asesoramos"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs text-slate-400">Texto del botón (buttonText)</label>
-              <Input
-                value={form.buttonText}
-                onChange={(e) => setField("buttonText", e.target.value)}
-                placeholder="Escribir por WhatsApp"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs text-slate-400">Mensaje de WhatsApp (msg)</label>
-              <Input
-                value={form.msg}
-                onChange={(e) => setField("msg", e.target.value)}
-                placeholder="Hola, quiero info"
-              />
-            </div>
+
+            {mode === "fields" ? (
+              <>
+                <div>
+                  <label className="mb-1 block text-xs text-slate-400">Título (title)</label>
+                  <Input value={form.title} onChange={(e) => setField("title", e.target.value)} placeholder="Título de la pestaña" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-slate-400">Encabezado (headline)</label>
+                  <Input value={form.headline} onChange={(e) => setField("headline", e.target.value)} placeholder="¡Aprovechá la promo!" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-slate-400">Subtítulo (subtitle)</label>
+                  <Input value={form.subtitle} onChange={(e) => setField("subtitle", e.target.value)} placeholder="Escribinos y te asesoramos" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-slate-400">Texto del botón (buttonText)</label>
+                  <Input value={form.buttonText} onChange={(e) => setField("buttonText", e.target.value)} placeholder="Escribir por WhatsApp" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-slate-400">Mensaje de WhatsApp (msg)</label>
+                  <Input value={form.msg} onChange={(e) => setField("msg", e.target.value)} placeholder="Hola, quiero info" />
+                </div>
+              </>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-slate-400">Plantillas:</span>
+                  {templates(user?.slug ?? "").map((t) => (
+                    <Button key={t.name} type="button" variant="ghost" onClick={() => setHtml(t.html)}>{t.name}</Button>
+                  ))}
+                  <Button type="button" variant="ghost" onClick={() => fileRef.current?.click()}>Subir .html</Button>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept=".html,text/html"
+                    className="hidden"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) onUploadHtml(f); e.target.value = ""; }}
+                  />
+                </div>
+                <textarea
+                  value={html}
+                  onChange={(e) => setHtml(e.target.value)}
+                  placeholder="<!doctype html> ..."
+                  className="h-64 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-xs text-slate-100 outline-none focus:border-wa-green"
+                />
+                <p className="text-xs text-slate-500">
+                  HTML propio. Para atribuir, el botón debe enlazar al redirector{" "}
+                  <code className="text-slate-400">{`${API_BASE}/go?u=${user?.slug ?? ""}`}</code> (las plantillas ya lo traen).
+                </p>
+              </div>
+            )}
             <div className="flex gap-2">
               <Button type="submit" disabled={saving}>
                 {saving ? "Guardando…" : editingId ? "Guardar cambios" : "Crear landing"}

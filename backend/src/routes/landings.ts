@@ -59,9 +59,14 @@ landingsRouter.get("/", async (req, res) => {
   return res.json({ landings });
 });
 
-const createSchema = z.object({ name: z.string().min(1).max(80), config: configSchema.optional() });
+// html: HTML libre (anula el editor por campos). config: editor por campos.
+const createSchema = z.object({
+  name: z.string().min(1).max(80),
+  config: configSchema.optional(),
+  html: z.string().min(1).max(200000).optional(),
+});
 
-// POST /api/landings — crea la landing (genera slug + html).
+// POST /api/landings — crea la landing (genera slug + html, o usa el HTML libre).
 landingsRouter.post("/", async (req, res) => {
   const parsed = createSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -72,9 +77,10 @@ landingsRouter.post("/", async (req, res) => {
 
   const cfg = parsed.data.config ?? {};
   const slug = await uniqueLandingSlug(parsed.data.name);
-  const html = await buildHtml(user.id, user.slug, cfg);
+  const raw = Boolean(parsed.data.html);
+  const html = raw ? parsed.data.html! : await buildHtml(user.id, user.slug, cfg);
   const landing = await prisma.landing.create({
-    data: { userId: user.id, name: parsed.data.name, slug, html, config: cfg },
+    data: { userId: user.id, name: parsed.data.name, slug, html, config: raw ? { raw: true } : cfg },
     select: { id: true, name: true, slug: true, config: true, isPrimary: true, published: true, publishedUrl: true, createdAt: true },
   });
   return res.status(201).json({ landing });
@@ -83,6 +89,7 @@ landingsRouter.post("/", async (req, res) => {
 const updateSchema = z.object({
   name: z.string().min(1).max(80).optional(),
   config: configSchema.optional(),
+  html: z.string().min(1).max(200000).optional(),
   isPrimary: z.boolean().optional(),
 });
 
@@ -98,7 +105,11 @@ landingsRouter.put("/:id", async (req, res) => {
 
   const data: Record<string, unknown> = {};
   if (parsed.data.name) data.name = parsed.data.name;
-  if (parsed.data.config) {
+  if (parsed.data.html) {
+    // HTML libre: lo guardamos tal cual.
+    data.html = parsed.data.html;
+    data.config = { raw: true };
+  } else if (parsed.data.config) {
     const merged = { ...(existing.config as Cfg | null ?? {}), ...parsed.data.config };
     data.config = merged;
     data.html = await buildHtml(req.userId!, user!.slug, merged);

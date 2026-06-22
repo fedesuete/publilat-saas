@@ -130,6 +130,16 @@ export default function WhatsappPage() {
     }
   };
 
+  const setStatus = async (id: string, action: "pause" | "resume") => {
+    setError(null);
+    try {
+      const { data } = await api.post<{ line: { id: string; status: string } }>(`/api/wa/lines/${id}/${action}`);
+      setLines((prev) => prev.map((l) => (l.id === id ? { ...l, status: data.line.status } : l)));
+    } catch (err) {
+      setError(apiError(err));
+    }
+  };
+
   const activate = async (id: string) => {
     const raw = activateDays[id] ?? "1";
     const n = parseInt(raw, 10);
@@ -207,7 +217,18 @@ export default function WhatsappPage() {
                     <div>
                       <div className="font-semibold">{line.label || "Sin etiqueta"}</div>
                       <div className="text-xs text-slate-400">
-                        {line.phone || "Sin número"} · {line.status}
+                        {line.phone || "Sin número"} ·{" "}
+                        <span
+                          className={
+                            line.status === "active"
+                              ? "font-semibold text-wa-green"
+                              : line.status === "paused"
+                                ? "font-semibold text-amber-400"
+                                : "text-slate-500"
+                          }
+                        >
+                          {line.status === "active" ? "activa" : line.status === "paused" ? "pausada" : line.status}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -246,6 +267,15 @@ export default function WhatsappPage() {
                   <Button variant="secondary" onClick={() => void checkStatus(line.id)}>
                     Estado
                   </Button>
+                  {line.status === "paused" ? (
+                    <Button variant="secondary" onClick={() => void setStatus(line.id, "resume")}>
+                      Reanudar
+                    </Button>
+                  ) : (
+                    <Button variant="ghost" onClick={() => void setStatus(line.id, "pause")}>
+                      Pausar
+                    </Button>
+                  )}
                   <Button variant="ghost" onClick={() => void logout(line.id)}>
                     Desvincular
                   </Button>

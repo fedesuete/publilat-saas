@@ -25,12 +25,31 @@ export async function fireIntegration(
     if (event === "lead" && !integ.onLead) return;
     if (event === "purchase" && !integ.onPurchase) return;
 
-    const body = { event, mode: integ.mode, data, sentAt: new Date().toISOString() };
+    // Kommo: payload plano que un webhook entrante / Salesbot mapea fácil a campos de lead.
+    // Webhook genérico: estructura {event, mode, data}.
+    const body =
+      integ.mode === "kommo"
+        ? {
+            event, // "lead" | "purchase"
+            name: (data.name as string) ?? `Lead ${String(data.code ?? data.externalId ?? "")}`,
+            price: typeof data.amount === "number" ? data.amount : 0,
+            source: (data.source as string) ?? "publilat",
+            pipeline: "publilat",
+            tags: ["publi.lat", event],
+            custom_fields: {
+              external_id: data.externalId ?? null,
+              code: data.code ?? null,
+              campaign: data.campaignId ?? null,
+              currency: data.currency ?? null,
+            },
+            sentAt: new Date().toISOString(),
+          }
+        : { event, mode: integ.mode, data, sentAt: new Date().toISOString() };
+
     const raw = JSON.stringify(body);
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (integ.secret) headers["X-Publilat-Signature"] = signPayload(raw, integ.secret);
 
-    // Kommo (amoCRM) consume el mismo payload vía un webhook entrante / Salesbot.
     await axios.post(integ.webhookUrl, body, { headers, timeout: 8000 });
   } catch (e) {
     console.error("[integration] error:", e instanceof Error ? e.message : String(e));

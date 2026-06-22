@@ -15,6 +15,7 @@ import BillingPage from "./pages/BillingPage";
 import PixelPage from "./pages/PixelPage";
 import AgendaPage from "./pages/AgendaPage";
 import SetupPage from "./pages/SetupPage";
+import TutorialesPage from "./pages/TutorialesPage";
 
 export default function App() {
   return (
@@ -41,6 +42,7 @@ export default function App() {
             <Route path="/landings" element={<LandingsPage />} />
             <Route path="/integraciones" element={<IntegrationsPage />} />
             <Route path="/configuracion" element={<SetupPage />} />
+            <Route path="/tutoriales" element={<TutorialesPage />} />
           </Route>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
