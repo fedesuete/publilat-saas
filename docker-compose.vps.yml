@@ -26,6 +26,14 @@ services:
     ports:
       - "4010:4000" # Traefik -> http://IP:4010
 
+  landing:
+    build:
+      context: .
+      dockerfile: Dockerfile.landing
+    restart: unless-stopped
+    ports:
+      - "4020:80" # Traefik -> http://IP:4020 (publi.lat / www.publi.lat)
+
   postgres:
     image: postgres:16
     restart: unless-stopped

@@ -1,5 +1,6 @@
 http:
   routers:
+    # Panel / app (app.publi.lat) -> contenedor app en :4010
     publilat:
       rule: "Host(`app.publi.lat`)"
       service: publilat
@@ -14,11 +15,33 @@ http:
         - http
       middlewares:
         - publilat-redirect
+
+    # Landing de marketing (publi.lat + www) -> contenedor landing en :4020
+    publilat-landing:
+      rule: "Host(`publi.lat`) || Host(`www.publi.lat`)"
+      service: publilat-landing
+      entryPoints:
+        - https
+      tls:
+        certResolver: letsencrypt
+    publilat-landing-http:
+      rule: "Host(`publi.lat`) || Host(`www.publi.lat`)"
+      service: publilat-landing
+      entryPoints:
+        - http
+      middlewares:
+        - publilat-redirect
+
   services:
     publilat:
       loadBalancer:
         servers:
           - url: "http://187.77.33.164:4010"
+    publilat-landing:
+      loadBalancer:
+        servers:
+          - url: "http://187.77.33.164:4020"
+
   middlewares:
     publilat-redirect:
       redirectScheme:

@@ -15,3 +15,9 @@ coverage/
 frontend/*.tsbuildinfo
 frontend/vite.config.d.ts
 frontend/vite.config.js
+
+# landing build artifacts
+landing-web/dist
+landing-web/*.tsbuildinfo
+landing-web/vite.config.js
+landing-web/vite.config.d.ts

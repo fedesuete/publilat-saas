@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-ink font-sans text-slate-300 antialiased;
+}
+
+@layer components {
+  .gradient-text {
+    @apply bg-gradient-to-r from-wa-green via-emerald-400 to-lime-300 bg-clip-text text-transparent;
+  }
+  .glass {
+    @apply border border-white/10 bg-white/[0.04] backdrop-blur-md;
+  }
+  .glow {
+    box-shadow: 0 0 50px -12px rgba(37, 211, 102, 0.55);
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-wa-green to-emerald-400 px-6 py-3 font-semibold text-ink shadow-lg shadow-emerald-500/20 transition hover:shadow-emerald-500/40 hover:brightness-105;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-white/15 bg-white/5 px-6 py-3 font-semibold text-slate-100 transition hover:bg-white/10;
+  }
+  .card-border {
+    @apply rounded-2xl border border-white/10 bg-gradient-to-b from-white/[0.06] to-white/[0.02];
+  }
+}
+
+/* halo de fondo reutilizable */
+.halo {
+  background: radial-gradient(closest-side, rgba(37, 211, 102, 0.18), transparent);
+}
