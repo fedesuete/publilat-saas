@@ -39,3 +39,43 @@ body {
 .halo {
   background: radial-gradient(closest-side, rgba(37, 211, 102, 0.18), transparent);
 }
+
+/* marco de navegador / mockups */
+.mock-frame {
+  @apply overflow-hidden rounded-2xl border border-white/10 bg-ink2/90 shadow-2xl shadow-black/40;
+}
+
+/* franja marquee: el track se duplica, por eso translateX(-50%) cierra el loop */
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee 28s linear infinite;
+}
+.marquee-mask {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+}
+
+/* hover vivo de tarjetas */
+.card-hover {
+  @apply transition duration-300 will-change-transform;
+}
+.card-hover:hover {
+  @apply -translate-y-1 border-wa-green/40;
+  box-shadow: 0 18px 50px -20px rgba(37, 211, 102, 0.35);
+}
+
+/* Respeto total a quien prefiere menos movimiento */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .marquee-track {
+    animation: none !important;
+  }
+}

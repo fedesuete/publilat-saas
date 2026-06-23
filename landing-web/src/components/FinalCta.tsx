@@ -1,6 +1,6 @@
 import { ArrowRight } from "lucide-react";
 import { Reveal } from "./ui/Reveal";
-import { REGISTER_URL } from "../config";
+import { REGISTER_URL, WHATSAPP_URL } from "../config";
 
 export default function FinalCta() {
   return (
@@ -18,11 +18,11 @@ export default function FinalCta() {
             Meta cambia cómo optimizás para siempre.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
-            <a href={REGISTER_URL} className="btn-primary">
+            <a href={REGISTER_URL} className="btn-primary animate-ctaGlow">
               Crear mi cuenta <ArrowRight className="h-4 w-4" />
             </a>
-            <a href="#precios" className="btn-ghost">
-              Ver precios
+            <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className="btn-ghost">
+              Pedí una demo
             </a>
           </div>
         </div>

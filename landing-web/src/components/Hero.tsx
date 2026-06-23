@@ -1,15 +1,22 @@
 import { motion } from "framer-motion";
-import { ArrowRight, PlayCircle, ShieldCheck } from "lucide-react";
-import { REGISTER_URL } from "../config";
+import { ArrowRight, MessageCircle, ShieldCheck } from "lucide-react";
+import { REGISTER_URL, WHATSAPP_URL } from "../config";
 import DashboardMock from "./DashboardMock";
+import { Counter } from "./ui/Counter";
+
+const STATS = [
+  { to: 10, suffix: "K+", label: "eventos atribuidos" },
+  { to: 4, suffix: "", label: "países LATAM" },
+  { to: 24, suffix: "/7", label: "atribución activa" },
+];
 
 export default function Hero() {
   return (
     <section id="top" className="relative pt-28 sm:pt-36">
-      {/* halos de fondo */}
+      {/* halos de fondo que "respiran" */}
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-        <div className="halo absolute -top-32 right-0 h-[36rem] w-[36rem]" />
-        <div className="halo absolute top-40 -left-40 h-[28rem] w-[28rem] opacity-60" />
+        <div className="halo absolute -top-32 right-0 h-[36rem] w-[36rem] animate-breathe" />
+        <div className="halo absolute top-40 -left-40 h-[28rem] w-[28rem] animate-breathe [animation-delay:2s]" />
       </div>
 
       <div className="mx-auto grid max-w-7xl items-center gap-12 px-4 sm:px-6 lg:grid-cols-2">
@@ -51,12 +58,29 @@ export default function Hero() {
             transition={{ duration: 0.6, delay: 0.2 }}
             className="mt-8 flex flex-wrap items-center gap-3"
           >
-            <a href={REGISTER_URL} className="btn-primary">
+            <a href={REGISTER_URL} className="btn-primary animate-ctaGlow">
               Crear mi cuenta <ArrowRight className="h-4 w-4" />
             </a>
-            <a href="#como-funciona" className="btn-ghost">
-              <PlayCircle className="h-4 w-4" /> Ver cómo funciona
+            <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className="btn-ghost">
+              <MessageCircle className="h-4 w-4" /> Pedí una demo
             </a>
+          </motion.div>
+
+          {/* Stats con contadores */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.34 }}
+            className="mt-10 grid max-w-md grid-cols-3 gap-4"
+          >
+            {STATS.map((s) => (
+              <div key={s.label}>
+                <div className="text-2xl font-extrabold text-white sm:text-3xl">
+                  <Counter to={s.to} suffix={s.suffix} />
+                </div>
+                <div className="text-xs text-slate-400">{s.label}</div>
+              </div>
+            ))}
           </motion.div>
 
           <motion.div

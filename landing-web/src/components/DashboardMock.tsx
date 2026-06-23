@@ -1,3 +1,4 @@
+import { motion, useReducedMotion } from "framer-motion";
 import { MousePointerClick, MessageCircle, ShoppingBag, TrendingUp } from "lucide-react";
 import { Counter } from "./ui/Counter";
 
@@ -11,6 +12,7 @@ const STATS = [
 const BARS = [30, 45, 38, 60, 52, 78, 66, 90, 84, 100];
 
 export default function DashboardMock() {
+  const reduce = useReducedMotion();
   return (
     <div className="card-border glow relative w-full max-w-xl p-4 sm:p-6">
       <div className="mb-4 flex items-center justify-between">
@@ -49,10 +51,13 @@ export default function DashboardMock() {
           <div className="text-[11px] text-slate-400">Ventas (7 días)</div>
           <div className="mt-2 flex h-12 items-end gap-1">
             {BARS.map((h, i) => (
-              <div
+              <motion.div
                 key={i}
                 className="flex-1 rounded-sm bg-gradient-to-t from-wa-green/40 to-lime-300"
-                style={{ height: `${h}%` }}
+                initial={{ height: reduce ? `${h}%` : "0%" }}
+                whileInView={{ height: `${h}%` }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: reduce ? 0 : i * 0.06, ease: "easeOut" }}
               />
             ))}
           </div>

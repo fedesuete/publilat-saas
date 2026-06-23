@@ -34,7 +34,7 @@ export default function Problem() {
       <div className="mt-12 grid gap-5 md:grid-cols-3">
         {PROBLEMS.map((p, i) => (
           <Reveal key={p.title} delay={i * 0.08}>
-            <div className="card-border h-full p-6">
+            <div className="card-border card-hover h-full p-6">
               <div className="mb-4 inline-flex rounded-xl bg-red-500/10 p-3">
                 <p.icon className="h-6 w-6 text-red-400" />
               </div>

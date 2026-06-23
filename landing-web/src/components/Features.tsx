@@ -6,7 +6,7 @@ export default function Features() {
     <section id="caracteristicas" className="mx-auto max-w-7xl px-4 py-24 sm:px-6">
       <Reveal>
         <h2 className="text-center text-3xl font-bold text-white sm:text-4xl">
-          Todo lo que necesitás para <span className="gradient-text">escalar con datos</span>
+          Y todo lo demás, <span className="gradient-text">bajo el capó</span>
         </h2>
         <p className="mx-auto mt-3 max-w-2xl text-center text-slate-400">
           Un sistema completo: del clic a la venta, con la señal de compra de vuelta en Meta.
@@ -17,7 +17,7 @@ export default function Features() {
       <div className="mt-12 grid grid-cols-1 gap-4 md:grid-cols-3">
         {/* Grande: atribución */}
         <Reveal className="md:col-span-2" >
-          <div className="card-border h-full overflow-hidden p-7">
+          <div className="card-border card-hover h-full overflow-hidden p-7">
             <div className="mb-4 inline-flex rounded-xl bg-wa-green/10 p-3">
               <Target className="h-6 w-6 text-wa-green" />
             </div>
@@ -41,7 +41,7 @@ export default function Features() {
 
         {/* ROAS */}
         <Reveal delay={0.05}>
-          <div className="card-border flex h-full flex-col justify-between p-7">
+          <div className="card-border card-hover flex h-full flex-col justify-between p-7">
             <div>
               <div className="mb-4 inline-flex rounded-xl bg-lime-400/10 p-3">
                 <BarChart3 className="h-6 w-6 text-lime-300" />
@@ -62,7 +62,7 @@ export default function Features() {
           { icon: KanbanSquare, title: "CRM kanban con montos", desc: "Arrastrá leads por etapa y marcá la venta con su valor en un clic." },
         ].map((f, i) => (
           <Reveal key={f.title} delay={i * 0.05}>
-            <div className="card-border h-full p-6">
+            <div className="card-border card-hover h-full p-6">
               <div className="mb-3 inline-flex rounded-xl bg-emerald-400/10 p-2.5">
                 <f.icon className="h-5 w-5 text-emerald-400" />
               </div>
@@ -74,7 +74,7 @@ export default function Features() {
 
         {/* ancho: dashboard + integraciones */}
         <Reveal delay={0.05} className="md:col-span-2">
-          <div className="card-border flex h-full flex-col justify-between gap-4 p-7 sm:flex-row sm:items-center">
+          <div className="card-border card-hover flex h-full flex-col justify-between gap-4 p-7 sm:flex-row sm:items-center">
             <div>
               <div className="mb-3 inline-flex rounded-xl bg-sky-400/10 p-2.5">
                 <Activity className="h-5 w-5 text-sky-400" />

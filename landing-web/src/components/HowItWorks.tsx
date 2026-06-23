@@ -1,3 +1,4 @@
+import { motion } from "framer-motion";
 import { Link2, MessageCircle, ShoppingBag, Repeat } from "lucide-react";
 import { Reveal } from "./ui/Reveal";
 
@@ -41,8 +42,14 @@ export default function HowItWorks() {
       </Reveal>
 
       <div className="relative mt-14 grid gap-6 md:grid-cols-4">
-        {/* línea conectora en desktop */}
-        <div className="absolute left-0 right-0 top-9 hidden h-px bg-gradient-to-r from-transparent via-wa-green/40 to-transparent md:block" />
+        {/* línea conectora en desktop — se dibuja al entrar */}
+        <motion.div
+          className="absolute left-0 right-0 top-9 hidden h-px origin-left bg-gradient-to-r from-transparent via-wa-green/50 to-transparent md:block"
+          initial={{ scaleX: 0 }}
+          whileInView={{ scaleX: 1 }}
+          viewport={{ once: true }}
+          transition={{ duration: 1, ease: "easeOut" }}
+        />
         {STEPS.map((s, i) => (
           <Reveal key={s.n} delay={i * 0.1}>
             <div className="relative flex flex-col items-center text-center">
