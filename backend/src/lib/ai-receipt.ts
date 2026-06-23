@@ -16,12 +16,29 @@ export interface ReceiptAnalysis {
 
 let cached: Anthropic | null = null;
 function clientOrNull(): Anthropic | null {
-  if (!process.env.ANTHROPIC_API_KEY) return null;
-  if (!cached) cached = new Anthropic(); // lee ANTHROPIC_API_KEY del entorno
+  // Dos formas de autenticar:
+  //  A) ANTHROPIC_AUTH_TOKEN  -> token OAuth de la suscripción (Claude Code). No cobra
+  //     por token aparte; va como Bearer + header anthropic-beta: oauth-2025-04-20.
+  //     OJO: es de corta duración y NO se auto-renueva por variable de entorno.
+  //  B) ANTHROPIC_API_KEY     -> API key clásica (pago por token).
+  // Si están las dos, la API rechaza la request: dejá UNA sola en el .env.
+  const authToken = process.env.ANTHROPIC_AUTH_TOKEN;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!authToken && !apiKey) return null;
+  if (cached) return cached;
+
+  cached = authToken
+    ? new Anthropic({
+        authToken,
+        apiKey: null, // evita mandar x-api-key además del Bearer
+        defaultHeaders: { "anthropic-beta": "oauth-2025-04-20" },
+      })
+    : new Anthropic(); // lee ANTHROPIC_API_KEY del entorno
   return cached;
 }
 
-export const aiEnabled = (): boolean => !!process.env.ANTHROPIC_API_KEY;
+export const aiEnabled = (): boolean =>
+  !!(process.env.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_API_KEY);
 
 // media_type que acepta la API de visión.
 type ImgMedia = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
