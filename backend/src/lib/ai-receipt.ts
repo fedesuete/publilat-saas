@@ -59,26 +59,27 @@ const PROMPT =
   "confidence refleja qué tan seguro estás de que es un pago real y exitoso. " +
   "Si no es un comprobante, is_receipt=false y amount=null.";
 
+const isPdf = (mediaType?: string): boolean => (mediaType ?? "").toLowerCase().includes("pdf");
+
 // ---- OpenAI (gpt-4o-mini, detalle bajo para gastar lo mínimo) ----
 let openaiClient: OpenAI | null = null;
 async function rawOpenAI(base64: string, mediaType?: string): Promise<string> {
   if (!openaiClient) openaiClient = new OpenAI(); // lee OPENAI_API_KEY del entorno
+  // PDF -> content part "file"; imagen -> "image_url".
+  const mediaPart = isPdf(mediaType)
+    ? {
+        type: "file" as const,
+        file: { filename: "comprobante.pdf", file_data: `data:application/pdf;base64,${base64}` },
+      }
+    : {
+        type: "image_url" as const,
+        image_url: { url: `data:${normMedia(mediaType)};base64,${base64}`, detail: "low" as const },
+      };
   const resp = await openaiClient.chat.completions.create({
     model: OPENAI_MODEL,
     max_tokens: 200,
     response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "text", text: PROMPT },
-          {
-            type: "image_url",
-            image_url: { url: `data:${normMedia(mediaType)};base64,${base64}`, detail: "low" },
-          },
-        ],
-      },
-    ],
+    messages: [{ role: "user", content: [{ type: "text", text: PROMPT }, mediaPart] }],
   });
   return resp.choices[0]?.message?.content ?? "";
 }
@@ -96,21 +97,20 @@ async function rawAnthropic(base64: string, mediaType?: string): Promise<string>
         })
       : new Anthropic(); // lee ANTHROPIC_API_KEY del entorno
   }
+  // PDF -> bloque "document"; imagen -> bloque "image".
+  const mediaBlock = isPdf(mediaType)
+    ? {
+        type: "document" as const,
+        source: { type: "base64" as const, media_type: "application/pdf" as const, data: base64 },
+      }
+    : {
+        type: "image" as const,
+        source: { type: "base64" as const, media_type: normMedia(mediaType), data: base64 },
+      };
   const resp = await anthropicClient.messages.create({
     model: ANTHROPIC_MODEL,
     max_tokens: 200,
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "image",
-            source: { type: "base64", media_type: normMedia(mediaType), data: base64 },
-          },
-          { type: "text", text: PROMPT },
-        ],
-      },
-    ],
+    messages: [{ role: "user", content: [mediaBlock, { type: "text", text: PROMPT }] }],
   });
   const block = resp.content.find((b) => b.type === "text");
   return block && block.type === "text" ? block.text : "";

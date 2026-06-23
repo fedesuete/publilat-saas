@@ -121,15 +121,20 @@ webhookRouter.post("/", async (req, res) => {
           contact = await prisma.contact.update({ where: { id: contact.id }, data: patch });
         }
 
-        // Si el mensaje trae imagen, la bajamos UNA vez (para mostrarla en el Inbox
-        // y, de paso, pasarla a la detección de pago sin volver a bajarla).
+        // Si el mensaje trae imagen o documento (PDF), lo bajamos UNA vez (para mostrarlo
+        // en el Inbox y pasarlo a la detección de pago sin volver a bajarlo).
         let mediaType: string | null = null;
         let mediaData: string | null = null;
-        if (item?.message?.imageMessage && waMessageId) {
+        const img = item?.message?.imageMessage;
+        const doc =
+          item?.message?.documentMessage ??
+          item?.message?.documentWithCaptionMessage?.message?.documentMessage;
+        const mediaHint = img ?? doc;
+        if (mediaHint && waMessageId) {
           const media = await getMediaBase64(instance, waMessageId);
           if (media?.base64) {
             mediaData = media.base64;
-            mediaType = media.mimetype ?? item.message.imageMessage.mimetype ?? "image/jpeg";
+            mediaType = media.mimetype ?? mediaHint.mimetype ?? (img ? "image/jpeg" : "application/octet-stream");
           }
         }
 

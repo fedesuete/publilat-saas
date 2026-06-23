@@ -58,20 +58,24 @@ export async function detectPayment(args: DetectPaymentArgs): Promise<void> {
     let currency: string | null = null;
     let confidence = signal ? 0.6 : 0; // por texto solo, confianza media
 
-    // ¿Trae imagen? Intentar leer el comprobante con la IA de visión.
-    const hasImage = !!item?.message?.imageMessage || !!args.imageBase64;
-    if (hasImage && aiEnabled()) {
-      // Si el webhook ya bajó la imagen, la reusamos (no la bajamos dos veces).
+    // ¿Trae comprobante (imagen o PDF)? Intentar leerlo con la IA.
+    const doc =
+      item?.message?.documentMessage ??
+      item?.message?.documentWithCaptionMessage?.message?.documentMessage;
+    const hasMedia = !!args.imageBase64 || !!item?.message?.imageMessage || !!doc;
+    if (hasMedia && aiEnabled()) {
+      // Si el webhook ya bajó el archivo, lo reusamos (no lo bajamos dos veces).
       let base64: string | undefined =
         args.imageBase64 ?? item?.message?.base64 ?? item?.message?.imageMessage?.base64;
       let mediaType: string | undefined =
-        args.imageMediaType ?? item?.message?.imageMessage?.mimetype;
+        args.imageMediaType ?? item?.message?.imageMessage?.mimetype ?? doc?.mimetype;
       if (!base64 && item?.key?.id) {
         const media = await getMediaBase64(instance, String(item.key.id));
         base64 = media?.base64;
         mediaType = media?.mimetype ?? mediaType;
       }
-      if (base64) {
+      // Sólo imágenes y PDF son legibles por la IA.
+      if (base64 && /image|pdf/i.test(mediaType ?? "")) {
         const a = await analyzeReceipt(base64, mediaType);
         if (a?.isReceipt && a.confidence >= 0.5) {
           signal = true;

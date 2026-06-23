@@ -142,15 +142,25 @@ export default function InboxPage() {
                         : "bg-slate-700 text-slate-100"
                     }`}
                   >
-                    {m.mediaUrl && (
-                      <a href={m.mediaUrl} target="_blank" rel="noopener noreferrer">
-                        <img
-                          src={m.mediaUrl}
-                          alt="Imagen"
-                          className="mb-1 max-h-64 w-full rounded-md object-cover"
-                        />
-                      </a>
-                    )}
+                    {m.mediaUrl &&
+                      (m.mediaUrl.startsWith("data:application/pdf") ? (
+                        <a
+                          href={m.mediaUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mb-1 flex items-center gap-2 rounded-md bg-black/20 px-3 py-2 font-medium underline"
+                        >
+                          📄 Abrir comprobante (PDF)
+                        </a>
+                      ) : (
+                        <a href={m.mediaUrl} target="_blank" rel="noopener noreferrer">
+                          <img
+                            src={m.mediaUrl}
+                            alt="Imagen"
+                            className="mb-1 max-h-64 w-full rounded-md object-cover"
+                          />
+                        </a>
+                      ))}
                     {m.body && <div>{m.body}</div>}
                     {!m.body && !m.mediaUrl && <div className="italic opacity-60">[mensaje no soportado]</div>}
                     <div
