@@ -35,8 +35,11 @@ const MODES: Array<{ key: Mode; label: string; desc: string }> = [
 
 export default function SetupPage() {
   const [status, setStatus] = useState<SetupStatus | null>(null);
+  // mode/payMode = selección actual (UI); saved* = lo último persistido (baseline).
   const [mode, setMode] = useState<Mode>("nativo");
+  const [savedMode, setSavedMode] = useState<Mode>("nativo");
   const [payMode, setPayMode] = useState<PayMode>("off");
+  const [savedPayMode, setSavedPayMode] = useState<PayMode>("off");
   const [payAi, setPayAi] = useState(false);
   const [savingPay, setSavingPay] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -55,7 +58,9 @@ export default function SetupPage() {
       ]);
       setStatus(s.data);
       setMode(i.data.integration.mode);
+      setSavedMode(i.data.integration.mode);
       setPayMode(p.data.mode);
+      setSavedPayMode(p.data.mode);
       setPayAi(p.data.aiEnabled);
     } catch (err) {
       setError(apiError(err));
@@ -66,13 +71,13 @@ export default function SetupPage() {
 
   useEffect(() => { void load(); }, []);
 
-  const saveMode = async (m: Mode) => {
+  const saveMode = async () => {
     setSavingMode(true);
     setError(null);
     setSavedMsg(null);
     try {
-      await api.put("/api/integrations", { mode: m });
-      setMode(m);
+      await api.put("/api/integrations", { mode });
+      setSavedMode(mode);
       setSavedMsg("Modo de integración guardado.");
     } catch (err) {
       setError(apiError(err));
@@ -81,13 +86,13 @@ export default function SetupPage() {
     }
   };
 
-  const savePayMode = async (m: PayMode) => {
+  const savePayMode = async () => {
     setSavingPay(true);
     setError(null);
     setSavedMsg(null);
     try {
-      await api.put("/api/setup/payment-detection", { mode: m });
-      setPayMode(m);
+      await api.put("/api/setup/payment-detection", { mode: payMode });
+      setSavedPayMode(payMode);
       setSavedMsg("Modo de detección de pago guardado.");
     } catch (err) {
       setError(apiError(err));
@@ -156,9 +161,8 @@ export default function SetupPage() {
               {MODES.map((m) => (
                 <button
                   key={m.key}
-                  onClick={() => void saveMode(m.key)}
-                  disabled={savingMode}
-                  className={`rounded-md border p-3 text-left transition disabled:opacity-60 ${
+                  onClick={() => setMode(m.key)}
+                  className={`rounded-md border p-3 text-left transition ${
                     mode === m.key ? "border-wa-green bg-wa-green/10" : "border-slate-700 bg-slate-900/40 hover:border-slate-600"
                   }`}
                 >
@@ -167,7 +171,12 @@ export default function SetupPage() {
                 </button>
               ))}
             </div>
-            {savedMsg && <p className="mt-2 text-xs text-emerald-300">{savedMsg}</p>}
+            <div className="mt-3 flex items-center gap-3">
+              <Button onClick={() => void saveMode()} disabled={savingMode || mode === savedMode}>
+                {savingMode ? "Guardando…" : "Guardar cambios"}
+              </Button>
+              {mode !== savedMode && <span className="text-xs text-amber-300">Tenés cambios sin guardar</span>}
+            </div>
           </Card>
 
           {/* Detección de pago en el chat */}
@@ -182,9 +191,8 @@ export default function SetupPage() {
               {PAY_MODES.map((m) => (
                 <button
                   key={m.key}
-                  onClick={() => void savePayMode(m.key)}
-                  disabled={savingPay}
-                  className={`rounded-md border p-3 text-left transition disabled:opacity-60 ${
+                  onClick={() => setPayMode(m.key)}
+                  className={`rounded-md border p-3 text-left transition ${
                     payMode === m.key ? "border-wa-green bg-wa-green/10" : "border-slate-700 bg-slate-900/40 hover:border-slate-600"
                   }`}
                 >
@@ -196,7 +204,7 @@ export default function SetupPage() {
             {payMode !== "off" && !payAi && (
               <p className="mt-2 rounded-md border border-amber-800 bg-amber-900/30 px-3 py-2 text-xs text-amber-200">
                 ⚠️ La lectura de comprobantes por imagen necesita una clave de IA
-                (<code>ANTHROPIC_API_KEY</code>) en el servidor. Sin ella, la detección por
+                (OpenAI o Anthropic) cargada en el servidor. Sin ella, la detección por
                 <b> texto</b> igual funciona.
               </p>
             )}
@@ -206,6 +214,13 @@ export default function SetupPage() {
                 confianza alta. Si no, queda como “pago a confirmar”.
               </p>
             )}
+            <div className="mt-3 flex items-center gap-3">
+              <Button onClick={() => void savePayMode()} disabled={savingPay || payMode === savedPayMode}>
+                {savingPay ? "Guardando…" : "Guardar cambios"}
+              </Button>
+              {payMode !== savedPayMode && <span className="text-xs text-amber-300">Tenés cambios sin guardar</span>}
+            </div>
+            {savedMsg && <p className="mt-2 text-xs text-emerald-300">{savedMsg}</p>}
           </Card>
         </div>
       )}
