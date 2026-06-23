@@ -11,11 +11,11 @@ export default function FinalCta() {
             <div className="halo absolute left-1/2 top-0 h-[24rem] w-[24rem] -translate-x-1/2" />
           </div>
           <h2 className="mx-auto max-w-2xl text-3xl font-extrabold text-white sm:text-4xl">
-            Dejá de adivinar. <span className="gradient-text">Empezá a escalar.</span>
+            Dejá las planillas. <span className="gradient-text">Profesionalizá tu casino.</span>
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-slate-300">
-            Conectá tu Pixel, tu WhatsApp y tus anuncios en minutos. La primera venta que vuelva a
-            Meta cambia cómo optimizás para siempre.
+            Cajeros, jugadores y cargas en un solo lugar, con un bot que acredita solo. Probalo
+            gratis y mirá cómo cambia tu operación desde el primer día.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
             <a href={REGISTER_URL} className="btn-primary animate-ctaGlow">

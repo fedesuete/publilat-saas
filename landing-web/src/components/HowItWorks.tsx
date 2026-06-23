@@ -4,28 +4,28 @@ import { Reveal } from "./ui/Reveal";
 
 const STEPS = [
   {
-    icon: Link2,
+    icon: MessageCircle,
     n: "01",
-    title: "Link rastreado",
-    desc: "Compartís un link de Publi.lat en tu anuncio. Captura el clic, el fbclid y las cookies de Meta.",
+    title: "El jugador escribe",
+    desc: "Llega por WhatsApp o Telegram pidiendo cargar. Cae en el Inbox unificado con todo su historial al lado.",
   },
   {
-    icon: MessageCircle,
+    icon: Link2,
     n: "02",
-    title: "Dispara el Lead y va a WhatsApp",
-    desc: "El clic envía el evento Lead a Meta y redirige al cliente a tu WhatsApp con un código de seguimiento.",
+    title: "Cajero o bot lo atiende",
+    desc: "Le pasan los datos para transferir. El bot puede hacerlo solo 24/7, o un cajero desde su panel.",
   },
   {
     icon: ShoppingBag,
     n: "03",
-    title: "El cliente compra",
-    desc: "Atendés el chat en el Inbox. Al cerrar la venta, la marcás con el monto en el CRM.",
+    title: "Manda el comprobante",
+    desc: "El jugador envía la captura o el PDF de la transferencia, como siempre lo hace.",
   },
   {
     icon: Repeat,
     n: "04",
-    title: "La venta vuelve a Meta",
-    desc: "Se envía el Purchase por CAPI con el mismo identificador y el valor. Meta optimiza por compradores reales.",
+    title: "La IA acredita la carga",
+    desc: "Lee el comprobante, valida el monto y acredita la carga al instante. Todo queda registrado en caja.",
   },
 ];
 
@@ -34,10 +34,10 @@ export default function HowItWorks() {
     <section id="como-funciona" className="relative mx-auto max-w-7xl px-4 py-24 sm:px-6">
       <Reveal>
         <h2 className="text-center text-3xl font-bold text-white sm:text-4xl">
-          Cómo funciona el <span className="gradient-text">círculo cerrado</span>
+          Una carga, <span className="gradient-text">de punta a punta</span>
         </h2>
         <p className="mx-auto mt-3 max-w-2xl text-center text-slate-400">
-          Del clic del anuncio a la venta — y de vuelta a Meta. En 4 pasos.
+          Del “quiero cargar” a la acreditación automática. En 4 pasos, sin planillas.
         </p>
       </Reveal>
 

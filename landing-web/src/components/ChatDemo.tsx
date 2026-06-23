@@ -11,13 +11,12 @@ type Line =
   | { kind: "sys"; text: string };
 
 const LINES: Line[] = [
-  { kind: "in", text: "Hola! Vi el anuncio 👀 ¿cómo compro?", time: "20:41" },
-  { kind: "sys", text: "✓ Lead enviado a Meta (CAPI)" },
+  { kind: "in", text: "Hola! Quiero cargar 150.000 👀", time: "20:41" },
   { kind: "out", text: "¡Hola! Te paso los datos para la transferencia 🙌", time: "20:41" },
   { kind: "img", time: "20:44" },
-  { kind: "sys", text: "💰 Comprobante detectado por IA · ₲ 150.000" },
-  { kind: "out", text: "¡Recibido! Activamos tu pedido 🎉", time: "20:44" },
-  { kind: "sys", text: "✓ Purchase enviado a Meta · optimiza por compradores" },
+  { kind: "sys", text: "🤖 Comprobante leído por IA · ₲ 150.000" },
+  { kind: "out", text: "¡Listo! Carga acreditada, ya podés jugar 🎰", time: "20:44" },
+  { kind: "sys", text: "✓ Registrada en caja · jugador #4821" },
 ];
 
 export default function ChatDemo() {
@@ -38,18 +37,17 @@ export default function ChatDemo() {
         <Reveal>
           <div>
             <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-wa-green">
-              Demo del loop en vivo
+              El bot en acción
             </span>
             <h2 className="mt-4 text-3xl font-bold text-white sm:text-4xl">
-              Del clic al <span className="gradient-text">Purchase</span>, sin tocar nada
+              Una carga acreditada en <span className="gradient-text">segundos</span>
             </h2>
             <p className="mt-4 max-w-md text-slate-400">
-              Mirá cómo un chat real se convierte en una venta que Meta entiende: el clic dispara
-              el Lead, la IA detecta el comprobante y la compra vuelve a Meta por la Conversions
-              API — con el mismo identificador para que matchee.
+              Mirá cómo el bot atiende al jugador, lee el comprobante con IA y acredita la carga
+              al instante — sin que nadie cargue nada a mano y con todo registrado en caja.
             </p>
             <ul className="mt-6 space-y-2 text-sm text-slate-300">
-              {["Lead automático al hacer clic", "Detección de comprobante con IA", "Purchase real a Meta por CAPI"].map(
+              {["Atención automática 24/7", "Lee el comprobante con IA", "Acredita y registra en caja"].map(
                 (t) => (
                   <li key={t} className="flex items-center gap-2">
                     <Check className="h-4 w-4 text-wa-green" /> {t}
@@ -58,7 +56,7 @@ export default function ChatDemo() {
               )}
             </ul>
             <a href={REGISTER_URL} className="btn-primary mt-7">
-              Probar el loop gratis <ArrowRight className="h-4 w-4" />
+              Crear mi cuenta <ArrowRight className="h-4 w-4" />
             </a>
           </div>
         </Reveal>

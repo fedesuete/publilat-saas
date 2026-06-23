@@ -10,8 +10,8 @@ export default function Footer() {
             Publi<span className="gradient-text">.lat</span>
           </a>
           <p className="mt-3 max-w-sm text-sm text-slate-400">
-            Atribución de WhatsApp a Meta Ads. Convertí tus chats en ventas que el algoritmo
-            entiende y optimizá por compradores reales.
+            El sistema operativo para casinos online: cajeros, jugadores, cargas y retiros en un
+            solo lugar, con un bot de IA que acredita las cargas 24/7.
           </p>
         </div>
 

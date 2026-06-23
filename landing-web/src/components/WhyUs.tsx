@@ -1,26 +1,26 @@
-import { ShieldCheck, GitCompareArrows, CreditCard, Users } from "lucide-react";
+import { ShieldCheck, Bot, CreditCard, Layers } from "lucide-react";
 import { Reveal } from "./ui/Reveal";
 
 const ITEMS = [
   {
-    icon: GitCompareArrows,
-    title: "Deduplicación navegador + servidor",
-    desc: "El mismo evento desde el Pixel y desde CAPI, sin contar doble. Match de máxima calidad.",
+    icon: Bot,
+    title: "Un bot que trabaja por vos",
+    desc: "Acredita cargas leyendo el comprobante, atiende 24/7 y libera a tus cajeros de la parte repetitiva.",
   },
   {
     icon: CreditCard,
-    title: "Pagás con MercadoPago o USDT",
-    desc: "Cargá días desde LATAM con MercadoPago o cripto. Sin fricción, sin tarjetas raras.",
+    title: "Pagos locales de verdad",
+    desc: "Bancard, Tigo Money, Ueno, transferencias y USDT. Como cobra y paga tu operación en LATAM.",
   },
   {
-    icon: Users,
-    title: "Multi-cliente con tu propio Pixel",
-    desc: "¿Agencia? Cada cuenta usa su propio Pixel y token de CAPI. Datos separados y seguros.",
+    icon: Layers,
+    title: "Multi-marca y multi-caja",
+    desc: "Manejá varias marcas y cajas desde un panel, con datos y permisos separados por cada una.",
   },
   {
     icon: ShieldCheck,
-    title: "Seguridad nivel producción",
-    desc: "Tokens cifrados, multi-tenant, rate limiting y reintentos automáticos de eventos.",
+    title: "Seguridad y auditoría",
+    desc: "Cada carga, retiro y acción queda registrada. Roles, permisos y respaldo nivel producción.",
   },
 ];
 

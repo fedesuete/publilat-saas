@@ -3,8 +3,7 @@ import { motion, useReducedMotion, useScroll, useTransform } from "framer-motion
 import { Check } from "lucide-react";
 import { Reveal } from "./ui/Reveal";
 import { BrowserFrame } from "./ui/Frame";
-import DashboardMock from "./DashboardMock";
-import { KanbanMock, InboxMock, PaymentMock } from "./mocks";
+import { CajerosMock, PlayersKanbanMock, InboxMock, BotMock } from "./mocks";
 
 interface Product {
   tag: string;
@@ -17,36 +16,36 @@ interface Product {
 
 const PRODUCTS: Product[] = [
   {
-    tag: "Dashboard",
-    title: "Tu ROAS real, en vivo",
-    desc: "Clics, chats, ventas y retorno por campaña, conjunto y anuncio. Ventana de hoy, semana y mes.",
-    bullets: ["Métricas en tiempo real", "ROAS por campaña/anuncio", "Eventos Lead y Purchase"],
-    url: "app.publi.lat/dashboard",
-    mock: <DashboardMock />,
+    tag: "Cajeros",
+    title: "Tus cajeros, bajo control",
+    desc: "Cargas, retiros y saldos de cada caja en tiempo real. Turnos, límites y un historial auditable de cada movimiento.",
+    bullets: ["Cargas y retiros por caja", "Saldos y arqueo en vivo", "Historial auditable"],
+    url: "app.publi.lat/cajeros",
+    mock: <CajerosMock />,
   },
   {
     tag: "CRM",
-    title: "Kanban con montos de venta",
-    desc: "Arrastrá cada lead por su etapa y marcá la compra con el valor. El Purchase sale a Meta con el mismo identificador.",
-    bullets: ["Etapas arrastrables", "Monto por venta", "Atribución por contacto"],
-    url: "app.publi.lat/kanban",
-    mock: <KanbanMock />,
+    title: "Seguí a cada jugador",
+    desc: "Un kanban con tus jugadores por etapa: nuevos, activos y VIP. Mirá quién deposita, quién se enfría y a quién reactivar.",
+    bullets: ["Etapas arrastrables", "Segmentación y VIP", "Historial de cada jugador"],
+    url: "app.publi.lat/jugadores",
+    mock: <PlayersKanbanMock />,
   },
   {
     tag: "Inbox",
-    title: "Todos los chats, con su atribución",
-    desc: "Atendé desde un solo lugar. Cada conversación muestra de qué anuncio vino y su código de seguimiento.",
-    bullets: ["Multi-línea unificado", "Lead atribuido al instante", "Imágenes y comprobantes"],
+    title: "Todos los chats en un lugar",
+    desc: "Atendé WhatsApp y Telegram desde un solo Inbox, con varios agentes y el historial del jugador siempre al lado.",
+    bullets: ["WhatsApp + Telegram", "Multi-agente", "Historial del jugador"],
     url: "app.publi.lat/inbox",
     mock: <InboxMock />,
   },
   {
-    tag: "IA",
-    title: "Detección de pago con IA",
-    desc: "La IA lee el comprobante (imagen o PDF), extrae el monto y te lo deja listo para confirmar — o dispara la compra solo.",
-    bullets: ["Lee imagen y PDF", "Extrae monto y moneda", "Confirmás con 1 clic"],
-    url: "app.publi.lat/leads",
-    mock: <PaymentMock />,
+    tag: "Bot IA",
+    title: "Un bot que acredita solo",
+    desc: "Atiende 24/7, lee el comprobante (imagen o PDF), valida el monto y acredita la carga al instante. Tus cajeros descansan.",
+    bullets: ["Atención 24/7", "Lee imagen y PDF", "Acredita la carga sola"],
+    url: "app.publi.lat/bot",
+    mock: <BotMock />,
   },
 ];
 
@@ -80,11 +79,7 @@ function Row({ p, i }: { p: Product; i: number }) {
       {/* mockup con parallax */}
       <motion.div style={{ y }} className={reversed ? "lg:order-1" : ""}>
         <Reveal delay={0.05}>
-          {p.tag === "Dashboard" ? (
-            <div className="flex justify-center">{p.mock}</div>
-          ) : (
-            <BrowserFrame url={p.url}>{p.mock}</BrowserFrame>
-          )}
+          <BrowserFrame url={p.url}>{p.mock}</BrowserFrame>
         </Reveal>
       </motion.div>
     </div>
@@ -96,10 +91,10 @@ export default function ProductShowcase() {
     <section id="productos" className="mx-auto max-w-7xl px-4 py-24 sm:px-6">
       <Reveal>
         <h2 className="text-center text-3xl font-bold text-white sm:text-4xl">
-          Mirá el producto <span className="gradient-text">funcionando</span>
+          Mirá la plataforma <span className="gradient-text">funcionando</span>
         </h2>
         <p className="mx-auto mt-3 max-w-2xl text-center text-slate-400">
-          Todo lo que necesitás para cerrar el loop, en un solo lugar.
+          Todo lo que tu operación necesita, en un solo lugar.
         </p>
       </Reveal>
 

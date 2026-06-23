@@ -5,9 +5,9 @@ import DashboardMock from "./DashboardMock";
 import { Counter } from "./ui/Counter";
 
 const STATS = [
-  { to: 10, suffix: "K+", label: "eventos atribuidos" },
+  { to: 50, suffix: "K+", label: "cargas procesadas" },
   { to: 4, suffix: "", label: "países LATAM" },
-  { to: 24, suffix: "/7", label: "atribución activa" },
+  { to: 24, suffix: "/7", label: "bot siempre activo" },
 ];
 
 export default function Hero() {
@@ -28,7 +28,7 @@ export default function Hero() {
             className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-300"
           >
             <span className="h-1.5 w-1.5 rounded-full bg-wa-green" />
-            Atribución WhatsApp → Meta Ads con Conversions API
+            El sistema operativo para casinos online
           </motion.div>
 
           <motion.h1
@@ -37,8 +37,8 @@ export default function Hero() {
             transition={{ duration: 0.6, delay: 0.05 }}
             className="text-4xl font-extrabold leading-[1.1] tracking-tight text-white sm:text-5xl lg:text-6xl"
           >
-            Convertí tus chats de WhatsApp en{" "}
-            <span className="gradient-text">ventas que Meta entiende.</span>
+            Tu casino online,{" "}
+            <span className="gradient-text">bajo control total.</span>
           </motion.h1>
 
           <motion.p
@@ -47,9 +47,9 @@ export default function Hero() {
             transition={{ duration: 0.6, delay: 0.12 }}
             className="mt-5 max-w-xl text-lg text-slate-300"
           >
-            Optimizá por <strong className="text-white">facturación real</strong>, no por costo por
-            mensaje. Publi.lat le devuelve a Meta la venta de WhatsApp y escalás por compradores
-            de verdad.
+            Cajeros, jugadores, cargas y retiros en{" "}
+            <strong className="text-white">una sola plataforma</strong> — con un bot de IA que
+            acredita las cargas leyendo el comprobante, las 24 horas.
           </motion.p>
 
           <motion.div
@@ -90,10 +90,10 @@ export default function Hero() {
             className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-slate-400"
           >
             <span className="flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-wa-green" /> Eventos validados con Meta
+              <ShieldCheck className="h-4 w-4 text-wa-green" /> Operación segura y auditada
             </span>
             <span className="flex items-center gap-2">
-              <span className="text-wa-green">★★★★★</span> Negocios que venden por WhatsApp
+              <span className="text-wa-green">★★★★★</span> Operadores de casino en LATAM
             </span>
           </motion.div>
         </div>

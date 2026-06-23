@@ -1,20 +1,15 @@
-import { Check, ArrowRight } from "lucide-react";
+import { Check, ArrowRight, MessageCircle } from "lucide-react";
 import { Reveal } from "./ui/Reveal";
-import { REGISTER_URL, PRICE_PER_DAY_USD } from "../config";
+import { REGISTER_URL, WHATSAPP_URL } from "../config";
 
 const INCLUDES = [
-  "1 día = 1 línea de WhatsApp activa 24 h",
-  "Atribución Lead + Purchase por CAPI",
-  "Dashboard de ROAS en tiempo real",
-  "Inbox + CRM kanban con montos",
-  "Multi-línea con rotación de clics",
-  "Integraciones: nativo, Kommo, webhook",
-];
-
-const PACKS = [
-  { days: 10, popular: false },
-  { days: 30, popular: true },
-  { days: 90, popular: false },
+  "Panel de cajeros (cargas, retiros, arqueo)",
+  "CRM de jugadores con etapas y VIP",
+  "Inbox de WhatsApp y Telegram multi-agente",
+  "Bot de IA que acredita cargas 24/7",
+  "Reportes en tiempo real (GGR, depósitos, retiros)",
+  "Multi-marca, roles y permisos",
+  "Pagos locales: Bancard, Tigo Money, Ueno, USDT",
 ];
 
 export default function Pricing() {
@@ -22,30 +17,36 @@ export default function Pricing() {
     <section id="precios" className="mx-auto max-w-7xl px-4 py-24 sm:px-6">
       <Reveal>
         <h2 className="text-center text-3xl font-bold text-white sm:text-4xl">
-          Precio simple: <span className="gradient-text">pagás por lo que usás</span>
+          Precio simple, <span className="gradient-text">sin sorpresas</span>
         </h2>
         <p className="mx-auto mt-3 max-w-2xl text-center text-slate-400">
-          Sin mensualidades atadas. Cargás días y los usás cuando querés. 1 día = 1 línea activa
-          24 horas, distribuibles entre tus líneas.
+          Probá la plataforma y armamos un plan a la medida de tu operación. Sin instalaciones ni
+          contratos eternos.
         </p>
       </Reveal>
 
-      <div className="mx-auto mt-12 grid max-w-5xl items-stretch gap-6 lg:grid-cols-2">
-        {/* Tarjeta principal */}
-        <Reveal>
-          <div className="card-border glow relative h-full overflow-hidden p-8">
-            <div className="text-sm font-semibold uppercase tracking-wide text-wa-green">Por día</div>
-            <div className="mt-2 flex items-end gap-1">
-              <span className="text-5xl font-extrabold text-white">US${PRICE_PER_DAY_USD}</span>
-              <span className="mb-1 text-slate-400">/ día por línea</span>
+      <Reveal delay={0.05}>
+        <div className="card-border glow mx-auto mt-12 max-w-3xl overflow-hidden p-8 sm:p-10">
+          <div className="flex flex-col gap-8 sm:flex-row sm:items-center">
+            <div className="flex-1">
+              <div className="text-sm font-semibold uppercase tracking-wide text-wa-green">Plan Operador</div>
+              <div className="mt-2 flex items-end gap-2">
+                <span className="text-4xl font-extrabold text-white sm:text-5xl">A tu medida</span>
+              </div>
+              <p className="mt-3 max-w-sm text-sm text-slate-400">
+                Según tu volumen de cargas, cajeros y marcas. Empezás probándolo gratis, sin tarjeta.
+              </p>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <a href={REGISTER_URL} className="btn-primary animate-ctaGlow">
+                  Crear mi cuenta <ArrowRight className="h-4 w-4" />
+                </a>
+                <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className="btn-ghost">
+                  <MessageCircle className="h-4 w-4" /> Pedí una demo
+                </a>
+              </div>
             </div>
-            <p className="mt-2 text-sm text-slate-400">
-              Empezás gratis para probar el loop. Después cargás días según tu operación.
-            </p>
-            <a href={REGISTER_URL} className="btn-primary mt-6 w-full">
-              Empezar gratis <ArrowRight className="h-4 w-4" />
-            </a>
-            <ul className="mt-7 space-y-2.5">
+
+            <ul className="flex-1 space-y-2.5">
               {INCLUDES.map((f) => (
                 <li key={f} className="flex items-start gap-2 text-sm text-slate-300">
                   <Check className="mt-0.5 h-4 w-4 shrink-0 text-wa-green" />
@@ -54,47 +55,8 @@ export default function Pricing() {
               ))}
             </ul>
           </div>
-        </Reveal>
-
-        {/* Packs de días */}
-        <Reveal delay={0.08}>
-          <div className="flex h-full flex-col gap-4">
-            {PACKS.map((p) => (
-              <div
-                key={p.days}
-                className={`flex items-center justify-between rounded-2xl border p-5 transition ${
-                  p.popular
-                    ? "border-wa-green/50 bg-wa-green/[0.06]"
-                    : "border-white/10 bg-white/[0.03]"
-                }`}
-              >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg font-bold text-white">{p.days} días</span>
-                    {p.popular && (
-                      <span className="rounded-full bg-wa-green/15 px-2 py-0.5 text-[11px] font-semibold text-wa-green">
-                        Más elegido
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-sm text-slate-400">
-                    Distribuibles entre tus líneas de WhatsApp
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-2xl font-extrabold text-white">
-                    US${p.days * PRICE_PER_DAY_USD}
-                  </div>
-                  <div className="text-[11px] text-slate-500">US${PRICE_PER_DAY_USD}/día</div>
-                </div>
-              </div>
-            ))}
-            <a href={REGISTER_URL} className="btn-ghost mt-auto w-full">
-              Crear cuenta y cargar días
-            </a>
-          </div>
-        </Reveal>
-      </div>
+        </div>
+      </Reveal>
     </section>
   );
 }

@@ -1,21 +1,21 @@
-import { MessageSquareOff, EyeOff, Wallet } from "lucide-react";
+import { Clock, ShieldAlert, UserX } from "lucide-react";
 import { Reveal } from "./ui/Reveal";
 
 const PROBLEMS = [
   {
-    icon: MessageSquareOff,
-    title: "Meta optimiza por mensajes, no por ventas",
-    desc: "Pagás por “conversaciones iniciadas”, aunque la mayoría nunca compre. El dato de la venta nunca vuelve a Meta.",
+    icon: Clock,
+    title: "Cargás todo a mano y se hace lento",
+    desc: "Cada comprobante se revisa y carga manual. El jugador espera, se impacienta y a veces se va antes de jugar.",
   },
   {
-    icon: EyeOff,
-    title: "No sabés qué campaña te factura",
-    desc: "Vendés por WhatsApp pero no podés decir qué anuncio, conjunto o campaña trajo ese comprador. Volás a ciegas.",
+    icon: ShieldAlert,
+    title: "Cajeros sin control ni auditoría",
+    desc: "No sabés en tiempo real cuánto movió cada cajero, ni tenés un registro claro de cargas, retiros y saldos.",
   },
   {
-    icon: Wallet,
-    title: "Quemás presupuesto en leads fríos",
-    desc: "Sin la señal de compra, el algoritmo trae más curiosos y menos compradores. Tu plata se va en chats que no cierran.",
+    icon: UserX,
+    title: "Jugadores que se van sin seguimiento",
+    desc: "Sin un CRM, no sabés quién depositó, quién dejó de jugar ni a quién reactivar. Perdés recompra todos los días.",
   },
 ];
 
@@ -24,10 +24,10 @@ export default function Problem() {
     <section className="mx-auto max-w-7xl px-4 py-24 sm:px-6">
       <Reveal>
         <h2 className="text-center text-3xl font-bold text-white sm:text-4xl">
-          ¿Cansado de <span className="gradient-text">adivinar</span>?
+          ¿Tu operación es un <span className="gradient-text">caos</span>?
         </h2>
         <p className="mx-auto mt-3 max-w-2xl text-center text-slate-400">
-          Si vendés por WhatsApp con tráfico de Meta, seguro te pasa esto:
+          Si manejás un casino online con cajeros y cargas por transferencia, seguro te pasa esto:
         </p>
       </Reveal>
 
