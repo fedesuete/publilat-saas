@@ -17,11 +17,19 @@ inboxRouter.get("/:contactId/messages", async (req, res) => {
   const contact = await getOwnedContact(req.userId!, req.params.contactId);
   if (!contact) return res.status(404).json({ error: "Contacto no encontrado" });
 
-  const messages = await prisma.message.findMany({
+  const rows = await prisma.message.findMany({
     where: { contactId: contact.id },
     orderBy: { createdAt: "asc" },
-    select: { id: true, direction: true, body: true, createdAt: true },
+    select: { id: true, direction: true, body: true, mediaType: true, mediaData: true, createdAt: true },
   });
+  // Las imágenes se devuelven como data URL para mostrarlas directo en el <img>.
+  const messages = rows.map((m) => ({
+    id: m.id,
+    direction: m.direction,
+    body: m.body,
+    createdAt: m.createdAt,
+    mediaUrl: m.mediaData ? `data:${m.mediaType ?? "image/jpeg"};base64,${m.mediaData}` : null,
+  }));
   return res.json({ messages });
 });
 

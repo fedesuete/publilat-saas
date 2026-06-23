@@ -4,7 +4,7 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
-import { fetchOwnerNumber } from "../lib/evolution.js";
+import { fetchOwnerNumber, getMediaBase64 } from "../lib/evolution.js";
 import { detectPayment } from "../lib/payment-detect.js";
 
 export const webhookRouter = Router();
@@ -121,19 +121,34 @@ webhookRouter.post("/", async (req, res) => {
           contact = await prisma.contact.update({ where: { id: contact.id }, data: patch });
         }
 
+        // Si el mensaje trae imagen, la bajamos UNA vez (para mostrarla en el Inbox
+        // y, de paso, pasarla a la detección de pago sin volver a bajarla).
+        let mediaType: string | null = null;
+        let mediaData: string | null = null;
+        if (item?.message?.imageMessage && waMessageId) {
+          const media = await getMediaBase64(instance, waMessageId);
+          if (media?.base64) {
+            mediaData = media.base64;
+            mediaType = media.mimetype ?? item.message.imageMessage.mimetype ?? "image/jpeg";
+          }
+        }
+
         const message = await prisma.message.create({
           data: {
             contactId: contact.id,
             lineId: line.id,
             direction: "in",
             body: text,
+            mediaType,
+            mediaData,
             waMessageId,
           },
         });
 
+        const mediaUrl = mediaData ? `data:${mediaType};base64,${mediaData}` : null;
         emitToUser(userId, "inbox:message", {
           contactId: contact.id,
-          message: { id: message.id, direction: "in", body: text, createdAt: message.createdAt },
+          message: { id: message.id, direction: "in", body: text, mediaUrl, createdAt: message.createdAt },
           stage: contact.stage,
         });
 
@@ -150,6 +165,8 @@ webhookRouter.post("/", async (req, res) => {
           instance,
           item,
           text,
+          imageBase64: mediaData,
+          imageMediaType: mediaType,
         });
       }
       return;

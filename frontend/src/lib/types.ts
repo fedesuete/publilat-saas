@@ -40,6 +40,7 @@ export interface Msg {
   id: string;
   direction: "in" | "out";
   body: string;
+  mediaUrl?: string | null; // data URL de la imagen (comprobante), si el mensaje trae una
   createdAt: string;
 }
 

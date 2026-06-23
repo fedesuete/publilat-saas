@@ -39,6 +39,8 @@ export interface DetectPaymentArgs {
   instance: string; // sessionId de la línea (instancia Evolution)
   item: Record<string, any>; // mensaje crudo del webhook
   text: string;
+  imageBase64?: string | null; // imagen ya descargada por el webhook (evita re-bajarla)
+  imageMediaType?: string | null;
 }
 
 /**
@@ -57,11 +59,13 @@ export async function detectPayment(args: DetectPaymentArgs): Promise<void> {
     let confidence = signal ? 0.6 : 0; // por texto solo, confianza media
 
     // ¿Trae imagen? Intentar leer el comprobante con la IA de visión.
-    const hasImage = !!item?.message?.imageMessage;
+    const hasImage = !!item?.message?.imageMessage || !!args.imageBase64;
     if (hasImage && aiEnabled()) {
+      // Si el webhook ya bajó la imagen, la reusamos (no la bajamos dos veces).
       let base64: string | undefined =
-        item?.message?.base64 ?? item?.message?.imageMessage?.base64;
-      let mediaType: string | undefined = item?.message?.imageMessage?.mimetype;
+        args.imageBase64 ?? item?.message?.base64 ?? item?.message?.imageMessage?.base64;
+      let mediaType: string | undefined =
+        args.imageMediaType ?? item?.message?.imageMessage?.mimetype;
       if (!base64 && item?.key?.id) {
         const media = await getMediaBase64(instance, String(item.key.id));
         base64 = media?.base64;

@@ -142,7 +142,17 @@ export default function InboxPage() {
                         : "bg-slate-700 text-slate-100"
                     }`}
                   >
-                    <div>{m.body}</div>
+                    {m.mediaUrl && (
+                      <a href={m.mediaUrl} target="_blank" rel="noopener noreferrer">
+                        <img
+                          src={m.mediaUrl}
+                          alt="Imagen"
+                          className="mb-1 max-h-64 w-full rounded-md object-cover"
+                        />
+                      </a>
+                    )}
+                    {m.body && <div>{m.body}</div>}
+                    {!m.body && !m.mediaUrl && <div className="italic opacity-60">[mensaje no soportado]</div>}
                     <div
                       className={`mt-1 text-[10px] ${
                         m.direction === "out" ? "text-slate-800/70" : "text-slate-400"

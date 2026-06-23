@@ -123,6 +123,8 @@ model Message {
   lineId     String
   direction  String   // in | out
   body       String
+  mediaType  String?  // mimetype si el mensaje trae imagen (ej image/jpeg)
+  mediaData  String?  @db.Text // imagen en base64 (sin prefijo data:) para mostrar en el Inbox
   waMessageId String?
   createdAt  DateTime @default(now())
   contact    Contact  @relation(fields: [contactId], references: [id])
