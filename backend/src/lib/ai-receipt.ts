@@ -1,11 +1,14 @@
-// Análisis de comprobantes de pago por imagen con Claude (visión).
-// Usa Claude Haiku 4.5 — el modelo con visión más económico, ideal para OCR de un
-// comprobante. Gateado por ANTHROPIC_API_KEY: sin la clave, devuelve null y el sistema
-// cae a la detección por texto.
+// Análisis de comprobantes de pago por imagen con IA (visión).
+// Soporta dos proveedores, en este orden de prioridad:
+//   1) OpenAI   (OPENAI_API_KEY)         -> modelo barato con visión, def gpt-4o-mini.
+//   2) Anthropic (ANTHROPIC_AUTH_TOKEN o ANTHROPIC_API_KEY) -> Claude Haiku 4.5.
+// Sin ninguna credencial, devuelve null y el sistema cae a la detección por texto.
 import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 
-// Modelo de visión económico para OCR de comprobantes (1 USD/1M in · 5 USD/1M out).
-const MODEL = process.env.ANTHROPIC_VISION_MODEL ?? "claude-haiku-4-5";
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_VISION_MODEL ?? "claude-haiku-4-5";
+// gpt-4o-mini: el modelo con visión más barato de OpenAI (centavos por comprobante).
+const OPENAI_MODEL = process.env.OPENAI_VISION_MODEL ?? "gpt-4o-mini";
 
 export interface ReceiptAnalysis {
   isReceipt: boolean; // ¿es un comprobante/transferencia de pago?
@@ -14,33 +17,16 @@ export interface ReceiptAnalysis {
   confidence: number; // 0..1 confianza de que es un pago real
 }
 
-let cached: Anthropic | null = null;
-function clientOrNull(): Anthropic | null {
-  // Dos formas de autenticar:
-  //  A) ANTHROPIC_AUTH_TOKEN  -> token OAuth de la suscripción (Claude Code). No cobra
-  //     por token aparte; va como Bearer + header anthropic-beta: oauth-2025-04-20.
-  //     OJO: es de corta duración y NO se auto-renueva por variable de entorno.
-  //  B) ANTHROPIC_API_KEY     -> API key clásica (pago por token).
-  // Si están las dos, la API rechaza la request: dejá UNA sola en el .env.
-  const authToken = process.env.ANTHROPIC_AUTH_TOKEN;
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!authToken && !apiKey) return null;
-  if (cached) return cached;
-
-  cached = authToken
-    ? new Anthropic({
-        authToken,
-        apiKey: null, // evita mandar x-api-key además del Bearer
-        defaultHeaders: { "anthropic-beta": "oauth-2025-04-20" },
-      })
-    : new Anthropic(); // lee ANTHROPIC_API_KEY del entorno
-  return cached;
+type Provider = "openai" | "anthropic";
+function provider(): Provider | null {
+  if (process.env.OPENAI_API_KEY) return "openai";
+  if (process.env.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_API_KEY) return "anthropic";
+  return null;
 }
 
-export const aiEnabled = (): boolean =>
-  !!(process.env.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_API_KEY);
+export const aiEnabled = (): boolean => provider() !== null;
 
-// media_type que acepta la API de visión.
+// media_type aceptado por las APIs de visión.
 type ImgMedia = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
 function normMedia(mt?: string): ImgMedia {
   const m = (mt ?? "").toLowerCase();
@@ -73,6 +59,63 @@ const PROMPT =
   "confidence refleja qué tan seguro estás de que es un pago real y exitoso. " +
   "Si no es un comprobante, is_receipt=false y amount=null.";
 
+// ---- OpenAI (gpt-4o-mini, detalle bajo para gastar lo mínimo) ----
+let openaiClient: OpenAI | null = null;
+async function rawOpenAI(base64: string, mediaType?: string): Promise<string> {
+  if (!openaiClient) openaiClient = new OpenAI(); // lee OPENAI_API_KEY del entorno
+  const resp = await openaiClient.chat.completions.create({
+    model: OPENAI_MODEL,
+    max_tokens: 200,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: PROMPT },
+          {
+            type: "image_url",
+            image_url: { url: `data:${normMedia(mediaType)};base64,${base64}`, detail: "low" },
+          },
+        ],
+      },
+    ],
+  });
+  return resp.choices[0]?.message?.content ?? "";
+}
+
+// ---- Anthropic (Claude Haiku 4.5) ----
+let anthropicClient: Anthropic | null = null;
+async function rawAnthropic(base64: string, mediaType?: string): Promise<string> {
+  if (!anthropicClient) {
+    const authToken = process.env.ANTHROPIC_AUTH_TOKEN;
+    anthropicClient = authToken
+      ? new Anthropic({
+          authToken,
+          apiKey: null,
+          defaultHeaders: { "anthropic-beta": "oauth-2025-04-20" },
+        })
+      : new Anthropic(); // lee ANTHROPIC_API_KEY del entorno
+  }
+  const resp = await anthropicClient.messages.create({
+    model: ANTHROPIC_MODEL,
+    max_tokens: 200,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: { type: "base64", media_type: normMedia(mediaType), data: base64 },
+          },
+          { type: "text", text: PROMPT },
+        ],
+      },
+    ],
+  });
+  const block = resp.content.find((b) => b.type === "text");
+  return block && block.type === "text" ? block.text : "";
+}
+
 /**
  * Analiza una imagen (base64) y devuelve si es un comprobante + monto + moneda.
  * Devuelve null si la IA no está configurada o si la llamada falla (no rompe el flujo).
@@ -81,29 +124,11 @@ export async function analyzeReceipt(
   base64: string,
   mediaType?: string,
 ): Promise<ReceiptAnalysis | null> {
-  const client = clientOrNull();
-  if (!client || !base64) return null;
+  const p = provider();
+  if (!p || !base64) return null;
 
   try {
-    const resp = await client.messages.create({
-      model: MODEL,
-      max_tokens: 200,
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image",
-              source: { type: "base64", media_type: normMedia(mediaType), data: base64 },
-            },
-            { type: "text", text: PROMPT },
-          ],
-        },
-      ],
-    });
-
-    const textBlock = resp.content.find((b) => b.type === "text");
-    const raw = textBlock && textBlock.type === "text" ? textBlock.text : "";
+    const raw = p === "openai" ? await rawOpenAI(base64, mediaType) : await rawAnthropic(base64, mediaType);
     const data = parseJson(raw);
     if (!data) return null;
 
