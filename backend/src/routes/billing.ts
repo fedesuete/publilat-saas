@@ -9,6 +9,7 @@ import {
   mpEnabled, createPreference, getMpPayment,
   stripeEnabled, createStripeSession, constructStripeEvent,
   usdtEnabled, createUsdtInvoice, verifyUsdtSignature,
+  nowpaymentsEnabled, usdtDirectEnabled, usdtAddress, verifyUsdtPayment,
 } from "../lib/payments.js";
 
 export const billingRouter = Router();
@@ -92,6 +93,20 @@ billingRouter.post("/checkout", async (req, res) => {
   const payment = await prisma.payment.create({
     data: { userId: req.userId!, provider, days, amount: Math.round(amount * 100), currency, status: "pending" },
   });
+
+  // USDT directo a wallet propia: no hay URL; el cliente paga a la dirección y luego
+  // verifica el TXID. (Si hay NOWPayments configurado, se prioriza el invoice de abajo.)
+  if (provider === "usdt" && !nowpaymentsEnabled() && usdtDirectEnabled()) {
+    return res.json({
+      direct: true,
+      provider: "usdt",
+      address: usdtAddress(),
+      network: "TRC20",
+      amountUsdt: amount,
+      paymentId: payment.id,
+    });
+  }
+
   try {
     const out =
       provider === "mercadopago" ? await createPreference({ paymentId: payment.id, days })
@@ -103,6 +118,36 @@ billingRouter.post("/checkout", async (req, res) => {
     await prisma.payment.update({ where: { id: payment.id }, data: { status: "rejected" } });
     return res.status(502).json({ error: "No se pudo crear el checkout", detail: e instanceof Error ? e.message : String(e) });
   }
+});
+
+const verifySchema = z.object({
+  paymentId: z.string().min(1),
+  txid: z.string().trim().min(10).max(120),
+});
+
+// POST /api/billing/usdt/verify — verifica el pago USDT directo on-chain y acredita días.
+billingRouter.post("/usdt/verify", async (req, res) => {
+  const parsed = verifySchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ ok: false, error: "Input inválido" });
+  const { paymentId, txid } = parsed.data;
+
+  const payment = await prisma.payment.findFirst({
+    where: { id: paymentId, userId: req.userId!, provider: "usdt" },
+  });
+  if (!payment) return res.status(404).json({ ok: false, error: "Pago no encontrado" });
+  if (payment.status === "approved") return res.json({ ok: true, alreadyApproved: true });
+
+  // Anti-reuso: un mismo TXID no puede acreditar dos pagos.
+  const dup = await prisma.payment.findFirst({ where: { externalId: txid, status: "approved" } });
+  if (dup) return res.status(409).json({ ok: false, error: "Ese TXID ya fue usado para otro pago." });
+
+  const expectedUsdt = (payment.amount ?? 0) / 100;
+  const result = await verifyUsdtPayment(txid, expectedUsdt);
+  if (!result.ok) return res.status(400).json({ ok: false, error: result.reason });
+
+  await prisma.payment.update({ where: { id: payment.id }, data: { externalId: txid } });
+  await approvePayment(payment.id, "USDT");
+  return res.json({ ok: true, valueUsdt: result.valueUsdt, days: payment.days });
 });
 
 // --- Webhook MercadoPago ---

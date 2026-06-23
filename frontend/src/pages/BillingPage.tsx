@@ -41,6 +41,12 @@ export default function BillingPage() {
   const [checkoutMsg, setCheckoutMsg] = useState<string | null>(null);
   const [methods, setMethods] = useState<Methods>({ mercadopago: false, stripe: false, usdt: false });
 
+  // Pago USDT directo a wallet propia (red Tron / TRC20).
+  const [usdtPay, setUsdtPay] = useState<{ address: string; amountUsdt: number; paymentId: string } | null>(null);
+  const [txid, setTxid] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [verifyMsg, setVerifyMsg] = useState<string | null>(null);
+
   const load = async () => {
     setLoading(true);
     setError(null);
@@ -89,14 +95,19 @@ export default function BillingPage() {
     setBuying(provider);
     setError(null);
     setCheckoutMsg(null);
+    setUsdtPay(null);
+    setVerifyMsg(null);
     try {
       const { data } = await api.post<
         | { stub: true; provider: Provider; amount: number; currency: string; message: string }
         | { stub: false; provider: Provider; url: string; paymentId: string }
+        | { direct: true; provider: "usdt"; address: string; network: string; amountUsdt: number; paymentId: string }
       >("/api/billing/checkout", { days: n, provider });
-      if (data.stub) {
+      if ("direct" in data && data.direct) {
+        setUsdtPay({ address: data.address, amountUsdt: data.amountUsdt, paymentId: data.paymentId });
+      } else if ("stub" in data && data.stub) {
         setCheckoutMsg(`${data.message} (${data.amount} ${data.currency})`);
-      } else {
+      } else if ("url" in data) {
         window.open(data.url, "_blank");
         setCheckoutMsg(`Te abrimos el checkout de ${PROVIDER_LABEL[provider]} en otra pestaña.`);
       }
@@ -104,6 +115,30 @@ export default function BillingPage() {
       setError(apiError(err));
     } finally {
       setBuying(null);
+    }
+  };
+
+  const verifyUsdt = async () => {
+    if (!usdtPay || !txid.trim()) return;
+    setVerifying(true);
+    setVerifyMsg(null);
+    setError(null);
+    try {
+      const { data } = await api.post<{ ok: boolean; valueUsdt?: number; days?: number; error?: string }>(
+        "/api/billing/usdt/verify",
+        { paymentId: usdtPay.paymentId, txid: txid.trim() },
+      );
+      if (data.ok) {
+        setVerifyMsg(`✓ Pago confirmado. Se acreditaron ${data.days ?? ""} día(s).`);
+        setUsdtPay(null);
+        setTxid("");
+        await load();
+      }
+    } catch (err) {
+      setVerifyMsg(null);
+      setError(apiError(err));
+    } finally {
+      setVerifying(false);
     }
   };
 
@@ -193,6 +228,63 @@ export default function BillingPage() {
               </p>
             )}
           </Card>
+
+          {usdtPay && (
+            <Card className="md:col-span-2">
+              <div className="mb-1 text-sm font-semibold">Pagar con USDT (red Tron · TRC20)</div>
+              <p className="mb-4 text-xs text-amber-300">
+                ⚠️ Enviá <b>solo USDT por la red Tron (TRC20)</b>. Mandar por otra red = pérdida de fondos.
+              </p>
+              <div className="flex flex-col gap-5 sm:flex-row">
+                <div className="shrink-0 text-center">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=8&data=${encodeURIComponent(usdtPay.address)}`}
+                    alt="QR de la dirección USDT"
+                    className="mx-auto rounded-lg bg-white p-1"
+                    width={200}
+                    height={200}
+                  />
+                  <div className="mt-2 text-2xl font-bold text-wa-green">{usdtPay.amountUsdt} USDT</div>
+                  <div className="text-xs text-slate-500">monto exacto a enviar</div>
+                </div>
+
+                <div className="flex-1">
+                  <div className="text-xs text-slate-400">Dirección receptora (TRC20)</div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <code className="flex-1 break-all rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs text-slate-200">
+                      {usdtPay.address}
+                    </code>
+                    <Button type="button" variant="secondary" onClick={() => void navigator.clipboard.writeText(usdtPay.address)}>
+                      Copiar
+                    </Button>
+                  </div>
+
+                  <ol className="mt-4 list-decimal space-y-1 pl-5 text-xs text-slate-400">
+                    <li>Enviá <b>{usdtPay.amountUsdt} USDT</b> a esa dirección (red Tron / TRC20).</li>
+                    <li>Copiá el <b>TXID</b> (hash de la transacción) desde tu wallet.</li>
+                    <li>Pegalo abajo y tocá <b>Verificar pago</b>. Acreditamos los días al confirmar en la red.</li>
+                  </ol>
+
+                  <div className="mt-3 flex gap-2">
+                    <Input
+                      value={txid}
+                      onChange={(e) => setTxid(e.target.value)}
+                      placeholder="TXID de la transacción"
+                    />
+                    <Button type="button" disabled={verifying || !txid.trim()} onClick={() => void verifyUsdt()}>
+                      {verifying ? "Verificando…" : "Verificar pago"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {verifyMsg && (
+            <Card className="md:col-span-2">
+              <p className="text-sm text-emerald-300">{verifyMsg}</p>
+            </Card>
+          )}
         </div>
       )}
 
