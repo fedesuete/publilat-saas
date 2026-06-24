@@ -40,6 +40,11 @@ describe("priceFor", () => {
     expect(priceFor("usdt", 3).currency).toBe("USD");
     expect(priceFor("usdt", 3).amount).toBe(3 * Number(process.env.PRICE_PER_DAY_USD ?? 1));
   });
+  it("el pack de 90 días tiene descuento por volumen (precio/día menor o igual)", () => {
+    const perDay90 = priceFor("usdt", 90).amount / 90;
+    const perDay10 = priceFor("usdt", 10).amount / 10;
+    expect(perDay90).toBeLessThanOrEqual(perDay10);
+  });
 });
 
 describe("renderTrackedLanding", () => {

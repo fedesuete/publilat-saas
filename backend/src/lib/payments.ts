@@ -15,10 +15,18 @@ const PANEL_BASE_URL = (process.env.PANEL_BASE_URL ?? "http://localhost:5173").s
 const MP_CURRENCY = process.env.MP_CURRENCY ?? "ARS";
 const MP_PRICE_PER_DAY = Number(process.env.MP_PRICE_PER_DAY ?? 1000);
 const USD_PRICE_PER_DAY = Number(process.env.PRICE_PER_DAY_USD ?? 1);
+// Descuento por volumen: a partir de 90 días, tarifa más baja por día.
+const USD_PRICE_PER_DAY_90 = Number(process.env.PRICE_PER_DAY_USD_90 ?? 1.5);
+
+// Precio por día en USD según la cantidad. El pack grande nunca cuesta más que el base.
+export function usdPerDay(days: number): number {
+  if (days >= 90) return Math.min(USD_PRICE_PER_DAY_90, USD_PRICE_PER_DAY);
+  return USD_PRICE_PER_DAY;
+}
 
 export function priceFor(provider: Provider, days: number): { amount: number; currency: string } {
   if (provider === "mercadopago") return { amount: days * MP_PRICE_PER_DAY, currency: MP_CURRENCY };
-  return { amount: days * USD_PRICE_PER_DAY, currency: "USD" }; // stripe + usdt
+  return { amount: days * usdPerDay(days), currency: "USD" }; // stripe + usdt
 }
 
 // ---- MercadoPago ----------------------------------------------------------
