@@ -75,6 +75,11 @@ export default function AppLayout() {
           <Button variant="ghost" className="w-full" onClick={handleLogout}>
             Cerrar sesión
           </Button>
+          <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
+            <a href="https://publi.lat/privacidad" target="_blank" rel="noopener noreferrer" className="hover:text-slate-300">Privacidad</a>
+            <a href="https://publi.lat/terminos" target="_blank" rel="noopener noreferrer" className="hover:text-slate-300">Términos</a>
+            <a href="https://publi.lat/eliminacion-datos" target="_blank" rel="noopener noreferrer" className="hover:text-slate-300">Eliminación de datos</a>
+          </div>
         </div>
       </aside>
       <main className="flex-1 overflow-auto">

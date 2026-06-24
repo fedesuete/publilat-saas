@@ -78,6 +78,21 @@ app.use("/api/wa/webhook", webhookRouter);
 app.use("/api/billing/webhook/usdt", usdtWebhookRouter); // NOWPayments (USDT)
 app.use("/api/billing/webhook", billingWebhookRouter); // MercadoPago (debe ir último)
 
+// Solicitud de eliminación de datos (pública). La vía principal es por email (hola@publi.lat);
+// este endpoint deja registrado el pedido. No expone datos.
+app.post("/api/data-deletion", (req, res) => {
+  const account = typeof req.body?.account === "string" ? req.body.account.trim().slice(0, 200) : "";
+  const phone = typeof req.body?.phone === "string" ? req.body.phone.trim().slice(0, 40) : "";
+  if (!account && !phone) {
+    return res.status(400).json({ error: "Indicá el email de la cuenta o el teléfono del contacto." });
+  }
+  console.log(`[data-deletion] solicitud recibida -> account="${account}" phone="${phone}"`);
+  return res.json({
+    ok: true,
+    message: "Recibimos tu solicitud y la procesaremos a la brevedad. También podés escribir a hola@publi.lat.",
+  });
+});
+
 // Rutas protegidas: Bearer token + rate-limit de API.
 app.use("/api/leads", apiLimiter, requireAuth, leadsRouter);
 app.use("/api/wa", apiLimiter, requireAuth, waRouter);
