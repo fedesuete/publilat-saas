@@ -22,13 +22,6 @@ interface Overview {
 }
 interface Series { days: number; series: Array<{ date: string; leads: number }>; }
 
-type Period = "today" | "week" | "month";
-const PERIODS: Array<{ key: Period; label: string }> = [
-  { key: "today", label: "Hoy" },
-  { key: "week", label: "Semana" },
-  { key: "month", label: "Mes" },
-];
-
 const FUNNEL: Array<{ stage: Stage; field: keyof Totals }> = [
   { stage: "NUEVO", field: "nuevo" },
   { stage: "CONTACTADO", field: "contactado" },
@@ -39,11 +32,21 @@ const FUNNEL: Array<{ stage: Stage; field: keyof Totals }> = [
 
 const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
 
-function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function StatCard({
+  label,
+  value,
+  sub,
+  accent = "text-slate-100",
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  accent?: string;
+}) {
   return (
     <Card>
       <div className="text-xs uppercase tracking-wide text-slate-400">{label}</div>
-      <div className="mt-1 text-2xl font-bold text-slate-100">{value}</div>
+      <div className={`mt-1 text-2xl font-bold ${accent}`}>{value}</div>
       {sub && <div className="mt-0.5 text-xs text-slate-500">{sub}</div>}
     </Card>
   );
@@ -81,7 +84,7 @@ function LineChart({ data }: { data: Array<{ date: string; leads: number }> }) {
 export default function DashboardPage() {
   const [data, setData] = useState<Overview | null>(null);
   const [series, setSeries] = useState<Series | null>(null);
-  const [period, setPeriod] = useState<Period>("month");
+  const [days, setDays] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -89,12 +92,14 @@ export default function DashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const [ov, ts] = await Promise.all([
+      const [ov, ts, cr] = await Promise.all([
         api.get<Overview>("/api/analytics/overview"),
         api.get<Series>("/api/analytics/timeseries?days=30"),
+        api.get<{ days: number }>("/api/billing/credit"),
       ]);
       setData(ov.data);
       setSeries(ts.data);
+      setDays(cr.data.days);
     } catch (err) {
       setError(apiError(err));
     } finally {
@@ -105,49 +110,52 @@ export default function DashboardPage() {
   useEffect(() => { void load(); }, []);
 
   const t = data?.totals;
-  const w = data?.windows[period];
+  const wins = data?.windows;
 
   return (
     <div className="p-6">
       <div className="mb-5 flex items-center justify-between">
         <h1 className="text-xl font-bold">Dashboard</h1>
-        <Button variant="secondary" onClick={() => void load()}>Actualizar</Button>
+        <div className="flex items-center gap-3">
+          {days != null && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-wa-green/30 bg-wa-green/10 px-3 py-1 text-sm font-semibold text-wa-green">
+              {days} {days === 1 ? "día" : "días"}
+            </span>
+          )}
+          <Button variant="secondary" onClick={() => void load()}>Actualizar</Button>
+        </div>
       </div>
 
       {error && <ErrorMsg>{error}</ErrorMsg>}
 
       {loading ? (
         <p className="text-slate-400">Cargando…</p>
-      ) : !t || !w ? (
+      ) : !t || !wins ? (
         <Card><p className="text-slate-300">No hay datos para mostrar.</p></Card>
       ) : (
         <div className="space-y-6">
-          {/* Selector de período */}
-          <div className="flex items-center gap-2">
-            <div className="inline-flex rounded-md bg-slate-900 p-1 text-sm">
-              {PERIODS.map((p) => (
-                <button
-                  key={p.key}
-                  onClick={() => setPeriod(p.key)}
-                  className={`rounded px-3 py-1 font-medium transition ${
-                    period === p.key ? "bg-wa-green text-slate-900" : "text-slate-300 hover:text-white"
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-            <span className="text-xs text-slate-500">métricas del período seleccionado</span>
+          {/* Clics: hoy / semana / mes + líneas activas */}
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <StatCard label="Clics hoy" value={String(wins.today.clicks)} sub="tocaron el anuncio" accent="text-sky-300" />
+            <StatCard label="Clics esta semana" value={String(wins.week.clicks)} accent="text-sky-300" />
+            <StatCard label="Clics este mes" value={String(wins.month.clicks)} accent="text-sky-300" />
+            <StatCard label="Líneas activas" value={String(data.activeLines)} sub="en rotación ahora" accent="text-amber-300" />
           </div>
 
-          {/* Tarjetas por ventana de tiempo */}
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
-            <StatCard label="Clics" value={String(w.clicks)} sub="contactos del link" />
-            <StatCard label="Chats reales" value={String(w.chats)} sub="llegaron a chatear" />
-            <StatCard label="Click→Chat" value={pct(w.clickToChat)} />
-            <StatCard label="Ventas" value={String(w.sales)} sub={fmtAmount(w.revenue)} />
-            <StatCard label="Conversión" value={pct(w.conversion)} sub="ventas / clics" />
-            <StatCard label="Líneas activas" value={String(data.activeLines)} sub="en rotación" />
+          {/* Chats: hoy / semana / mes + click→chat */}
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <StatCard label="Chats hoy" value={String(wins.today.chats)} sub="mensajes WA recibidos" accent="text-violet-300" />
+            <StatCard label="Chats esta semana" value={String(wins.week.chats)} accent="text-violet-300" />
+            <StatCard label="Chats este mes" value={String(wins.month.chats)} accent="text-violet-300" />
+            <StatCard label="Click→Chat hoy" value={pct(wins.today.clickToChat)} sub={`${wins.today.chats} chats / ${wins.today.clicks} clics`} accent="text-violet-300" />
+          </div>
+
+          {/* Ventas: hoy / semana / mes + conversión del mes */}
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <StatCard label="Ventas hoy" value={String(wins.today.sales)} sub={`${pct(wins.today.conversion)} conversión`} accent="text-wa-green" />
+            <StatCard label="Ventas esta semana" value={String(wins.week.sales)} sub={`${pct(wins.week.conversion)} conversión`} accent="text-wa-green" />
+            <StatCard label="Ventas este mes" value={String(wins.month.sales)} sub={fmtAmount(wins.month.revenue)} accent="text-wa-green" />
+            <StatCard label="Conversión del mes" value={pct(wins.month.conversion)} sub={`${wins.month.sales} ventas / ${wins.month.clicks} clics`} accent="text-rose-300" />
           </div>
 
           {/* Gráfico 30 días */}

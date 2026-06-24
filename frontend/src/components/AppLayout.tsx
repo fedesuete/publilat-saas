@@ -1,21 +1,37 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import {
+  LayoutDashboard,
+  Users,
+  CalendarDays,
+  KanbanSquare,
+  Inbox,
+  MessageCircle,
+  Coins,
+  Target,
+  Link2,
+  LayoutTemplate,
+  Plug,
+  Settings,
+  GraduationCap,
+  type LucideIcon,
+} from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { Button } from "./ui";
 
-const NAV = [
-  { to: "/dashboard", label: "Dashboard" },
-  { to: "/leads", label: "Leads" },
-  { to: "/agenda", label: "Agenda" },
-  { to: "/kanban", label: "Kanban" },
-  { to: "/inbox", label: "Inbox" },
-  { to: "/whatsapp", label: "WhatsApp" },
-  { to: "/billing", label: "Créditos" },
-  { to: "/pixel", label: "Mi Pixel" },
-  { to: "/links", label: "Links" },
-  { to: "/landings", label: "Landings" },
-  { to: "/integraciones", label: "Integraciones" },
-  { to: "/configuracion", label: "Configuración" },
-  { to: "/tutoriales", label: "Tutoriales" },
+const NAV: Array<{ to: string; label: string; icon: LucideIcon }> = [
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/leads", label: "Leads", icon: Users },
+  { to: "/agenda", label: "Agenda", icon: CalendarDays },
+  { to: "/kanban", label: "Kanban", icon: KanbanSquare },
+  { to: "/inbox", label: "Inbox", icon: Inbox },
+  { to: "/whatsapp", label: "WhatsApp", icon: MessageCircle },
+  { to: "/billing", label: "Créditos", icon: Coins },
+  { to: "/pixel", label: "Mi Pixel", icon: Target },
+  { to: "/links", label: "Links", icon: Link2 },
+  { to: "/landings", label: "Landings", icon: LayoutTemplate },
+  { to: "/integraciones", label: "Integraciones", icon: Plug },
+  { to: "/configuracion", label: "Configuración", icon: Settings },
+  { to: "/tutoriales", label: "Tutoriales", icon: GraduationCap },
 ];
 
 export default function AppLayout() {
@@ -41,13 +57,14 @@ export default function AppLayout() {
               key={item.to}
               to={item.to}
               className={({ isActive }) =>
-                `rounded-md px-3 py-2 text-sm font-medium transition ${
+                `flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition ${
                   isActive
                     ? "bg-wa-green/15 text-wa-green"
                     : "text-slate-300 hover:bg-slate-800 hover:text-white"
                 }`
               }
             >
+              <item.icon className="h-4 w-4 shrink-0" />
               {item.label}
             </NavLink>
           ))}
