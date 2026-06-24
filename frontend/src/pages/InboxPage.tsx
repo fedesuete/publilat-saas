@@ -1,16 +1,26 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, apiError } from "../lib/api";
 import { getSocket, type InboxMessagePayload } from "../lib/socket";
-import type { Lead, Msg } from "../lib/types";
+import type { Msg, Stage } from "../lib/types";
 import { fmtDate } from "../lib/format";
 import { Button, Input, StageBadge, ErrorMsg } from "../components/ui";
 
-function contactLabel(lead: Lead): string {
-  return lead.name || lead.code || lead.externalId.slice(0, 8);
+interface Conversation {
+  id: string;
+  label: string;
+  stage: Stage;
+  line: string | null;
+  preview: string;
+  lastAt: string;
+  unread: number;
 }
 
+// Hora corta para la lista (HH:MM).
+const shortTime = (iso: string) =>
+  new Date(iso).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
+
 export default function InboxPage() {
-  const [contacts, setContacts] = useState<Lead[]>([]);
+  const [convs, setConvs] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [draft, setDraft] = useState("");
@@ -22,17 +32,17 @@ export default function InboxPage() {
 
   selectedRef.current = selected;
 
-  const loadContacts = async () => {
+  const loadConvs = async () => {
     try {
-      const { data } = await api.get<{ leads: Lead[] }>("/api/leads");
-      setContacts(data.leads);
+      const { data } = await api.get<{ conversations: Conversation[] }>("/api/inbox/conversations");
+      setConvs(data.conversations);
     } catch (err) {
       setListError(apiError(err));
     }
   };
 
   useEffect(() => {
-    void loadContacts();
+    void loadConvs();
   }, []);
 
   useEffect(() => {
@@ -41,7 +51,7 @@ export default function InboxPage() {
       if (payload.contactId === selectedRef.current) {
         setMessages((prev) => [...prev, payload.message]);
       }
-      void loadContacts();
+      void loadConvs();
     };
     socket.on("inbox:message", onMessage);
     return () => {
@@ -53,6 +63,8 @@ export default function InboxPage() {
     if (!selected) return;
     setChatError(null);
     setMessages([]);
+    // Al abrir, marcamos como leído en la lista (visual).
+    setConvs((prev) => prev.map((c) => (c.id === selected ? { ...c, unread: 0 } : c)));
     api
       .get<{ messages: Msg[] }>(`/api/inbox/${selected}/messages`)
       .then(({ data }) => setMessages(data.messages))
@@ -70,12 +82,10 @@ export default function InboxPage() {
     setChatError(null);
     const body = draft.trim();
     try {
-      const { data } = await api.post<{ message: Msg }>(
-        `/api/inbox/${selected}/messages`,
-        { body }
-      );
+      const { data } = await api.post<{ message: Msg }>(`/api/inbox/${selected}/messages`, { body });
       setMessages((prev) => [...prev, data.message]);
       setDraft("");
+      void loadConvs();
     } catch (err) {
       setChatError(apiError(err));
     } finally {
@@ -83,13 +93,14 @@ export default function InboxPage() {
     }
   };
 
-  const current = contacts.find((c) => c.id === selected);
+  const current = convs.find((c) => c.id === selected);
 
   return (
     <div className="flex h-screen">
-      <div className="flex w-72 flex-col border-r border-slate-800">
+      <div className="flex w-80 flex-col border-r border-slate-800">
         <div className="border-b border-slate-800 px-4 py-3">
-          <h1 className="font-bold">Inbox</h1>
+          <h1 className="font-bold">WhatsApp Inbox</h1>
+          <div className="text-xs text-slate-500">{convs.length} conversaciones</div>
         </div>
         {listError && (
           <div className="p-3">
@@ -97,19 +108,35 @@ export default function InboxPage() {
           </div>
         )}
         <div className="flex-1 overflow-y-auto">
-          {contacts.length === 0 ? (
-            <p className="p-4 text-sm text-slate-500">No hay contactos aún.</p>
+          {convs.length === 0 ? (
+            <p className="p-4 text-sm text-slate-500">No hay conversaciones aún.</p>
           ) : (
-            contacts.map((c) => (
+            convs.map((c) => (
               <button
                 key={c.id}
                 onClick={() => setSelected(c.id)}
-                className={`flex w-full items-center justify-between gap-2 border-b border-slate-800/60 px-4 py-3 text-left transition ${
+                className={`flex w-full items-start gap-3 border-b border-slate-800/60 px-4 py-3 text-left transition ${
                   selected === c.id ? "bg-slate-800" : "hover:bg-slate-800/50"
                 }`}
               >
-                <span className="truncate text-sm">{contactLabel(c)}</span>
-                <StageBadge stage={c.stage} />
+                {/* avatar / contador de no-leídos */}
+                <span
+                  className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+                    c.unread > 0 ? "bg-wa-green text-slate-900" : "bg-slate-700 text-slate-200"
+                  }`}
+                >
+                  {c.unread > 0 ? c.unread : c.label.charAt(0).toUpperCase()}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="truncate text-sm font-medium text-slate-100">{c.label}</span>
+                    <span className="shrink-0 text-[10px] text-slate-500">{shortTime(c.lastAt)}</span>
+                  </span>
+                  {c.line && <span className="block truncate text-[10px] text-slate-500">vía {c.line}</span>}
+                  <span className="mt-0.5 flex items-center gap-2">
+                    <span className="truncate text-xs text-slate-400">{c.preview || "—"}</span>
+                  </span>
+                </span>
               </button>
             ))
           )}
@@ -119,14 +146,16 @@ export default function InboxPage() {
       <div className="flex flex-1 flex-col">
         {!selected ? (
           <div className="flex flex-1 items-center justify-center text-slate-500">
-            Seleccioná un contacto para ver la conversación.
+            Seleccioná una conversación para verla.
           </div>
         ) : (
           <>
-            <div className="border-b border-slate-800 px-4 py-3">
-              <div className="font-semibold">
-                {current ? contactLabel(current) : "Conversación"}
+            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+              <div>
+                <div className="font-semibold">{current ? current.label : "Conversación"}</div>
+                {current?.line && <div className="text-xs text-slate-500">vía {current.line}</div>}
               </div>
+              {current && <StageBadge stage={current.stage} />}
             </div>
             <div className="flex-1 space-y-2 overflow-y-auto bg-slate-900/40 p-4">
               {chatError && <ErrorMsg>{chatError}</ErrorMsg>}
@@ -177,7 +206,7 @@ export default function InboxPage() {
             </div>
             <form onSubmit={send} className="flex gap-2 border-t border-slate-800 p-3">
               <Input
-                placeholder="Escribí un mensaje…"
+                placeholder="Escribí un mensaje… (Enter para enviar)"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
               />

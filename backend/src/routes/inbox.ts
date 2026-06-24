@@ -12,6 +12,53 @@ async function getOwnedContact(userId: string, contactId: string) {
   return prisma.contact.findFirst({ where: { id: contactId, userId } });
 }
 
+// GET /api/inbox/conversations — lista de chats con preview, línea y no-leídos.
+inboxRouter.get("/conversations", async (req, res) => {
+  const userId = req.userId!;
+  const contacts = await prisma.contact.findMany({
+    where: { userId, messages: { some: {} } },
+    include: {
+      line: { select: { label: true, phone: true } },
+      messages: {
+        orderBy: { createdAt: "desc" },
+        take: 30,
+        select: { direction: true, body: true, mediaType: true, createdAt: true },
+      },
+    },
+  });
+
+  const conversations = contacts
+    .map((c) => {
+      const last = c.messages[0];
+      // No-leídos = mensajes entrantes desde la última respuesta saliente (pendientes).
+      let unread = 0;
+      for (const m of c.messages) {
+        if (m.direction === "out") break;
+        unread++;
+      }
+      const preview = last
+        ? last.body ||
+          (last.mediaType
+            ? last.mediaType.includes("pdf")
+              ? "📄 Comprobante (PDF)"
+              : "📷 Imagen"
+            : "")
+        : "";
+      return {
+        id: c.id,
+        label: c.name || c.code || c.phone || c.externalId.slice(0, 8),
+        stage: c.stage,
+        line: c.line ? c.line.label || c.line.phone : null,
+        preview,
+        lastAt: (last?.createdAt ?? c.createdAt).toISOString(),
+        unread,
+      };
+    })
+    .sort((a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime());
+
+  return res.json({ conversations, count: conversations.length });
+});
+
 // GET /api/inbox/:contactId/messages — historial de la conversación.
 inboxRouter.get("/:contactId/messages", async (req, res) => {
   const contact = await getOwnedContact(req.userId!, req.params.contactId);
