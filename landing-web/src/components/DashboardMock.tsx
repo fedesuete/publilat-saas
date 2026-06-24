@@ -1,11 +1,11 @@
 import { motion, useReducedMotion } from "framer-motion";
-import { ArrowDownToLine, ArrowUpFromLine, Users, TrendingUp } from "lucide-react";
+import { MousePointerClick, MessageCircle, ShoppingBag, TrendingUp } from "lucide-react";
 import { Counter } from "./ui/Counter";
 
 const STATS = [
-  { icon: ArrowDownToLine, label: "Cargas hoy", value: 312, color: "text-emerald-400" },
-  { icon: ArrowUpFromLine, label: "Retiros hoy", value: 87, color: "text-sky-400" },
-  { icon: Users, label: "Jugadores activos", value: 1240, color: "text-lime-400" },
+  { icon: MousePointerClick, label: "Clics", value: 2840, color: "text-sky-400" },
+  { icon: MessageCircle, label: "Chats", value: 612, color: "text-emerald-400" },
+  { icon: ShoppingBag, label: "Ventas", value: 138, color: "text-lime-400" },
 ];
 
 // Mini gráfico de barras (SVG) decorativo.
@@ -40,15 +40,15 @@ export default function DashboardMock() {
         <div className="glass rounded-xl p-4">
           <div className="flex items-center gap-2 text-slate-400">
             <TrendingUp className="h-4 w-4 text-wa-green" />
-            <span className="text-[11px]">GGR del día</span>
+            <span className="text-[11px]">ROAS</span>
           </div>
           <div className="mt-1 text-2xl font-extrabold gradient-text">
-            ₲<Counter to={18.4} decimals={1} suffix="M" />
+            <Counter to={4.7} decimals={1} suffix="x" />
           </div>
-          <div className="text-[11px] text-slate-500">cargas − retiros − premios</div>
+          <div className="text-[11px] text-slate-500">facturación real / inversión</div>
         </div>
         <div className="glass rounded-xl p-4">
-          <div className="text-[11px] text-slate-400">Movimiento (7 días)</div>
+          <div className="text-[11px] text-slate-400">Ventas (7 días)</div>
           <div className="mt-2 flex h-12 items-end gap-1">
             {BARS.map((h, i) => (
               <motion.div
@@ -66,11 +66,11 @@ export default function DashboardMock() {
 
       <div className="mt-3 glass flex items-center justify-between rounded-xl p-3">
         <div>
-          <div className="text-xs font-medium text-white">Carga acreditada por IA</div>
-          <div className="text-[11px] text-slate-500">comprobante leído · ₲150.000 · jugador #4821</div>
+          <div className="text-xs font-medium text-white">Purchase enviado a Meta</div>
+          <div className="text-[11px] text-slate-500">CAPI · mismo external_id · valor $</div>
         </div>
         <span className="rounded-full bg-wa-green/15 px-2.5 py-1 text-[11px] font-semibold text-wa-green">
-          ✓ Registrada
+          ✓ Matcheado
         </span>
       </div>
     </div>

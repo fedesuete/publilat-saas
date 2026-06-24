@@ -6,30 +6,30 @@ import { Reveal } from "./ui/Reveal";
 const TESTIMONIALS = [
   {
     quote:
-      "El bot acredita las cargas solo. Mis cajeros pasaron de cargar a mano toda la noche a supervisar nomás. La operación vuela.",
+      "Pasé de optimizar por mensajes a optimizar por compras. En 3 semanas bajé el costo por venta a la mitad y por fin sé qué campaña me factura.",
     name: "Martín Ferreyra",
-    role: "Operador · Asunción",
+    role: "Indumentaria · Asunción",
     initials: "MF",
   },
   {
     quote:
-      "Antes no sabía cuánto movía cada caja. Ahora tengo el GGR del día y el arqueo en tiempo real. Cero planillas de Excel.",
+      "Tenía 4 vendedoras con 4 líneas y no sabía nada. Ahora veo el ROAS por anuncio y reparto los clics solo. Cambió cómo manejo la pauta.",
     name: "Carla Giménez",
-    role: "Casino online · Córdoba",
+    role: "Cosmética · Córdoba",
     initials: "CG",
   },
   {
     quote:
-      "Tener WhatsApp y Telegram en un solo Inbox, con el historial del jugador al lado, me cambió la atención. Respondemos al toque.",
+      "Lo mejor es que la venta vuelve a Meta automática. El algoritmo empezó a traerme gente que compra, no que pregunta y desaparece.",
     name: "Diego Rolón",
-    role: "Plataforma de apuestas · Encarnación",
+    role: "Electro · Encarnación",
     initials: "DR",
   },
   {
     quote:
-      "El CRM de jugadores me dejó ver quién se enfriaba. Reactivamos VIPs y subió la recompra sin gastar más en tráfico.",
+      "La detección de comprobantes me ahorra cargar ventas a mano. La IA lee el monto y yo solo confirmo. Una locura lo que escala.",
     name: "Sofía Medina",
-    role: "Operadora · Montevideo",
+    role: "Accesorios · Montevideo",
     initials: "SM",
   },
 ];

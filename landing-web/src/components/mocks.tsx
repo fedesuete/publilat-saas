@@ -1,38 +1,11 @@
 // Mockups con datos de ejemplo (placeholders realistas, listos para reemplazar por
 // capturas reales del panel).
 
-export function CajerosMock() {
-  const rows = [
-    { name: "Caja Norte", cargas: "₲ 4.2M", retiros: "₲ 1.1M", on: true },
-    { name: "Caja Sur", cargas: "₲ 3.8M", retiros: "₲ 0.9M", on: true },
-    { name: "Caja Turno Noche", cargas: "₲ 2.1M", retiros: "₲ 1.4M", on: false },
-  ];
-  return (
-    <div className="overflow-hidden rounded-lg border border-white/10">
-      <div className="grid grid-cols-4 gap-2 bg-white/[0.04] px-3 py-2 text-[10px] uppercase text-slate-400">
-        <span className="col-span-2">Cajero</span>
-        <span>Cargas</span>
-        <span>Retiros</span>
-      </div>
-      {rows.map((r, i) => (
-        <div key={i} className="grid grid-cols-4 items-center gap-2 border-t border-white/5 px-3 py-2.5 text-[11px]">
-          <span className="col-span-2 flex items-center gap-2 text-slate-200">
-            <span className={`h-1.5 w-1.5 rounded-full ${r.on ? "bg-wa-green" : "bg-slate-600"}`} />
-            {r.name}
-          </span>
-          <span className="text-emerald-300">{r.cargas}</span>
-          <span className="text-sky-300">{r.retiros}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export function PlayersKanbanMock() {
+export function KanbanMock() {
   const cols: { name: string; tint: string; cards: string[] }[] = [
-    { name: "Nuevos", tint: "text-slate-300", cards: ["Jugador #5012", "Jugador #5018"] },
-    { name: "Activos", tint: "text-sky-300", cards: ["#4821 · ₲150K"] },
-    { name: "VIP", tint: "text-wa-green", cards: ["#3007 · ₲2.4M", "#2990 · ₲1.1M"] },
+    { name: "Nuevo", tint: "text-slate-300", cards: ["Promo IG · ref 8F2A", "Camp. Verano · ref 1C9D"] },
+    { name: "Interesado", tint: "text-sky-300", cards: ["WhatsApp · ref 77B0"] },
+    { name: "Compró", tint: "text-wa-green", cards: ["₲ 150.000", "₲ 320.000"] },
   ];
   return (
     <div className="grid grid-cols-3 gap-2">
@@ -54,9 +27,9 @@ export function PlayersKanbanMock() {
 
 export function InboxMock() {
   const chats = [
-    { n: "Jugador #4821", m: "Quiero cargar 150.000", t: "20:41", on: true },
-    { n: "Jugador #3007", m: "Ya transferí 🙌", t: "20:12", on: false },
-    { n: "Jugador #5018", m: "¿Cómo retiro?", t: "19:58", on: false },
+    { n: "Cliente · ref 8F2A", m: "Hola, quiero info", t: "20:41", on: true },
+    { n: "Cliente · ref 77B0", m: "Ya transferí 🙌", t: "20:12", on: false },
+    { n: "Cliente · ref 1C9D", m: "¿Hacen envíos?", t: "19:58", on: false },
   ];
   return (
     <div className="grid grid-cols-5 gap-2">
@@ -70,20 +43,20 @@ export function InboxMock() {
       </div>
       <div className="col-span-3 flex flex-col justify-end gap-1.5 rounded-md bg-[#0b141a] p-2">
         <div className="self-start rounded-lg rounded-tl-sm bg-[#202c33] px-2.5 py-1.5 text-[11px] text-slate-100">
-          Quiero cargar 150.000
+          Hola, quiero info
         </div>
         <div className="self-end rounded-lg rounded-tr-sm bg-[#005c4b] px-2.5 py-1.5 text-[11px] text-white">
-          Te paso los datos 🙌
+          ¡Hola! Te cuento 🙌
         </div>
         <div className="mx-auto rounded-full bg-wa-green/15 px-2 py-0.5 text-[10px] text-wa-green">
-          WhatsApp · Telegram
+          ✓ Lead atribuido
         </div>
       </div>
     </div>
   );
 }
 
-export function BotMock() {
+export function PaymentMock() {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] p-2.5">
@@ -92,7 +65,7 @@ export function BotMock() {
         </div>
         <div className="text-[11px]">
           <div className="text-slate-200">Comprobante.jpg</div>
-          <div className="text-slate-500">leído por el bot</div>
+          <div className="text-slate-500">leído por IA</div>
         </div>
         <span className="ml-auto rounded-full bg-wa-green/15 px-2 py-1 text-[11px] font-semibold text-wa-green">
           ₲ 150.000
@@ -103,8 +76,9 @@ export function BotMock() {
         <span className="font-semibold text-wa-green">98%</span>
       </div>
       <button className="w-full rounded-md bg-gradient-to-r from-wa-green to-emerald-400 py-2 text-[11px] font-semibold text-ink">
-        🤖 Acreditar carga automáticamente
+        💰 Confirmar compra → Purchase a Meta
       </button>
     </div>
   );
 }
+

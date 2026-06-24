@@ -5,24 +5,24 @@ import { Reveal } from "./ui/Reveal";
 
 const FAQS = [
   {
-    q: "¿Necesito instalar algo o saber de programación?",
-    a: "No. Publi funciona en la nube: entrás desde el navegador, conectás tu WhatsApp/Telegram y empezás a operar. Te acompañamos en la puesta en marcha.",
+    q: "¿Necesito saber de programación o de la API de Meta?",
+    a: "No. Cargás tu Pixel y tu token de Conversions API una vez (te guiamos paso a paso) y Publi.lat se encarga del resto: dispara los eventos Lead y Purchase por vos.",
   },
   {
-    q: "¿Cómo acredita el bot las cargas?",
-    a: "El jugador manda el comprobante (imagen o PDF). La IA lo lee, valida el monto y acredita la carga al instante, dejando todo registrado en caja. Podés dejarlo automático o que un cajero confirme con un clic.",
+    q: "¿Sirve si vendo por WhatsApp con varias personas/líneas?",
+    a: "Sí. Podés conectar varias líneas de WhatsApp y el sistema reparte los clics entre ellas con rotación automática. Todos los chats caen en un Inbox unificado.",
   },
   {
-    q: "¿Puedo manejar varias marcas y varios cajeros?",
-    a: "Sí. Operás múltiples marcas y cajas desde un solo panel, con datos separados, roles y permisos para cada cajero, supervisor y admin.",
+    q: "¿Cómo sabe Meta que la persona compró?",
+    a: "Cuando marcás la venta (o la IA detecta el comprobante), enviamos el evento Purchase por la Conversions API con el mismo identificador del clic original. Así Meta hace el match y optimiza por compradores reales.",
   },
   {
-    q: "¿Qué medios de pago soporta?",
-    a: "Los que ya usás en LATAM: Bancard, Tigo Money, Ueno, transferencias bancarias y USDT (red Tron/TRC20). Cada movimiento queda con su comprobante.",
+    q: "¿Qué medios de pago puedo usar para cargar días?",
+    a: "MercadoPago, Stripe (tarjeta) y USDT (cripto, red Tron/TRC20) directo a tu wallet. 1 día = 1 línea activa por 24 horas.",
   },
   {
-    q: "¿Mis datos y los de mis jugadores están seguros?",
-    a: "Sí. Accesos por rol, registro auditable de cada carga y retiro, y respaldo nivel producción. Cada quien ve solo lo que le corresponde.",
+    q: "¿La detección de pago por comprobante es confiable?",
+    a: "La IA lee la imagen o el PDF y extrae el monto. Podés dejarla en modo semi-automático (te lo resalta y confirmás con 1 clic) o automático. Nunca manda una compra falsa a Meta si no hay confianza alta.",
   },
 ];
 

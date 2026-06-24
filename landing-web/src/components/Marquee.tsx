@@ -1,18 +1,18 @@
 // Franja en loop infinito: países LATAM + lo que se integra. El contenido se duplica
 // para que el translateX(-50%) cierre el ciclo sin saltos.
 const ITEMS = [
+  "Meta Ads",
   "WhatsApp",
-  "Telegram",
-  "Bancard",
-  "Tigo Money",
-  "Ueno",
+  "Conversions API",
+  "MercadoPago",
   "USDT · TRC20",
-  "Mercado Pago",
+  "Stripe",
   "🇦🇷 Argentina",
   "🇵🇾 Paraguay",
   "🇺🇾 Uruguay",
   "🇨🇱 Chile",
-  "Bot IA 24/7",
+  "Kommo",
+  "ROAS real",
 ];
 
 export default function Marquee() {
