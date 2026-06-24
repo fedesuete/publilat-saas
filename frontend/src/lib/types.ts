@@ -31,9 +31,16 @@ export interface Line {
   phone: string;
   label: string | null;
   status: string;
+  provider: "baileys" | "cloud";
   connected: boolean;
   expiresAt: string | null;
   createdAt: string;
+  // Cloud API (CTWA):
+  wabaPhoneNumberId?: string | null;
+  wabaId?: string | null;
+  verifyToken?: string | null;
+  tokenMask?: string | null;
+  webhookUrl?: string | null;
 }
 
 export interface Msg {

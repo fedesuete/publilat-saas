@@ -14,6 +14,7 @@ import { authRouter } from "./routes/auth.js";
 import { leadsRouter } from "./routes/leads.js";
 import { waRouter } from "./routes/wa.js";
 import { webhookRouter } from "./routes/webhook.js";
+import { cloudWebhookRouter } from "./routes/wa-cloud.js";
 import { inboxRouter } from "./routes/inbox.js";
 import { analyticsRouter } from "./routes/analytics.js";
 import { billingRouter, billingWebhookRouter, usdtWebhookRouter, stripeWebhookHandler } from "./routes/billing.js";
@@ -72,6 +73,7 @@ app.use("/", landingRouter);
 app.use("/api/auth", authLimiter, authRouter);
 
 // Webhooks públicos (los llaman servicios externos, sin Bearer)
+app.use("/api/wa/cloud/webhook", cloudWebhookRouter); // WhatsApp Cloud API (CTWA)
 app.use("/api/wa/webhook", webhookRouter);
 app.use("/api/billing/webhook/usdt", usdtWebhookRouter); // NOWPayments (USDT)
 app.use("/api/billing/webhook", billingWebhookRouter); // MercadoPago (debe ir último)

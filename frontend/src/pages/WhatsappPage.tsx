@@ -20,6 +20,9 @@ export default function WhatsappPage() {
   const [activateDays, setActivateDays] = useState<Record<string, string>>({});
   const [activatingId, setActivatingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ id: string; text: string } | null>(null);
+  // Alta: tipo de conexión + datos de Cloud API (CTWA).
+  const [provider, setProvider] = useState<"baileys" | "cloud">("baileys");
+  const [cloud, setCloud] = useState({ phoneNumberId: "", wabaId: "", accessToken: "", verifyToken: "", phone: "" });
 
   const load = async () => {
     setLoading(true);
@@ -70,13 +73,23 @@ export default function WhatsappPage() {
     setCreating(true);
     setError(null);
     try {
-      const { data } = await api.post<{ line: Line; qr: string | null }>(
-        "/api/wa/lines",
-        { label: label || undefined }
-      );
+      const payload =
+        provider === "cloud"
+          ? {
+              provider: "cloud" as const,
+              label: label || undefined,
+              phone: cloud.phone || undefined,
+              wabaPhoneNumberId: cloud.phoneNumberId,
+              wabaId: cloud.wabaId || undefined,
+              accessToken: cloud.accessToken,
+              verifyToken: cloud.verifyToken,
+            }
+          : { label: label || undefined };
+      const { data } = await api.post<{ line: Line; qr: string | null }>("/api/wa/lines", payload);
       setLines((prev) => [...prev, data.line]);
       if (data.qr) setQrs((prev) => ({ ...prev, [data.line.id]: data.qr! }));
       setLabel("");
+      setCloud({ phoneNumberId: "", wabaId: "", accessToken: "", verifyToken: "", phone: "" });
     } catch (err) {
       setError(apiError(err));
     } finally {
@@ -179,18 +192,79 @@ export default function WhatsappPage() {
     <div className="p-6">
       <h1 className="mb-2 text-xl font-bold">WhatsApp</h1>
       <p className="mb-5 text-sm text-slate-400">
-        Escaneá el QR desde WhatsApp &gt; Dispositivos vinculados.
+        Conectá por QR (Baileys) o con la API oficial (Cloud API) para anuncios Click-to-WhatsApp.
       </p>
 
-      <Card className="mb-6 max-w-md">
-        <form onSubmit={createLine} className="flex gap-2">
+      <Card className="mb-6 max-w-xl">
+        {/* Selector de tipo de conexión */}
+        <div className="mb-4 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setProvider("baileys")}
+            className={`rounded-md border p-3 text-left transition ${
+              provider === "baileys" ? "border-wa-green bg-wa-green/10" : "border-slate-700 bg-slate-900/40 hover:border-slate-600"
+            }`}
+          >
+            <div className="text-sm font-semibold text-slate-100">Conexión por QR</div>
+            <div className="mt-0.5 text-xs text-slate-500">Baileys — escaneás el QR. Para el flujo de landing.</div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setProvider("cloud")}
+            className={`rounded-md border p-3 text-left transition ${
+              provider === "cloud" ? "border-wa-green bg-wa-green/10" : "border-slate-700 bg-slate-900/40 hover:border-slate-600"
+            }`}
+          >
+            <div className="text-sm font-semibold text-slate-100">API oficial (Cloud API)</div>
+            <div className="mt-0.5 text-xs text-slate-500">Para anuncios Click-to-WhatsApp (CTWA).</div>
+          </button>
+        </div>
+
+        <form onSubmit={createLine} className="space-y-2">
           <Input
             placeholder="Etiqueta de la línea (ej: Ventas)"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
           />
+
+          {provider === "cloud" && (
+            <div className="space-y-2 rounded-md border border-slate-800 bg-slate-900/40 p-3">
+              <Input
+                placeholder="Phone Number ID (WhatsApp → API config)"
+                value={cloud.phoneNumberId}
+                onChange={(e) => setCloud((c) => ({ ...c, phoneNumberId: e.target.value }))}
+              />
+              <Input
+                placeholder="WhatsApp Business Account ID (opcional)"
+                value={cloud.wabaId}
+                onChange={(e) => setCloud((c) => ({ ...c, wabaId: e.target.value }))}
+              />
+              <Input
+                placeholder="Access Token (permanente, del System User)"
+                value={cloud.accessToken}
+                onChange={(e) => setCloud((c) => ({ ...c, accessToken: e.target.value }))}
+              />
+              <Input
+                placeholder="Verify Token (lo inventás vos; lo pegás en Meta)"
+                value={cloud.verifyToken}
+                onChange={(e) => setCloud((c) => ({ ...c, verifyToken: e.target.value }))}
+              />
+              <Input
+                placeholder="Número de la línea (opcional, ej 595…)"
+                value={cloud.phone}
+                onChange={(e) => setCloud((c) => ({ ...c, phone: e.target.value }))}
+              />
+              <p className="text-xs text-slate-500">
+                En Meta → WhatsApp → Configuración: <b>Phone Number ID</b> y <b>WABA ID</b> están en
+                “API Setup”. El <b>Access Token</b> conviene que sea permanente (System User). El{" "}
+                <b>Verify Token</b> es una palabra que elegís vos y pegás en el webhook de Meta.
+                Al crear la línea te mostramos la <b>URL del webhook</b> para pegar.
+              </p>
+            </div>
+          )}
+
           <Button type="submit" disabled={creating}>
-            {creating ? "…" : "Crear línea"}
+            {creating ? "…" : provider === "cloud" ? "Conectar Cloud API" : "Crear línea"}
           </Button>
         </form>
       </Card>
@@ -209,13 +283,21 @@ export default function WhatsappPage() {
         <div className="grid gap-4 md:grid-cols-2">
           {lines.map((line) => {
             const qr = qrs[line.id];
+            const isCloud = line.provider === "cloud";
             return (
               <Card key={line.id}>
                 <div className="mb-3 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <StatusDot ok={line.connected} />
                     <div>
-                      <div className="font-semibold">{line.label || "Sin etiqueta"}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold">{line.label || "Sin etiqueta"}</span>
+                        {isCloud && (
+                          <span className="rounded-full bg-wa-green/15 px-2 py-0.5 text-[10px] font-semibold text-wa-green">
+                            Oficial / CTWA
+                          </span>
+                        )}
+                      </div>
                       <div className="text-xs text-slate-400">
                         {line.phone || "Sin número"} ·{" "}
                         <span
@@ -250,7 +332,25 @@ export default function WhatsappPage() {
                   </div>
                 </div>
 
-                {line.connected ? (
+                {isCloud ? (
+                  <div className="mb-3 space-y-2 rounded-md border border-slate-800 bg-slate-900/40 p-3 text-xs">
+                    <div>
+                      <span className="text-slate-400">Phone Number ID: </span>
+                      <code className="break-all text-slate-200">{line.wabaPhoneNumberId}</code>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Verify Token: </span>
+                      <code className="break-all text-slate-200">{line.verifyToken}</code>
+                    </div>
+                    <div className="text-slate-400">Webhook URL (pegar en Meta):</div>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 break-all rounded bg-slate-900 px-2 py-1 text-slate-200">{line.webhookUrl}</code>
+                      <Button variant="secondary" onClick={() => void navigator.clipboard.writeText(line.webhookUrl ?? "")}>
+                        Copiar
+                      </Button>
+                    </div>
+                  </div>
+                ) : line.connected ? (
                   <div className="mb-3 rounded-md border border-wa-green/40 bg-wa-green/10 px-3 py-2 text-sm text-wa-green">
                     Línea conectada
                   </div>
@@ -261,12 +361,16 @@ export default function WhatsappPage() {
                 ) : null}
 
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="secondary" onClick={() => void connect(line.id)}>
-                    Conectar / Ver QR
-                  </Button>
-                  <Button variant="secondary" onClick={() => void checkStatus(line.id)}>
-                    Estado
-                  </Button>
+                  {!isCloud && (
+                    <>
+                      <Button variant="secondary" onClick={() => void connect(line.id)}>
+                        Conectar / Ver QR
+                      </Button>
+                      <Button variant="secondary" onClick={() => void checkStatus(line.id)}>
+                        Estado
+                      </Button>
+                    </>
+                  )}
                   {line.status === "paused" ? (
                     <Button variant="secondary" onClick={() => void setStatus(line.id, "resume")}>
                       Reanudar
@@ -276,9 +380,11 @@ export default function WhatsappPage() {
                       Pausar
                     </Button>
                   )}
-                  <Button variant="ghost" onClick={() => void logout(line.id)}>
-                    Desvincular
-                  </Button>
+                  {!isCloud && (
+                    <Button variant="ghost" onClick={() => void logout(line.id)}>
+                      Desvincular
+                    </Button>
+                  )}
                   <Button variant="danger" onClick={() => void remove(line.id)}>
                     Borrar
                   </Button>

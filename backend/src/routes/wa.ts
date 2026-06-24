@@ -4,6 +4,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
+import { encryptSecret, maskSecret } from "../lib/crypto.js";
 import {
   createInstance,
   connectInstance,
@@ -15,38 +16,84 @@ import {
 
 export const waRouter = Router();
 
+// URL pública del webhook de la Cloud API (para pegar en Meta).
+const CLOUD_WEBHOOK_URL = `${(process.env.APP_BASE_URL ?? "http://localhost:4000").replace(/\/$/, "")}/api/wa/cloud/webhook`;
+
+// Forma pública de una línea (nunca devuelve el access token entero).
+function toPublicLine(l: {
+  id: string; phone: string; label: string | null; status: string; provider: string;
+  connected: boolean; expiresAt: Date | null; createdAt: Date;
+  wabaPhoneNumberId: string | null; wabaId: string | null; accessToken: string | null; verifyToken: string | null;
+}) {
+  return {
+    id: l.id,
+    phone: l.phone,
+    label: l.label,
+    status: l.status,
+    provider: l.provider,
+    connected: l.connected,
+    expiresAt: l.expiresAt,
+    createdAt: l.createdAt,
+    wabaPhoneNumberId: l.wabaPhoneNumberId,
+    wabaId: l.wabaId,
+    verifyToken: l.verifyToken,
+    tokenMask: l.accessToken ? maskSecret(l.accessToken.replace(/^enc:v1:/, "")) : null,
+    webhookUrl: l.provider === "cloud" ? CLOUD_WEBHOOK_URL : null,
+  };
+}
+
 // GET /api/wa/lines — líneas del usuario con su estado (según DB; el webhook lo mantiene).
 waRouter.get("/lines", async (req, res) => {
   const lines = await prisma.waLine.findMany({
     where: { userId: req.userId! },
     orderBy: { createdAt: "asc" },
-    select: {
-      id: true,
-      phone: true,
-      label: true,
-      status: true,
-      connected: true,
-      expiresAt: true,
-      createdAt: true,
-    },
   });
-  return res.json({ lines });
+  return res.json({ lines: lines.map(toPublicLine) });
 });
 
 const createSchema = z.object({
   label: z.string().min(1).max(60).optional(),
   phone: z.string().min(6).max(20).optional(),
+  provider: z.enum(["baileys", "cloud"]).default("baileys"),
+  // Cloud API (CTWA):
+  wabaPhoneNumberId: z.string().min(3).max(40).optional(),
+  wabaId: z.string().min(3).max(40).optional(),
+  accessToken: z.string().min(20).max(1000).optional(),
+  verifyToken: z.string().min(4).max(120).optional(),
 });
 
-// POST /api/wa/lines — crea la línea + la instancia en Evolution. Devuelve el QR inicial.
+// POST /api/wa/lines — crea la línea. Baileys: instancia en Evolution + QR.
+// Cloud: guarda credenciales (token cifrado) y queda lista para el webhook de Meta.
 waRouter.post("/lines", async (req, res) => {
   const parsed = createSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
   }
-  const { label, phone } = parsed.data;
+  const { label, phone, provider, wabaPhoneNumberId, wabaId, accessToken, verifyToken } = parsed.data;
 
-  // Creamos la fila primero para tener el id que da nombre a la instancia.
+  // --- Línea Cloud API oficial (CTWA) ---
+  if (provider === "cloud") {
+    if (!wabaPhoneNumberId || !accessToken || !verifyToken) {
+      return res.status(400).json({ error: "Faltan datos de la Cloud API (Phone Number ID, Access Token y Verify Token)" });
+    }
+    const line = await prisma.waLine.create({
+      data: {
+        userId: req.userId!,
+        label,
+        phone: phone ?? "",
+        provider: "cloud",
+        status: "active",
+        connected: true,
+        wabaPhoneNumberId,
+        wabaId,
+        accessToken: encryptSecret(accessToken),
+        verifyToken,
+      },
+    });
+    return res.status(201).json({ line: toPublicLine(line), webhookUrl: CLOUD_WEBHOOK_URL });
+  }
+
+  // --- Línea Baileys (QR/Evolution) ---
   const line = await prisma.waLine.create({
     data: { userId: req.userId!, label, phone: phone ?? "", status: "inactive" },
   });
@@ -54,9 +101,9 @@ waRouter.post("/lines", async (req, res) => {
 
   try {
     const qr = await createInstance(instanceName);
-    await prisma.waLine.update({ where: { id: line.id }, data: { sessionId: instanceName } });
+    const updated = await prisma.waLine.update({ where: { id: line.id }, data: { sessionId: instanceName } });
     if (qr.base64) emitToUser(req.userId!, "wa:qr", { lineId: line.id, qr: qr.base64 });
-    return res.status(201).json({ line: { ...line, sessionId: instanceName }, qr: qr.base64 ?? null });
+    return res.status(201).json({ line: toPublicLine(updated), qr: qr.base64 ?? null });
   } catch (e) {
     // Si Evolution falla, no dejamos la línea huérfana.
     await prisma.waLine.delete({ where: { id: line.id } }).catch(() => undefined);
@@ -182,7 +229,7 @@ waRouter.delete("/lines/:id", async (req, res) => {
   const line = await getOwnedLine(req.userId!, req.params.id);
   if (!line) return res.status(404).json({ error: "Línea no encontrada" });
   try {
-    await deleteInstance(line.sessionId ?? `line_${line.id}`);
+    if (line.provider !== "cloud") await deleteInstance(line.sessionId ?? `line_${line.id}`);
     // Orden por las FKs: mensajes (lineId obligatorio) -> soltar contactos -> línea.
     await prisma.message.deleteMany({ where: { lineId: line.id } });
     await prisma.contact.updateMany({ where: { lineId: line.id }, data: { lineId: null } });

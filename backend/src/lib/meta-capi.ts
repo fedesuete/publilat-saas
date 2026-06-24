@@ -25,6 +25,9 @@ export interface CapiEventInput {
   currency?: string;           // ej "ARS"
   eventId?: string;            // para deduplicar con el Pixel del navegador
   eventSourceUrl?: string;     // url donde ocurrió el evento (override del global)
+  // Atribución por anuncio Click-to-WhatsApp (CTWA, vía Cloud API):
+  actionSource?: "website" | "business_messaging"; // default website (flujo landing)
+  ctwaClid?: string;           // click id del referral (NO se hashea)
   // Credenciales por usuario; si faltan, caen a las del .env.
   pixelId?: string;
   capiToken?: string;
@@ -50,6 +53,9 @@ export async function sendCapiEvent(input: CapiEventInput): Promise<CapiResult> 
     throw new Error("Falta pixelId/capiToken (ni en el usuario ni en .env)");
   }
 
+  const actionSource = input.actionSource ?? "website";
+  const isMessaging = actionSource === "business_messaging";
+
   const userData: Record<string, unknown> = {
     external_id: sha256(input.externalId),
   };
@@ -58,15 +64,21 @@ export async function sendCapiEvent(input: CapiEventInput): Promise<CapiResult> 
   if (input.phone) userData.ph = sha256(input.phone);
   if (input.clientIp) userData.client_ip_address = input.clientIp;
   if (input.userAgent) userData.client_user_agent = input.userAgent;
+  if (isMessaging && input.ctwaClid) userData.ctwa_clid = input.ctwaClid; // NO se hashea
 
   const event: Record<string, unknown> = {
     event_name: input.eventName,
     event_time: Math.floor(Date.now() / 1000),
-    action_source: "website",
-    event_source_url: input.eventSourceUrl || SOURCE_URL,
+    action_source: actionSource,
     event_id: input.eventId,
     user_data: userData,
   };
+  if (isMessaging) {
+    // CTWA: el evento ocurre en el chat, no en una web.
+    event.messaging_channel = "whatsapp";
+  } else {
+    event.event_source_url = input.eventSourceUrl || SOURCE_URL;
+  }
 
   if (input.eventName === "Purchase") {
     event.custom_data = {

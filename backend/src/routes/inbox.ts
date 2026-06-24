@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
 import { sendText } from "../lib/evolution.js";
+import { sendCloudText, isOutsideWindowError, graphErrorMessage } from "../lib/wa-cloud.js";
 
 export const inboxRouter = Router();
 
@@ -94,15 +95,34 @@ inboxRouter.post("/:contactId/messages", async (req, res) => {
   if (!contact.lineId) return res.status(400).json({ error: "El contacto no tiene línea asociada" });
 
   const line = await prisma.waLine.findFirst({ where: { id: contact.lineId, userId: req.userId! } });
-  if (!line?.sessionId) return res.status(400).json({ error: "La línea no está disponible" });
+  if (!line) return res.status(400).json({ error: "La línea no está disponible" });
 
   // Preferimos el JID crudo (soporta direcciones @lid de privacidad); si no, el teléfono.
   const destination = contact.waJid ?? contact.phone;
-  try {
-    await sendText(line.sessionId, destination, parsed.data.body);
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    return res.status(502).json({ error: "No se pudo enviar el mensaje", detail: message });
+  if (line.provider === "cloud") {
+    // WhatsApp Cloud API oficial (líneas CTWA). La Graph API usa sólo el número.
+    if (!line.wabaPhoneNumberId || !line.accessToken) {
+      return res.status(400).json({ error: "La línea Cloud no está configurada" });
+    }
+    try {
+      await sendCloudText(line, (contact.phone ?? destination).replace(/\D/g, ""), parsed.data.body);
+    } catch (e) {
+      if (isOutsideWindowError(e)) {
+        return res.status(409).json({
+          error: "Fuera de la ventana de 24 h. Para reabrir la conversación necesitás enviar una plantilla aprobada.",
+          requiresTemplate: true,
+        });
+      }
+      return res.status(502).json({ error: "No se pudo enviar el mensaje", detail: graphErrorMessage(e) });
+    }
+  } else {
+    if (!line.sessionId) return res.status(400).json({ error: "La línea no está disponible" });
+    try {
+      await sendText(line.sessionId, destination, parsed.data.body);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return res.status(502).json({ error: "No se pudo enviar el mensaje", detail: message });
+    }
   }
 
   const message = await prisma.message.create({

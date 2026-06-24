@@ -69,6 +69,9 @@ export async function markPurchase(
     purchasedAt: updated.purchasedAt,
   };
 
+  // Si el contacto vino por un anuncio Click-to-WhatsApp, el Purchase va como
+  // business_messaging con el ctwa_clid; si no, sigue el flujo web (landing).
+  const isCtwa = !!contact.ctwaClid;
   try {
     const result = await sendCapiEvent({
       eventName: "Purchase",
@@ -80,6 +83,8 @@ export async function markPurchase(
       currency,
       eventId: `${contact.externalId}:purchase`,
       eventSourceUrl: contact.landingUrl ?? undefined,
+      actionSource: isCtwa ? "business_messaging" : "website",
+      ctwaClid: contact.ctwaClid ?? undefined,
       pixelId: creds?.pixelId,
       capiToken: creds?.capiToken,
     });

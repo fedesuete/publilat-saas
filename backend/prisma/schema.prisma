@@ -49,8 +49,14 @@ model WaLine {
   phone       String    // ej: 5492944684573
   label       String?
   status      String    @default("inactive") // inactive | active | paused
+  provider    String    @default("baileys")  // baileys (QR/Evolution) | cloud (WhatsApp Cloud API oficial)
   sessionId   String?   // id de sesión Baileys/Evolution
   connected   Boolean   @default(false)
+  // --- Cloud API oficial (para anuncios Click-to-WhatsApp / CTWA) ---
+  wabaPhoneNumberId String?  // Phone Number ID de la Cloud API
+  wabaId      String?        // WhatsApp Business Account ID
+  accessToken String?        // token de la Cloud API (cifrado en reposo)
+  verifyToken String?        // token de verificación del webhook de Meta
   expiresAt   DateTime? // se desactiva al vencer (consumo de días)
   lastUsedAt  DateTime? // para rotación LRU de clics entre líneas activas
   createdAt   DateTime  @default(now())
@@ -92,6 +98,7 @@ model Contact {
   fbp         String?                   // cookie _fbp
   fbc         String?                   // cookie _fbc (derivada de fbclid)
   fbclid      String?
+  ctwaClid    String?                    // click id de anuncios Click-to-WhatsApp (referral de la Cloud API)
   code        String?  @unique          // código corto incrustado en el msg de WA
   landingUrl  String?
   lineId      String?
