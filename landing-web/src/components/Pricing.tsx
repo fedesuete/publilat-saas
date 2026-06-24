@@ -1,6 +1,6 @@
 import { Check, ArrowRight } from "lucide-react";
 import { Reveal } from "./ui/Reveal";
-import { REGISTER_URL, PRICE_PER_DAY_USD } from "../config";
+import { REGISTER_URL } from "../config";
 
 const INCLUDES = [
   "1 día = 1 línea de WhatsApp activa 24 h",
@@ -12,9 +12,9 @@ const INCLUDES = [
 ];
 
 const PACKS = [
-  { days: 10, popular: false },
-  { days: 30, popular: true },
-  { days: 90, popular: false },
+  { days: 10, perDay: 2, popular: false, note: "" },
+  { days: 30, perDay: 2, popular: true, note: "" },
+  { days: 90, perDay: 1.5, popular: false, note: "Ahorrás 25%" },
 ];
 
 export default function Pricing() {
@@ -36,11 +36,12 @@ export default function Pricing() {
           <div className="card-border glow relative h-full overflow-hidden p-8">
             <div className="text-sm font-semibold uppercase tracking-wide text-wa-green">Por día</div>
             <div className="mt-2 flex items-end gap-1">
-              <span className="text-5xl font-extrabold text-white">US${PRICE_PER_DAY_USD}</span>
+              <span className="text-5xl font-extrabold text-white">US$2</span>
               <span className="mb-1 text-slate-400">/ día por línea</span>
             </div>
             <p className="mt-2 text-sm text-slate-400">
-              Empezás gratis para probar el loop. Después cargás días según tu operación.
+              Empezás gratis para probar. Después cargás días según tu operación —{" "}
+              <span className="text-lime-300">desde US$1,5/día</span> en el pack de 90.
             </p>
             <a href={REGISTER_URL} className="btn-primary mt-6 w-full">
               Empezar gratis <ArrowRight className="h-4 w-4" />
@@ -69,11 +70,16 @@ export default function Pricing() {
                 }`}
               >
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="text-lg font-bold text-white">{p.days} días</span>
                     {p.popular && (
                       <span className="rounded-full bg-wa-green/15 px-2 py-0.5 text-[11px] font-semibold text-wa-green">
                         Más elegido
+                      </span>
+                    )}
+                    {p.note && (
+                      <span className="rounded-full bg-lime-400/15 px-2 py-0.5 text-[11px] font-semibold text-lime-300">
+                        {p.note}
                       </span>
                     )}
                   </div>
@@ -82,10 +88,8 @@ export default function Pricing() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-2xl font-extrabold text-white">
-                    US${p.days * PRICE_PER_DAY_USD}
-                  </div>
-                  <div className="text-[11px] text-slate-500">US${PRICE_PER_DAY_USD}/día</div>
+                  <div className="text-2xl font-extrabold text-white">US${p.days * p.perDay}</div>
+                  <div className="text-[11px] text-slate-500">US${p.perDay}/día</div>
                 </div>
               </div>
             ))}
