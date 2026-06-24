@@ -4,7 +4,9 @@
 import axios from "axios";
 import { decryptSecret } from "./crypto.js";
 
-const GRAPH = `https://graph.facebook.com/${process.env.WHATSAPP_GRAPH_VERSION ?? "v20.0"}`;
+export const GRAPH_VERSION =
+  process.env.META_GRAPH_VERSION ?? process.env.WHATSAPP_GRAPH_VERSION ?? "v20.0";
+const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
 interface CloudLine {
   wabaPhoneNumberId: string | null;
@@ -40,6 +42,48 @@ export function graphErrorMessage(e: unknown): string {
     return e.response?.data?.error?.message ?? e.message;
   }
   return e instanceof Error ? e.message : String(e);
+}
+
+// ---- Embedded Signup (Tech Provider) ----------------------------------------
+
+// Intercambia el `code` del Embedded Signup por un access token para operar la WABA del
+// cliente. Usa las credenciales de NUESTRA app (Tech Provider).
+export async function exchangeCodeForToken(code: string): Promise<string> {
+  const appId = process.env.META_APP_ID;
+  const appSecret = process.env.META_APP_SECRET;
+  if (!appId || !appSecret) throw new Error("Faltan META_APP_ID / META_APP_SECRET");
+  const { data } = await axios.get(`${GRAPH}/oauth/access_token`, {
+    params: { client_id: appId, client_secret: appSecret, code },
+    timeout: 15000,
+  });
+  const token: string | undefined = data?.access_token;
+  if (!token) throw new Error("No se obtuvo access_token en el intercambio del code");
+  return token;
+}
+
+// Suscribe NUESTRA app al webhook de la WABA del cliente (para recibir sus mensajes).
+export async function subscribeWaba(wabaId: string, token: string): Promise<void> {
+  await axios.post(
+    `${GRAPH}/${wabaId}/subscribed_apps`,
+    {},
+    { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 },
+  );
+}
+
+// Registra/activa el número en la Cloud API. Best-effort: si ya está registrado o requiere
+// PIN de verificación en dos pasos, no rompemos el alta (se loguea y sigue).
+export async function registerPhone(phoneNumberId: string, token: string, pin?: string): Promise<boolean> {
+  try {
+    await axios.post(
+      `${GRAPH}/${phoneNumberId}/register`,
+      { messaging_product: "whatsapp", ...(pin ? { pin } : {}) },
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 },
+    );
+    return true;
+  } catch (e) {
+    console.warn("[wa-cloud] registerPhone (best-effort):", graphErrorMessage(e));
+    return false;
+  }
 }
 
 // Baja un media entrante (imagen/documento) por su id -> base64. Para leer comprobantes.

@@ -68,6 +68,12 @@ cloudWebhookRouter.get("/", async (req, res) => {
   const verifyToken = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
   if (mode === "subscribe" && typeof verifyToken === "string") {
+    // 1) Token global de la app (Embedded Signup / Tech Provider).
+    const globalToken = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;
+    if (globalToken && verifyToken === globalToken) {
+      return res.status(200).send(String(challenge ?? ""));
+    }
+    // 2) Token por línea (alta manual de credenciales).
     const line = await prisma.waLine.findFirst({ where: { provider: "cloud", verifyToken } });
     if (line) return res.status(200).send(String(challenge ?? ""));
   }

@@ -1,13 +1,27 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, apiError } from "../lib/api";
 import { getSocket, type WaQrPayload, type WaStatusPayload } from "../lib/socket";
 import type { Line } from "../lib/types";
 import { fmtDate, fmtRemaining, isExpired } from "../lib/format";
 import { Button, Input, ErrorMsg, Card, StatusDot } from "../components/ui";
 
+// FB JS SDK (Embedded Signup) — tipado mínimo del global.
+declare global {
+  interface Window {
+    FB?: { init: (o: Record<string, unknown>) => void; login: (cb: (r: any) => void, o: Record<string, unknown>) => void };
+    fbAsyncInit?: () => void;
+  }
+}
+
 interface ActivateResponse {
   line: { id: string; status: string; expiresAt: string | null };
   creditDays: number;
+}
+
+interface EsConfig {
+  appId: string | null;
+  configId: string | null;
+  graphVersion: string;
 }
 
 export default function WhatsappPage() {
@@ -23,6 +37,12 @@ export default function WhatsappPage() {
   // Alta: tipo de conexión + datos de Cloud API (CTWA).
   const [provider, setProvider] = useState<"baileys" | "cloud">("baileys");
   const [cloud, setCloud] = useState({ phoneNumberId: "", wabaId: "", accessToken: "", verifyToken: "", phone: "" });
+  // Embedded Signup (Tech Provider).
+  const [esConfig, setEsConfig] = useState<EsConfig | null>(null);
+  const [fbReady, setFbReady] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const esSessionRef = useRef<{ phoneNumberId?: string; wabaId?: string }>({});
 
   const load = async () => {
     setLoading(true);
@@ -39,7 +59,104 @@ export default function WhatsappPage() {
 
   useEffect(() => {
     void load();
+    // Config del Embedded Signup (appId/configId de nuestro Tech Provider).
+    api
+      .get<EsConfig>("/api/wa/cloud/config")
+      .then(({ data }) => setEsConfig(data))
+      .catch(() => undefined);
   }, []);
+
+  // Carga el FB JS SDK una vez que tenemos el appId.
+  useEffect(() => {
+    if (!esConfig?.appId) return;
+    if (window.FB) {
+      setFbReady(true);
+      return;
+    }
+    if (document.getElementById("fb-jssdk")) return;
+    window.fbAsyncInit = () => {
+      window.FB?.init({
+        appId: esConfig.appId!,
+        autoLogAppEvents: true,
+        xfbml: false,
+        version: esConfig.graphVersion,
+      });
+      setFbReady(true);
+    };
+    const s = document.createElement("script");
+    s.id = "fb-jssdk";
+    s.async = true;
+    s.defer = true;
+    s.crossOrigin = "anonymous";
+    s.src = "https://connect.facebook.net/en_US/sdk.js";
+    document.body.appendChild(s);
+  }, [esConfig?.appId, esConfig?.graphVersion]);
+
+  // Captura los datos que el popup de Embedded Signup manda por postMessage.
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (typeof event.origin !== "string" || !event.origin.endsWith("facebook.com")) return;
+      try {
+        const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        if (data?.type === "WA_EMBEDDED_SIGNUP" && data?.data?.phone_number_id) {
+          esSessionRef.current = {
+            phoneNumberId: data.data.phone_number_id,
+            wabaId: data.data.waba_id,
+          };
+        }
+      } catch {
+        /* mensajes no-JSON del SDK: se ignoran */
+      }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, []);
+
+  const finishConnect = async (code: string, phoneNumberId: string, wabaId: string) => {
+    setConnecting(true);
+    setError(null);
+    try {
+      const { data } = await api.post<{ line: Line }>("/api/wa/cloud/connect", {
+        code,
+        phoneNumberId,
+        wabaId,
+        label: label || undefined,
+      });
+      setLines((prev) => [...prev, data.line]);
+      setLabel("");
+      setNotice({ id: data.line.id, text: "WhatsApp oficial conectado ✓" });
+    } catch (err) {
+      setError(apiError(err));
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const launchSignup = () => {
+    if (!window.FB || !esConfig?.configId) {
+      setError("Embedded Signup no está disponible todavía.");
+      return;
+    }
+    setError(null);
+    esSessionRef.current = {};
+    window.FB.login(
+      (response: any) => {
+        const code = response?.authResponse?.code;
+        const sess = esSessionRef.current;
+        if (code && sess.phoneNumberId && sess.wabaId) {
+          void finishConnect(code, sess.phoneNumberId, sess.wabaId);
+        } else {
+          setError("No se completó la conexión (faltó el código o los datos del número).");
+        }
+      },
+      {
+        config_id: esConfig.configId,
+        response_type: "code",
+        override_default_response_type: true,
+        extras: { setup: {}, featureType: "", sessionInfoVersion: "3" },
+      },
+    );
+  };
 
   useEffect(() => {
     const socket = getSocket();
@@ -227,45 +344,71 @@ export default function WhatsappPage() {
             onChange={(e) => setLabel(e.target.value)}
           />
 
-          {provider === "cloud" && (
-            <div className="space-y-2 rounded-md border border-slate-800 bg-slate-900/40 p-3">
-              <Input
-                placeholder="Phone Number ID (WhatsApp → API config)"
-                value={cloud.phoneNumberId}
-                onChange={(e) => setCloud((c) => ({ ...c, phoneNumberId: e.target.value }))}
-              />
-              <Input
-                placeholder="WhatsApp Business Account ID (opcional)"
-                value={cloud.wabaId}
-                onChange={(e) => setCloud((c) => ({ ...c, wabaId: e.target.value }))}
-              />
-              <Input
-                placeholder="Access Token (permanente, del System User)"
-                value={cloud.accessToken}
-                onChange={(e) => setCloud((c) => ({ ...c, accessToken: e.target.value }))}
-              />
-              <Input
-                placeholder="Verify Token (lo inventás vos; lo pegás en Meta)"
-                value={cloud.verifyToken}
-                onChange={(e) => setCloud((c) => ({ ...c, verifyToken: e.target.value }))}
-              />
-              <Input
-                placeholder="Número de la línea (opcional, ej 595…)"
-                value={cloud.phone}
-                onChange={(e) => setCloud((c) => ({ ...c, phone: e.target.value }))}
-              />
-              <p className="text-xs text-slate-500">
-                En Meta → WhatsApp → Configuración: <b>Phone Number ID</b> y <b>WABA ID</b> están en
-                “API Setup”. El <b>Access Token</b> conviene que sea permanente (System User). El{" "}
-                <b>Verify Token</b> es una palabra que elegís vos y pegás en el webhook de Meta.
-                Al crear la línea te mostramos la <b>URL del webhook</b> para pegar.
-              </p>
-            </div>
-          )}
+          {provider === "cloud" ? (
+            <div className="space-y-3">
+              {esConfig?.appId && esConfig?.configId ? (
+                <>
+                  <Button type="button" onClick={launchSignup} disabled={!fbReady || connecting} className="w-full">
+                    {connecting ? "Conectando…" : fbReady ? "Conectar WhatsApp (oficial)" : "Cargando…"}
+                  </Button>
+                  <p className="text-xs text-slate-500">
+                    Se abre un popup de Meta para elegir/crear tu cuenta de WhatsApp Business y
+                    autorizar a Publi. No tenés que copiar ningún token.
+                  </p>
+                </>
+              ) : (
+                <p className="rounded-md border border-amber-800 bg-amber-900/30 px-3 py-2 text-xs text-amber-200">
+                  ⚠️ El registro oficial (Embedded Signup) todavía no está configurado en el
+                  servidor. Mientras tanto podés cargar las credenciales a mano (Avanzado).
+                </p>
+              )}
 
-          <Button type="submit" disabled={creating}>
-            {creating ? "…" : provider === "cloud" ? "Conectar Cloud API" : "Crear línea"}
-          </Button>
+              <button
+                type="button"
+                onClick={() => setShowAdvanced((v) => !v)}
+                className="text-xs text-slate-400 underline hover:text-slate-200"
+              >
+                {showAdvanced ? "Ocultar carga manual" : "Avanzado: cargar credenciales manualmente"}
+              </button>
+
+              {showAdvanced && (
+                <div className="space-y-2 rounded-md border border-slate-800 bg-slate-900/40 p-3">
+                  <Input
+                    placeholder="Phone Number ID"
+                    value={cloud.phoneNumberId}
+                    onChange={(e) => setCloud((c) => ({ ...c, phoneNumberId: e.target.value }))}
+                  />
+                  <Input
+                    placeholder="WhatsApp Business Account ID (opcional)"
+                    value={cloud.wabaId}
+                    onChange={(e) => setCloud((c) => ({ ...c, wabaId: e.target.value }))}
+                  />
+                  <Input
+                    placeholder="Access Token (permanente, del System User)"
+                    value={cloud.accessToken}
+                    onChange={(e) => setCloud((c) => ({ ...c, accessToken: e.target.value }))}
+                  />
+                  <Input
+                    placeholder="Verify Token (lo inventás vos; lo pegás en Meta)"
+                    value={cloud.verifyToken}
+                    onChange={(e) => setCloud((c) => ({ ...c, verifyToken: e.target.value }))}
+                  />
+                  <Input
+                    placeholder="Número de la línea (opcional, ej 595…)"
+                    value={cloud.phone}
+                    onChange={(e) => setCloud((c) => ({ ...c, phone: e.target.value }))}
+                  />
+                  <Button type="submit" disabled={creating}>
+                    {creating ? "…" : "Conectar Cloud API (manual)"}
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Button type="submit" disabled={creating}>
+              {creating ? "…" : "Crear línea"}
+            </Button>
+          )}
         </form>
       </Card>
 

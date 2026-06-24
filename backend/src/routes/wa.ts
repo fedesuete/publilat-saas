@@ -13,6 +13,12 @@ import {
   logoutInstance,
   deleteInstance,
 } from "../lib/evolution.js";
+import {
+  GRAPH_VERSION,
+  exchangeCodeForToken,
+  subscribeWaba,
+  registerPhone,
+} from "../lib/wa-cloud.js";
 
 export const waRouter = Router();
 
@@ -110,6 +116,58 @@ waRouter.post("/lines", async (req, res) => {
     const message = e instanceof Error ? e.message : String(e);
     console.error("[wa/lines create] error:", message);
     return res.status(502).json({ error: "No se pudo crear la instancia en Evolution", detail: message });
+  }
+});
+
+// GET /api/wa/cloud/config — datos públicos para lanzar el Embedded Signup en el front.
+// (Nunca incluye el app secret.)
+waRouter.get("/cloud/config", (_req, res) => {
+  res.json({
+    appId: process.env.META_APP_ID ?? null,
+    configId: process.env.META_ES_CONFIG_ID ?? null,
+    graphVersion: GRAPH_VERSION,
+  });
+});
+
+const connectSchema = z.object({
+  code: z.string().min(10).max(4000),
+  phoneNumberId: z.string().min(3).max(40),
+  wabaId: z.string().min(3).max(40),
+  label: z.string().max(60).optional(),
+  phone: z.string().max(20).optional(),
+});
+
+// POST /api/wa/cloud/connect — cierra el Embedded Signup: intercambia el code por token,
+// suscribe nuestra app a la WABA del cliente, registra el número y crea la línea cloud.
+waRouter.post("/cloud/connect", async (req, res) => {
+  const parsed = connectSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
+  }
+  const { code, phoneNumberId, wabaId, label, phone } = parsed.data;
+  try {
+    const token = await exchangeCodeForToken(code);
+    await subscribeWaba(wabaId, token);
+    await registerPhone(phoneNumberId, token); // best-effort
+    const line = await prisma.waLine.create({
+      data: {
+        userId: req.userId!,
+        label: label ?? "WhatsApp oficial",
+        phone: phone ?? "",
+        provider: "cloud",
+        status: "active",
+        connected: true,
+        wabaPhoneNumberId: phoneNumberId,
+        wabaId,
+        accessToken: encryptSecret(token),
+        verifyToken: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN ?? null,
+      },
+    });
+    return res.status(201).json({ line: toPublicLine(line) });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("[wa/cloud/connect] error:", message);
+    return res.status(502).json({ error: "No se pudo conectar la cuenta de WhatsApp", detail: message });
   }
 });
 
