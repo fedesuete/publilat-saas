@@ -2,6 +2,7 @@
 // Traduce eventos de WhatsApp a nuestro modelo: QR, estado de línea y mensajes entrantes.
 // El mensaje entrante se matchea al lead por el `code` incrustado (o por teléfono).
 import { Router } from "express";
+import crypto from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
 import { fetchOwnerNumber, getMediaBase64 } from "../lib/evolution.js";
@@ -109,7 +110,20 @@ webhookRouter.post("/", async (req, res) => {
             orderBy: { createdAt: "desc" },
           });
         }
-        if (!contact) continue; // sin lead atribuible: lo ignoramos por ahora
+        if (!contact) {
+          // Mensaje directo (sin link rastreado): igual lo mostramos en el Inbox.
+          contact = await prisma.contact.create({
+            data: {
+              userId,
+              externalId: crypto.randomUUID(),
+              phone,
+              waJid: item.key.remoteJid ?? undefined,
+              lineId: line.id,
+              source: "wa",
+              stage: "NUEVO",
+            },
+          });
+        }
 
         // Completa teléfono/JID/línea y avanza la etapa si era nuevo.
         const patch: Record<string, unknown> = {};
