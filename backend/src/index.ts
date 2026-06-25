@@ -22,6 +22,9 @@ import { landingsRouter } from "./routes/landings.js";
 import { integrationsRouter } from "./routes/integrations.js";
 import { pixelRouter } from "./routes/pixel.js";
 import { setupRouter } from "./routes/setup.js";
+import { adminRouter } from "./routes/admin.js";
+import { supportRouter } from "./routes/support.js";
+import { requireAdmin } from "./middleware/requireAdmin.js";
 import { requireAuth } from "./middleware/requireAuth.js";
 import { verifyToken } from "./lib/auth.js";
 import { setIo } from "./lib/io.js";
@@ -103,6 +106,9 @@ app.use("/api/landings", apiLimiter, requireAuth, landingsRouter);
 app.use("/api/integrations", apiLimiter, requireAuth, integrationsRouter);
 app.use("/api/pixels", apiLimiter, requireAuth, pixelRouter);
 app.use("/api/setup", apiLimiter, requireAuth, setupRouter);
+app.use("/api/support", apiLimiter, requireAuth, supportRouter);
+// Panel maestro: admin-only (requireAuth + requireAdmin).
+app.use("/api/admin", apiLimiter, requireAuth, requireAdmin, adminRouter);
 
 // 404 para rutas de API desconocidas (antes del fallback del SPA).
 app.use("/api", (_req, res) => res.status(404).json({ error: "No encontrado" }));

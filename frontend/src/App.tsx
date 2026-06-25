@@ -16,6 +16,16 @@ import PixelPage from "./pages/PixelPage";
 import AgendaPage from "./pages/AgendaPage";
 import SetupPage from "./pages/SetupPage";
 import TutorialesPage from "./pages/TutorialesPage";
+import SupportPage from "./pages/SupportPage";
+import ProtectedAdminRoute from "./components/ProtectedAdminRoute";
+import AdminLayout from "./components/AdminLayout";
+import AdminOverview from "./pages/admin/AdminOverview";
+import AdminClients from "./pages/admin/AdminClients";
+import AdminLines from "./pages/admin/AdminLines";
+import AdminRevenue from "./pages/admin/AdminRevenue";
+import AdminDemos from "./pages/admin/AdminDemos";
+import AdminSupport from "./pages/admin/AdminSupport";
+import AdminExport from "./pages/admin/AdminExport";
 
 export default function App() {
   return (
@@ -43,6 +53,23 @@ export default function App() {
             <Route path="/integraciones" element={<IntegrationsPage />} />
             <Route path="/configuracion" element={<SetupPage />} />
             <Route path="/tutoriales" element={<TutorialesPage />} />
+            <Route path="/soporte" element={<SupportPage />} />
+          </Route>
+          {/* Panel maestro (admin-only) */}
+          <Route
+            element={
+              <ProtectedAdminRoute>
+                <AdminLayout />
+              </ProtectedAdminRoute>
+            }
+          >
+            <Route path="/admin" element={<AdminOverview />} />
+            <Route path="/admin/clientes" element={<AdminClients />} />
+            <Route path="/admin/lineas" element={<AdminLines />} />
+            <Route path="/admin/ingresos" element={<AdminRevenue />} />
+            <Route path="/admin/demos" element={<AdminDemos />} />
+            <Route path="/admin/soporte" element={<AdminSupport />} />
+            <Route path="/admin/exportar" element={<AdminExport />} />
           </Route>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

@@ -13,6 +13,8 @@ import {
   Plug,
   Settings,
   GraduationCap,
+  LifeBuoy,
+  Shield,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
@@ -32,6 +34,7 @@ const NAV: Array<{ to: string; label: string; icon: LucideIcon }> = [
   { to: "/integraciones", label: "Integraciones", icon: Plug },
   { to: "/configuracion", label: "Configuración", icon: Settings },
   { to: "/tutoriales", label: "Tutoriales", icon: GraduationCap },
+  { to: "/soporte", label: "Soporte", icon: LifeBuoy },
 ];
 
 export default function AppLayout() {
@@ -68,6 +71,15 @@ export default function AppLayout() {
               {item.label}
             </NavLink>
           ))}
+          {user?.role === "ADMIN" && (
+            <NavLink
+              to="/admin"
+              className="mt-1 flex items-center gap-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-300 transition hover:bg-amber-500/20"
+            >
+              <Shield className="h-4 w-4 shrink-0" />
+              Admin
+            </NavLink>
+          )}
         </nav>
         <div className="border-t border-slate-800 p-4 text-xs text-slate-400">
           <div className="truncate font-medium text-slate-200">{user?.email}</div>

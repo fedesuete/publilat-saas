@@ -10,6 +10,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Role {
+  USER
+  ADMIN
+}
+
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
@@ -18,6 +23,13 @@ model User {
   name      String?
   phone     String?                    // WhatsApp del usuario (registro)
   paymentDetection String @default("off") // off | assisted | auto (detección de pago en chat)
+  // --- Panel maestro (super-admin) ---
+  role          Role      @default(USER)
+  suspended     Boolean   @default(false)
+  isDemo        Boolean   @default(false)
+  demoExpiresAt DateTime?
+  source        String?                    // cómo llegó la cuenta (demo, referido, etc.)
+  lastLoginAt   DateTime?
   createdAt DateTime @default(now())
 
   lines       WaLine[]
@@ -28,6 +40,29 @@ model User {
   credit      Credit?
   integration Integration?
   payments    Payment[]
+  supportMessages SupportMessage[]
+}
+
+// Hilo de soporte 1-a-1 entre cada cliente y el dueño (admin).
+model SupportMessage {
+  id        String   @id @default(cuid())
+  userId    String
+  fromAdmin Boolean  @default(false)
+  body      String
+  mediaUrl  String?
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+// Auditoría de acciones del admin (dar días, demo, suspender, responder soporte).
+model AdminLog {
+  id           String   @id @default(cuid())
+  adminId      String
+  action       String
+  targetUserId String?
+  meta         Json?
+  createdAt    DateTime @default(now())
 }
 
 // Pixel de Meta + token CAPI. Una entrada por evento (Lead / Purchase), como ScaleOS.

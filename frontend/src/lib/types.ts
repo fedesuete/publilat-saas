@@ -5,6 +5,7 @@ export interface User {
   email: string;
   slug: string;
   name?: string | null;
+  role?: "USER" | "ADMIN";
 }
 
 export interface Lead {

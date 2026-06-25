@@ -3,6 +3,7 @@ import {
   useContext,
   useState,
   useCallback,
+  useEffect,
   type ReactNode,
 } from "react";
 import { api } from "./api";
@@ -71,6 +72,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     [persist]
   );
+
+  // Al cargar con sesión activa, refrescamos el usuario (trae role para gatear /admin).
+  useEffect(() => {
+    if (!token) return;
+    api
+      .get<{ user: User }>("/api/auth/me")
+      .then(({ data }) => {
+        setUser(data.user);
+        localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+      })
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
