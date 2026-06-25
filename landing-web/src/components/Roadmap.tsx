@@ -14,8 +14,8 @@ const ITEMS = [
   },
   {
     icon: Trophy,
-    title: "Chat con gamificación",
-    desc: "Niveles, premios y recompensas para que tus clientes vuelvan a comprar más seguido.",
+    title: "Programa de fidelización",
+    desc: "Beneficios y recompensas por recompra para que tus clientes vuelvan más seguido.",
   },
 ];
 
