@@ -40,6 +40,26 @@ body {
   background: radial-gradient(closest-side, rgba(37, 211, 102, 0.18), transparent);
 }
 
+/* Cursor personalizado de Publi — flecha blanca con borde verde (variante verde en clickeables). */
+* {
+  cursor:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><path d='M4 2 L4 20 L9 15.5 L12 21.5 L15 20 L12 14 L18 14 Z' fill='%23ffffff' stroke='%2325d366' stroke-width='1.6' stroke-linejoin='round'/></svg>") 4 2,
+    auto;
+}
+a, button, [role='button'], label, summary, select,
+input[type='submit'], input[type='button'] {
+  cursor:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><path d='M4 2 L4 20 L9 15.5 L12 21.5 L15 20 L12 14 L18 14 Z' fill='%2325d366' stroke='%230b141a' stroke-width='1.6' stroke-linejoin='round'/></svg>") 4 2,
+    pointer;
+}
+input[type='text'], input[type='email'], input[type='password'], input[type='number'],
+input[type='search'], input[type='url'], input[type='tel'], textarea, [contenteditable='true'] {
+  cursor: text;
+}
+@media (hover: none) and (pointer: coarse) {
+  * { cursor: auto; }
+}
+
 /* marco de navegador / mockups */
 .mock-frame {
   @apply overflow-hidden rounded-2xl border border-white/10 bg-ink2/90 shadow-2xl shadow-black/40;
