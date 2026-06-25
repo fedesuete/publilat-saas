@@ -5,18 +5,79 @@ import { fmtDate } from "../lib/format";
 import { useAuth } from "../lib/auth";
 import { Button, Input, Card, ErrorMsg } from "../components/ui";
 
-// Plantillas de HTML libre. El CTA apunta al redirector /go (con el slug del usuario)
-// para que la atribución siga funcionando aunque el HTML sea propio.
+// Plantillas de HTML libre (diseños originales, listos para editar). El CTA apunta al
+// redirector /go (con el slug del usuario) para que la atribución siga funcionando.
+// NO traen número ni pixel reales: el número lo asigna la rotación de líneas y el Lead
+// server-side lo dispara /go. El cliente edita textos/colores a gusto.
 function templates(slug: string): Array<{ name: string; html: string }> {
   const go = (msg: string) => `${API_BASE}/go?u=${slug}&msg=${encodeURIComponent(msg)}`;
+  const page = (title: string, css: string, body: string) =>
+    `<!doctype html><html lang="es"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${title}</title><style>*{box-sizing:border-box}body{margin:0;font-family:system-ui,'Segoe UI',Roboto,Arial,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}a.btn:active{transform:scale(.99)}${css}</style></head><body>${body}</body></html>`;
+  const plus18 = `<small style="display:block;margin-top:16px;color:#7a7a7a;font-size:12px">+18 · Jugá con responsabilidad</small>`;
+
+  // Genéricas (negocio en general)
   const base = (title: string, body: string) =>
-    `<!doctype html><html lang="es"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${title}</title>
-<style>*{box-sizing:border-box}body{margin:0;font-family:system-ui,Segoe UI,Roboto,sans-serif;background:#0b141a;color:#e9edef;display:flex;min-height:100vh;align-items:center;justify-content:center}.c{max-width:440px;width:90%;text-align:center;padding:44px 28px;background:#111b21;border:1px solid #222d34;border-radius:16px}h1{font-size:26px;margin:0 0 10px}p{color:#8696a0;margin:0 0 28px;line-height:1.55}a.btn{display:block;text-decoration:none;border-radius:999px;padding:16px;font-size:17px;font-weight:600;background:#25d366;color:#03301a}</style>
-</head><body><div class="c">${body}</div></body></html>`;
+    page(
+      title,
+      `body{background:#0b141a;color:#e9edef}.c{max-width:440px;width:100%;text-align:center;padding:44px 28px;background:#111b21;border:1px solid #222d34;border-radius:16px}h1{font-size:26px;margin:0 0 10px}p{color:#8696a0;margin:0 0 28px;line-height:1.55}a.btn{display:block;text-decoration:none;border-radius:999px;padding:16px;font-size:17px;font-weight:700;background:#25d366;color:#03301a}`,
+      `<div class="c">${body}</div>`,
+    );
+
   return [
-    { name: "Simple", html: base("Contactanos", `<h1>Hablá con nosotros</h1><p>Te respondemos al toque por WhatsApp.</p><a class="btn" href="${go("Hola, quiero info")}">Escribir por WhatsApp</a>`) },
-    { name: "Promo", html: base("Promo", `<h1>🔥 Promo por tiempo limitado</h1><p>Escribinos y reservá tu descuento ahora.</p><a class="btn" href="${go("Hola, quiero la promo")}">Quiero la promo</a>`) },
-    { name: "Servicios", html: base("Servicios", `<h1>¿Necesitás ayuda?</h1><p>Contanos qué buscás y te asesoramos sin cargo.</p><a class="btn" href="${go("Hola, necesito asesoramiento")}">Pedir asesoramiento</a>`) },
+    {
+      name: "Simple",
+      html: base("Contactanos", `<h1>Hablá con nosotros</h1><p>Te respondemos al toque por WhatsApp.</p><a class="btn" href="${go("Hola, quiero info")}">Escribir por WhatsApp</a>`),
+    },
+    {
+      name: "Promo",
+      html: base("Promo", `<h1>🔥 Promo por tiempo limitado</h1><p>Escribinos y reservá tu descuento ahora.</p><a class="btn" href="${go("Hola, quiero la promo")}">Quiero la promo</a>`),
+    },
+    {
+      name: "Servicios",
+      html: base("Servicios", `<h1>¿Necesitás ayuda?</h1><p>Contanos qué buscás y te asesoramos sin cargo.</p><a class="btn" href="${go("Hola, necesito asesoramiento")}">Pedir asesoramiento</a>`),
+    },
+
+    // Rubro casino / apuestas (diseños originales)
+    {
+      name: "Casino Oro",
+      html: page(
+        "Bono de bienvenida",
+        `body{background:radial-gradient(circle at 50% 0%,#1a1407,#0a0a0a);color:#fff}.c{max-width:460px;width:100%;text-align:center;background:linear-gradient(180deg,#171206,#0d0b04);border:1px solid #b8860b55;border-radius:20px;padding:44px 26px;box-shadow:0 24px 60px -24px #000}.k{display:inline-block;padding:6px 14px;border:1px solid #d4af3766;border-radius:999px;color:#e9c766;font-size:12px;letter-spacing:1px;text-transform:uppercase}h1{font-size:30px;margin:16px 0 8px;line-height:1.2}.g{background:linear-gradient(90deg,#f5d271,#d4af37,#b8860b);-webkit-background-clip:text;background-clip:text;color:transparent}p{color:#c9bfa3;margin:0 0 26px;line-height:1.55}a.btn{display:block;text-decoration:none;border-radius:999px;padding:17px;font-size:18px;font-weight:800;color:#1a1407;background:linear-gradient(90deg,#f5d271,#d4af37);box-shadow:0 12px 34px -10px #d4af37aa}`,
+        `<div class="c"><span class="k">Bono de bienvenida</span><h1>Hasta <span class="g">200% extra</span> en tu primera carga</h1><p>Registrate gratis y empezá a jugar hoy. Atención al instante por WhatsApp.</p><a class="btn" href="${go("Hola! Quiero mi bono de bienvenida 🎁")}">Quiero mi bono</a>${plus18}</div>`,
+      ),
+    },
+    {
+      name: "Ruleta Neón",
+      html: page(
+        "Girá y ganá",
+        `body{background:#0a0613;background-image:radial-gradient(circle at 80% 15%,#3b0d6b55,transparent),radial-gradient(circle at 10% 90%,#0d6b6155,transparent);color:#fff}.c{max-width:460px;width:100%;text-align:center;background:#120a22;border:1px solid #6d28d955;border-radius:20px;padding:40px 26px}.e{font-size:56px;line-height:1}h1{font-size:30px;margin:8px 0 8px}.n{color:#22d3ee;text-shadow:0 0 18px #22d3ee88}p{color:#b9a7d6;margin:0 0 26px;line-height:1.55}a.btn{display:block;text-decoration:none;border-radius:14px;padding:17px;font-size:18px;font-weight:800;color:#0a0613;background:linear-gradient(90deg,#22d3ee,#a855f7);box-shadow:0 0 32px -6px #a855f7aa}`,
+        `<div class="c"><div class="e">🎰</div><h1>Girá y <span class="n">ganá</span></h1><p>Tu primera jugada viene con regalo. Sumate y probá tu suerte ahora mismo.</p><a class="btn" href="${go("Hola! Quiero jugar 🎰")}">Jugar ahora</a>${plus18}</div>`,
+      ),
+    },
+    {
+      name: "Club VIP",
+      html: page(
+        "Club VIP",
+        `body{background:#07100c;background-image:radial-gradient(circle at 50% -10%,#0f3d2a,transparent);color:#fff}.c{max-width:460px;width:100%;text-align:center;background:#0b1712;border:1px solid #10b98155;border-radius:20px;padding:40px 26px}.k{color:#34d399;font-size:12px;letter-spacing:2px;text-transform:uppercase}h1{font-size:28px;margin:14px 0 14px}p{color:#9fb8ad;margin:0 0 26px;line-height:1.55}a.btn{display:block;text-decoration:none;border-radius:999px;padding:17px;font-size:18px;font-weight:800;color:#06281b;background:linear-gradient(90deg,#34d399,#10b981)}.row{display:flex;gap:8px;justify-content:center;margin-bottom:20px;flex-wrap:wrap}.chip{background:#0f211a;border:1px solid #10b98133;border-radius:10px;padding:8px 12px;color:#cdeee0;font-size:13px}`,
+        `<div class="c"><div class="k">★ Club VIP</div><h1>Cargá tus fichas en segundos</h1><div class="row"><span class="chip">Atención 24/7</span><span class="chip">Carga al instante</span><span class="chip">Retiros rápidos</span></div><p>Sumate al grupo VIP y jugá sin esperas. Te atendemos por WhatsApp.</p><a class="btn" href="${go("Hola! Quiero unirme al VIP y cargar fichas")}">Unirme al VIP</a>${plus18}</div>`,
+      ),
+    },
+    {
+      name: "Promo Relámpago",
+      html: page(
+        "Promo relámpago",
+        `body{background:#120606;background-image:radial-gradient(circle at 50% 0%,#3a0a0a,transparent);color:#fff}.c{max-width:460px;width:100%;text-align:center;background:#1a0a0a;border:1px solid #ef444455;border-radius:20px;padding:44px 26px}.k{display:inline-block;background:#ef4444;color:#fff;font-weight:700;font-size:12px;padding:5px 12px;border-radius:999px;text-transform:uppercase;letter-spacing:1px}h1{font-size:30px;margin:16px 0 8px}p{color:#e7b3b3;margin:0 0 26px;line-height:1.55}a.btn{display:block;text-decoration:none;border-radius:12px;padding:17px;font-size:18px;font-weight:800;color:#fff;background:linear-gradient(90deg,#ef4444,#f97316);box-shadow:0 12px 34px -10px #ef4444aa}`,
+        `<div class="c"><span class="k">⚡ Por tiempo limitado</span><h1>Duplicamos tu primera carga</h1><p>Hoy x2 en tu primer depósito. Escribinos antes de que termine.</p><a class="btn" href="${go("Hola! Quiero la promo x2 ⚡")}">Aprovechar ahora</a>${plus18}</div>`,
+      ),
+    },
+    {
+      name: "Deportes",
+      html: page(
+        "Apuestas deportivas",
+        `body{background:#04140a;background-image:radial-gradient(circle at 50% 0%,#0a3d1f,transparent);color:#fff}.c{max-width:460px;width:100%;text-align:center;background:#08160e;border:1px solid #16a34a55;border-radius:20px;padding:40px 26px}.e{font-size:52px}h1{font-size:28px;margin:8px 0 8px}.g{color:#4ade80}p{color:#a7c6b3;margin:0 0 26px;line-height:1.55}a.btn{display:block;text-decoration:none;border-radius:12px;padding:17px;font-size:18px;font-weight:800;color:#04140a;background:linear-gradient(90deg,#4ade80,#16a34a)}`,
+        `<div class="c"><div class="e">⚽</div><h1>Apostá a <span class="g">tu equipo</span></h1><p>Cuotas altas y cobrás al toque. Empezá a apostar por WhatsApp.</p><a class="btn" href="${go("Hola! Quiero empezar a apostar ⚽")}">Empezar a apostar</a>${plus18}</div>`,
+      ),
+    },
   ];
 }
 
