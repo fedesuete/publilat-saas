@@ -177,7 +177,7 @@ adminRouter.get("/clients/:id", async (req, res) => {
   const id = req.params.id;
   const user = await prisma.user.findUnique({
     where: { id },
-    select: { id: true, email: true, name: true, phone: true, slug: true, role: true, suspended: true, isDemo: true, demoExpiresAt: true, source: true, lastLoginAt: true, createdAt: true },
+    select: { id: true, email: true, name: true, phone: true, slug: true, role: true, suspended: true, isDemo: true, demoExpiresAt: true, source: true, lastLoginAt: true, createdAt: true, maxLines: true, maxLandings: true },
   });
   if (!user) return res.status(404).json({ error: "Cliente no encontrado" });
 
@@ -217,6 +217,22 @@ adminRouter.post("/clients/:id/credits", async (req, res) => {
   });
   await adminLog(req.userId!, "credits", userId, { days, note });
   return res.json({ ok: true, days: updated.days });
+});
+
+// Editar límites del plan (líneas / landings) por cliente.
+const limitsSchema = z.object({ maxLines: z.number().int().min(0).max(100).optional(), maxLandings: z.number().int().min(0).max(1000).optional() });
+adminRouter.post("/clients/:id/limits", async (req, res) => {
+  const parsed = limitsSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const userId = req.params.id;
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+  if (!user) return res.status(404).json({ error: "Cliente no encontrado" });
+  const data: { maxLines?: number; maxLandings?: number } = {};
+  if (parsed.data.maxLines !== undefined) data.maxLines = parsed.data.maxLines;
+  if (parsed.data.maxLandings !== undefined) data.maxLandings = parsed.data.maxLandings;
+  const updated = await prisma.user.update({ where: { id: userId }, data, select: { maxLines: true, maxLandings: true } });
+  await adminLog(req.userId!, "limits", userId, data);
+  return res.json({ ok: true, ...updated });
 });
 
 // Activar demo de N días (default 5).

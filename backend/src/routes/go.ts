@@ -22,7 +22,8 @@ function buildFbc(fbclid?: string, existing?: string) {
 
 // Elige la línea de WhatsApp a usar, repartiendo los clics entre las líneas elegibles
 // (rotación LRU: la menos usada primero). Elegible = conectada, status active y con
-// tiempo (expiresAt nulo o futuro). Fallback a cualquiera con número y luego a DEMO.
+// TIEMPO PAGADO vigente (expiresAt futuro). Sin línea paga activa no enviamos el clic a
+// un número del cliente (paywall): caemos a DEMO si está definido. 1 día = 24h activa.
 async function pickLine(userId: string) {
   const now = new Date();
   const eligible = await prisma.waLine.findFirst({
@@ -31,7 +32,7 @@ async function pickLine(userId: string) {
       connected: true,
       status: "active",
       NOT: { phone: "" },
-      OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+      expiresAt: { gt: now },
     },
     orderBy: { lastUsedAt: { sort: "asc", nulls: "first" } }, // la menos reciente primero
   });
@@ -42,14 +43,8 @@ async function pickLine(userId: string) {
     return { phone: eligible.phone, lineId: eligible.id as string | undefined };
   }
 
-  // Sin líneas elegibles: cualquiera con número (para no perder el lead) o DEMO.
-  const anyLine = await prisma.waLine.findFirst({
-    where: { userId, NOT: { phone: "" } },
-    orderBy: { createdAt: "asc" },
-  });
-  if (anyLine?.phone) return { phone: anyLine.phone, lineId: anyLine.id as string | undefined };
-  // Sin número: sólo DEMO_LINE_PHONE si está explícito en .env (dev). Nunca un número fijo.
-  return { phone: process.env.DEMO_LINE_PHONE ?? "", lineId: anyLine?.id };
+  // Sin línea paga activa: sólo DEMO_LINE_PHONE si está explícito en .env. Nunca un número fijo.
+  return { phone: process.env.DEMO_LINE_PHONE ?? "", lineId: undefined };
 }
 
 // Envía el Lead por CAPI y registra el MetaEvent. No bloquea la redirección.

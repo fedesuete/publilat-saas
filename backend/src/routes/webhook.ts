@@ -7,6 +7,7 @@ import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
 import { fetchOwnerNumber, getMediaBase64 } from "../lib/evolution.js";
 import { detectPayment } from "../lib/payment-detect.js";
+import { consumeDayAndActivate } from "../lib/access.js";
 
 export const webhookRouter = Router();
 
@@ -75,6 +76,12 @@ webhookRouter.post("/", async (req, res) => {
           ...(connected && ownerPhone && !line.phone ? { phone: ownerPhone } : {}),
         },
       });
+      // Primera conexión: arranca el contador (consume 1 día / 24h). Si no hay días,
+      // queda conectada pero sin tiempo activo -> el redirector no la usará (paywall).
+      if (connected && !line.expiresAt) {
+        const activated = await consumeDayAndActivate(userId, line.id, line.label);
+        if (!activated) emitToUser(userId, "wa:status", { lineId: line.id, state: "no_credits", connected });
+      }
       emitToUser(userId, "wa:status", { lineId: line.id, state, connected });
       return;
     }

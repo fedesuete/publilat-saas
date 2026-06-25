@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
 import { encryptSecret, maskSecret } from "../lib/crypto.js";
+import { getAvailableDays, consumeDayAndActivate } from "../lib/access.js";
 import {
   createInstance,
   connectInstance,
@@ -76,6 +77,25 @@ waRouter.post("/lines", async (req, res) => {
     return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
   }
   const { label, phone, provider, wabaPhoneNumberId, wabaId, accessToken, verifyToken } = parsed.data;
+  const userId = req.userId!;
+
+  // Paywall: conectar un número requiere días. Sin crédito, le pedimos pagar.
+  const days = await getAvailableDays(userId);
+  if (days < 1) {
+    return res.status(402).json({
+      error: "Necesitás días para conectar un número. Comprá días en Créditos para activar tu línea.",
+      code: "NEEDS_CREDITS",
+    });
+  }
+  // Límite de líneas del plan (configurable por cliente desde el panel).
+  const me = await prisma.user.findUnique({ where: { id: userId }, select: { maxLines: true } });
+  const lineCount = await prisma.waLine.count({ where: { userId } });
+  if (lineCount >= (me?.maxLines ?? 1)) {
+    return res.status(403).json({
+      error: `Alcanzaste el límite de líneas de tu plan (${me?.maxLines ?? 1}). Escribinos para ampliarlo.`,
+      code: "LINE_LIMIT",
+    });
+  }
 
   // --- Línea Cloud API oficial (CTWA) ---
   if (provider === "cloud") {
@@ -96,7 +116,10 @@ waRouter.post("/lines", async (req, res) => {
         verifyToken,
       },
     });
-    return res.status(201).json({ line: toPublicLine(line), webhookUrl: CLOUD_WEBHOOK_URL });
+    // La línea Cloud queda activa de inmediato: arranca el contador (consume 1 día / 24h).
+    await consumeDayAndActivate(userId, line.id, line.label);
+    const fresh = await prisma.waLine.findUnique({ where: { id: line.id } });
+    return res.status(201).json({ line: toPublicLine(fresh ?? line), webhookUrl: CLOUD_WEBHOOK_URL });
   }
 
   // --- Línea Baileys (QR/Evolution) ---

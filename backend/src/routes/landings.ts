@@ -7,6 +7,7 @@ import { resolveUserPixel } from "../lib/pixel.js";
 import { renderTrackedLanding, type LandingConfig } from "../lib/landing-template.js";
 import { publishToS3 } from "../lib/s3.js";
 import { slugify } from "../lib/auth.js";
+import { getAvailableDays } from "../lib/access.js";
 
 export const landingsRouter = Router();
 
@@ -75,6 +76,15 @@ landingsRouter.post("/", async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.userId! } });
   if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
+  // Tope de landings del plan (configurable por cliente desde el panel).
+  const landingCount = await prisma.landing.count({ where: { userId: user.id } });
+  if (landingCount >= user.maxLandings) {
+    return res.status(403).json({
+      error: `Alcanzaste el límite de landings de tu plan (${user.maxLandings}). Escribinos para ampliarlo.`,
+      code: "LANDING_LIMIT",
+    });
+  }
+
   const cfg = parsed.data.config ?? {};
   const slug = await uniqueLandingSlug(parsed.data.name);
   const raw = Boolean(parsed.data.html);
@@ -134,6 +144,15 @@ landingsRouter.put("/:id", async (req, res) => {
 landingsRouter.post("/:id/publish", async (req, res) => {
   const landing = await prisma.landing.findFirst({ where: { id: req.params.id, userId: req.userId! } });
   if (!landing) return res.status(404).json({ error: "Landing no encontrada" });
+
+  // Paywall: publicar requiere días. Sin crédito, le pedimos pagar.
+  const days = await getAvailableDays(req.userId!);
+  if (days < 1) {
+    return res.status(402).json({
+      error: "Necesitás días para publicar. Comprá días en Créditos y volvé a publicar tu landing.",
+      code: "NEEDS_CREDITS",
+    });
+  }
 
   const s3Url = await publishToS3(landing.slug, landing.html);
   const publishedUrl = s3Url ?? `${process.env.APP_BASE_URL ?? ""}/p/${landing.slug}`;

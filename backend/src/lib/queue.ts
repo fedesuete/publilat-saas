@@ -6,6 +6,7 @@ import { prisma } from "./prisma.js";
 import { emitToUser } from "./io.js";
 import { sendCapiEvent } from "./meta-capi.js";
 import { resolveUserPixel } from "./pixel.js";
+import { consumeDayAndActivate } from "./access.js";
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const parsed = new URL(REDIS_URL);
@@ -20,19 +21,30 @@ const QUEUE_NAME = "line-expiry";
 let queue: Queue | null = null;
 let worker: Worker | null = null;
 
-// Desactiva las líneas vencidas y avisa por socket. Devuelve cuántas venció.
+// Procesa las líneas vencidas: si el usuario aún tiene días, renueva 24h (consume 1 día);
+// si no, la desactiva. Modelo: 1 día = 1 línea activa por 24h. Devuelve cuántas desactivó.
 export async function expireLines(): Promise<number> {
   const now = new Date();
   const expired = await prisma.waLine.findMany({
     where: { status: "active", expiresAt: { lt: now } },
-    select: { id: true, userId: true, connected: true },
+    select: { id: true, userId: true, connected: true, label: true },
   });
+  let deactivated = 0;
   for (const l of expired) {
+    // Solo renueva líneas conectadas (las desconectadas no consumen días).
+    if (l.connected) {
+      const renewed = await consumeDayAndActivate(l.userId, l.id, l.label);
+      if (renewed) {
+        emitToUser(l.userId, "wa:status", { lineId: l.id, state: "renewed", connected: true });
+        continue;
+      }
+    }
     await prisma.waLine.update({ where: { id: l.id }, data: { status: "inactive" } });
     emitToUser(l.userId, "wa:status", { lineId: l.id, state: "expired", connected: l.connected });
+    deactivated++;
   }
-  if (expired.length) console.log(`[line-expiry] desactivadas ${expired.length} línea(s)`);
-  return expired.length;
+  if (deactivated) console.log(`[line-expiry] desactivadas ${deactivated} línea(s) sin crédito`);
+  return deactivated;
 }
 
 // Reintenta los MetaEvent fallidos (últimas 24h). Reconstruye el evento desde el Contact

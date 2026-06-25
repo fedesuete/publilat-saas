@@ -9,7 +9,7 @@ interface Client {
   facturacion: number; lastLoginAt: string | null; createdAt: string; demoExpiresAt: string | null;
 }
 interface Detail {
-  user: { id: string; email: string; name: string | null; phone: string | null; slug: string; suspended: boolean; isDemo: boolean; demoExpiresAt: string | null; createdAt: string };
+  user: { id: string; email: string; name: string | null; phone: string | null; slug: string; suspended: boolean; isDemo: boolean; demoExpiresAt: string | null; createdAt: string; maxLines: number; maxLandings: number };
   days: number;
   lines: Array<{ id: string; label: string | null; phone: string; provider: string; status: string; connected: boolean; expiresAt: string | null }>;
   payments: Array<{ id: string; provider: string; days: number; amount: number; currency: string; status: string; createdAt: string }>;
@@ -30,6 +30,7 @@ export default function AdminClients() {
   const [error, setError] = useState<string | null>(null);
   const [sel, setSel] = useState<Detail | null>(null);
   const [busy, setBusy] = useState(false);
+  const [lim, setLim] = useState({ lines: 1, landings: 50 });
 
   const load = async (p = page, search = q, st = status) => {
     setError(null);
@@ -46,7 +47,7 @@ export default function AdminClients() {
 
   const openDetail = async (id: string) => {
     setError(null);
-    try { const { data } = await api.get<Detail>(`/api/admin/clients/${id}`); setSel(data); }
+    try { const { data } = await api.get<Detail>(`/api/admin/clients/${id}`); setSel(data); setLim({ lines: data.user.maxLines, landings: data.user.maxLandings }); }
     catch (e) { setError(apiError(e)); }
   };
 
@@ -59,6 +60,7 @@ export default function AdminClients() {
   const addDays = (id: string, days: number) => act(() => api.post(`/api/admin/clients/${id}/credits`, { days }));
   const giveDemo = (id: string) => act(() => api.post(`/api/admin/clients/${id}/demo`, {}));
   const toggleSuspend = (id: string, suspended: boolean) => act(() => api.post(`/api/admin/clients/${id}/suspend`, { suspended }));
+  const saveLimits = (id: string, maxLines: number, maxLandings: number) => act(() => api.post(`/api/admin/clients/${id}/limits`, { maxLines, maxLandings }));
 
   const onSearch = (e: FormEvent) => { e.preventDefault(); void load(1, q, status); };
   const setFilter = (st: string) => { setStatus(st); void load(1, q, st); };
@@ -136,6 +138,19 @@ export default function AdminClients() {
                 <Button variant={sel.user.suspended ? "secondary" : "danger"} disabled={busy} onClick={() => toggleSuspend(sel.user.id, !sel.user.suspended)}>
                   {sel.user.suspended ? "Reactivar" : "Suspender"}
                 </Button>
+              </div>
+
+              <div className="mt-4 rounded bg-slate-900/60 p-3">
+                <div className="mb-2 text-xs font-semibold uppercase text-slate-400">Límites del plan</div>
+                <div className="flex items-end gap-2">
+                  <label className="flex-1 text-xs text-slate-400">Líneas
+                    <Input type="number" min={0} value={lim.lines} onChange={(e) => setLim((s) => ({ ...s, lines: Number(e.target.value) }))} className="mt-1" />
+                  </label>
+                  <label className="flex-1 text-xs text-slate-400">Landings
+                    <Input type="number" min={0} value={lim.landings} onChange={(e) => setLim((s) => ({ ...s, landings: Number(e.target.value) }))} className="mt-1" />
+                  </label>
+                  <Button disabled={busy} onClick={() => saveLimits(sel.user.id, lim.lines, lim.landings)}>Guardar</Button>
+                </div>
               </div>
 
               <div className="mt-4">
