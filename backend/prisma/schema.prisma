@@ -44,6 +44,19 @@ model User {
   integration Integration?
   payments    Payment[]
   supportMessages SupportMessage[]
+  quickReplies QuickReply[]
+}
+
+// Respuestas rápidas / mensajes guardados del Inbox (por usuario).
+model QuickReply {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // Hilo de soporte 1-a-1 entre cada cliente y el dueño (admin).

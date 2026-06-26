@@ -3,7 +3,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
-import { sendText } from "../lib/evolution.js";
+import { sendText, sendWhatsAppAudio } from "../lib/evolution.js";
 import { sendCloudText, isOutsideWindowError, graphErrorMessage } from "../lib/wa-cloud.js";
 
 export const inboxRouter = Router();
@@ -12,6 +12,43 @@ export const inboxRouter = Router();
 async function getOwnedContact(userId: string, contactId: string) {
   return prisma.contact.findFirst({ where: { id: contactId, userId } });
 }
+
+// Número mostrable del contacto (incluye direcciones @lid de privacidad).
+function displayNumber(c: { phone: string | null; waJid: string | null; code: string | null }): string {
+  if (c.phone) return c.phone;
+  if (c.waJid) return c.waJid.split("@")[0];
+  return c.code ?? "";
+}
+
+// Etiqueta corta de un media para el preview de la lista.
+function mediaPreview(mediaType: string | null): string {
+  if (!mediaType) return "";
+  if (mediaType.includes("pdf")) return "📄 Comprobante (PDF)";
+  if (mediaType.startsWith("audio")) return "🎤 Audio";
+  if (mediaType.startsWith("image")) return "📷 Imagen";
+  return "📎 Archivo";
+}
+
+// ---- Respuestas rápidas / mensajes guardados (deben ir antes de las rutas con :contactId) ----
+inboxRouter.get("/quick-replies", async (req, res) => {
+  const items = await prisma.quickReply.findMany({ where: { userId: req.userId! }, orderBy: { createdAt: "asc" } });
+  return res.json({ items });
+});
+
+const quickSchema = z.object({ title: z.string().min(1).max(60), body: z.string().min(1).max(2000) });
+inboxRouter.post("/quick-replies", async (req, res) => {
+  const parsed = quickSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const item = await prisma.quickReply.create({ data: { userId: req.userId!, title: parsed.data.title, body: parsed.data.body } });
+  return res.status(201).json({ item });
+});
+
+inboxRouter.delete("/quick-replies/:id", async (req, res) => {
+  const item = await prisma.quickReply.findFirst({ where: { id: req.params.id, userId: req.userId! } });
+  if (!item) return res.status(404).json({ error: "No encontrado" });
+  await prisma.quickReply.delete({ where: { id: item.id } });
+  return res.json({ ok: true });
+});
 
 // GET /api/inbox/conversations — lista de chats con preview, línea y no-leídos.
 inboxRouter.get("/conversations", async (req, res) => {
@@ -37,17 +74,14 @@ inboxRouter.get("/conversations", async (req, res) => {
         if (m.direction === "out") break;
         unread++;
       }
-      const preview = last
-        ? last.body ||
-          (last.mediaType
-            ? last.mediaType.includes("pdf")
-              ? "📄 Comprobante (PDF)"
-              : "📷 Imagen"
-            : "")
-        : "";
+      const preview = last ? last.body || mediaPreview(last.mediaType) : "";
+      const number = displayNumber(c);
       return {
         id: c.id,
-        label: c.name || c.code || c.phone || c.externalId.slice(0, 8),
+        // alias = nombre de WhatsApp; si no lo tenemos, mostramos el número/código.
+        name: c.name || null,
+        number,
+        label: c.name || number || c.externalId.slice(0, 8),
         stage: c.stage,
         line: c.line ? c.line.label || c.line.phone : null,
         preview,
@@ -133,4 +167,44 @@ inboxRouter.post("/:contactId/messages", async (req, res) => {
     message: { id: message.id, direction: "out", body: message.body, createdAt: message.createdAt },
   });
   return res.status(201).json({ message: { id: message.id, direction: "out", body: message.body, createdAt: message.createdAt } });
+});
+
+const audioSchema = z.object({ audio: z.string().min(1) }); // base64 (con o sin prefijo data:)
+
+// POST /api/inbox/:contactId/audio — envía una nota de voz por WhatsApp y la guarda.
+inboxRouter.post("/:contactId/audio", async (req, res) => {
+  const parsed = audioSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const contact = await getOwnedContact(req.userId!, req.params.contactId);
+  if (!contact) return res.status(404).json({ error: "Contacto no encontrado" });
+  if (!contact.lineId) return res.status(400).json({ error: "El contacto no tiene línea asociada" });
+
+  const line = await prisma.waLine.findFirst({ where: { id: contact.lineId, userId: req.userId! } });
+  if (!line) return res.status(400).json({ error: "La línea no está disponible" });
+  if (line.provider === "cloud") {
+    return res.status(400).json({ error: "El envío de audios todavía no está disponible en líneas Cloud API." });
+  }
+  if (!line.sessionId) return res.status(400).json({ error: "La línea no está disponible" });
+
+  const mimeMatch = parsed.data.audio.match(/^data:([^;]+);base64,/);
+  const mime = mimeMatch?.[1] ?? "audio/ogg";
+  const base64 = parsed.data.audio.replace(/^data:[^;]+;base64,/, "");
+  const destination = contact.waJid ?? contact.phone;
+  if (!destination) return res.status(400).json({ error: "El contacto aún no tiene teléfono" });
+  try {
+    await sendWhatsAppAudio(line.sessionId, destination, base64);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return res.status(502).json({ error: "No se pudo enviar el audio", detail: message });
+  }
+
+  const message = await prisma.message.create({
+    data: { contactId: contact.id, lineId: line.id, direction: "out", body: "", mediaType: mime, mediaData: base64 },
+  });
+  const mediaUrl = `data:${mime};base64,${base64}`;
+  emitToUser(req.userId!, "inbox:message", {
+    contactId: contact.id,
+    message: { id: message.id, direction: "out", body: "", mediaUrl, createdAt: message.createdAt },
+  });
+  return res.status(201).json({ message: { id: message.id, direction: "out", body: "", mediaUrl, createdAt: message.createdAt } });
 });

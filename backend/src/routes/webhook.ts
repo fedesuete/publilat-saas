@@ -132,11 +132,13 @@ webhookRouter.post("/", async (req, res) => {
           });
         }
 
-        // Completa teléfono/JID/línea y avanza la etapa si era nuevo.
+        // Completa teléfono/JID/línea, alias (nombre de WhatsApp) y avanza la etapa.
+        const pushName = typeof item.pushName === "string" ? item.pushName.trim().slice(0, 80) : "";
         const patch: Record<string, unknown> = {};
         if (!contact.phone) patch.phone = phone;
         if (!contact.waJid && item.key.remoteJid) patch.waJid = item.key.remoteJid; // soporta @lid
         if (!contact.lineId) patch.lineId = line.id;
+        if (pushName && !contact.name) patch.name = pushName; // alias = nombre que tiene en WhatsApp
         if (contact.stage === "NUEVO") patch.stage = "CONTACTADO";
         if (Object.keys(patch).length) {
           contact = await prisma.contact.update({ where: { id: contact.id }, data: patch });
@@ -147,15 +149,17 @@ webhookRouter.post("/", async (req, res) => {
         let mediaType: string | null = null;
         let mediaData: string | null = null;
         const img = item?.message?.imageMessage;
+        const audio = item?.message?.audioMessage;
         const doc =
           item?.message?.documentMessage ??
           item?.message?.documentWithCaptionMessage?.message?.documentMessage;
-        const mediaHint = img ?? doc;
+        const mediaHint = img ?? audio ?? doc;
         if (mediaHint && waMessageId) {
           const media = await getMediaBase64(instance, waMessageId);
           if (media?.base64) {
             mediaData = media.base64;
-            mediaType = media.mimetype ?? mediaHint.mimetype ?? (img ? "image/jpeg" : "application/octet-stream");
+            const fallbackMime = img ? "image/jpeg" : audio ? "audio/ogg" : "application/octet-stream";
+            mediaType = media.mimetype ?? mediaHint.mimetype ?? fallbackMime;
           }
         }
 

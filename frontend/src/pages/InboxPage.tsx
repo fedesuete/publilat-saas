@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { PanelLeftClose, PanelLeftOpen, Smile, Mic, Square, MessageSquareText, Trash2, Send, X } from "lucide-react";
 import { api, apiError } from "../lib/api";
 import { getSocket, type InboxMessagePayload } from "../lib/socket";
 import type { Msg, Stage } from "../lib/types";
@@ -7,6 +8,8 @@ import { Button, Input, StageBadge, ErrorMsg } from "../components/ui";
 
 interface Conversation {
   id: string;
+  name: string | null;
+  number: string;
   label: string;
   stage: Stage;
   line: string | null;
@@ -14,10 +17,12 @@ interface Conversation {
   lastAt: string;
   unread: number;
 }
+interface QuickReply { id: string; title: string; body: string }
 
-// Hora corta para la lista (HH:MM).
 const shortTime = (iso: string) =>
   new Date(iso).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
+
+const EMOJIS = ["😀","😅","😂","🤣","😊","😍","😘","😎","🤩","🥳","👍","🙏","🙌","👏","💪","🔥","✨","🎉","🎁","💯","❤️","💚","💙","✅","❌","⚠️","⏰","📞","📲","💬","🤝","🙋","😉","😜","🤔","😢","😭","😡","🥰","😴","💰","💵","🏦","🛒","📷","🎤","📄"];
 
 export default function InboxPage() {
   const [convs, setConvs] = useState<Conversation[]>([]);
@@ -27,193 +32,265 @@ export default function InboxPage() {
   const [listError, setListError] = useState<string | null>(null);
   const [chatError, setChatError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [listOpen, setListOpen] = useState(true);
+  const [showEmoji, setShowEmoji] = useState(false);
+  const [showQuick, setShowQuick] = useState(false);
+  const [quick, setQuick] = useState<QuickReply[]>([]);
+  const [recording, setRecording] = useState(false);
   const selectedRef = useRef<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-
+  const recRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
   selectedRef.current = selected;
 
   const loadConvs = async () => {
     try {
       const { data } = await api.get<{ conversations: Conversation[] }>("/api/inbox/conversations");
       setConvs(data.conversations);
-    } catch (err) {
-      setListError(apiError(err));
-    }
+    } catch (err) { setListError(apiError(err)); }
+  };
+  const loadQuick = async () => {
+    try { const { data } = await api.get<{ items: QuickReply[] }>("/api/inbox/quick-replies"); setQuick(data.items); }
+    catch { /* noop */ }
   };
 
-  useEffect(() => {
-    void loadConvs();
-  }, []);
+  useEffect(() => { void loadConvs(); void loadQuick(); }, []);
 
   useEffect(() => {
     const socket = getSocket();
     const onMessage = (payload: InboxMessagePayload) => {
-      if (payload.contactId === selectedRef.current) {
-        setMessages((prev) => [...prev, payload.message]);
-      }
+      if (payload.contactId === selectedRef.current) setMessages((prev) => [...prev, payload.message]);
       void loadConvs();
     };
     socket.on("inbox:message", onMessage);
-    return () => {
-      socket.off("inbox:message", onMessage);
-    };
+    return () => { socket.off("inbox:message", onMessage); };
   }, []);
 
   useEffect(() => {
     if (!selected) return;
-    setChatError(null);
-    setMessages([]);
-    // Al abrir, marcamos como leído en la lista (visual).
+    setChatError(null); setMessages([]); setShowEmoji(false); setShowQuick(false);
     setConvs((prev) => prev.map((c) => (c.id === selected ? { ...c, unread: 0 } : c)));
-    api
-      .get<{ messages: Msg[] }>(`/api/inbox/${selected}/messages`)
+    api.get<{ messages: Msg[] }>(`/api/inbox/${selected}/messages`)
       .then(({ data }) => setMessages(data.messages))
       .catch((err) => setChatError(apiError(err)));
   }, [selected]);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   const send = async (e: FormEvent) => {
     e.preventDefault();
     if (!selected || !draft.trim()) return;
-    setSending(true);
-    setChatError(null);
+    setSending(true); setChatError(null);
     const body = draft.trim();
     try {
       const { data } = await api.post<{ message: Msg }>(`/api/inbox/${selected}/messages`, { body });
       setMessages((prev) => [...prev, data.message]);
-      setDraft("");
+      setDraft(""); setShowEmoji(false); setShowQuick(false);
       void loadConvs();
-    } catch (err) {
-      setChatError(apiError(err));
-    } finally {
-      setSending(false);
-    }
+    } catch (err) { setChatError(apiError(err)); } finally { setSending(false); }
+  };
+
+  // --- Grabación de audio ---
+  const startRec = async () => {
+    setChatError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")
+        ? "audio/ogg;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : "";
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      chunksRef.current = [];
+      rec.ondataavailable = (ev) => { if (ev.data.size) chunksRef.current.push(ev.data); };
+      rec.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType });
+        const dataUrl: string = await new Promise((resolve) => {
+          const fr = new FileReader();
+          fr.onloadend = () => resolve(String(fr.result));
+          fr.readAsDataURL(blob);
+        });
+        if (!selectedRef.current) return;
+        try {
+          const { data } = await api.post<{ message: Msg }>(`/api/inbox/${selectedRef.current}/audio`, { audio: dataUrl });
+          setMessages((prev) => [...prev, data.message]);
+          void loadConvs();
+        } catch (err) { setChatError(apiError(err)); }
+      };
+      recRef.current = rec;
+      rec.start();
+      setRecording(true);
+    } catch { setChatError("No pude acceder al micrófono. Revisá los permisos del navegador."); }
+  };
+  const stopRec = () => { recRef.current?.stop(); setRecording(false); };
+
+  // --- Mensajes guardados ---
+  const addQuick = async () => {
+    const title = window.prompt("Título del mensaje guardado (ej: Bienvenida):")?.trim();
+    if (!title) return;
+    const body = window.prompt("Texto del mensaje:")?.trim();
+    if (!body) return;
+    try { await api.post("/api/inbox/quick-replies", { title, body }); await loadQuick(); }
+    catch (err) { setChatError(apiError(err)); }
+  };
+  const delQuick = async (id: string) => {
+    try { await api.delete(`/api/inbox/quick-replies/${id}`); await loadQuick(); }
+    catch (err) { setChatError(apiError(err)); }
   };
 
   const current = convs.find((c) => c.id === selected);
 
   return (
     <div className="flex h-screen">
-      <div className="flex w-80 flex-col border-r border-slate-800">
-        <div className="border-b border-slate-800 px-4 py-3">
-          <h1 className="font-bold">WhatsApp Inbox</h1>
-          <div className="text-xs text-slate-500">{convs.length} conversaciones</div>
-        </div>
-        {listError && (
-          <div className="p-3">
-            <ErrorMsg>{listError}</ErrorMsg>
+      {/* ---- Lista de conversaciones (plegable) ---- */}
+      {listOpen && (
+        <div className="flex w-80 shrink-0 flex-col border-r border-slate-800">
+          <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+            <div>
+              <h1 className="font-bold">WhatsApp Inbox</h1>
+              <div className="text-xs text-slate-500">{convs.length} conversaciones</div>
+            </div>
+            <button onClick={() => setListOpen(false)} title="Ocultar lista" className="rounded p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white">
+              <PanelLeftClose className="h-5 w-5" />
+            </button>
           </div>
-        )}
-        <div className="flex-1 overflow-y-auto">
-          {convs.length === 0 ? (
-            <p className="p-4 text-sm text-slate-500">No hay conversaciones aún.</p>
-          ) : (
-            convs.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => setSelected(c.id)}
-                className={`flex w-full items-start gap-3 border-b border-slate-800/60 px-4 py-3 text-left transition ${
-                  selected === c.id ? "bg-slate-800" : "hover:bg-slate-800/50"
-                }`}
-              >
-                {/* avatar / contador de no-leídos */}
-                <span
-                  className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
-                    c.unread > 0 ? "bg-wa-green text-slate-900" : "bg-slate-700 text-slate-200"
-                  }`}
-                >
-                  {c.unread > 0 ? c.unread : c.label.charAt(0).toUpperCase()}
+          {listError && <div className="p-3"><ErrorMsg>{listError}</ErrorMsg></div>}
+          <div className="flex-1 overflow-y-auto">
+            {convs.length === 0 ? (
+              <p className="p-4 text-sm text-slate-500">No hay conversaciones aún.</p>
+            ) : convs.map((c) => (
+              <button key={c.id} onClick={() => setSelected(c.id)}
+                className={`flex w-full items-start gap-3 border-b border-slate-800/60 px-4 py-3 text-left transition ${selected === c.id ? "bg-slate-800" : "hover:bg-slate-800/50"}`}>
+                <span className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${c.unread > 0 ? "bg-wa-green text-slate-900" : "bg-slate-700 text-slate-200"}`}>
+                  {c.unread > 0 ? c.unread : (c.name || c.number || "?").charAt(0).toUpperCase()}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center justify-between gap-2">
-                    <span className="truncate text-sm font-medium text-slate-100">{c.label}</span>
+                    <span className="truncate text-sm font-medium text-slate-100">{c.name || c.number || "Sin nombre"}</span>
                     <span className="shrink-0 text-[10px] text-slate-500">{shortTime(c.lastAt)}</span>
                   </span>
-                  {c.line && <span className="block truncate text-[10px] text-slate-500">vía {c.line}</span>}
-                  <span className="mt-0.5 flex items-center gap-2">
-                    <span className="truncate text-xs text-slate-400">{c.preview || "—"}</span>
-                  </span>
+                  {c.name && c.number && <span className="block truncate text-[10px] text-slate-500">{c.number}</span>}
+                  {c.line && <span className="block truncate text-[10px] text-slate-600">vía {c.line}</span>}
+                  <span className="mt-0.5 block truncate text-xs text-slate-400">{c.preview || "—"}</span>
                 </span>
               </button>
-            ))
-          )}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
+      {/* ---- Chat ---- */}
       <div className="flex flex-1 flex-col">
         {!selected ? (
           <div className="flex flex-1 items-center justify-center text-slate-500">
+            {!listOpen && (
+              <button onClick={() => setListOpen(true)} className="absolute left-3 top-3 rounded p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white">
+                <PanelLeftOpen className="h-5 w-5" />
+              </button>
+            )}
             Seleccioná una conversación para verla.
           </div>
         ) : (
           <>
-            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
-              <div>
-                <div className="font-semibold">{current ? current.label : "Conversación"}</div>
-                {current?.line && <div className="text-xs text-slate-500">vía {current.line}</div>}
+            <div className="flex items-center gap-3 border-b border-slate-800 px-4 py-3">
+              {!listOpen && (
+                <button onClick={() => setListOpen(true)} title="Mostrar lista" className="rounded p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white">
+                  <PanelLeftOpen className="h-5 w-5" />
+                </button>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-semibold">{current?.name || current?.number || "Conversación"}</div>
+                <div className="truncate text-xs text-slate-500">
+                  {current?.number}{current?.line ? ` · vía ${current.line}` : ""}
+                </div>
               </div>
               {current && <StageBadge stage={current.stage} />}
             </div>
+
             <div className="flex-1 space-y-2 overflow-y-auto bg-slate-900/40 p-4">
               {chatError && <ErrorMsg>{chatError}</ErrorMsg>}
               {messages.map((m) => (
-                <div
-                  key={m.id}
-                  className={`flex ${m.direction === "out" ? "justify-end" : "justify-start"}`}
-                >
-                  <div
-                    className={`max-w-[70%] rounded-lg px-3 py-2 text-sm ${
-                      m.direction === "out"
-                        ? "bg-wa-green text-slate-900"
-                        : "bg-slate-700 text-slate-100"
-                    }`}
-                  >
-                    {m.mediaUrl &&
-                      (m.mediaUrl.startsWith("data:application/pdf") ? (
-                        <a
-                          href={m.mediaUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mb-1 flex items-center gap-2 rounded-md bg-black/20 px-3 py-2 font-medium underline"
-                        >
-                          📄 Abrir comprobante (PDF)
-                        </a>
-                      ) : (
-                        <a href={m.mediaUrl} target="_blank" rel="noopener noreferrer">
-                          <img
-                            src={m.mediaUrl}
-                            alt="Imagen"
-                            className="mb-1 max-h-64 w-full rounded-md object-cover"
-                          />
-                        </a>
-                      ))}
-                    {m.body && <div>{m.body}</div>}
+                <div key={m.id} className={`flex ${m.direction === "out" ? "justify-end" : "justify-start"}`}>
+                  <div className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${m.direction === "out" ? "bg-wa-green text-slate-900" : "bg-slate-700 text-slate-100"}`}>
+                    {m.mediaUrl && m.mediaUrl.startsWith("data:audio") && (
+                      <audio controls src={m.mediaUrl} className="mb-1 w-56 max-w-full" />
+                    )}
+                    {m.mediaUrl && m.mediaUrl.startsWith("data:application/pdf") && (
+                      <a href={m.mediaUrl} target="_blank" rel="noopener noreferrer" className="mb-1 flex items-center gap-2 rounded-md bg-black/20 px-3 py-2 font-medium underline">
+                        📄 Abrir comprobante (PDF)
+                      </a>
+                    )}
+                    {m.mediaUrl && m.mediaUrl.startsWith("data:image") && (
+                      <a href={m.mediaUrl} target="_blank" rel="noopener noreferrer">
+                        <img src={m.mediaUrl} alt="Imagen" className="mb-1 max-h-64 w-full rounded-md object-cover" />
+                      </a>
+                    )}
+                    {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
                     {!m.body && !m.mediaUrl && <div className="italic opacity-60">[mensaje no soportado]</div>}
-                    <div
-                      className={`mt-1 text-[10px] ${
-                        m.direction === "out" ? "text-slate-800/70" : "text-slate-400"
-                      }`}
-                    >
-                      {fmtDate(m.createdAt)}
-                    </div>
+                    <div className={`mt-1 text-[10px] ${m.direction === "out" ? "text-slate-800/70" : "text-slate-400"}`}>{fmtDate(m.createdAt)}</div>
                   </div>
                 </div>
               ))}
               <div ref={bottomRef} />
             </div>
-            <form onSubmit={send} className="flex gap-2 border-t border-slate-800 p-3">
-              <Input
-                placeholder="Escribí un mensaje… (Enter para enviar)"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-              />
-              <Button type="submit" disabled={sending || !draft.trim()}>
-                {sending ? "…" : "Enviar"}
-              </Button>
-            </form>
+
+            {/* ---- Compositor ---- */}
+            <div className="relative border-t border-slate-800">
+              {showEmoji && (
+                <div className="absolute bottom-full left-2 mb-2 grid w-72 grid-cols-8 gap-1 rounded-lg border border-slate-700 bg-slate-900 p-2 shadow-xl">
+                  {EMOJIS.map((e) => (
+                    <button key={e} type="button" className="rounded p-1 text-lg hover:bg-slate-700" onClick={() => { setDraft((d) => d + e); }}>{e}</button>
+                  ))}
+                </div>
+              )}
+              {showQuick && (
+                <div className="absolute bottom-full left-2 mb-2 w-80 rounded-lg border border-slate-700 bg-slate-900 p-2 shadow-xl">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-300">Mensajes guardados</span>
+                    <button type="button" onClick={addQuick} className="text-xs font-medium text-wa-green hover:underline">+ Nuevo</button>
+                  </div>
+                  {quick.length === 0 ? (
+                    <p className="px-1 py-2 text-xs text-slate-500">Sin mensajes guardados. Creá uno con "+ Nuevo".</p>
+                  ) : (
+                    <div className="max-h-60 space-y-1 overflow-y-auto">
+                      {quick.map((q) => (
+                        <div key={q.id} className="group flex items-start gap-2 rounded px-2 py-1.5 hover:bg-slate-800">
+                          <button type="button" className="min-w-0 flex-1 text-left" onClick={() => { setDraft((d) => (d ? d + " " : "") + q.body); setShowQuick(false); }}>
+                            <div className="text-xs font-medium text-slate-200">{q.title}</div>
+                            <div className="truncate text-[11px] text-slate-500">{q.body}</div>
+                          </button>
+                          <button type="button" onClick={() => delQuick(q.id)} className="mt-0.5 text-slate-500 opacity-0 transition group-hover:opacity-100 hover:text-rose-400">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <form onSubmit={send} className="flex items-center gap-1.5 p-3">
+                <button type="button" title="Emojis" onClick={() => { setShowEmoji((v) => !v); setShowQuick(false); }} className={`rounded p-2 ${showEmoji ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
+                  {showEmoji ? <X className="h-5 w-5" /> : <Smile className="h-5 w-5" />}
+                </button>
+                <button type="button" title="Mensajes guardados" onClick={() => { setShowQuick((v) => !v); setShowEmoji(false); }} className={`rounded p-2 ${showQuick ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
+                  <MessageSquareText className="h-5 w-5" />
+                </button>
+                <Input placeholder="Escribí un mensaje… (Enter para enviar)" value={draft} onChange={(e) => setDraft(e.target.value)} className="flex-1" />
+                {recording ? (
+                  <button type="button" title="Detener y enviar" onClick={stopRec} className="flex items-center gap-1 rounded bg-rose-500 px-3 py-2 text-sm font-medium text-white">
+                    <Square className="h-4 w-4" /> <span className="animate-pulse">grabando…</span>
+                  </button>
+                ) : draft.trim() ? (
+                  <Button type="submit" disabled={sending}>{sending ? "…" : <Send className="h-4 w-4" />}</Button>
+                ) : (
+                  <button type="button" title="Grabar audio" onClick={startRec} className="rounded p-2 text-slate-400 hover:bg-slate-800 hover:text-white">
+                    <Mic className="h-5 w-5" />
+                  </button>
+                )}
+              </form>
+            </div>
           </>
         )}
       </div>

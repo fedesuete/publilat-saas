@@ -116,6 +116,16 @@ export async function sendText(instanceName: string, number: string, text: strin
   return data;
 }
 
+// Envía una nota de voz (audio). `audioBase64` sin el prefijo data:. number sin "+".
+export async function sendWhatsAppAudio(instanceName: string, number: string, audioBase64: string) {
+  const c = client();
+  const { data } = await c.post(`/message/sendWhatsAppAudio/${instanceName}`, {
+    number,
+    audio: audioBase64,
+  });
+  return data;
+}
+
 // Baja el contenido (base64) de un mensaje multimedia (ej imagen del comprobante).
 // Evolution v2: POST /chat/getBase64FromMediaMessage/{instance} con la key del mensaje.
 // Devuelve null si no se pudo (no rompe el flujo del webhook).
