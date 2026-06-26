@@ -1,552 +1,305 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Star, Plus, LayoutTemplate, Upload, ExternalLink, Trash2, Copy, Check, X } from "lucide-react";
 import { api, apiError } from "../lib/api";
 import { API_BASE } from "../lib/config";
-import { fmtDate } from "../lib/format";
 import { useAuth } from "../lib/auth";
 import { Button, Input, Card, ErrorMsg } from "../components/ui";
 
-// Plantillas de HTML libre (diseños originales, listos para editar). El CTA apunta al
-// redirector /go (con el slug del usuario) para que la atribución siga funcionando.
-// NO traen número ni pixel reales: el número lo asigna la rotación de líneas y el Lead
-// server-side lo dispara /go. El cliente edita textos/colores a gusto.
-function templates(slug: string): Array<{ name: string; html: string }> {
+// ---- Plantillas (diseños ORIGINALES y NEUTROS, listos para editar). El CTA apunta al
+// redirector /go con el slug del usuario para mantener la atribución. Sin número ni pixel reales.
+type TplCat = "simple" | "full";
+interface Tpl { name: string; desc: string; category: TplCat; html: string }
+
+function templates(slug: string): Tpl[] {
   const go = (msg: string) => `${API_BASE}/go?u=${slug}&msg=${encodeURIComponent(msg)}`;
   const page = (title: string, css: string, body: string) =>
     `<!doctype html><html lang="es"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${title}</title><style>*{box-sizing:border-box}body{margin:0;font-family:system-ui,'Segoe UI',Roboto,Arial,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}a.btn:active{transform:scale(.99)}${css}</style></head><body>${body}</body></html>`;
-  // Genéricas (negocio en general)
   const base = (title: string, body: string) =>
-    page(
-      title,
-      `body{background:#0b141a;color:#e9edef}.c{max-width:440px;width:100%;text-align:center;padding:44px 28px;background:#111b21;border:1px solid #222d34;border-radius:16px}h1{font-size:26px;margin:0 0 10px}p{color:#8696a0;margin:0 0 28px;line-height:1.55}a.btn{display:block;text-decoration:none;border-radius:999px;padding:16px;font-size:17px;font-weight:700;background:#25d366;color:#03301a}`,
-      `<div class="c">${body}</div>`,
-    );
+    page(title, `body{background:#0b141a;color:#e9edef}.c{max-width:440px;width:100%;text-align:center;padding:44px 28px;background:#111b21;border:1px solid #222d34;border-radius:16px}h1{font-size:26px;margin:0 0 10px}p{color:#8696a0;margin:0 0 28px;line-height:1.55}a.btn{display:block;text-decoration:none;border-radius:999px;padding:16px;font-size:17px;font-weight:700;background:#25d366;color:#03301a}`, `<div class="c">${body}</div>`);
 
   return [
-    {
-      name: "Simple",
-      html: base("Contactanos", `<h1>Hablá con nosotros</h1><p>Te respondemos al toque por WhatsApp.</p><a class="btn" href="${go("Hola, quiero info")}">Escribir por WhatsApp</a>`),
-    },
-    {
-      name: "Promo",
-      html: base("Promo", `<h1>🔥 Promo por tiempo limitado</h1><p>Escribinos y reservá tu descuento ahora.</p><a class="btn" href="${go("Hola, quiero la promo")}">Quiero la promo</a>`),
-    },
-    {
-      name: "Servicios",
-      html: base("Servicios", `<h1>¿Necesitás ayuda?</h1><p>Contanos qué buscás y te asesoramos sin cargo.</p><a class="btn" href="${go("Hola, necesito asesoramiento")}">Pedir asesoramiento</a>`),
-    },
+    { name: "Simple", category: "simple", desc: "Tarjeta limpia sobre fondo oscuro, botón verde de WhatsApp.",
+      html: base("Contactanos", `<h1>Hablá con nosotros</h1><p>Te respondemos al toque por WhatsApp.</p><a class="btn" href="${go("Hola, quiero info")}">Escribir por WhatsApp</a>`) },
+    { name: "Promo", category: "simple", desc: "Para una promo o descuento por tiempo limitado.",
+      html: base("Promo", `<h1>🔥 Promo por tiempo limitado</h1><p>Escribinos y reservá tu descuento ahora.</p><a class="btn" href="${go("Hola, quiero la promo")}">Quiero la promo</a>`) },
+    { name: "Servicios", category: "simple", desc: "Captación de consultas / asesoramiento.",
+      html: base("Servicios", `<h1>¿Necesitás ayuda?</h1><p>Contanos qué buscás y te asesoramos sin cargo.</p><a class="btn" href="${go("Hola, necesito asesoramiento")}">Pedir asesoramiento</a>`) },
 
-    // Diseños con más onda (copy neutro y editable; el contenido lo define el cliente)
-    {
-      name: "Bienvenida",
-      html: page(
-        "Beneficio de bienvenida",
-        `body{background:radial-gradient(circle at 50% 0%,#1a1407,#0a0a0a);color:#fff}.c{max-width:460px;width:100%;text-align:center;background:linear-gradient(180deg,#171206,#0d0b04);border:1px solid #b8860b55;border-radius:20px;padding:44px 26px;box-shadow:0 24px 60px -24px #000}.k{display:inline-block;padding:6px 14px;border:1px solid #d4af3766;border-radius:999px;color:#e9c766;font-size:12px;letter-spacing:1px;text-transform:uppercase}h1{font-size:30px;margin:16px 0 8px;line-height:1.2}.g{background:linear-gradient(90deg,#f5d271,#d4af37,#b8860b);-webkit-background-clip:text;background-clip:text;color:transparent}p{color:#c9bfa3;margin:0 0 26px;line-height:1.55}a.btn{display:block;text-decoration:none;border-radius:999px;padding:17px;font-size:18px;font-weight:800;color:#1a1407;background:linear-gradient(90deg,#f5d271,#d4af37);box-shadow:0 12px 34px -10px #d4af37aa}`,
-        `<div class="c"><span class="k">Beneficio de bienvenida</span><h1>Llevate tu <span class="g">beneficio</span> de bienvenida</h1><p>Sumate hoy y accedé a tu beneficio. Te atendemos al instante por WhatsApp.</p><a class="btn" href="${go("Hola! Quiero mi beneficio de bienvenida 🎁")}">Quiero mi beneficio</a></div>`,
-      ),
-    },
-    {
-      name: "Sorteo",
-      html: page(
-        "Participá y ganá",
-        `body{background:#0a0613;background-image:radial-gradient(circle at 80% 15%,#3b0d6b55,transparent),radial-gradient(circle at 10% 90%,#0d6b6155,transparent);color:#fff}.c{max-width:460px;width:100%;text-align:center;background:#120a22;border:1px solid #6d28d955;border-radius:20px;padding:40px 26px}.e{font-size:56px;line-height:1}h1{font-size:30px;margin:8px 0 8px}.n{color:#22d3ee;text-shadow:0 0 18px #22d3ee88}p{color:#b9a7d6;margin:0 0 26px;line-height:1.55}a.btn{display:block;text-decoration:none;border-radius:14px;padding:17px;font-size:18px;font-weight:800;color:#0a0613;background:linear-gradient(90deg,#22d3ee,#a855f7);box-shadow:0 0 32px -6px #a855f7aa}`,
-        `<div class="c"><div class="e">🎁</div><h1>Participá y <span class="n">ganá</span></h1><p>Sumate al sorteo de este mes. Escribinos y participá en segundos.</p><a class="btn" href="${go("Hola! Quiero participar del sorteo 🎁")}">Participar</a></div>`,
-      ),
-    },
-    {
-      name: "Club VIP",
-      html: page(
-        "Club VIP",
-        `body{background:#07100c;background-image:radial-gradient(circle at 50% -10%,#0f3d2a,transparent);color:#fff}.c{max-width:460px;width:100%;text-align:center;background:#0b1712;border:1px solid #10b98155;border-radius:20px;padding:40px 26px}.k{color:#34d399;font-size:12px;letter-spacing:2px;text-transform:uppercase}h1{font-size:28px;margin:14px 0 14px}p{color:#9fb8ad;margin:0 0 26px;line-height:1.55}a.btn{display:block;text-decoration:none;border-radius:999px;padding:17px;font-size:18px;font-weight:800;color:#06281b;background:linear-gradient(90deg,#34d399,#10b981)}.row{display:flex;gap:8px;justify-content:center;margin-bottom:20px;flex-wrap:wrap}.chip{background:#0f211a;border:1px solid #10b98133;border-radius:10px;padding:8px 12px;color:#cdeee0;font-size:13px}`,
-        `<div class="c"><div class="k">★ Clientes VIP</div><h1>Sumate al Club VIP</h1><div class="row"><span class="chip">Atención 24/7</span><span class="chip">Beneficios exclusivos</span><span class="chip">Respuesta rápida</span></div><p>Accedé a beneficios exclusivos y atención prioritaria. Te escribimos por WhatsApp.</p><a class="btn" href="${go("Hola! Quiero sumarme al Club VIP")}">Unirme al VIP</a></div>`,
-      ),
-    },
-    {
-      name: "Oferta Relámpago",
-      html: page(
-        "Oferta relámpago",
-        `body{background:#120606;background-image:radial-gradient(circle at 50% 0%,#3a0a0a,transparent);color:#fff}.c{max-width:460px;width:100%;text-align:center;background:#1a0a0a;border:1px solid #ef444455;border-radius:20px;padding:44px 26px}.k{display:inline-block;background:#ef4444;color:#fff;font-weight:700;font-size:12px;padding:5px 12px;border-radius:999px;text-transform:uppercase;letter-spacing:1px}h1{font-size:30px;margin:16px 0 8px}p{color:#e7b3b3;margin:0 0 26px;line-height:1.55}a.btn{display:block;text-decoration:none;border-radius:12px;padding:17px;font-size:18px;font-weight:800;color:#fff;background:linear-gradient(90deg,#ef4444,#f97316);box-shadow:0 12px 34px -10px #ef4444aa}`,
-        `<div class="c"><span class="k">⚡ Por tiempo limitado</span><h1>2x1 en tu primer pedido</h1><p>Aprovechá la oferta de hoy. Escribinos antes de que termine.</p><a class="btn" href="${go("Hola! Quiero la oferta 2x1 ⚡")}">Aprovechar ahora</a></div>`,
-      ),
-    },
-    {
-      name: "Novedades",
-      html: page(
-        "Novedades",
-        `body{background:#06101c;background-image:radial-gradient(circle at 50% 0%,#0c2a4d,transparent);color:#fff}.c{max-width:460px;width:100%;text-align:center;background:#0a1726;border:1px solid #3b82f655;border-radius:20px;padding:40px 26px}.e{font-size:52px}h1{font-size:28px;margin:8px 0 8px}.g{color:#60a5fa}p{color:#a9c0d6;margin:0 0 26px;line-height:1.55}a.btn{display:block;text-decoration:none;border-radius:12px;padding:17px;font-size:18px;font-weight:800;color:#06101c;background:linear-gradient(90deg,#60a5fa,#3b82f6)}`,
-        `<div class="c"><div class="e">🛍️</div><h1>Enterate de las <span class="g">novedades</span></h1><p>Escribinos y te pasamos catálogo, precios y promos. Sin compromiso.</p><a class="btn" href="${go("Hola! Quiero recibir las novedades")}">Pedir info</a></div>`,
-      ),
-    },
+    { name: "Redirección WhatsApp", category: "full", desc: "Pantalla de carga animada que redirige directo a WhatsApp.",
+      html: page("Conectando…", `body{background:#0b141a;color:#e9edef;text-align:center}.c{max-width:420px}.s{width:54px;height:54px;border:5px solid #1f2c33;border-top-color:#25d366;border-radius:50%;margin:0 auto 22px;animation:r 1s linear infinite}@keyframes r{to{transform:rotate(360deg)}}h1{font-size:22px;margin:0 0 6px}p{color:#8696a0;margin:0 0 22px}a.btn{display:inline-block;text-decoration:none;border-radius:999px;padding:13px 26px;font-weight:700;background:#25d366;color:#03301a}`,
+        `<div class="c"><div class="s"></div><h1>Te estamos conectando</h1><p>Si no se abre solo, tocá el botón.</p><a class="btn" href="${go("Hola, vengo de la web")}">Abrir WhatsApp</a></div><script>setTimeout(function(){location.href=${JSON.stringify(go("Hola, vengo de la web"))}},1500)</script>`) },
+    { name: "Bienvenida", category: "full", desc: "Alto impacto, dorado elegante. Beneficio de bienvenida.",
+      html: page("Beneficio de bienvenida", `body{background:radial-gradient(circle at 50% 0%,#1a1407,#0a0a0a);color:#fff}.c{max-width:460px;width:100%;text-align:center;background:linear-gradient(180deg,#171206,#0d0b04);border:1px solid #b8860b55;border-radius:20px;padding:44px 26px;box-shadow:0 24px 60px -24px #000}.k{display:inline-block;padding:6px 14px;border:1px solid #d4af3766;border-radius:999px;color:#e9c766;font-size:12px;letter-spacing:1px;text-transform:uppercase}h1{font-size:30px;margin:16px 0 8px;line-height:1.2}.g{background:linear-gradient(90deg,#f5d271,#d4af37,#b8860b);-webkit-background-clip:text;background-clip:text;color:transparent}p{color:#c9bfa3;margin:0 0 26px;line-height:1.55}a.btn{display:block;text-decoration:none;border-radius:999px;padding:17px;font-size:18px;font-weight:800;color:#1a1407;background:linear-gradient(90deg,#f5d271,#d4af37);box-shadow:0 12px 34px -10px #d4af37aa}`,
+        `<div class="c"><span class="k">Beneficio de bienvenida</span><h1>Llevate tu <span class="g">beneficio</span> de bienvenida</h1><p>Sumate hoy y accedé a tu beneficio. Te atendemos al instante por WhatsApp.</p><a class="btn" href="${go("Hola! Quiero mi beneficio de bienvenida 🎁")}">Quiero mi beneficio</a></div>`) },
+    { name: "Sorteo", category: "full", desc: "Neón violeta/cyan para sorteos y participaciones.",
+      html: page("Participá y ganá", `body{background:#0a0613;background-image:radial-gradient(circle at 80% 15%,#3b0d6b55,transparent),radial-gradient(circle at 10% 90%,#0d6b6155,transparent);color:#fff}.c{max-width:460px;width:100%;text-align:center;background:#120a22;border:1px solid #6d28d955;border-radius:20px;padding:40px 26px}.e{font-size:56px;line-height:1}h1{font-size:30px;margin:8px 0 8px}.n{color:#22d3ee;text-shadow:0 0 18px #22d3ee88}p{color:#b9a7d6;margin:0 0 26px;line-height:1.55}a.btn{display:block;text-decoration:none;border-radius:14px;padding:17px;font-size:18px;font-weight:800;color:#0a0613;background:linear-gradient(90deg,#22d3ee,#a855f7);box-shadow:0 0 32px -6px #a855f7aa}`,
+        `<div class="c"><div class="e">🎁</div><h1>Participá y <span class="n">ganá</span></h1><p>Sumate al sorteo de este mes. Escribinos y participá en segundos.</p><a class="btn" href="${go("Hola! Quiero participar del sorteo 🎁")}">Participar</a></div>`) },
+    { name: "Club VIP", category: "full", desc: "Verde premium con chips de beneficios.",
+      html: page("Club VIP", `body{background:#07100c;background-image:radial-gradient(circle at 50% -10%,#0f3d2a,transparent);color:#fff}.c{max-width:460px;width:100%;text-align:center;background:#0b1712;border:1px solid #10b98155;border-radius:20px;padding:40px 26px}.k{color:#34d399;font-size:12px;letter-spacing:2px;text-transform:uppercase}h1{font-size:28px;margin:14px 0 14px}p{color:#9fb8ad;margin:0 0 26px;line-height:1.55}a.btn{display:block;text-decoration:none;border-radius:999px;padding:17px;font-size:18px;font-weight:800;color:#06281b;background:linear-gradient(90deg,#34d399,#10b981)}.row{display:flex;gap:8px;justify-content:center;margin-bottom:20px;flex-wrap:wrap}.chip{background:#0f211a;border:1px solid #10b98133;border-radius:10px;padding:8px 12px;color:#cdeee0;font-size:13px}`,
+        `<div class="c"><div class="k">★ Clientes VIP</div><h1>Sumate al Club VIP</h1><div class="row"><span class="chip">Atención 24/7</span><span class="chip">Beneficios exclusivos</span><span class="chip">Respuesta rápida</span></div><p>Accedé a beneficios exclusivos y atención prioritaria. Te escribimos por WhatsApp.</p><a class="btn" href="${go("Hola! Quiero sumarme al Club VIP")}">Unirme al VIP</a></div>`) },
+    { name: "Oferta Relámpago", category: "full", desc: "Rojo/naranja urgente para ofertas flash.",
+      html: page("Oferta relámpago", `body{background:#120606;background-image:radial-gradient(circle at 50% 0%,#3a0a0a,transparent);color:#fff}.c{max-width:460px;width:100%;text-align:center;background:#1a0a0a;border:1px solid #ef444455;border-radius:20px;padding:44px 26px}.k{display:inline-block;background:#ef4444;color:#fff;font-weight:700;font-size:12px;padding:5px 12px;border-radius:999px;text-transform:uppercase;letter-spacing:1px}h1{font-size:30px;margin:16px 0 8px}p{color:#e7b3b3;margin:0 0 26px;line-height:1.55}a.btn{display:block;text-decoration:none;border-radius:12px;padding:17px;font-size:18px;font-weight:800;color:#fff;background:linear-gradient(90deg,#ef4444,#f97316);box-shadow:0 12px 34px -10px #ef4444aa}`,
+        `<div class="c"><span class="k">⚡ Por tiempo limitado</span><h1>2x1 en tu primer pedido</h1><p>Aprovechá la oferta de hoy. Escribinos antes de que termine.</p><a class="btn" href="${go("Hola! Quiero la oferta 2x1 ⚡")}">Aprovechar ahora</a></div>`) },
+    { name: "Novedades", category: "full", desc: "Azul moderno para catálogo y novedades.",
+      html: page("Novedades", `body{background:#06101c;background-image:radial-gradient(circle at 50% 0%,#0c2a4d,transparent);color:#fff}.c{max-width:460px;width:100%;text-align:center;background:#0a1726;border:1px solid #3b82f655;border-radius:20px;padding:40px 26px}.e{font-size:52px}h1{font-size:28px;margin:8px 0 8px}.g{color:#60a5fa}p{color:#a9c0d6;margin:0 0 26px;line-height:1.55}a.btn{display:block;text-decoration:none;border-radius:12px;padding:17px;font-size:18px;font-weight:800;color:#06101c;background:linear-gradient(90deg,#60a5fa,#3b82f6)}`,
+        `<div class="c"><div class="e">🛍️</div><h1>Enterate de las <span class="g">novedades</span></h1><p>Escribinos y te pasamos catálogo, precios y promos. Sin compromiso.</p><a class="btn" href="${go("Hola! Quiero recibir las novedades")}">Pedir info</a></div>`) },
   ];
 }
 
-interface LandingConfig {
-  title?: string;
-  headline?: string;
-  subtitle?: string;
-  buttonText?: string;
-  msg?: string;
+interface LandingConfig { title?: string; headline?: string; subtitle?: string; buttonText?: string; msg?: string }
+interface Landing { id: string; name: string; slug: string; config: LandingConfig | null; isPrimary: boolean; published: boolean; publishedUrl: string | null; createdAt: string }
+
+const landingUrl = (slug: string) => `${API_BASE}/p/${slug}`;
+
+// Vista previa aproximada para el modo "Campos" (la página real la arma el server).
+function previewFromFields(slug: string, f: FormState): string {
+  const go = `${API_BASE}/go?u=${slug}&msg=${encodeURIComponent(f.msg || "Hola, quiero info")}`;
+  return `<!doctype html><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${f.title || "Landing"}</title><div style="font-family:system-ui;min-height:100vh;margin:0;display:flex;align-items:center;justify-content:center;background:#0b141a;color:#e9edef;padding:24px"><div style="max-width:440px;width:100%;text-align:center;padding:44px 28px;background:#111b21;border:1px solid #222d34;border-radius:16px"><h1 style="font-size:26px;margin:0 0 10px">${f.headline || "Tu encabezado acá"}</h1><p style="color:#8696a0;margin:0 0 28px;line-height:1.55">${f.subtitle || "Tu subtítulo descriptivo"}</p><a href="${go}" style="display:block;text-decoration:none;border-radius:999px;padding:16px;font-size:17px;font-weight:700;background:#25d366;color:#03301a">${f.buttonText || "Escribir por WhatsApp"}</a></div></div>`;
 }
 
-interface Landing {
-  id: string;
-  name: string;
-  slug: string;
-  config: LandingConfig | null;
-  isPrimary: boolean;
-  published: boolean;
-  publishedUrl: string | null;
-  createdAt: string;
-}
-
-function landingUrl(slug: string): string {
-  return `${API_BASE}/p/${slug}`;
-}
-
-function CopyButton({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      setCopied(false);
-    }
-  };
+function CopyBtn({ value, label = "Copiar" }: { value: string; label?: string }) {
+  const [ok, setOk] = useState(false);
   return (
-    <Button variant="secondary" onClick={() => void copy()}>
-      {copied ? "¡Copiado!" : "Copiar"}
+    <Button variant="secondary" onClick={async () => { try { await navigator.clipboard.writeText(value); setOk(true); setTimeout(() => setOk(false), 1500); } catch { /* noop */ } }}>
+      {ok ? <><Check className="h-4 w-4" /> ¡Listo!</> : <><Copy className="h-4 w-4" /> {label}</>}
     </Button>
   );
 }
 
-interface FormState {
-  name: string;
-  title: string;
-  headline: string;
-  subtitle: string;
-  buttonText: string;
-  msg: string;
-}
-
-const EMPTY_FORM: FormState = {
-  name: "",
-  title: "",
-  headline: "",
-  subtitle: "",
-  buttonText: "",
-  msg: "",
-};
+interface FormState { name: string; title: string; headline: string; subtitle: string; buttonText: string; msg: string }
+const EMPTY_FORM: FormState = { name: "", title: "", headline: "", subtitle: "", buttonText: "", msg: "" };
 
 export default function LandingsPage() {
   const { user } = useAuth();
+  const slug = user?.slug ?? "";
+  const tpls = useMemo(() => templates(slug), [slug]);
+
   const [landings, setLandings] = useState<Landing[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [mode, setMode] = useState<"fields" | "html">("fields");
+  const [mode, setMode] = useState<"fields" | "html">("html");
   const [html, setHtml] = useState("");
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [lastSaved, setLastSaved] = useState<Landing | null>(null);
+  const [showTpl, setShowTpl] = useState(false);
+  const [snapshot, setSnapshot] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { data } = await api.get<{ landings: Landing[] }>("/api/landings");
-      setLandings(data.landings);
-    } catch (err) {
-      setError(apiError(err));
-    } finally {
-      setLoading(false);
-    }
-  };
+  const current = landings.find((l) => l.id === editingId) ?? null;
+  const curSnapshot = mode === "html" ? `h|${form.name}|${html}` : `f|${form.name}|${JSON.stringify(form)}`;
+  const dirty = editingId === null ? true : curSnapshot !== snapshot;
+  const previewHtml = mode === "html" ? html : previewFromFields(slug, form);
 
-  useEffect(() => {
-    void load();
-  }, []);
+  const load = async () => {
+    setLoading(true); setError(null);
+    try { const { data } = await api.get<{ landings: Landing[] }>("/api/landings"); setLandings(data.landings); }
+    catch (err) { setError(apiError(err)); } finally { setLoading(false); }
+  };
+  useEffect(() => { void load(); }, []);
 
   const startCreate = () => {
-    setEditingId(null);
-    setForm(EMPTY_FORM);
-    setMode("fields");
-    setHtml("");
-    setLastSaved(null);
+    setEditingId(null); setForm(EMPTY_FORM); setMode("html");
+    setHtml(tpls[0].html); setSnapshot("");
   };
 
   const startEdit = async (l: Landing) => {
-    setEditingId(l.id);
-    setLastSaved(null);
+    setEditingId(l.id); setError(null);
     const c = (l.config ?? {}) as LandingConfig & { raw?: boolean };
     if (c.raw) {
-      // Landing de HTML libre: traemos el HTML guardado desde /p/:slug.
-      setMode("html");
-      setForm({ ...EMPTY_FORM, name: l.name });
-      try {
-        const r = await fetch(landingUrl(l.slug));
-        setHtml(await r.text());
-      } catch {
-        setHtml("");
-      }
+      setMode("html"); setForm({ ...EMPTY_FORM, name: l.name });
+      let body = "";
+      try { body = await (await fetch(landingUrl(l.slug))).text(); } catch { /* noop */ }
+      setHtml(body); setSnapshot(`h|${l.name}|${body}`);
     } else {
-      setMode("fields");
-      setHtml("");
-      setForm({
-        name: l.name,
-        title: c.title ?? "",
-        headline: c.headline ?? "",
-        subtitle: c.subtitle ?? "",
-        buttonText: c.buttonText ?? "",
-        msg: c.msg ?? "",
-      });
+      setMode("fields"); setHtml("");
+      const f = { name: l.name, title: c.title ?? "", headline: c.headline ?? "", subtitle: c.subtitle ?? "", buttonText: c.buttonText ?? "", msg: c.msg ?? "" };
+      setForm(f); setSnapshot(`f|${l.name}|${JSON.stringify(f)}`);
     }
   };
 
-  const onUploadHtml = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => setHtml(String(reader.result ?? ""));
-    reader.readAsText(file);
-  };
+  const onUploadHtml = (file: File) => { const r = new FileReader(); r.onload = () => { setHtml(String(r.result ?? "")); setMode("html"); }; r.readAsText(file); };
 
-  const buildConfig = (): LandingConfig => ({
-    title: form.title || undefined,
-    headline: form.headline || undefined,
-    subtitle: form.subtitle || undefined,
-    buttonText: form.buttonText || undefined,
-    msg: form.msg || undefined,
-  });
+  const buildConfig = (): LandingConfig => ({ title: form.title || undefined, headline: form.headline || undefined, subtitle: form.subtitle || undefined, buttonText: form.buttonText || undefined, msg: form.msg || undefined });
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!form.name.trim()) {
-      setError("El nombre es obligatorio.");
-      return;
-    }
-    if (mode === "html" && !html.trim()) {
-      setError("El HTML no puede estar vacío.");
-      return;
-    }
-    setSaving(true);
-    setError(null);
+  const save = async (e?: FormEvent) => {
+    e?.preventDefault();
+    if (!form.name.trim()) { setError("Ponele un nombre a la landing."); return; }
+    if (mode === "html" && !html.trim()) { setError("El HTML no puede estar vacío."); return; }
+    setSaving(true); setError(null);
     try {
-      const payload =
-        mode === "html"
-          ? { name: form.name.trim(), html }
-          : { name: form.name.trim(), config: buildConfig() };
-      if (editingId) {
-        const { data } = await api.put<{ landing: Landing }>(`/api/landings/${editingId}`, payload);
-        setLastSaved(data.landing);
-      } else {
-        const { data } = await api.post<{ landing: Landing }>("/api/landings", payload);
-        setLastSaved(data.landing);
-      }
-      setForm(EMPTY_FORM);
-      setHtml("");
-      setMode("fields");
-      setEditingId(null);
+      const payload = mode === "html" ? { name: form.name.trim(), html } : { name: form.name.trim(), config: buildConfig() };
+      if (editingId) await api.put<{ landing: Landing }>(`/api/landings/${editingId}`, payload);
+      else { const { data } = await api.post<{ landing: Landing }>("/api/landings", payload); setEditingId(data.landing.id); }
+      setSnapshot(curSnapshot);
       await load();
-    } catch (err) {
-      setError(apiError(err));
-    } finally {
-      setSaving(false);
-    }
+    } catch (err) { setError(apiError(err)); } finally { setSaving(false); }
   };
 
-  const publish = async (l: Landing) => {
-    setBusyId(l.id);
-    setError(null);
-    try {
-      const { data } = await api.post<{
-        landing: { id: string; slug: string; published: boolean; publishedUrl: string | null };
-        host: "s3" | "local";
-      }>(`/api/landings/${l.id}/publish`);
-      setLandings((prev) =>
-        prev.map((x) =>
-          x.id === l.id
-            ? { ...x, published: data.landing.published, publishedUrl: data.landing.publishedUrl }
-            : x
-        )
-      );
-      setLastSaved(null);
-    } catch (err) {
-      setError(apiError(err));
-    } finally {
-      setBusyId(null);
-    }
+  const publish = async () => {
+    if (!editingId) return;
+    if (dirty) await save();
+    setBusyId(editingId); setError(null);
+    try { await api.post(`/api/landings/${editingId}/publish`); await load(); }
+    catch (err) { setError(apiError(err)); } finally { setBusyId(null); }
   };
 
-  const makePrimary = async (l: Landing) => {
-    setBusyId(l.id);
-    setError(null);
-    try {
-      await api.put<{ landing: Landing }>(`/api/landings/${l.id}`, { isPrimary: true });
-      await load();
-    } catch (err) {
-      setError(apiError(err));
-    } finally {
-      setBusyId(null);
-    }
+  const makePrimary = async () => {
+    if (!editingId) return;
+    setBusyId(editingId); setError(null);
+    try { await api.put(`/api/landings/${editingId}`, { isPrimary: true }); await load(); }
+    catch (err) { setError(apiError(err)); } finally { setBusyId(null); }
   };
 
-  const remove = async (l: Landing) => {
-    if (!window.confirm(`¿Borrar la landing "${l.name}"? Esta acción no se puede deshacer.`)) {
-      return;
-    }
-    setBusyId(l.id);
-    setError(null);
-    try {
-      await api.delete<{ ok: true }>(`/api/landings/${l.id}`);
-      if (editingId === l.id) startCreate();
-      await load();
-    } catch (err) {
-      setError(apiError(err));
-    } finally {
-      setBusyId(null);
-    }
+  const remove = async () => {
+    if (!current) return;
+    if (!window.confirm(`¿Borrar la landing "${current.name}"?`)) return;
+    setBusyId(current.id); setError(null);
+    try { await api.delete(`/api/landings/${current.id}`); setEditingId(null); setForm(EMPTY_FORM); setHtml(""); await load(); }
+    catch (err) { setError(apiError(err)); } finally { setBusyId(null); }
   };
 
-  const setField = (key: keyof FormState, value: string) =>
-    setForm((prev) => ({ ...prev, [key]: value }));
+  const useTemplate = (t: Tpl) => { setMode("html"); setHtml(t.html); if (!form.name) setForm((f) => ({ ...f, name: t.name })); setShowTpl(false); };
+  const setField = (k: keyof FormState, v: string) => setForm((p) => ({ ...p, [k]: v }));
+
+  const campaignUrl = current ? (current.publishedUrl ?? landingUrl(current.slug)) : "";
+  const editing = editingId !== null || html !== "" || form.name !== "";
 
   return (
     <div className="p-6">
-      <div className="mb-5 flex items-center justify-between">
-        <h1 className="text-xl font-bold">Landings</h1>
-        <Button variant="secondary" onClick={() => void load()}>
-          Actualizar
-        </Button>
-      </div>
-      <p className="mb-5 text-sm text-slate-400">
-        Páginas rastreadas que disparan el evento Lead antes de llevar a WhatsApp.
-        Cada landing trae el Pixel del navegador y el botón deduplicado con el servidor.
-      </p>
-
-      {error && (
-        <div className="mb-4">
-          <ErrorMsg>{error}</ErrorMsg>
-        </div>
-      )}
-
-      {lastSaved && (
-        <Card className="mb-4 border-wa-green/40 bg-wa-green/5">
-          <div className="mb-1 text-sm font-semibold text-wa-green">
-            Landing guardada: {lastSaved.name}
-          </div>
-          <p className="mb-2 text-xs text-slate-400">
-            Esta landing ya trae el Pixel del navegador y el botón que dispara el Lead
-            (deduplicado con el server).
-          </p>
-          <div className="flex gap-2">
-            <input
-              readOnly
-              value={landingUrl(lastSaved.slug)}
-              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-xs text-slate-300"
-            />
-            <CopyButton value={landingUrl(lastSaved.slug)} />
-          </div>
-        </Card>
-      )}
-
-      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-        {/* List */}
+      <div className="mb-4 flex items-center justify-between">
         <div>
-          {loading ? (
-            <p className="text-slate-400">Cargando…</p>
-          ) : landings.length === 0 ? (
-            <Card>
-              <p className="text-slate-300">Todavía no hay landings.</p>
-              <p className="mt-1 text-sm text-slate-500">
-                Creá tu primera landing con el formulario de la derecha.
-              </p>
-            </Card>
-          ) : (
-            <div className="space-y-3">
-              {landings.map((l) => (
-                <Card key={l.id}>
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-slate-100">{l.name}</span>
-                        {l.isPrimary && (
-                          <span className="rounded-full bg-wa-green px-2 py-0.5 text-xs font-semibold text-slate-900">
-                            primaria
-                          </span>
-                        )}
-                        {l.published ? (
-                          <span className="rounded-full bg-emerald-700 px-2 py-0.5 text-xs font-semibold text-emerald-50">
-                            publicada
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-slate-600 px-2 py-0.5 text-xs font-semibold text-slate-100">
-                            borrador
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-1 font-mono text-xs text-slate-500">/{l.slug}</div>
-                      <div className="mt-0.5 text-xs text-slate-500">
-                        creada {fmtDate(l.createdAt)}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <input
-                      readOnly
-                      value={landingUrl(l.slug)}
-                      className="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 font-mono text-xs text-slate-300"
-                    />
-                    <CopyButton value={landingUrl(l.slug)} />
-                  </div>
-
-                  {l.published && l.publishedUrl && (
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <span className="text-xs text-emerald-300">Publicada en:</span>
-                      <a
-                        href={l.publishedUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="min-w-0 flex-1 truncate font-mono text-xs text-emerald-200 underline"
-                      >
-                        {l.publishedUrl}
-                      </a>
-                      <CopyButton value={l.publishedUrl} />
-                    </div>
-                  )}
-
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Button
-                      variant="secondary"
-                      onClick={() => window.open(landingUrl(l.slug), "_blank")}
-                    >
-                      Ver
-                    </Button>
-                    <Button variant="secondary" onClick={() => void startEdit(l)}>
-                      Editar
-                    </Button>
-                    <Button
-                      variant="primary"
-                      disabled={busyId === l.id}
-                      onClick={() => void publish(l)}
-                    >
-                      {busyId === l.id ? "…" : "Publicar"}
-                    </Button>
-                    {!l.isPrimary && (
-                      <Button
-                        variant="ghost"
-                        disabled={busyId === l.id}
-                        onClick={() => void makePrimary(l)}
-                      >
-                        Marcar primaria
-                      </Button>
-                    )}
-                    <Button
-                      variant="danger"
-                      disabled={busyId === l.id}
-                      onClick={() => void remove(l)}
-                    >
-                      Borrar
-                    </Button>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          )}
+          <h1 className="text-xl font-bold">Landings</h1>
+          <p className="text-sm text-slate-400">Páginas rastreadas que disparan el Lead y llevan a WhatsApp.</p>
         </div>
+        <Button variant="secondary" onClick={() => void load()}>Actualizar</Button>
+      </div>
 
-        {/* Editor */}
-        <Card className="h-fit">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-200">
-              {editingId ? "Editar landing" : "Nueva landing"}
-            </h2>
-            {editingId && (
-              <Button variant="ghost" onClick={startCreate}>
-                Nueva
-              </Button>
-            )}
-          </div>
-          <form onSubmit={submit} className="space-y-3">
-            <div>
-              <label className="mb-1 block text-xs text-slate-400">Nombre</label>
-              <Input
-                value={form.name}
-                onChange={(e) => setField("name", e.target.value)}
-                placeholder="Promo verano"
-              />
-            </div>
-            <div className="inline-flex rounded-md bg-slate-900 p-1 text-xs">
-              <button type="button" onClick={() => setMode("fields")} className={`rounded px-3 py-1 font-medium ${mode === "fields" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Campos</button>
-              <button type="button" onClick={() => setMode("html")} className={`rounded px-3 py-1 font-medium ${mode === "html" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>HTML libre</button>
-            </div>
+      {error && <div className="mb-4"><ErrorMsg>{error}</ErrorMsg></div>}
 
-            {mode === "fields" ? (
+      {/* Pestañas de landings */}
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Landings:</span>
+        {landings.map((l) => (
+          <button key={l.id} onClick={() => void startEdit(l)}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition ${editingId === l.id ? "border-wa-green bg-wa-green/15 text-wa-green" : "border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"}`}>
+            {l.isPrimary && <Star className="h-3.5 w-3.5 fill-current" />}
+            {l.name}
+          </button>
+        ))}
+        <button onClick={startCreate} className="flex items-center gap-1 rounded-lg border border-dashed border-slate-600 px-3 py-1.5 text-sm font-medium text-slate-300 hover:bg-slate-800">
+          <Plus className="h-4 w-4" /> Nueva landing
+        </button>
+      </div>
+
+      {loading && <p className="text-slate-400">Cargando…</p>}
+
+      {!loading && !editing && (
+        <Card><p className="text-slate-300">Elegí una landing arriba o creá una nueva.</p></Card>
+      )}
+
+      {!loading && editing && (
+        <>
+          {/* Barra de acciones */}
+          <Card className="mb-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <Input value={form.name} onChange={(e) => setField("name", e.target.value)} placeholder="Nombre de la landing" className="!w-64 font-semibold" />
+                {current && <div className="mt-1 font-mono text-xs text-slate-500">/{current.slug}{current.published ? " · publicada" : " · borrador"}</div>}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="secondary" onClick={() => setShowTpl(true)}><LayoutTemplate className="h-4 w-4" /> Plantillas</Button>
+                <Button variant="secondary" onClick={() => fileRef.current?.click()}><Upload className="h-4 w-4" /> Subir .html</Button>
+                <input ref={fileRef} type="file" accept=".html,text/html" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onUploadHtml(f); e.target.value = ""; }} />
+                {current && <Button variant="secondary" onClick={() => window.open(campaignUrl, "_blank")}><ExternalLink className="h-4 w-4" /> Ver mi sitio</Button>}
+                <Button onClick={() => void save()} disabled={saving || !dirty}>{saving ? "Guardando…" : dirty ? "Guardar cambios" : "Sin cambios"}</Button>
+                <Button variant="primary" disabled={busyId === editingId || !editingId} onClick={() => void publish()}>
+                  {busyId === editingId ? "…" : current?.published ? "Actualizar sitio" : "Publicar"}
+                </Button>
+              </div>
+            </div>
+            {current && (
               <>
-                <div>
-                  <label className="mb-1 block text-xs text-slate-400">Título (title)</label>
-                  <Input value={form.title} onChange={(e) => setField("title", e.target.value)} placeholder="Título de la pestaña" />
+                <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">URL para campañas</div>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <input readOnly value={campaignUrl} className="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-xs text-slate-300" />
+                  <CopyBtn value={campaignUrl} />
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs text-slate-400">Encabezado (headline)</label>
-                  <Input value={form.headline} onChange={(e) => setField("headline", e.target.value)} placeholder="¡Aprovechá la promo!" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs text-slate-400">Subtítulo (subtitle)</label>
-                  <Input value={form.subtitle} onChange={(e) => setField("subtitle", e.target.value)} placeholder="Escribinos y te asesoramos" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs text-slate-400">Texto del botón (buttonText)</label>
-                  <Input value={form.buttonText} onChange={(e) => setField("buttonText", e.target.value)} placeholder="Escribir por WhatsApp" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs text-slate-400">Mensaje de WhatsApp (msg)</label>
-                  <Input value={form.msg} onChange={(e) => setField("msg", e.target.value)} placeholder="Hola, quiero info" />
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {!current.isPrimary && <Button variant="ghost" onClick={() => void makePrimary()}><Star className="h-4 w-4" /> Marcar principal</Button>}
+                  <Button variant="danger" onClick={() => void remove()}><Trash2 className="h-4 w-4" /> Borrar</Button>
                 </div>
               </>
-            ) : (
-              <div className="space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-slate-400">Plantillas:</span>
-                  {templates(user?.slug ?? "").map((t) => (
-                    <Button key={t.name} type="button" variant="ghost" onClick={() => setHtml(t.html)}>{t.name}</Button>
-                  ))}
-                  <Button type="button" variant="ghost" onClick={() => fileRef.current?.click()}>Subir .html</Button>
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    accept=".html,text/html"
-                    className="hidden"
-                    onChange={(e) => { const f = e.target.files?.[0]; if (f) onUploadHtml(f); e.target.value = ""; }}
-                  />
-                </div>
-                <textarea
-                  value={html}
-                  onChange={(e) => setHtml(e.target.value)}
-                  placeholder="<!doctype html> ..."
-                  className="h-64 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-xs text-slate-100 outline-none focus:border-wa-green"
-                />
-                <p className="text-xs text-slate-500">
-                  HTML propio. Para atribuir, el botón debe enlazar al redirector{" "}
-                  <code className="text-slate-400">{`${API_BASE}/go?u=${user?.slug ?? ""}`}</code> (las plantillas ya lo traen).
-                </p>
-              </div>
             )}
-            <div className="flex gap-2">
-              <Button type="submit" disabled={saving}>
-                {saving ? "Guardando…" : editingId ? "Guardar cambios" : "Crear landing"}
-              </Button>
-              {editingId && (
-                <Button type="button" variant="ghost" onClick={startCreate}>
-                  Cancelar
-                </Button>
+          </Card>
+
+          {/* Editor + vista previa en vivo */}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card className="flex flex-col p-0">
+              <div className="flex items-center gap-2 border-b border-slate-800 px-3 py-2">
+                <div className="inline-flex rounded-md bg-slate-900 p-1 text-xs">
+                  <button onClick={() => setMode("fields")} className={`rounded px-3 py-1 font-medium ${mode === "fields" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Campos</button>
+                  <button onClick={() => setMode("html")} className={`rounded px-3 py-1 font-medium ${mode === "html" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>HTML</button>
+                </div>
+                <span className="text-xs text-slate-500">{mode === "html" ? "Editá el HTML libremente" : "Editor por campos (rápido)"}</span>
+              </div>
+              {mode === "fields" ? (
+                <div className="space-y-3 p-4">
+                  {([["title", "Título de la pestaña"], ["headline", "Encabezado"], ["subtitle", "Subtítulo"], ["buttonText", "Texto del botón"], ["msg", "Mensaje de WhatsApp"]] as Array<[keyof FormState, string]>).map(([k, ph]) => (
+                    <div key={k}>
+                      <label className="mb-1 block text-xs capitalize text-slate-400">{ph}</label>
+                      <Input value={form[k]} onChange={(e) => setField(k, e.target.value)} placeholder={ph} />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <textarea value={html} onChange={(e) => setHtml(e.target.value)} placeholder="<!doctype html> …"
+                  className="h-[28rem] w-full resize-none rounded-b-lg bg-slate-900 px-3 py-2 font-mono text-xs text-slate-100 outline-none" spellCheck={false} />
               )}
+            </Card>
+
+            <Card className="flex flex-col p-0">
+              <div className="border-b border-slate-800 px-3 py-2 text-xs text-slate-400">Vista previa en tiempo real</div>
+              <iframe title="preview" srcDoc={previewHtml} sandbox="allow-scripts" className="h-[28rem] w-full rounded-b-lg bg-white" />
+            </Card>
+          </div>
+        </>
+      )}
+
+      {/* Modal de plantillas */}
+      {showTpl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setShowTpl(false)}>
+          <div className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-bold">Elegir plantilla</h2>
+              <button onClick={() => setShowTpl(false)} className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white"><X className="h-5 w-5" /></button>
             </div>
-          </form>
-        </Card>
-      </div>
+            {(["simple", "full"] as TplCat[]).map((cat) => (
+              <div key={cat} className="mb-5">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{cat === "simple" ? "Simples" : "Diseños completos"}</div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {tpls.filter((t) => t.category === cat).map((t) => (
+                    <div key={t.name} className="overflow-hidden rounded-xl border border-slate-700 bg-slate-950">
+                      <div className="relative h-36 overflow-hidden border-b border-slate-800">
+                        <iframe title={t.name} srcDoc={t.html} sandbox="" tabIndex={-1}
+                          className="pointer-events-none absolute left-0 top-0 origin-top-left"
+                          style={{ width: "333%", height: "333%", transform: "scale(0.3)" }} />
+                      </div>
+                      <div className="p-3">
+                        <div className="text-sm font-semibold text-slate-100">{t.name}</div>
+                        <p className="mt-0.5 mb-3 text-xs text-slate-400">{t.desc}</p>
+                        <Button className="w-full" onClick={() => useTemplate(t)}>Usar esta</Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
