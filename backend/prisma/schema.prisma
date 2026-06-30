@@ -108,6 +108,8 @@ model WaLine {
   wabaId      String?        // WhatsApp Business Account ID
   accessToken String?        // token de la Cloud API (cifrado en reposo)
   verifyToken String?        // token de verificación del webhook de Meta
+  registerPin String?        // PIN de registro de la Cloud API (cifrado en reposo)
+  registered  Boolean   @default(false) // true si el número quedó registrado en la Cloud API
   expiresAt   DateTime? // se desactiva al vencer (consumo de días)
   lastUsedAt  DateTime? // para rotación LRU de clics entre líneas activas
   createdAt   DateTime  @default(now())

@@ -4,7 +4,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
-import { encryptSecret, maskSecret } from "../lib/crypto.js";
+import { encryptSecret, decryptSecret, maskSecret } from "../lib/crypto.js";
 import { getAvailableDays, consumeDayAndActivate } from "../lib/access.js";
 import {
   createInstance,
@@ -15,11 +15,12 @@ import {
   deleteInstance,
 } from "../lib/evolution.js";
 import axios from "axios";
+import crypto from "node:crypto";
 import {
   GRAPH_VERSION,
   exchangeCodeForToken,
   subscribeWaba,
-  registerPhone,
+  registerCloudNumber,
   getWabaPhoneNumbers,
   debugToken,
 } from "../lib/wa-cloud.js";
@@ -32,7 +33,7 @@ const CLOUD_WEBHOOK_URL = `${(process.env.APP_BASE_URL ?? "http://localhost:4000
 // Forma pública de una línea (nunca devuelve el access token entero).
 function toPublicLine(l: {
   id: string; phone: string; label: string | null; status: string; provider: string;
-  connected: boolean; expiresAt: Date | null; createdAt: Date;
+  connected: boolean; expiresAt: Date | null; createdAt: Date; registered?: boolean;
   wabaPhoneNumberId: string | null; wabaId: string | null; accessToken: string | null; verifyToken: string | null;
 }) {
   return {
@@ -44,6 +45,7 @@ function toPublicLine(l: {
     connected: l.connected,
     expiresAt: l.expiresAt,
     createdAt: l.createdAt,
+    registered: l.registered ?? false,
     wabaPhoneNumberId: l.wabaPhoneNumberId,
     wabaId: l.wabaId,
     verifyToken: l.verifyToken,
@@ -208,11 +210,11 @@ waRouter.post("/cloud/connect", async (req, res) => {
       }
     }
 
-    // c) Suscribir la app al webhook de la WABA y registrar el número (best-effort).
+    // c) Suscribir la app al webhook de la WABA.
     await subscribeWaba(wabaId, token);
-    await registerPhone(phoneNumberId, token);
 
-    // d) Crear la línea cloud.
+    // d) Crear la línea cloud con un PIN de registro (cifrado en reposo).
+    const pin = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
     const line = await prisma.waLine.create({
       data: {
         userId: req.userId!,
@@ -224,10 +226,17 @@ waRouter.post("/cloud/connect", async (req, res) => {
         wabaPhoneNumberId: phoneNumberId,
         wabaId,
         accessToken: encryptSecret(token),
+        registerPin: encryptSecret(pin),
         verifyToken: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN ?? null,
       },
     });
-    return res.status(201).json({ line: toPublicLine(line) });
+
+    // e) Registrar el número en la Cloud API (saca la línea de "Pendiente").
+    //    Best-effort: si falla (ej. falta método de pago en la WABA) se reintenta desde el panel.
+    const reg = await registerCloudNumber(phoneNumberId, token, pin);
+    if (reg.ok) await prisma.waLine.update({ where: { id: line.id }, data: { registered: true } });
+    const fresh = await prisma.waLine.findUnique({ where: { id: line.id } });
+    return res.status(201).json({ line: toPublicLine(fresh ?? line), registered: reg.ok, registerError: reg.error });
   } catch (e) {
     if (axios.isAxiosError(e)) {
       console.error("[wa/cloud/connect] Graph error", e.response?.status, JSON.stringify(e.response?.data));
@@ -244,6 +253,36 @@ waRouter.post("/cloud/connect", async (req, res) => {
 async function getOwnedLine(userId: string, id: string) {
   return prisma.waLine.findFirst({ where: { id, userId } });
 }
+
+// POST /api/wa/lines/:id/register — reintenta el registro del número en la Cloud API
+// (saca la línea de "Pendiente" en el WhatsApp Manager). Devuelve el resultado real de Meta.
+waRouter.post("/lines/:id/register", async (req, res) => {
+  const line = await getOwnedLine(req.userId!, req.params.id);
+  if (!line) return res.status(404).json({ error: "Línea no encontrada" });
+  if (line.provider !== "cloud") return res.status(400).json({ error: "El registro solo aplica a líneas Cloud API" });
+  if (!line.wabaPhoneNumberId || !line.accessToken) {
+    return res.status(400).json({ error: "La línea Cloud no está configurada (falta Phone Number ID o token)" });
+  }
+
+  const token = decryptSecret(line.accessToken);
+  // Reusa el PIN guardado o genera uno nuevo (y lo persiste cifrado).
+  let pin: string;
+  if (line.registerPin) {
+    pin = decryptSecret(line.registerPin);
+  } else {
+    pin = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
+    await prisma.waLine.update({ where: { id: line.id }, data: { registerPin: encryptSecret(pin) } });
+  }
+
+  const reg = await registerCloudNumber(line.wabaPhoneNumberId, token, pin);
+  if (reg.ok) await prisma.waLine.update({ where: { id: line.id }, data: { registered: true } });
+  const fresh = await prisma.waLine.findUnique({ where: { id: line.id } });
+  return res.status(reg.ok ? 200 : 502).json({
+    registered: reg.ok,
+    error: reg.ok ? undefined : reg.error,
+    line: fresh ? toPublicLine(fresh) : undefined,
+  });
+});
 
 // POST /api/wa/lines/:id/connect — devuelve el QR para escanear (y lo emite por socket).
 waRouter.post("/lines/:id/connect", async (req, res) => {

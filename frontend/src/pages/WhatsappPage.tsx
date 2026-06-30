@@ -43,6 +43,8 @@ export default function WhatsappPage() {
   const [connecting, setConnecting] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [needsRetry, setNeedsRetry] = useState(false); // 409: WABA sin número verificado aún
+  const [registeringId, setRegisteringId] = useState<string | null>(null);
+  const [registerMsg, setRegisterMsg] = useState<{ id: string; ok: boolean; text: string } | null>(null);
   const esSessionRef = useRef<{ phoneNumberId?: string; wabaId?: string }>({});
   const lastAttemptRef = useRef<{ code: string; phoneNumberId?: string; wabaId?: string } | null>(null);
 
@@ -152,6 +154,25 @@ export default function WhatsappPage() {
   const retryConnect = () => {
     const a = lastAttemptRef.current;
     if (a) void finishConnect(a.code, a.phoneNumberId, a.wabaId);
+  };
+
+  // Reintenta el registro del número de una línea Cloud en la Cloud API (saca de "Pendiente").
+  const registerNumber = async (id: string) => {
+    setRegisteringId(id);
+    setRegisterMsg(null);
+    try {
+      const { data } = await api.post<{ registered: boolean; error?: string; line?: Line }>(
+        `/api/wa/lines/${id}/register`,
+      );
+      if (data.line) setLines((prev) => prev.map((l) => (l.id === id ? data.line! : l)));
+      setRegisterMsg({ id, ok: true, text: "Número registrado ✓" });
+    } catch (err) {
+      const body = (err as { response?: { data?: { error?: string; line?: Line } } })?.response?.data;
+      if (body?.line) setLines((prev) => prev.map((l) => (l.id === id ? body.line! : l)));
+      setRegisterMsg({ id, ok: false, text: body?.error ?? apiError(err) });
+    } finally {
+      setRegisteringId(null);
+    }
   };
 
   const launchSignup = () => {
@@ -509,6 +530,26 @@ export default function WhatsappPage() {
 
                 {isCloud ? (
                   <div className="mb-3 space-y-2 rounded-md border border-slate-800 bg-slate-900/40 p-3 text-xs">
+                    {/* Estado de registro en la Cloud API */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                      {line.registered ? (
+                        <span className="font-semibold text-wa-green">● Número registrado</span>
+                      ) : (
+                        <span className="font-semibold text-amber-400">● Pendiente de registro</span>
+                      )}
+                      {!line.registered && (
+                        <Button
+                          variant="secondary"
+                          disabled={registeringId === line.id}
+                          onClick={() => void registerNumber(line.id)}
+                        >
+                          {registeringId === line.id ? "Registrando…" : "Registrar número"}
+                        </Button>
+                      )}
+                    </div>
+                    {registerMsg && registerMsg.id === line.id && (
+                      <p className={registerMsg.ok ? "text-wa-green" : "text-rose-400"}>{registerMsg.text}</p>
+                    )}
                     <div>
                       <span className="text-slate-400">Phone Number ID: </span>
                       <code className="break-all text-slate-200">{line.wabaPhoneNumberId}</code>

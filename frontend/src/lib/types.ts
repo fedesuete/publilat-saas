@@ -42,6 +42,7 @@ export interface Line {
   verifyToken?: string | null;
   tokenMask?: string | null;
   webhookUrl?: string | null;
+  registered?: boolean;
 }
 
 export interface Msg {

@@ -119,6 +119,34 @@ export async function registerPhone(phoneNumberId: string, token: string, pin?: 
   }
 }
 
+// Registra el número en la Cloud API con PIN (necesario para que salga de "Pendiente").
+// Devuelve el resultado real de Graph; trata "ya registrado" (133010) como éxito.
+export async function registerCloudNumber(
+  phoneNumberId: string,
+  token: string,
+  pin: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await axios.post(
+      `${GRAPH}/${phoneNumberId}/register`,
+      { messaging_product: "whatsapp", pin },
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 },
+    );
+    return { ok: true };
+  } catch (e) {
+    if (axios.isAxiosError(e)) {
+      const err = e.response?.data?.error;
+      // 133010: el número ya estaba registrado -> lo tratamos como éxito.
+      if (err?.code === 133010) return { ok: true };
+      console.error("[wa-cloud] registerCloudNumber error:", e.response?.status, JSON.stringify(e.response?.data));
+      return { ok: false, error: err?.message ?? e.message };
+    }
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[wa-cloud] registerCloudNumber error:", msg);
+    return { ok: false, error: msg };
+  }
+}
+
 // Baja un media entrante (imagen/documento) por su id -> base64. Para leer comprobantes.
 export async function getCloudMediaBase64(
   line: CloudLine,
