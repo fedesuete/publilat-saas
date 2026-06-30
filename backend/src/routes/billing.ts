@@ -6,7 +6,7 @@ import { prisma } from "../lib/prisma.js";
 import {
   type Provider,
   priceFor,
-  mpEnabled, createPreference, getMpPayment,
+  mpEnabled, createPreference, getMpPayment, mpWebhookSecretSet, verifyMpWebhook,
   stripeEnabled, createStripeSession, constructStripeEvent,
   usdtEnabled, createUsdtInvoice, verifyUsdtSignature,
   nowpaymentsEnabled, usdtDirectEnabled, usdtAddress, verifyUsdtPayment,
@@ -174,6 +174,22 @@ billingWebhookRouter.post("/", async (req, res) => {
     const paymentMpId = String(req.query["data.id"] ?? req.body?.data?.id ?? req.body?.id ?? "");
     const topic = String(req.query.type ?? req.query.topic ?? req.body?.type ?? "");
     if (!paymentMpId || (topic && topic !== "payment")) return;
+
+    // Validar la firma del webhook (si hay secret configurado). Sin secret: se procesa
+    // pero se avisa (recomendado setear MP_WEBHOOK_SECRET al activar MercadoPago).
+    if (mpWebhookSecretSet()) {
+      const ok = verifyMpWebhook({
+        xSignature: req.headers["x-signature"] as string | undefined,
+        xRequestId: req.headers["x-request-id"] as string | undefined,
+        dataId: paymentMpId,
+      });
+      if (!ok) {
+        console.warn("[billing/webhook mp] firma x-signature inválida -> ignorado");
+        return;
+      }
+    } else {
+      console.warn("[billing/webhook mp] MP_WEBHOOK_SECRET no configurado: webhook sin validar firma");
+    }
     const { status, externalReference } = await getMpPayment(paymentMpId);
     if (!externalReference) return;
     if (status === "approved") await approvePayment(externalReference, "MercadoPago");

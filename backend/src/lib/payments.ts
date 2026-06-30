@@ -61,6 +61,28 @@ export async function getMpPayment(paymentId: string): Promise<{ status: string;
   return { status: data.status, externalReference: data.external_reference ?? null };
 }
 
+// Validación de la firma del webhook de MercadoPago (header x-signature: "ts=...,v1=...").
+// Manifest: id:<data.id>;request-id:<x-request-id>;ts:<ts>; firmado con MP_WEBHOOK_SECRET.
+const MP_WEBHOOK_SECRET = process.env.MP_WEBHOOK_SECRET ?? "";
+export const mpWebhookSecretSet = () => Boolean(MP_WEBHOOK_SECRET);
+export function verifyMpWebhook(p: { xSignature?: string; xRequestId?: string; dataId?: string }): boolean {
+  if (!MP_WEBHOOK_SECRET) return false;
+  if (!p.xSignature || !p.dataId) return false;
+  const parts: Record<string, string> = {};
+  for (const kv of p.xSignature.split(",")) {
+    const [k, v] = kv.split("=");
+    if (k && v) parts[k.trim()] = v.trim();
+  }
+  const ts = parts["ts"];
+  const v1 = parts["v1"];
+  if (!ts || !v1) return false;
+  const manifest = `id:${p.dataId.toLowerCase()};request-id:${p.xRequestId ?? ""};ts:${ts};`;
+  const hmac = crypto.createHmac("sha256", MP_WEBHOOK_SECRET).update(manifest).digest("hex");
+  const a = Buffer.from(hmac);
+  const b = Buffer.from(v1);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 // ---- Stripe (tarjeta, global) --------------------------------------------
 const STRIPE_KEY = process.env.STRIPE_SECRET_KEY ?? "";
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? "";
