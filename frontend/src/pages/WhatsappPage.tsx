@@ -104,18 +104,10 @@ export default function WhatsappPage() {
         try {
           data = JSON.parse(data);
         } catch {
-          // [DIAG] mensaje no-JSON del SDK: lo logueamos pero seguimos.
-          console.log("[ES] message no-JSON ignorado <-", event.origin, ":", event.data);
+          // mensajes no-JSON del SDK: se ignoran
           return;
         }
       }
-      // [DIAG] todo lo que llega del popup, para ver qué falta (type/event/ids).
-      console.log("[ES] message <-", event.origin, {
-        type: data?.type,
-        event: data?.event,
-        phone_number_id: data?.data?.phone_number_id,
-        waba_id: data?.data?.waba_id,
-      });
       // Aceptamos cualquier evento del Embedded Signup (FINISH, FINISH_ONLY_WABA, etc.)
       // y vamos acumulando lo que venga: a veces el waba_id llega sin el phone_number_id.
       if (data?.type === "WA_EMBEDDED_SIGNUP") {
@@ -174,12 +166,6 @@ export default function WhatsappPage() {
       (response: any) => {
         const code = response?.authResponse?.code;
         const sess = esSessionRef.current;
-        // [DIAG] qué tenemos al cerrar el popup: code + ids capturados por postMessage.
-        console.log("[ES] FB.login callback", {
-          hasCode: !!code,
-          phoneNumberId: sess.phoneNumberId,
-          wabaId: sess.wabaId,
-        });
         // Con el `code` alcanza: el backend resuelve la WABA y el número.
         // phoneNumberId/wabaId del postMessage son best-effort (si llegaron, los mandamos).
         if (code) {
