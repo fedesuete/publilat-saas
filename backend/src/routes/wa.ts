@@ -20,6 +20,7 @@ import {
   GRAPH_VERSION,
   exchangeCodeForToken,
   subscribeWaba,
+  getSubscribedApps,
   registerCloudNumber,
   getWabaPhoneNumbers,
   debugToken,
@@ -282,6 +283,31 @@ waRouter.post("/lines/:id/register", async (req, res) => {
     error: reg.ok ? undefined : reg.error,
     line: fresh ? toPublicLine(fresh) : undefined,
   });
+});
+
+// POST /api/wa/lines/:id/subscribe — (re)suscribe NUESTRA app al webhook de la WABA del
+// cliente. Sin esta suscripción los mensajes entrantes nunca llegan al webhook/Inbox.
+waRouter.post("/lines/:id/subscribe", async (req, res) => {
+  const line = await getOwnedLine(req.userId!, req.params.id);
+  if (!line) return res.status(404).json({ error: "Línea no encontrada" });
+  if (line.provider !== "cloud") return res.status(400).json({ error: "Solo aplica a líneas Cloud API" });
+  if (!line.wabaId || !line.accessToken) {
+    return res.status(400).json({ error: "La línea Cloud no está configurada (falta WABA ID o token)" });
+  }
+  const token = decryptSecret(line.accessToken);
+  try {
+    await subscribeWaba(line.wabaId, token);
+    const apps = await getSubscribedApps(line.wabaId, token);
+    return res.json({ subscribed: apps.length > 0, apps });
+  } catch (e) {
+    if (axios.isAxiosError(e)) {
+      console.error("[wa/lines/subscribe] Graph error", e.response?.status, JSON.stringify(e.response?.data));
+      return res.status(502).json({ subscribed: false, error: e.response?.data?.error?.message ?? e.message });
+    }
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("[wa/lines/subscribe] error:", message);
+    return res.status(502).json({ subscribed: false, error: message });
+  }
 });
 
 // POST /api/wa/lines/:id/connect — devuelve el QR para escanear (y lo emite por socket).

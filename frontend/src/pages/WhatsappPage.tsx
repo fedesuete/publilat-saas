@@ -45,6 +45,8 @@ export default function WhatsappPage() {
   const [needsRetry, setNeedsRetry] = useState(false); // 409: WABA sin número verificado aún
   const [registeringId, setRegisteringId] = useState<string | null>(null);
   const [registerMsg, setRegisterMsg] = useState<{ id: string; ok: boolean; text: string } | null>(null);
+  const [subscribingId, setSubscribingId] = useState<string | null>(null);
+  const [subscribeMsg, setSubscribeMsg] = useState<{ id: string; ok: boolean; text: string } | null>(null);
   const esSessionRef = useRef<{ phoneNumberId?: string; wabaId?: string }>({});
   const lastAttemptRef = useRef<{ code: string; phoneNumberId?: string; wabaId?: string } | null>(null);
 
@@ -172,6 +174,25 @@ export default function WhatsappPage() {
       setRegisterMsg({ id, ok: false, text: body?.error ?? apiError(err) });
     } finally {
       setRegisteringId(null);
+    }
+  };
+
+  // (Re)suscribe la WABA al webhook de la app: sin esto los mensajes entrantes no llegan.
+  const subscribeWebhook = async (id: string) => {
+    setSubscribingId(id);
+    setSubscribeMsg(null);
+    try {
+      const { data } = await api.post<{ subscribed: boolean; error?: string }>(`/api/wa/lines/${id}/subscribe`);
+      setSubscribeMsg({
+        id,
+        ok: data.subscribed,
+        text: data.subscribed ? "Webhook reconectado ✓ (WABA suscrita)" : data.error ?? "La WABA no quedó suscrita",
+      });
+    } catch (err) {
+      const body = (err as { response?: { data?: { error?: string } } })?.response?.data;
+      setSubscribeMsg({ id, ok: false, text: body?.error ?? apiError(err) });
+    } finally {
+      setSubscribingId(null);
     }
   };
 
@@ -565,6 +586,20 @@ export default function WhatsappPage() {
                         Copiar
                       </Button>
                     </div>
+                    {/* Re-suscribir la WABA al webhook (si no llegan los mensajes entrantes) */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-2">
+                      <span className="text-slate-500">¿No llegan los mensajes al Inbox?</span>
+                      <Button
+                        variant="secondary"
+                        disabled={subscribingId === line.id}
+                        onClick={() => void subscribeWebhook(line.id)}
+                      >
+                        {subscribingId === line.id ? "Reconectando…" : "Reconectar webhook"}
+                      </Button>
+                    </div>
+                    {subscribeMsg && subscribeMsg.id === line.id && (
+                      <p className={subscribeMsg.ok ? "text-wa-green" : "text-rose-400"}>{subscribeMsg.text}</p>
+                    )}
                   </div>
                 ) : line.connected ? (
                   <div className="mb-3 rounded-md border border-wa-green/40 bg-wa-green/10 px-3 py-2 text-sm text-wa-green">

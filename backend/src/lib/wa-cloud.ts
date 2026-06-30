@@ -96,11 +96,24 @@ export async function getWabaPhoneNumbers(wabaId: string, token: string): Promis
 
 // Suscribe NUESTRA app al webhook de la WABA del cliente (para recibir sus mensajes).
 export async function subscribeWaba(wabaId: string, token: string): Promise<void> {
-  await axios.post(
+  const { data } = await axios.post(
     `${GRAPH}/${wabaId}/subscribed_apps`,
     {},
     { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 },
   );
+  console.log("[wa-cloud] subscribeWaba", wabaId, "->", JSON.stringify(data));
+}
+
+// Lista las apps suscritas al webhook de una WABA. Sirve para verificar que NUESTRA app
+// quedó suscrita (si no, los mensajes entrantes nunca llegan al webhook).
+export async function getSubscribedApps(wabaId: string, token: string): Promise<any[]> {
+  const { data } = await axios.get(`${GRAPH}/${wabaId}/subscribed_apps`, {
+    headers: { Authorization: `Bearer ${token}` },
+    timeout: 15000,
+  });
+  const apps: any[] = Array.isArray(data?.data) ? data.data : [];
+  console.log("[wa-cloud] subscribed_apps", wabaId, "->", JSON.stringify(apps));
+  return apps;
 }
 
 // Registra/activa el número en la Cloud API. Best-effort: si ya está registrado o requiere

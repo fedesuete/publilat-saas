@@ -85,16 +85,23 @@ cloudWebhookRouter.post("/", async (req, res) => {
   res.sendStatus(200); // responder rápido; Meta reintenta si fallamos
   try {
     const entries: any[] = req.body?.entry ?? [];
+    console.log(`[cloud-webhook] POST recibido: ${entries.length} entry(s)`);
     for (const entry of entries) {
       for (const change of entry?.changes ?? []) {
         const value = change?.value;
         const phoneNumberId: string | undefined = value?.metadata?.phone_number_id;
+        const msgCount = Array.isArray(value?.messages) ? value.messages.length : 0;
+        console.log(`[cloud-webhook] field=${change?.field} phone_number_id=${phoneNumberId ?? "—"} messages=${msgCount}`);
         if (!phoneNumberId) continue;
 
         const line = await prisma.waLine.findFirst({
           where: { provider: "cloud", wabaPhoneNumberId: phoneNumberId },
         });
-        if (!line) continue;
+        if (!line) {
+          console.warn(`[cloud-webhook] SIN línea Cloud para phone_number_id=${phoneNumberId} -> no se entrega`);
+          continue;
+        }
+        console.log(`[cloud-webhook] match línea ${line.id} (user ${line.userId})`);
         const userId = line.userId;
 
         const owner = await prisma.user.findUnique({ where: { id: userId }, select: { paymentDetection: true } });
