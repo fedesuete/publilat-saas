@@ -42,6 +42,7 @@ export default function WhatsappPage() {
   const [fbReady, setFbReady] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [needsRetry, setNeedsRetry] = useState(false); // 409: WABA sin número verificado aún
   const esSessionRef = useRef<{ phoneNumberId?: string; wabaId?: string }>({});
 
   const load = async () => {
@@ -96,36 +97,56 @@ export default function WhatsappPage() {
   useEffect(() => {
     const handler = (event: MessageEvent) => {
       if (typeof event.origin !== "string" || !event.origin.endsWith("facebook.com")) return;
-      try {
-        const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
-        if (data?.type === "WA_EMBEDDED_SIGNUP" && data?.data?.phone_number_id) {
-          esSessionRef.current = {
-            phoneNumberId: data.data.phone_number_id,
-            wabaId: data.data.waba_id,
-          };
+      // El SDK manda objetos o strings JSON. Solo parseamos si es string.
+      let data: any = event.data;
+      if (typeof data === "string") {
+        try {
+          data = JSON.parse(data);
+        } catch {
+          // [DIAG] mensaje no-JSON del SDK: lo logueamos pero seguimos.
+          console.log("[ES] message no-JSON ignorado <-", event.origin, ":", event.data);
+          return;
         }
-      } catch {
-        /* mensajes no-JSON del SDK: se ignoran */
+      }
+      // [DIAG] todo lo que llega del popup, para ver qué falta (type/event/ids).
+      console.log("[ES] message <-", event.origin, {
+        type: data?.type,
+        event: data?.event,
+        phone_number_id: data?.data?.phone_number_id,
+        waba_id: data?.data?.waba_id,
+      });
+      // Aceptamos cualquier evento del Embedded Signup (FINISH, FINISH_ONLY_WABA, etc.)
+      // y vamos acumulando lo que venga: a veces el waba_id llega sin el phone_number_id.
+      if (data?.type === "WA_EMBEDDED_SIGNUP") {
+        const d = data.data ?? {};
+        esSessionRef.current = {
+          phoneNumberId: d.phone_number_id ?? esSessionRef.current.phoneNumberId,
+          wabaId: d.waba_id ?? esSessionRef.current.wabaId,
+        };
       }
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
   }, []);
 
-  const finishConnect = async (code: string, phoneNumberId: string, wabaId: string) => {
+  const finishConnect = async (code: string, phoneNumberId: string | undefined, wabaId: string) => {
     setConnecting(true);
     setError(null);
+    setNeedsRetry(false);
     try {
       const { data } = await api.post<{ line: Line }>("/api/wa/cloud/connect", {
         code,
-        phoneNumberId,
+        phoneNumberId: phoneNumberId || undefined, // el backend lo resuelve si falta
         wabaId,
         label: label || undefined,
       });
-      setLines((prev) => [...prev, data.line]);
+      await load(); // refresca la lista desde el server (aparece sí o sí)
       setLabel("");
-      setNotice({ id: data.line.id, text: "WhatsApp oficial conectado ✓" });
+      setNotice({ id: data.line.id, text: "WhatsApp conectado ✓" });
     } catch (err) {
+      // 409: la WABA todavía no tiene número verificado -> ofrecer reintento.
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 409) setNeedsRetry(true);
       setError(apiError(err));
     } finally {
       setConnecting(false);
@@ -138,15 +159,23 @@ export default function WhatsappPage() {
       return;
     }
     setError(null);
+    setNeedsRetry(false);
     esSessionRef.current = {};
     window.FB.login(
       (response: any) => {
         const code = response?.authResponse?.code;
         const sess = esSessionRef.current;
-        if (code && sess.phoneNumberId && sess.wabaId) {
+        // [DIAG] qué tenemos al cerrar el popup: code + ids capturados por postMessage.
+        console.log("[ES] FB.login callback", {
+          hasCode: !!code,
+          phoneNumberId: sess.phoneNumberId,
+          wabaId: sess.wabaId,
+        });
+        // Fallback: con code + wabaId alcanza; si falta el phone_number_id, lo resuelve el backend.
+        if (code && sess.wabaId) {
           void finishConnect(code, sess.phoneNumberId, sess.wabaId);
         } else {
-          setError("No se completó la conexión (faltó el código o los datos del número).");
+          setError("No se completó la conexión (faltó el código o la cuenta de WhatsApp).");
         }
       },
       {
@@ -415,6 +444,13 @@ export default function WhatsappPage() {
       {error && (
         <div className="mb-4">
           <ErrorMsg>{error}</ErrorMsg>
+          {needsRetry && (
+            <div className="mt-2">
+              <Button type="button" onClick={launchSignup} disabled={connecting || !fbReady}>
+                {connecting ? "Reintentando…" : "Reintentar conexión"}
+              </Button>
+            </div>
+          )}
         </div>
       )}
 

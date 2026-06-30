@@ -19,6 +19,7 @@ import {
   exchangeCodeForToken,
   subscribeWaba,
   registerPhone,
+  getWabaPhoneNumbers,
 } from "../lib/wa-cloud.js";
 
 export const waRouter = Router();
@@ -154,23 +155,41 @@ waRouter.get("/cloud/config", (_req, res) => {
 
 const connectSchema = z.object({
   code: z.string().min(10).max(4000),
-  phoneNumberId: z.string().min(3).max(40),
+  phoneNumberId: z.string().min(3).max(40).optional(),
   wabaId: z.string().min(3).max(40),
   label: z.string().max(60).optional(),
   phone: z.string().max(20).optional(),
 });
 
 // POST /api/wa/cloud/connect — cierra el Embedded Signup: intercambia el code por token,
-// suscribe nuestra app a la WABA del cliente, registra el número y crea la línea cloud.
+// suscribe nuestra app a la WABA del cliente, resuelve/registra el número y crea la línea.
 waRouter.post("/cloud/connect", async (req, res) => {
   const parsed = connectSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
   }
-  const { code, phoneNumberId, wabaId, label, phone } = parsed.data;
+  const { code, wabaId, label } = parsed.data;
+  let phoneNumberId = parsed.data.phoneNumberId;
+  let phone = parsed.data.phone;
   try {
     const token = await exchangeCodeForToken(code);
     await subscribeWaba(wabaId, token);
+
+    // El Embedded Signup a veces no manda el phone_number_id (solo el waba_id).
+    // En ese caso lo resolvemos consultando los números de la WABA.
+    if (!phoneNumberId) {
+      const numbers = await getWabaPhoneNumbers(wabaId, token);
+      if (numbers.length === 0) {
+        return res.status(409).json({
+          error: "La cuenta de WhatsApp se creó pero todavía no tiene número verificado. Volvé a intentar en unos segundos.",
+        });
+      }
+      phoneNumberId = numbers[0].id;
+      if (!phone && numbers[0].display_phone_number) {
+        phone = numbers[0].display_phone_number.replace(/\D/g, "");
+      }
+    }
+
     await registerPhone(phoneNumberId, token); // best-effort
     const line = await prisma.waLine.create({
       data: {

@@ -61,6 +61,18 @@ export async function exchangeCodeForToken(code: string): Promise<string> {
   return token;
 }
 
+// Lista los números de teléfono de una WABA. Sirve para resolver el phone_number_id
+// cuando el Embedded Signup no lo mandó (a veces sólo llega el waba_id).
+export interface WabaPhoneNumber { id: string; display_phone_number?: string; verified_name?: string }
+export async function getWabaPhoneNumbers(wabaId: string, token: string): Promise<WabaPhoneNumber[]> {
+  const { data } = await axios.get(`${GRAPH}/${wabaId}/phone_numbers`, {
+    params: { access_token: token, fields: "id,display_phone_number,verified_name" },
+    timeout: 15000,
+  });
+  const arr: any[] = Array.isArray(data?.data) ? data.data : [];
+  return arr.map((p) => ({ id: p.id, display_phone_number: p.display_phone_number, verified_name: p.verified_name }));
+}
+
 // Suscribe NUESTRA app al webhook de la WABA del cliente (para recibir sus mensajes).
 export async function subscribeWaba(wabaId: string, token: string): Promise<void> {
   await axios.post(
