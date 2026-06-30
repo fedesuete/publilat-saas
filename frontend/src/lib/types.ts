@@ -12,6 +12,7 @@ export interface Lead {
   id: string;
   externalId: string;
   name: string | null;
+  phone?: string | null;
   stage: Stage;
   source: string | null;
   campaignId: string | null;

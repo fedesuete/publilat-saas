@@ -32,6 +32,7 @@ leadsRouter.get("/", async (req, res) => {
       id: true,
       externalId: true,
       name: true,
+      phone: true, // para mostrar al contacto por teléfono cuando no tiene nombre (Kanban/Agenda)
       stage: true,
       source: true,
       campaignId: true,
@@ -45,7 +46,6 @@ leadsRouter.get("/", async (req, res) => {
       paymentDetected: true,
       paymentDetectedAmount: true,
       createdAt: true,
-      // phone se omite a propósito (PII): no se expone en el listado.
     },
   });
   return res.json({ leads });

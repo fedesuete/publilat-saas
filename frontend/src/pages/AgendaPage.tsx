@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, apiError } from "../lib/api";
-import { fmtDate, fmtAmount } from "../lib/format";
+import { fmtDate, fmtAmount, contactName } from "../lib/format";
 import { Button, Input, Card, ErrorMsg, StageBadge } from "../components/ui";
 import type { Lead, LeadDetail } from "../lib/types";
 
@@ -118,7 +118,7 @@ export default function AgendaPage() {
                     >
                       <div className="min-w-0">
                         <div className="truncate text-sm font-medium text-slate-100">
-                          {l.name || l.code || l.externalId.slice(0, 8)}
+                          {contactName(l)}
                         </div>
                         <div className="truncate text-xs text-slate-500">
                           {l.source || "sin fuente"}{l.campaignId ? ` · ${l.campaignId}` : ""} · {fmtDate(l.createdAt)}

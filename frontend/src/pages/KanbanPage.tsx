@@ -1,7 +1,7 @@
 import { useEffect, useState, type DragEvent, type FormEvent } from "react";
 import { api, apiError } from "../lib/api";
 import type { Lead, Stage } from "../lib/types";
-import { fmtAmount, fmtDate, truncate } from "../lib/format";
+import { fmtAmount, fmtDate, contactName } from "../lib/format";
 import { Button, Input, ErrorMsg } from "../components/ui";
 
 const COLUMNS: Stage[] = ["NUEVO", "CONTACTADO", "INTERESADO", "COMPRO", "PERDIDO"];
@@ -15,7 +15,7 @@ const HEADER_STYLES: Record<Stage, string> = {
 };
 
 function leadTitle(lead: Lead): string {
-  return lead.name || lead.code || truncate(lead.externalId, 12);
+  return contactName(lead);
 }
 
 export default function KanbanPage() {

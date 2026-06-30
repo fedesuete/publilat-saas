@@ -24,6 +24,11 @@ export function truncate(value: string | null, len = 14): string {
   return value.length > len ? value.slice(0, len) + "…" : value;
 }
 
+// Nombre legible de un contacto: nombre -> teléfono -> código corto. NUNCA el UUID crudo.
+export function contactName(c: { name?: string | null; phone?: string | null; code?: string | null }): string {
+  return c.name || c.phone || c.code || "Sin nombre";
+}
+
 /**
  * Tiempo restante hasta `iso` en texto corto ("en 3 días", "en 5 h", "vencida").
  * Devuelve null si `iso` es null/inválido.
