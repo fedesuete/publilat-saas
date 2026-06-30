@@ -44,6 +44,7 @@ export default function WhatsappPage() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [needsRetry, setNeedsRetry] = useState(false); // 409: WABA sin número verificado aún
   const esSessionRef = useRef<{ phoneNumberId?: string; wabaId?: string }>({});
+  const lastAttemptRef = useRef<{ code: string; phoneNumberId?: string; wabaId?: string } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -129,28 +130,36 @@ export default function WhatsappPage() {
     return () => window.removeEventListener("message", handler);
   }, []);
 
-  const finishConnect = async (code: string, phoneNumberId: string | undefined, wabaId: string) => {
+  const finishConnect = async (code: string, phoneNumberId?: string, wabaId?: string) => {
+    // Guardamos el último intento para poder reintentar el MISMO code (caso 409).
+    lastAttemptRef.current = { code, phoneNumberId, wabaId };
     setConnecting(true);
     setError(null);
     setNeedsRetry(false);
     try {
+      // El backend resuelve la WABA y el número con SOLO el code; lo demás es best-effort.
       const { data } = await api.post<{ line: Line }>("/api/wa/cloud/connect", {
         code,
-        phoneNumberId: phoneNumberId || undefined, // el backend lo resuelve si falta
-        wabaId,
+        phoneNumberId: phoneNumberId || undefined,
+        wabaId: wabaId || undefined,
         label: label || undefined,
       });
       await load(); // refresca la lista desde el server (aparece sí o sí)
       setLabel("");
       setNotice({ id: data.line.id, text: "WhatsApp conectado ✓" });
     } catch (err) {
-      // 409: la WABA todavía no tiene número verificado -> ofrecer reintento.
+      // 409: la WABA todavía no se compartió / no tiene número -> ofrecer reintento (mismo code).
       const status = (err as { response?: { status?: number } })?.response?.status;
       if (status === 409) setNeedsRetry(true);
       setError(apiError(err));
     } finally {
       setConnecting(false);
     }
+  };
+
+  const retryConnect = () => {
+    const a = lastAttemptRef.current;
+    if (a) void finishConnect(a.code, a.phoneNumberId, a.wabaId);
   };
 
   const launchSignup = () => {
@@ -171,11 +180,12 @@ export default function WhatsappPage() {
           phoneNumberId: sess.phoneNumberId,
           wabaId: sess.wabaId,
         });
-        // Fallback: con code + wabaId alcanza; si falta el phone_number_id, lo resuelve el backend.
-        if (code && sess.wabaId) {
+        // Con el `code` alcanza: el backend resuelve la WABA y el número.
+        // phoneNumberId/wabaId del postMessage son best-effort (si llegaron, los mandamos).
+        if (code) {
           void finishConnect(code, sess.phoneNumberId, sess.wabaId);
         } else {
-          setError("No se completó la conexión (faltó el código o la cuenta de WhatsApp).");
+          setError("No se completó la conexión (Meta no devolvió el código de autorización).");
         }
       },
       {
@@ -446,7 +456,7 @@ export default function WhatsappPage() {
           <ErrorMsg>{error}</ErrorMsg>
           {needsRetry && (
             <div className="mt-2">
-              <Button type="button" onClick={launchSignup} disabled={connecting || !fbReady}>
+              <Button type="button" onClick={retryConnect} disabled={connecting}>
                 {connecting ? "Reintentando…" : "Reintentar conexión"}
               </Button>
             </div>

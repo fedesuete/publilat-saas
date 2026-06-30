@@ -14,12 +14,14 @@ import {
   logoutInstance,
   deleteInstance,
 } from "../lib/evolution.js";
+import axios from "axios";
 import {
   GRAPH_VERSION,
   exchangeCodeForToken,
   subscribeWaba,
   registerPhone,
   getWabaPhoneNumbers,
+  debugToken,
 } from "../lib/wa-cloud.js";
 
 export const waRouter = Router();
@@ -156,41 +158,61 @@ waRouter.get("/cloud/config", (_req, res) => {
 const connectSchema = z.object({
   code: z.string().min(10).max(4000),
   phoneNumberId: z.string().min(3).max(40).optional(),
-  wabaId: z.string().min(3).max(40),
+  wabaId: z.string().min(3).max(40).optional(),
   label: z.string().max(60).optional(),
   phone: z.string().max(20).optional(),
 });
 
-// POST /api/wa/cloud/connect — cierra el Embedded Signup: intercambia el code por token,
-// suscribe nuestra app a la WABA del cliente, resuelve/registra el número y crea la línea.
+// POST /api/wa/cloud/connect — cierra el Embedded Signup usando SOLO el `code`:
+// intercambia el code por token, resuelve la WABA (debug_token) y el número
+// (phone_numbers), suscribe la app al webhook, registra el número y crea la línea.
+// No depende del postMessage del popup (phoneNumberId/wabaId son best-effort).
 waRouter.post("/cloud/connect", async (req, res) => {
   const parsed = connectSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
   }
-  const { code, wabaId, label } = parsed.data;
+  const { code, label } = parsed.data;
+  let wabaId = parsed.data.wabaId;
   let phoneNumberId = parsed.data.phoneNumberId;
   let phone = parsed.data.phone;
   try {
+    console.log("[ES][backend] code recibido (len):", code.length, "| waba/phone del front:", wabaId ?? "—", phoneNumberId ?? "—");
     const token = await exchangeCodeForToken(code);
-    await subscribeWaba(wabaId, token);
+    console.log("[ES][backend] token OK");
 
-    // El Embedded Signup a veces no manda el phone_number_id (solo el waba_id).
-    // En ese caso lo resolvemos consultando los números de la WABA.
+    // a) Resolver la WABA desde el token si no vino del front.
+    if (!wabaId) {
+      const { wabaIds } = await debugToken(token);
+      console.log("[ES][backend] debug_token wabaIds:", JSON.stringify(wabaIds));
+      if (wabaIds.length === 0) {
+        return res.status(409).json({
+          error: "La cuenta de WhatsApp se conectó en Meta pero todavía no se comparte con la app. Esperá unos segundos y tocá Reintentar.",
+        });
+      }
+      wabaId = wabaIds[0];
+    }
+    console.log("[ES][backend] wabaId resuelto:", wabaId);
+
+    // b) Resolver el número desde la WABA si no vino del front.
     if (!phoneNumberId) {
       const numbers = await getWabaPhoneNumbers(wabaId, token);
+      console.log("[ES][backend] phone_numbers:", JSON.stringify(numbers));
       if (numbers.length === 0) {
         return res.status(409).json({
-          error: "La cuenta de WhatsApp se creó pero todavía no tiene número verificado. Volvé a intentar en unos segundos.",
+          error: "La cuenta no tiene número verificado todavía. Reintentá en unos segundos.",
         });
       }
       phoneNumberId = numbers[0].id;
-      if (!phone && numbers[0].display_phone_number) {
-        phone = numbers[0].display_phone_number.replace(/\D/g, "");
-      }
+      if (!phone && numbers[0].display_phone_number) phone = numbers[0].display_phone_number.replace(/\D/g, "");
     }
+    console.log("[ES][backend] phoneNumberId resuelto:", phoneNumberId, "| phone:", phone ?? "—");
 
-    await registerPhone(phoneNumberId, token); // best-effort
+    // c) Suscribir la app al webhook de la WABA y registrar el número (best-effort).
+    await subscribeWaba(wabaId, token);
+    await registerPhone(phoneNumberId, token);
+
+    // d) Crear la línea cloud.
     const line = await prisma.waLine.create({
       data: {
         userId: req.userId!,
@@ -205,10 +227,16 @@ waRouter.post("/cloud/connect", async (req, res) => {
         verifyToken: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN ?? null,
       },
     });
+    console.log("[ES][backend] línea creada:", line.id);
     return res.status(201).json({ line: toPublicLine(line) });
   } catch (e) {
+    if (axios.isAxiosError(e)) {
+      console.error("[ES][backend] Graph error", e.response?.status, JSON.stringify(e.response?.data));
+      const detail = e.response?.data?.error?.message ?? e.message;
+      return res.status(502).json({ error: "No se pudo conectar la cuenta de WhatsApp", detail });
+    }
     const message = e instanceof Error ? e.message : String(e);
-    console.error("[wa/cloud/connect] error:", message);
+    console.error("[ES][backend] connect error:", message);
     return res.status(502).json({ error: "No se pudo conectar la cuenta de WhatsApp", detail: message });
   }
 });

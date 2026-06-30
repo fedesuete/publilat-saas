@@ -61,6 +61,27 @@ export async function exchangeCodeForToken(code: string): Promise<string> {
   return token;
 }
 
+// Inspecciona el token (debug_token) y devuelve los WABA ids a los que da acceso.
+// Embedded Signup: el token del negocio trae granular_scopes con los target_ids (las WABA).
+// Así resolvemos la WABA usando SOLO el code, sin depender del postMessage del popup.
+export async function debugToken(token: string): Promise<{ wabaIds: string[] }> {
+  const appId = process.env.META_APP_ID;
+  const appSecret = process.env.META_APP_SECRET;
+  if (!appId || !appSecret) throw new Error("Faltan META_APP_ID / META_APP_SECRET");
+  const { data } = await axios.get(`${GRAPH}/debug_token`, {
+    params: { input_token: token, access_token: `${appId}|${appSecret}` },
+    timeout: 15000,
+  });
+  const scopes: any[] = Array.isArray(data?.data?.granular_scopes) ? data.data.granular_scopes : [];
+  const idsFor = (scope: string): string[] => {
+    const s = scopes.find((x) => x?.scope === scope);
+    return Array.isArray(s?.target_ids) ? s.target_ids.map(String) : [];
+  };
+  let ids = idsFor("whatsapp_business_management");
+  if (ids.length === 0) ids = idsFor("whatsapp_business_messaging");
+  return { wabaIds: ids };
+}
+
 // Lista los números de teléfono de una WABA. Sirve para resolver el phone_number_id
 // cuando el Embedded Signup no lo mandó (a veces sólo llega el waba_id).
 export interface WabaPhoneNumber { id: string; display_phone_number?: string; verified_name?: string }
