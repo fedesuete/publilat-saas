@@ -4,6 +4,7 @@
 import crypto from "node:crypto";
 import axios from "axios";
 import { prisma } from "./prisma.js";
+import { assertPublicUrl } from "./ssrf.js";
 
 export type IntegrationEvent = "lead" | "purchase";
 
@@ -50,7 +51,8 @@ export async function fireIntegration(
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (integ.secret) headers["X-Publilat-Signature"] = signPayload(raw, integ.secret);
 
-    await axios.post(integ.webhookUrl, body, { headers, timeout: 8000 });
+    await assertPublicUrl(integ.webhookUrl); // anti-SSRF: nunca a IPs internas
+    await axios.post(integ.webhookUrl, body, { headers, timeout: 8000, maxRedirects: 0 });
   } catch (e) {
     console.error("[integration] error:", e instanceof Error ? e.message : String(e));
   }
@@ -69,6 +71,7 @@ export async function sendTestIntegration(userId: string): Promise<number> {
   const raw = JSON.stringify(body);
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (integ.secret) headers["X-Publilat-Signature"] = signPayload(raw, integ.secret);
-  const r = await axios.post(integ.webhookUrl, body, { headers, timeout: 8000, validateStatus: () => true });
+  await assertPublicUrl(integ.webhookUrl); // anti-SSRF: nunca a IPs internas
+  const r = await axios.post(integ.webhookUrl, body, { headers, timeout: 8000, maxRedirects: 0, validateStatus: () => true });
   return r.status;
 }

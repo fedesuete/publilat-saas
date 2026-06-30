@@ -13,6 +13,24 @@ import { detectPayment } from "../lib/payment-detect.js";
 
 export const cloudWebhookRouter = Router();
 
+// Valida la firma X-Hub-Signature-256 que Meta envía: HMAC-SHA256 del body crudo con el
+// app secret. Sin firma válida no procesamos (evita webhooks falsificados).
+function validMetaSignature(req: import("express").Request): boolean {
+  const appSecret = process.env.META_APP_SECRET;
+  if (!appSecret) {
+    console.warn("[cloud-webhook] META_APP_SECRET no configurado: no se puede validar la firma");
+    return false;
+  }
+  const header = req.get("x-hub-signature-256");
+  if (!header || !header.startsWith("sha256=")) return false;
+  const raw = (req as unknown as { rawBody?: Buffer }).rawBody;
+  if (!raw || raw.length === 0) return false;
+  const expected = "sha256=" + crypto.createHmac("sha256", appSecret).update(raw).digest("hex");
+  const a = Buffer.from(header);
+  const b = Buffer.from(expected);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 // Extrae el texto de un mensaje de la Cloud API (varios tipos).
 function extractText(msg: Record<string, any>): string {
   return (
@@ -82,6 +100,11 @@ cloudWebhookRouter.get("/", async (req, res) => {
 
 // POST — mensajes entrantes.
 cloudWebhookRouter.post("/", async (req, res) => {
+  // Validamos la firma de Meta ANTES de procesar (rechaza payloads falsificados).
+  if (!validMetaSignature(req)) {
+    console.warn("[cloud-webhook] firma X-Hub-Signature-256 inválida o ausente -> 401");
+    return res.sendStatus(401);
+  }
   res.sendStatus(200); // responder rápido; Meta reintenta si fallamos
   try {
     const entries: any[] = req.body?.entry ?? [];

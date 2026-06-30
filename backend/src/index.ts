@@ -57,7 +57,15 @@ app.use(cors({ origin: corsOrigin, credentials: true }));
 // Webhook de Stripe ANTES del json(): necesita el body crudo para validar la firma.
 app.post("/api/billing/webhook/stripe", express.raw({ type: "*/*" }), stripeWebhookHandler);
 
-app.use(express.json({ limit: "1mb" }));
+// Guardamos el body crudo (para validar la firma X-Hub-Signature-256 de los webhooks de Meta).
+app.use(
+  express.json({
+    limit: "1mb",
+    verify: (req, _res, buf) => {
+      (req as unknown as { rawBody?: Buffer }).rawBody = buf;
+    },
+  })
+);
 app.use(cookieParser());
 
 // Rate limits: más laxo global, estricto en auth y en el redirector público.
