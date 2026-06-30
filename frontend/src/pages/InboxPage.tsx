@@ -22,6 +22,9 @@ interface QuickReply { id: string; title: string; body: string }
 const shortTime = (iso: string) =>
   new Date(iso).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
 
+// Agrega un mensaje sólo si su id no está ya en la lista (evita el duplicado salida POST + socket).
+const appendUnique = (prev: Msg[], m: Msg) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]);
+
 const EMOJIS = ["😀","😅","😂","🤣","😊","😍","😘","😎","🤩","🥳","👍","🙏","🙌","👏","💪","🔥","✨","🎉","🎁","💯","❤️","💚","💙","✅","❌","⚠️","⏰","📞","📲","💬","🤝","🙋","😉","😜","🤔","😢","😭","😡","🥰","😴","💰","💵","🏦","🛒","📷","🎤","📄"];
 
 export default function InboxPage() {
@@ -59,7 +62,7 @@ export default function InboxPage() {
   useEffect(() => {
     const socket = getSocket();
     const onMessage = (payload: InboxMessagePayload) => {
-      if (payload.contactId === selectedRef.current) setMessages((prev) => [...prev, payload.message]);
+      if (payload.contactId === selectedRef.current) setMessages((prev) => appendUnique(prev, payload.message));
       void loadConvs();
     };
     socket.on("inbox:message", onMessage);
@@ -84,7 +87,7 @@ export default function InboxPage() {
     const body = draft.trim();
     try {
       const { data } = await api.post<{ message: Msg }>(`/api/inbox/${selected}/messages`, { body });
-      setMessages((prev) => [...prev, data.message]);
+      setMessages((prev) => appendUnique(prev, data.message));
       setDraft(""); setShowEmoji(false); setShowQuick(false);
       void loadConvs();
     } catch (err) { setChatError(apiError(err)); } finally { setSending(false); }
@@ -114,7 +117,7 @@ export default function InboxPage() {
         if (!selectedRef.current) return;
         try {
           const { data } = await api.post<{ message: Msg }>(`/api/inbox/${selectedRef.current}/audio`, { audio: dataUrl });
-          setMessages((prev) => [...prev, data.message]);
+          setMessages((prev) => appendUnique(prev, data.message));
           void loadConvs();
         } catch (err) { setChatError(apiError(err)); }
       };
