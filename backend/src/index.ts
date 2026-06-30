@@ -47,6 +47,9 @@ app.use(
   helmet({
     contentSecurityPolicy: false, // las landings traen el pixel inline; el panel es SPA aparte
     crossOriginEmbedderPolicy: false,
+    // Permite que los popups que abre la app (Facebook Login / Embedded Signup) sigan
+    // comunicándose con la ventana que los abrió (window.opener + postMessage).
+    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
   })
 );
 app.use(cors({ origin: corsOrigin, credentials: true }));
