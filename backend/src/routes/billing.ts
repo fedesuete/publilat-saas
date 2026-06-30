@@ -58,10 +58,26 @@ billingRouter.get("/credit", async (req, res) => {
   });
 });
 
+// GET /api/billing/quote?days=N — precio por proveedor para esa cantidad de días.
+const quoteSchema = z.object({ days: z.coerce.number().int().positive().max(3650) });
+billingRouter.get("/quote", (req, res) => {
+  const parsed = quoteSchema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: "Cantidad de días inválida" });
+  const days = parsed.data.days;
+  const prices = Object.fromEntries(
+    (["mercadopago", "stripe", "usdt"] as Provider[]).map((p) => [p, priceFor(p, days)]),
+  );
+  return res.json({ days, prices });
+});
+
 const addSchema = z.object({ days: z.number().int().positive().max(3650) });
 
-// POST /api/billing/credit/add — suma días (stub de compra, sólo dev). Registra en ledger.
+// POST /api/billing/credit/add — suma días SIN pagar. Sólo dev: en producción está
+// deshabilitado (los días reales se compran por pasarela o los carga un admin).
 billingRouter.post("/credit/add", async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(403).json({ error: "Deshabilitado: comprá días con un medio de pago real." });
+  }
   const parsed = addSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
   const credit = await ensureCredit(req.userId!);

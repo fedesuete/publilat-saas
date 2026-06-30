@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { api, apiError } from "../lib/api";
 import { fmtDate } from "../lib/format";
 import { Button, Input, Card, ErrorMsg } from "../components/ui";
@@ -33,13 +33,12 @@ export default function BillingPage() {
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [addDays, setAddDays] = useState("1");
-  const [adding, setAdding] = useState(false);
 
   const [buyDays, setBuyDays] = useState("1");
   const [buying, setBuying] = useState<Provider | null>(null);
   const [checkoutMsg, setCheckoutMsg] = useState<string | null>(null);
   const [methods, setMethods] = useState<Methods>({ mercadopago: false, stripe: false, usdt: false });
+  const [prices, setPrices] = useState<Record<Provider, { amount: number; currency: string }> | null>(null);
 
   // Pago USDT directo a wallet propia (red Tron / TRC20).
   const [usdtPay, setUsdtPay] = useState<{ address: string; amountUsdt: number; paymentId: string } | null>(null);
@@ -66,25 +65,20 @@ export default function BillingPage() {
     void load();
   }, []);
 
-  const submitAdd = async (e: FormEvent) => {
-    e.preventDefault();
-    const n = parseInt(addDays, 10);
+  // Cotiza el precio por proveedor cada vez que cambia la cantidad de días.
+  useEffect(() => {
+    const n = parseInt(buyDays, 10);
     if (!Number.isInteger(n) || n <= 0) {
-      setError("Ingresá una cantidad de días válida (entero mayor a 0).");
+      setPrices(null);
       return;
     }
-    setAdding(true);
-    setError(null);
-    try {
-      await api.post<{ days: number }>("/api/billing/credit/add", { days: n });
-      setAddDays("1");
-      await load();
-    } catch (err) {
-      setError(apiError(err));
-    } finally {
-      setAdding(false);
-    }
-  };
+    let cancelled = false;
+    api
+      .get<{ prices: Record<Provider, { amount: number; currency: string }> }>(`/api/billing/quote?days=${n}`)
+      .then(({ data }) => { if (!cancelled) setPrices(data.prices); })
+      .catch(() => { if (!cancelled) setPrices(null); });
+    return () => { cancelled = true; };
+  }, [buyDays]);
 
   const buy = async (provider: Provider) => {
     const n = parseInt(buyDays, 10);
@@ -160,32 +154,12 @@ export default function BillingPage() {
         <p className="text-slate-400">Cargando…</p>
       ) : (
         <div className="grid gap-6 md:grid-cols-2">
-          <Card>
+          <Card className="md:col-span-2">
             <div className="text-sm text-slate-400">Días disponibles</div>
             <div className="mt-1 text-5xl font-bold text-wa-green">{days}</div>
             <div className="mt-1 text-xs text-slate-500">
               {days === 1 ? "1 día de línea activa" : `${days} días de línea activa`}
             </div>
-          </Card>
-
-          <Card>
-            <div className="mb-2 text-sm font-semibold">Agregar días</div>
-            <form onSubmit={submitAdd} className="flex gap-2">
-              <Input
-                type="number"
-                min={1}
-                step={1}
-                value={addDays}
-                onChange={(e) => setAddDays(e.target.value)}
-                placeholder="Días"
-              />
-              <Button type="submit" disabled={adding}>
-                {adding ? "…" : "Agregar"}
-              </Button>
-            </form>
-            <p className="mt-2 text-xs text-slate-500">
-              Stub de compra — la pasarela de pago real llega en F5.
-            </p>
           </Card>
 
           <Card className="md:col-span-2">
@@ -201,17 +175,27 @@ export default function BillingPage() {
                 placeholder="Días"
                 className="max-w-[140px]"
               />
+              {parseInt(buyDays, 10) >= 90 && (
+                <span className="rounded-full bg-wa-green/15 px-2 py-0.5 text-xs font-semibold text-wa-green">
+                  descuento por volumen
+                </span>
+              )}
             </div>
             {(["mercadopago", "stripe", "usdt"] as Provider[]).filter((p) => methods[p]).length > 0 ? (
               <>
                 <div className="flex flex-wrap gap-2">
                   {(["mercadopago", "stripe", "usdt"] as Provider[])
                     .filter((p) => methods[p])
-                    .map((p) => (
-                      <Button key={p} type="button" disabled={buying !== null} onClick={() => void buy(p)}>
-                        {buying === p ? "…" : PROVIDER_LABEL[p]}
-                      </Button>
-                    ))}
+                    .map((p) => {
+                      const price = prices?.[p];
+                      return (
+                        <Button key={p} type="button" disabled={buying !== null} onClick={() => void buy(p)}>
+                          {buying === p
+                            ? "…"
+                            : `${PROVIDER_LABEL[p]}${price ? ` · ${price.amount.toLocaleString("es-AR")} ${price.currency}` : ""}`}
+                        </Button>
+                      );
+                    })}
                 </div>
                 <p className="mt-2 text-xs text-slate-500">
                   Elegí el medio de pago; los días se acreditan al confirmarse el pago.
@@ -219,7 +203,7 @@ export default function BillingPage() {
               </>
             ) : (
               <p className="text-sm text-slate-400">
-                No hay pasarela de pago configurada todavía. (En dev podés usar “Agregar días”.)
+                Todavía no hay un medio de pago habilitado. Escribinos por Soporte para activarlo.
               </p>
             )}
             {checkoutMsg && (
