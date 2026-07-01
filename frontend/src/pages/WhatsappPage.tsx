@@ -316,6 +316,20 @@ export default function WhatsappPage() {
     await connect(id, raw);
   };
 
+  // Reinicia una línea trabada (se desconectó varias veces): recrea la instancia limpia.
+  const resetLine = async (id: string) => {
+    setError(null);
+    setPairingCodes((prev) => { const n = { ...prev }; delete n[id]; return n; });
+    setQrs((prev) => { const n = { ...prev }; delete n[id]; return n; });
+    try {
+      const { data } = await api.post<{ ok: boolean; qr: string | null }>(`/api/wa/lines/${id}/reset`);
+      if (data.qr) setQrs((prev) => ({ ...prev, [id]: data.qr! }));
+      setNotice({ id, text: "Conexión reiniciada. Escaneá el QR o vinculá por número de nuevo." });
+    } catch (err) {
+      setError(apiError(err));
+    }
+  };
+
   const checkStatus = async (id: string) => {
     setError(null);
     try {
@@ -652,6 +666,9 @@ export default function WhatsappPage() {
                       </Button>
                       <Button variant="secondary" onClick={() => void checkStatus(line.id)}>
                         Estado
+                      </Button>
+                      <Button variant="ghost" onClick={() => void resetLine(line.id)}>
+                        Reiniciar conexión
                       </Button>
                     </>
                   )}

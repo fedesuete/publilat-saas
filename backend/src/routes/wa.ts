@@ -328,6 +328,30 @@ waRouter.post("/lines/:id/connect", async (req, res) => {
   }
 });
 
+// POST /api/wa/lines/:id/reset — reinicia una línea Baileys trabada (se desconectó varias
+// veces / quedó en "connecting"): cierra sesión, borra la instancia y la recrea limpia.
+waRouter.post("/lines/:id/reset", async (req, res) => {
+  const line = await getOwnedLine(req.userId!, req.params.id);
+  if (!line) return res.status(404).json({ error: "Línea no encontrada" });
+  if (line.provider !== "baileys") return res.status(400).json({ error: "El reinicio aplica a líneas por QR (Baileys)" });
+  const instanceName = line.sessionId ?? `line_${line.id}`;
+  try {
+    await logoutInstance(instanceName);
+    await deleteInstance(instanceName);
+    const qr = await createInstance(instanceName);
+    await prisma.waLine.update({
+      where: { id: line.id },
+      data: { sessionId: instanceName, connected: false, status: "inactive" },
+    });
+    if (qr.base64) emitToUser(req.userId!, "wa:qr", { lineId: line.id, qr: qr.base64 });
+    return res.json({ ok: true, qr: qr.base64 ?? null });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("[wa/lines/reset] error:", message);
+    return res.status(502).json({ error: "No se pudo reiniciar la conexión", detail: message });
+  }
+});
+
 // GET /api/wa/lines/:id/status — estado en vivo desde Evolution; sincroniza la DB.
 waRouter.get("/lines/:id/status", async (req, res) => {
   const line = await getOwnedLine(req.userId!, req.params.id);
