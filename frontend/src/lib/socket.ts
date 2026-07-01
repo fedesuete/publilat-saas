@@ -1,5 +1,5 @@
 import { io, Socket } from "socket.io-client";
-import { API_BASE, TOKEN_KEY } from "./config";
+import { API_BASE } from "./config";
 import type { Msg, Stage } from "./types";
 
 export interface WaQrPayload {
@@ -23,9 +23,9 @@ let socket: Socket | null = null;
 
 export function getSocket(): Socket {
   if (!socket) {
-    const token = localStorage.getItem(TOKEN_KEY);
+    // Autenticación por la cookie httpOnly (mismo origen); withCredentials la manda en el handshake.
     socket = io(API_BASE, {
-      auth: { token },
+      withCredentials: true,
       autoConnect: true,
     });
   }

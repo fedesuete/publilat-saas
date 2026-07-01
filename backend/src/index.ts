@@ -146,9 +146,17 @@ const server = createServer(app);
 const io = new SocketServer(server, { cors: { origin: corsOrigin, credentials: true } });
 setIo(io);
 
-// Auth del socket: el cliente manda el JWT en handshake.auth.token.
+// Auth del socket: el JWT viene por la cookie httpOnly (mismo origen) o, como fallback,
+// en handshake.auth.token.
 io.use((socket, next) => {
-  const token = socket.handshake.auth?.token as string | undefined;
+  const fromAuth = socket.handshake.auth?.token as string | undefined;
+  const cookieHeader = socket.handshake.headers.cookie ?? "";
+  const fromCookie = cookieHeader
+    .split(";")
+    .map((c) => c.trim())
+    .find((c) => c.startsWith("publilat_token="))
+    ?.slice("publilat_token=".length);
+  const token = fromAuth || (fromCookie ? decodeURIComponent(fromCookie) : undefined);
   if (!token) return next(new Error("No autenticado"));
   try {
     const { userId } = verifyToken(token);

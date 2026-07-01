@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { api } from "./api";
-import { TOKEN_KEY, USER_KEY } from "./config";
+import { USER_KEY } from "./config";
 import { disconnectSocket } from "./socket";
 import type { User } from "./types";
 
@@ -20,7 +20,7 @@ export interface RegisterPayload {
 
 interface AuthContextValue {
   user: User | null;
-  token: string | null;
+  loading: boolean; // true mientras validamos la sesión (cookie) con /me
   login: (email: string, password: string) => Promise<void>;
   register: (payload: RegisterPayload) => Promise<void>;
   logout: () => void;
@@ -39,63 +39,55 @@ function readUser(): User | null {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(() =>
-    localStorage.getItem(TOKEN_KEY)
-  );
+  // El JWT vive en una cookie httpOnly (no accesible por JS). En localStorage sólo
+  // guardamos el usuario (dato no sensible) para pintar la UI al instante; /me valida.
   const [user, setUser] = useState<User | null>(() => readUser());
+  const [loading, setLoading] = useState(true);
 
-  const persist = useCallback((nextToken: string, nextUser: User) => {
-    localStorage.setItem(TOKEN_KEY, nextToken);
+  const setSession = useCallback((nextUser: User) => {
     localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
-    setToken(nextToken);
     setUser(nextUser);
   }, []);
 
   const login = useCallback(
     async (email: string, password: string) => {
-      const { data } = await api.post<{ token: string; user: User }>(
-        "/api/auth/login",
-        { email, password }
-      );
-      persist(data.token, data.user);
+      const { data } = await api.post<{ user: User }>("/api/auth/login", { email, password });
+      setSession(data.user);
     },
-    [persist]
+    [setSession]
   );
 
   const register = useCallback(
     async (payload: RegisterPayload) => {
-      const { data } = await api.post<{ token: string; user: User }>(
-        "/api/auth/register",
-        payload
-      );
-      persist(data.token, data.user);
+      const { data } = await api.post<{ user: User }>("/api/auth/register", payload);
+      setSession(data.user);
     },
-    [persist]
+    [setSession]
   );
 
-  // Al cargar con sesión activa, refrescamos el usuario (trae role para gatear /admin).
+  // Al cargar, validamos la sesión con la cookie (/me). Si es válida, refresca el usuario;
+  // si no, quedamos deslogueados (el interceptor 401 ya limpia y redirige donde corresponde).
   useEffect(() => {
-    if (!token) return;
     api
       .get<{ user: User }>("/api/auth/me")
-      .then(({ data }) => {
-        setUser(data.user);
-        localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+      .then(({ data }) => setSession(data.user))
+      .catch(() => {
+        localStorage.removeItem(USER_KEY);
+        setUser(null);
       })
-      .catch(() => undefined);
+      .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const logout = useCallback(() => {
-    localStorage.removeItem(TOKEN_KEY);
+    void api.post("/api/auth/logout").catch(() => undefined); // borra la cookie httpOnly
     localStorage.removeItem(USER_KEY);
-    setToken(null);
     setUser(null);
     disconnectSocket();
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

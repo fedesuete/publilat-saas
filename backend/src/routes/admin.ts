@@ -263,7 +263,11 @@ adminRouter.post("/clients/:id/suspend", async (req, res) => {
   const userId = req.params.id;
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
   if (!user) return res.status(404).json({ error: "Cliente no encontrado" });
-  await prisma.user.update({ where: { id: userId }, data: { suspended: parsed.data.suspended } });
+  await prisma.user.update({
+    where: { id: userId },
+    // Al suspender, incrementamos tokenVersion para revocar sus sesiones activas al instante.
+    data: { suspended: parsed.data.suspended, ...(parsed.data.suspended ? { tokenVersion: { increment: 1 } } : {}) },
+  });
   await adminLog(req.userId!, parsed.data.suspended ? "suspend" : "reactivate", userId);
   return res.json({ ok: true, suspended: parsed.data.suspended });
 });

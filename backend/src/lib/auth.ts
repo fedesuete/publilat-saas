@@ -14,6 +14,7 @@ function secret(): string {
 
 export interface JwtPayload {
   userId: string;
+  tv?: number; // tokenVersion: para revocar sesiones (si no coincide con el de la DB -> inválido)
 }
 
 export const hashPassword = (plain: string) => bcrypt.hash(plain, 10);

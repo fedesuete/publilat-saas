@@ -4,9 +4,23 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { hashPassword, verifyPassword, signToken, slugify } from "../lib/auth.js";
-import { requireAuth } from "../middleware/requireAuth.js";
+import { requireAuth, AUTH_COOKIE } from "../middleware/requireAuth.js";
+import type { Response } from "express";
 
 export const authRouter = Router();
+
+// Cookie httpOnly con el JWT: no accesible desde JS (mitiga robo por XSS).
+const isProd = process.env.NODE_ENV === "production";
+const COOKIE_OPTS = {
+  httpOnly: true,
+  secure: isProd, // sólo por HTTPS en producción
+  sameSite: "lax" as const,
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días (igual que el JWT)
+  path: "/",
+};
+function setAuthCookie(res: Response, token: string) {
+  res.cookie(AUTH_COOKIE, token, COOKIE_OPTS);
+}
 
 const registerSchema = z.object({
   email: z.string().email("Email inválido"),
@@ -49,11 +63,15 @@ authRouter.post("/register", async (req, res) => {
         phone,
         password: await hashPassword(password),
       },
-      select: { id: true, email: true, slug: true, name: true, role: true },
+      select: { id: true, email: true, slug: true, name: true, role: true, tokenVersion: true },
     });
 
-    const token = signToken({ userId: user.id });
-    return res.status(201).json({ token, user });
+    const token = signToken({ userId: user.id, tv: user.tokenVersion });
+    setAuthCookie(res, token);
+    return res.status(201).json({
+      token,
+      user: { id: user.id, email: user.email, slug: user.slug, name: user.name, role: user.role },
+    });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       return res.status(409).json({ error: "El email ya está registrado" });
@@ -80,11 +98,18 @@ authRouter.post("/login", async (req, res) => {
 
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
 
-  const token = signToken({ userId: user.id });
+  const token = signToken({ userId: user.id, tv: user.tokenVersion });
+  setAuthCookie(res, token);
   return res.json({
     token,
     user: { id: user.id, email: user.email, slug: user.slug, name: user.name, role: user.role },
   });
+});
+
+// POST /api/auth/logout — cierra la sesión borrando la cookie httpOnly.
+authRouter.post("/logout", (_req, res) => {
+  res.clearCookie(AUTH_COOKIE, { ...COOKIE_OPTS, maxAge: undefined });
+  return res.json({ ok: true });
 });
 
 // GET /api/auth/me — usuario actual (incluye role para gatear el panel admin).

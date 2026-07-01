@@ -33,6 +33,7 @@ model User {
   // --- Límites de plan (configurables por cliente desde el panel) ---
   maxLines      Int       @default(1)        // líneas de WhatsApp permitidas
   maxLandings   Int       @default(50)       // landings permitidas
+  tokenVersion  Int       @default(0)        // revocación de sesiones: al subir, invalida los JWT viejos
   createdAt DateTime @default(now())
 
   lines       WaLine[]

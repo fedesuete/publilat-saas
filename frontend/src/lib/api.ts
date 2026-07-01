@@ -1,24 +1,16 @@
 import axios from "axios";
-import { API_BASE, TOKEN_KEY, USER_KEY } from "./config";
+import { API_BASE, USER_KEY } from "./config";
 
+// El JWT viaja en una cookie httpOnly (no en localStorage). withCredentials la envía.
 export const api = axios.create({
   baseURL: API_BASE,
-});
-
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem(TOKEN_KEY);
-  if (token) {
-    config.headers = config.headers ?? {};
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
+  withCredentials: true,
 });
 
 api.interceptors.response.use(
   (res) => res,
   (error) => {
     if (error?.response?.status === 401) {
-      localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
       if (window.location.pathname !== "/login") {
         window.location.href = "/login";
