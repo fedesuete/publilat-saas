@@ -27,6 +27,8 @@ interface EsConfig {
 export default function WhatsappPage() {
   const [lines, setLines] = useState<Line[]>([]);
   const [qrs, setQrs] = useState<Record<string, string>>({});
+  const [pairingCodes, setPairingCodes] = useState<Record<string, string>>({});
+  const [numberInputs, setNumberInputs] = useState<Record<string, string>>({});
   const [label, setLabel] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -242,6 +244,11 @@ export default function WhatsappPage() {
           delete next[p.lineId];
           return next;
         });
+        setPairingCodes((prev) => {
+          const next = { ...prev };
+          delete next[p.lineId];
+          return next;
+        });
       }
     };
     socket.on("wa:qr", onQr);
@@ -281,16 +288,32 @@ export default function WhatsappPage() {
     }
   };
 
-  const connect = async (id: string) => {
+  const connect = async (id: string, number?: string) => {
     setError(null);
     try {
       const { data } = await api.post<{ qr: string | null; pairingCode: string | null }>(
-        `/api/wa/lines/${id}/connect`
+        `/api/wa/lines/${id}/connect`,
+        number ? { number } : {}
       );
       if (data.qr) setQrs((prev) => ({ ...prev, [id]: data.qr! }));
+      if (data.pairingCode) {
+        setPairingCodes((prev) => ({ ...prev, [id]: data.pairingCode! }));
+        // al vincular por número no usamos el QR
+        setQrs((prev) => { const n = { ...prev }; delete n[id]; return n; });
+      }
     } catch (err) {
       setError(apiError(err));
     }
+  };
+
+  const linkByNumber = async (id: string) => {
+    const raw = (numberInputs[id] ?? "").replace(/\D/g, "");
+    if (raw.length < 8) {
+      setError("Ingresá el número con código de país (ej: 549294xxxxxxx).");
+      return;
+    }
+    setPairingCodes((prev) => { const n = { ...prev }; delete n[id]; return n; });
+    await connect(id, raw);
   };
 
   const checkStatus = async (id: string) => {
@@ -611,6 +634,16 @@ export default function WhatsappPage() {
                   </div>
                 ) : null}
 
+                {!isCloud && !line.connected && pairingCodes[line.id] && (
+                  <div className="mb-3 rounded-md border border-wa-green/40 bg-slate-900/60 p-3 text-center">
+                    <div className="text-xs text-slate-400">Código de vinculación</div>
+                    <div className="my-1 text-2xl font-bold tracking-[0.3em] text-wa-green">{pairingCodes[line.id]}</div>
+                    <div className="text-xs text-slate-500">
+                      En WhatsApp: <b>Ajustes → Dispositivos vinculados → Vincular dispositivo → Vincular con número de teléfono</b>, y escribí este código.
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex flex-wrap gap-2">
                   {!isCloud && (
                     <>
@@ -640,6 +673,20 @@ export default function WhatsappPage() {
                     Borrar
                   </Button>
                 </div>
+
+                {!isCloud && !line.connected && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <Input
+                      value={numberInputs[line.id] ?? ""}
+                      onChange={(e) => setNumberInputs((p) => ({ ...p, [line.id]: e.target.value }))}
+                      placeholder="Número con país (ej: 549294xxxxxxx)"
+                      className="max-w-[240px]"
+                    />
+                    <Button variant="secondary" onClick={() => void linkByNumber(line.id)}>
+                      Vincular por número
+                    </Button>
+                  </div>
+                )}
 
                 <div className="mt-3 border-t border-slate-800 pt-3">
                   <div className="flex items-center gap-2">

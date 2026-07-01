@@ -310,19 +310,21 @@ waRouter.post("/lines/:id/subscribe", async (req, res) => {
   }
 });
 
-// POST /api/wa/lines/:id/connect — devuelve el QR para escanear (y lo emite por socket).
+// POST /api/wa/lines/:id/connect — devuelve el QR (o, si mandás `number`, un pairing code
+// de 8 caracteres para vincular por número). El QR se emite por socket.
 waRouter.post("/lines/:id/connect", async (req, res) => {
   const line = await getOwnedLine(req.userId!, req.params.id);
   if (!line) return res.status(404).json({ error: "Línea no encontrada" });
   const instanceName = line.sessionId ?? `line_${line.id}`;
+  const number = typeof req.body?.number === "string" ? req.body.number.replace(/\D/g, "") : "";
 
   try {
-    const qr = await connectInstance(instanceName);
+    const qr = await connectInstance(instanceName, number || undefined);
     if (qr.base64) emitToUser(req.userId!, "wa:qr", { lineId: line.id, qr: qr.base64 });
     return res.json({ qr: qr.base64 ?? null, pairingCode: qr.pairingCode ?? null });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    return res.status(502).json({ error: "No se pudo obtener el QR", detail: message });
+    return res.status(502).json({ error: "No se pudo iniciar la conexión", detail: message });
   }
 });
 

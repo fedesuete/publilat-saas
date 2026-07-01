@@ -71,10 +71,14 @@ export async function setWebhook(instanceName: string): Promise<void> {
   });
 }
 
-// Pide (re)conexión y devuelve el QR actual para escanear.
-export async function connectInstance(instanceName: string): Promise<QrResult> {
+// Pide (re)conexión. Sin `number` devuelve el QR; con `number` (internacional, sin "+")
+// devuelve un pairingCode de 8 caracteres para vincular por número en vez de escanear.
+export async function connectInstance(instanceName: string, number?: string): Promise<QrResult> {
   const c = client();
-  const { data } = await c.get(`/instance/connect/${instanceName}`);
+  const digits = number ? number.replace(/\D/g, "") : "";
+  const { data } = await c.get(`/instance/connect/${instanceName}`, {
+    params: digits ? { number: digits } : undefined,
+  });
   return { base64: data?.base64, code: data?.code, pairingCode: data?.pairingCode };
 }
 
