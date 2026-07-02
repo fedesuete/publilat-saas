@@ -18,6 +18,7 @@ interface Conversation {
   unread: number;
 }
 interface QuickReply { id: string; title: string; body: string }
+interface Tpl { name: string; language: string; category?: string; bodyParams: number }
 
 const shortTime = (iso: string) =>
   new Date(iso).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
@@ -40,6 +41,9 @@ export default function InboxPage() {
   const [showQuick, setShowQuick] = useState(false);
   const [quick, setQuick] = useState<QuickReply[]>([]);
   const [recording, setRecording] = useState(false);
+  const [needTemplate, setNeedTemplate] = useState(false);
+  const [templates, setTemplates] = useState<Tpl[]>([]);
+  const [tplInputs, setTplInputs] = useState<Record<string, string[]>>({});
   const selectedRef = useRef<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const recRef = useRef<MediaRecorder | null>(null);
@@ -71,7 +75,7 @@ export default function InboxPage() {
 
   useEffect(() => {
     if (!selected) return;
-    setChatError(null); setMessages([]); setShowEmoji(false); setShowQuick(false);
+    setChatError(null); setMessages([]); setShowEmoji(false); setShowQuick(false); setNeedTemplate(false); setTemplates([]);
     setConvs((prev) => prev.map((c) => (c.id === selected ? { ...c, unread: 0 } : c)));
     api.get<{ messages: Msg[] }>(`/api/inbox/${selected}/messages`)
       .then(({ data }) => setMessages(data.messages))
@@ -90,7 +94,33 @@ export default function InboxPage() {
       setMessages((prev) => appendUnique(prev, data.message));
       setDraft(""); setShowEmoji(false); setShowQuick(false);
       void loadConvs();
-    } catch (err) { setChatError(apiError(err)); } finally { setSending(false); }
+    } catch (err) {
+      setChatError(apiError(err));
+      // 409 fuera de la ventana de 24h -> ofrecer plantillas para reabrir.
+      const r = (err as { response?: { status?: number; data?: { requiresTemplate?: boolean } } })?.response;
+      if (r?.status === 409 && r.data?.requiresTemplate) void loadTemplates();
+    } finally { setSending(false); }
+  };
+
+  const loadTemplates = async () => {
+    if (!selectedRef.current) return;
+    try {
+      const { data } = await api.get<{ templates: Tpl[] }>(`/api/inbox/${selectedRef.current}/templates`);
+      setTemplates(data.templates);
+      setNeedTemplate(true);
+    } catch (err) { setChatError(apiError(err)); }
+  };
+
+  const sendTemplate = async (t: Tpl, params: string[]) => {
+    if (!selected) return;
+    try {
+      const { data } = await api.post<{ message: Msg }>(`/api/inbox/${selected}/template`, {
+        name: t.name, language: t.language, params: params.length ? params : undefined,
+      });
+      setMessages((prev) => appendUnique(prev, data.message));
+      setNeedTemplate(false); setTemplates([]); setDraft("");
+      void loadConvs();
+    } catch (err) { setChatError(apiError(err)); }
   };
 
   // --- Grabación de audio ---
@@ -237,6 +267,43 @@ export default function InboxPage() {
               ))}
               <div ref={bottomRef} />
             </div>
+
+            {/* ---- Plantillas (fuera de la ventana de 24h) ---- */}
+            {needTemplate && (
+              <div className="border-t border-amber-800 bg-amber-950/30 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs text-amber-200">Fuera de la ventana de 24 h. Reabrí la conversación con una plantilla aprobada.</span>
+                  <button type="button" onClick={() => setNeedTemplate(false)} className="text-xs text-slate-400 hover:text-white">Cerrar</button>
+                </div>
+                {templates.length === 0 ? (
+                  <p className="text-xs text-slate-400">No hay plantillas aprobadas en esta línea (o no es Cloud API). Creá/aprobá plantillas en el Business Manager de Meta.</p>
+                ) : (
+                  <div className="max-h-48 space-y-2 overflow-y-auto">
+                    {templates.map((t) => {
+                      const vals = tplInputs[t.name] ?? Array(t.bodyParams).fill("");
+                      const ready = vals.slice(0, t.bodyParams).every((v) => v.trim());
+                      return (
+                        <div key={`${t.name}-${t.language}`} className="rounded-md border border-slate-700 bg-slate-900/60 p-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-medium text-slate-200">{t.name} <span className="text-slate-500">({t.language})</span></span>
+                            <Button type="button" disabled={!ready} onClick={() => void sendTemplate(t, vals.slice(0, t.bodyParams))}>Enviar</Button>
+                          </div>
+                          {t.bodyParams > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {Array.from({ length: t.bodyParams }).map((_, i) => (
+                                <input key={i} value={vals[i] ?? ""} placeholder={`{{${i + 1}}}`}
+                                  onChange={(e) => setTplInputs((p) => { const arr = [...(p[t.name] ?? Array(t.bodyParams).fill(""))]; arr[i] = e.target.value; return { ...p, [t.name]: arr }; })}
+                                  className="w-28 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100" />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* ---- Compositor ---- */}
             <div className="relative border-t border-slate-800">

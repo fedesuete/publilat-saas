@@ -29,6 +29,52 @@ export async function sendCloudText(line: CloudLine, to: string, text: string) {
   return data;
 }
 
+// ---- Plantillas (message templates) ----------------------------------------
+export interface WaTemplate {
+  name: string;
+  status: string;
+  language: string;
+  category?: string;
+  components?: unknown[];
+  bodyParams: number; // cantidad de variables {{n}} en el body
+}
+
+// Lista las plantillas de una WABA (para reabrir conversaciones fuera de la ventana 24h).
+export async function listTemplates(wabaId: string, token: string): Promise<WaTemplate[]> {
+  const { data } = await axios.get(`${GRAPH}/${wabaId}/message_templates`, {
+    params: { access_token: token, fields: "name,status,language,category,components", limit: 200 },
+    timeout: 15000,
+  });
+  const arr: any[] = Array.isArray(data?.data) ? data.data : [];
+  return arr.map((t) => {
+    const body = Array.isArray(t.components) ? t.components.find((c: any) => c?.type === "BODY") : null;
+    const text: string = body?.text ?? "";
+    const bodyParams = (text.match(/\{\{\d+\}\}/g) ?? []).length;
+    return { name: t.name, status: t.status, language: t.language, category: t.category, components: t.components, bodyParams };
+  });
+}
+
+// Envía un mensaje de plantilla. bodyParams = valores para las variables {{1}},{{2}}...
+export async function sendCloudTemplate(
+  line: CloudLine,
+  to: string,
+  name: string,
+  language: string,
+  bodyParams?: string[],
+) {
+  if (!line.wabaPhoneNumberId) throw new Error("La línea Cloud no tiene Phone Number ID");
+  const components =
+    bodyParams && bodyParams.length
+      ? [{ type: "body", parameters: bodyParams.map((t) => ({ type: "text", text: t })) }]
+      : undefined;
+  const { data } = await axios.post(
+    `${GRAPH}/${line.wabaPhoneNumberId}/messages`,
+    { messaging_product: "whatsapp", to, type: "template", template: { name, language: { code: language }, ...(components ? { components } : {}) } },
+    { headers: { Authorization: `Bearer ${token(line)}`, "Content-Type": "application/json" }, timeout: 15000 },
+  );
+  return data;
+}
+
 // True si el error de Graph es por estar fuera de la ventana de 24 h (requiere plantilla).
 export function isOutsideWindowError(e: unknown): boolean {
   if (!axios.isAxiosError(e)) return false;

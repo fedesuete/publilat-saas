@@ -4,7 +4,8 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
 import { sendText, sendWhatsAppAudio } from "../lib/evolution.js";
-import { sendCloudText, isOutsideWindowError, graphErrorMessage } from "../lib/wa-cloud.js";
+import { sendCloudText, isOutsideWindowError, graphErrorMessage, listTemplates, sendCloudTemplate } from "../lib/wa-cloud.js";
+import { decryptSecret } from "../lib/crypto.js";
 
 export const inboxRouter = Router();
 
@@ -167,6 +168,57 @@ inboxRouter.post("/:contactId/messages", async (req, res) => {
     message: { id: message.id, direction: "out", body: message.body, createdAt: message.createdAt },
   });
   return res.status(201).json({ message: { id: message.id, direction: "out", body: message.body, createdAt: message.createdAt } });
+});
+
+// GET /api/inbox/:contactId/templates — plantillas APROBADAS de la línea Cloud del contacto.
+inboxRouter.get("/:contactId/templates", async (req, res) => {
+  const contact = await getOwnedContact(req.userId!, req.params.contactId);
+  if (!contact) return res.status(404).json({ error: "Contacto no encontrado" });
+  if (!contact.lineId) return res.json({ templates: [] });
+  const line = await prisma.waLine.findFirst({ where: { id: contact.lineId, userId: req.userId! } });
+  if (!line || line.provider !== "cloud" || !line.wabaId || !line.accessToken) {
+    return res.json({ templates: [] }); // solo aplica a líneas Cloud API
+  }
+  try {
+    const all = await listTemplates(line.wabaId, decryptSecret(line.accessToken));
+    return res.json({ templates: all.filter((t) => t.status === "APPROVED") });
+  } catch (e) {
+    return res.status(502).json({ error: "No se pudieron traer las plantillas", detail: graphErrorMessage(e) });
+  }
+});
+
+const templateSchema = z.object({
+  name: z.string().min(1),
+  language: z.string().min(2).max(10),
+  params: z.array(z.string()).optional(),
+});
+
+// POST /api/inbox/:contactId/template — envía una plantilla (reabre la conversación).
+inboxRouter.post("/:contactId/template", async (req, res) => {
+  const parsed = templateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const contact = await getOwnedContact(req.userId!, req.params.contactId);
+  if (!contact) return res.status(404).json({ error: "Contacto no encontrado" });
+  if (!contact.lineId) return res.status(400).json({ error: "El contacto no tiene línea asociada" });
+  const line = await prisma.waLine.findFirst({ where: { id: contact.lineId, userId: req.userId! } });
+  if (!line || line.provider !== "cloud") return res.status(400).json({ error: "Las plantillas son solo para líneas Cloud API" });
+  if (!line.wabaPhoneNumberId || !line.accessToken) return res.status(400).json({ error: "La línea Cloud no está configurada" });
+
+  const to = (contact.phone ?? contact.waJid ?? "").replace(/\D/g, "");
+  if (!to) return res.status(400).json({ error: "El contacto no tiene teléfono" });
+  try {
+    await sendCloudTemplate(line, to, parsed.data.name, parsed.data.language, parsed.data.params);
+  } catch (e) {
+    return res.status(502).json({ error: "No se pudo enviar la plantilla", detail: graphErrorMessage(e) });
+  }
+
+  const body = `📋 Plantilla: ${parsed.data.name}${parsed.data.params?.length ? ` (${parsed.data.params.join(", ")})` : ""}`;
+  const message = await prisma.message.create({ data: { contactId: contact.id, lineId: line.id, direction: "out", body } });
+  emitToUser(req.userId!, "inbox:message", {
+    contactId: contact.id,
+    message: { id: message.id, direction: "out", body, createdAt: message.createdAt },
+  });
+  return res.status(201).json({ message: { id: message.id, direction: "out", body, createdAt: message.createdAt } });
 });
 
 const audioSchema = z.object({ audio: z.string().min(1) }); // base64 (con o sin prefijo data:)
