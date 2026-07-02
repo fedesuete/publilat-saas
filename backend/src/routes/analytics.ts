@@ -132,3 +132,40 @@ analyticsRouter.get("/timeseries", async (req, res) => {
   const series = [...counts.entries()].map(([date, leads]) => ({ date, leads }));
   return res.json({ days, series });
 });
+
+// GET /api/analytics/heatmap?days=30&tz=America/Asuncion — a qué DÍAS y HORAS llegan
+// los mensajes entrantes. Devuelve una matriz 7x24 (día de semana x hora) + totales.
+analyticsRouter.get("/heatmap", async (req, res) => {
+  const userId = req.userId!;
+  const days = Math.min(Math.max(parseInt(String(req.query.days ?? "30"), 10) || 30, 1), 90);
+  // Zona horaria del operador (la manda el frontend); si es inválida, UTC.
+  let tz = typeof req.query.tz === "string" ? req.query.tz : "UTC";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+  } catch {
+    tz = "UTC";
+  }
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+  const msgs = await prisma.message.findMany({
+    where: { direction: "in", createdAt: { gte: since }, contact: { userId } },
+    select: { createdAt: true },
+  });
+
+  const matrix: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0)); // [dow][hour]
+  const byHour = Array(24).fill(0);
+  const byDow = Array(7).fill(0);
+  for (const m of msgs) {
+    // Convertimos a la hora local del operador para bucketizar bien.
+    const local = new Date(m.createdAt.toLocaleString("en-US", { timeZone: tz }));
+    const dow = local.getDay(); // 0=Domingo
+    const hour = local.getHours();
+    if (dow >= 0 && dow < 7 && hour >= 0 && hour < 24) {
+      matrix[dow][hour]++;
+      byHour[hour]++;
+      byDow[dow]++;
+    }
+  }
+
+  return res.json({ days, tz, total: msgs.length, matrix, byHour, byDow });
+});
