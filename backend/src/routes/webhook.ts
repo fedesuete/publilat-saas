@@ -106,6 +106,12 @@ webhookRouter.post("/", async (req, res) => {
         const text = extractText(item.message);
         const waMessageId = item.key.id as string | undefined;
 
+        // Idempotencia: si ya procesamos este mensaje (mismo waMessageId), lo salteamos.
+        if (waMessageId) {
+          const dup = await prisma.message.findFirst({ where: { waMessageId }, select: { id: true } });
+          if (dup) continue;
+        }
+
         // 1) Match por código incrustado (ref: XXXX). 2) Fallback por teléfono.
         const codeMatch = text.match(/ref:\s*([A-Z0-9]{4,})/i);
         let contact = codeMatch

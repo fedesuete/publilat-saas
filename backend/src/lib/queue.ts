@@ -50,12 +50,19 @@ export async function expireLines(): Promise<number> {
 // Reintenta los MetaEvent fallidos (últimas 24h). Reconstruye el evento desde el Contact
 // y lo reenvía con el pixel del usuario. Marca "sent" al lograrlo. Idempotente: Meta
 // deduplica por event_id, así que reintentar no genera doble conteo.
-export async function retryFailedCapi(): Promise<number> {
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+const CAPI_MAX_ATTEMPTS = 5;
+
+// Reintenta los eventos CAPI fallidos. Por defecto solo los que no superaron el tope de
+// intentos (los que sí = "dead-letter", se reprocesan a mano desde el admin con includeDead).
+export async function retryFailedCapi(opts?: { includeDead?: boolean; max?: number }): Promise<number> {
   const failed = await prisma.metaEvent.findMany({
-    where: { status: "failed", createdAt: { gte: since }, contactId: { not: null } },
+    where: {
+      status: "failed",
+      contactId: { not: null },
+      ...(opts?.includeDead ? {} : { attempts: { lt: CAPI_MAX_ATTEMPTS } }),
+    },
     orderBy: { createdAt: "asc" },
-    take: 50,
+    take: opts?.max ?? 50,
   });
   let ok = 0;
   for (const ev of failed) {
@@ -79,11 +86,16 @@ export async function retryFailedCapi(): Promise<number> {
       });
       await prisma.metaEvent.update({
         where: { id: ev.id },
-        data: { status: "sent", pixelId: result.pixelId, payload: result.payload as object, response: result.response as object },
+        data: { status: "sent", attempts: { increment: 1 }, pixelId: result.pixelId, payload: result.payload as object, response: result.response as object },
       });
       ok++;
-    } catch {
-      /* queda failed; se reintenta en el próximo ciclo (hasta 24h) */
+    } catch (e) {
+      // Suma un intento; al llegar al tope queda dead-letter (no se reintenta más solo).
+      const msg = e instanceof Error ? e.message : String(e);
+      await prisma.metaEvent.update({
+        where: { id: ev.id },
+        data: { attempts: { increment: 1 }, response: { error: msg } },
+      });
     }
   }
   if (ok) console.log(`[capi-retry] reenviados ${ok}/${failed.length} evento(s)`);

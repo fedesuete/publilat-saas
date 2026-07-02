@@ -130,8 +130,14 @@ cloudWebhookRouter.post("/", async (req, res) => {
         const owner = await prisma.user.findUnique({ where: { id: userId }, select: { paymentDetection: true } });
         const paymentMode = owner?.paymentDetection ?? "off";
 
+        // Ignoramos cambios que no sean mensajes (statuses/echoes): solo procesamos value.messages.
         for (const msg of value?.messages ?? []) {
           if (!msg?.from) continue;
+          // Idempotencia: si ya guardamos este mensaje (mismo id), lo salteamos.
+          if (msg.id) {
+            const dup = await prisma.message.findFirst({ where: { waMessageId: msg.id }, select: { id: true } });
+            if (dup) continue;
+          }
           const phone = String(msg.from).replace(/\D/g, "");
           if (!phone) continue;
           const text = extractText(msg);

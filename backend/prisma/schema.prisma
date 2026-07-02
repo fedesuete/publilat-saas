@@ -186,7 +186,7 @@ model Message {
   body       String
   mediaType  String?  // mimetype si el mensaje trae imagen (ej image/jpeg)
   mediaData  String?  @db.Text // imagen en base64 (sin prefijo data:) para mostrar en el Inbox
-  waMessageId String?
+  waMessageId String?  @unique // idempotencia: no procesar dos veces el mismo evento de WhatsApp
   createdAt  DateTime @default(now())
   contact    Contact  @relation(fields: [contactId], references: [id])
   line       WaLine   @relation(fields: [lineId], references: [id])
@@ -244,6 +244,7 @@ model MetaEvent {
   pixelId    String
   payload    Json
   status     String   @default("pending") // pending | sent | failed
+  attempts   Int      @default(0)         // reintentos CAPI; tras el tope queda dead-letter
   response   Json?
   createdAt  DateTime @default(now())
   user       User     @relation(fields: [userId], references: [id])

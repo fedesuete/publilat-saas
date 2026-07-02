@@ -5,6 +5,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
+import { retryFailedCapi } from "../lib/queue.js";
 
 export const adminRouter = Router();
 
@@ -427,6 +428,29 @@ adminRouter.get("/export/:type", async (req, res) => {
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="${type}-${Date.now()}.csv"`);
   return res.send(csv(rows));
+});
+
+// ============================ CAPI: eventos fallidos ============================
+// GET /api/admin/capi/failed — resumen de eventos CAPI fallidos (para monitoreo).
+adminRouter.get("/capi/failed", async (_req, res) => {
+  const [total, deadLetter, recent] = await Promise.all([
+    prisma.metaEvent.count({ where: { status: "failed" } }),
+    prisma.metaEvent.count({ where: { status: "failed", attempts: { gte: 5 } } }),
+    prisma.metaEvent.findMany({
+      where: { status: "failed" },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: { id: true, userId: true, eventName: true, attempts: true, createdAt: true, response: true },
+    }),
+  ]);
+  return res.json({ total, deadLetter, recent });
+});
+
+// POST /api/admin/capi/retry — reintenta los eventos fallidos (incluye dead-letter).
+adminRouter.post("/capi/retry", async (req, res) => {
+  const retried = await retryFailedCapi({ includeDead: true, max: 200 });
+  await adminLog(req.userId!, "capi_retry", undefined, { retried });
+  return res.json({ ok: true, retried });
 });
 
 export { emitToAdmins };
