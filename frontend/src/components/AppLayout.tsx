@@ -1,4 +1,6 @@
+import { useEffect } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { getSocket, type InboxMessagePayload } from "../lib/socket";
 import {
   LayoutDashboard,
   Users,
@@ -19,6 +21,31 @@ import {
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { Button } from "./ui";
+
+// "Ding" de notificación cuando entra un mensaje (Web Audio, sin archivos externos).
+let audioCtx: AudioContext | null = null;
+function playPing() {
+  try {
+    const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AC) return;
+    audioCtx = audioCtx ?? new AC();
+    if (audioCtx.state === "suspended") void audioCtx.resume();
+    const t = audioCtx.currentTime;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.connect(g); g.connect(audioCtx.destination);
+    o.type = "sine";
+    o.frequency.setValueAtTime(880, t);
+    o.frequency.setValueAtTime(1175, t + 0.12);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.35, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
+    o.start(t);
+    o.stop(t + 0.34);
+  } catch {
+    /* si el navegador bloquea el audio, no rompemos nada */
+  }
+}
 
 const NAV: Array<{ to: string; label: string; icon: LucideIcon }> = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -45,6 +72,16 @@ export default function AppLayout() {
     logout();
     navigate("/login");
   };
+
+  // Suena un "ding" cuando llega un mensaje ENTRANTE, en cualquier pantalla del panel.
+  useEffect(() => {
+    const socket = getSocket();
+    const onMsg = (p: InboxMessagePayload) => {
+      if (p.message?.direction === "in") playPing();
+    };
+    socket.on("inbox:message", onMsg);
+    return () => { socket.off("inbox:message", onMsg); };
+  }, []);
 
   return (
     <div className="flex h-full min-h-screen">
