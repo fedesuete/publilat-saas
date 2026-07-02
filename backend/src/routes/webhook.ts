@@ -8,6 +8,7 @@ import { emitToUser } from "../lib/io.js";
 import { fetchOwnerNumber, getMediaBase64 } from "../lib/evolution.js";
 import { detectPayment } from "../lib/payment-detect.js";
 import { consumeDayAndActivate } from "../lib/access.js";
+import { notify } from "../lib/notifications.js";
 
 export const webhookRouter = Router();
 
@@ -136,6 +137,7 @@ webhookRouter.post("/", async (req, res) => {
               stage: "NUEVO",
             },
           });
+          void notify(userId, "lead", "Nuevo lead 💬", `Te escribió un contacto nuevo (${phone}).`);
         }
 
         // Completa teléfono/JID/línea, alias (nombre de WhatsApp) y avanza la etapa.

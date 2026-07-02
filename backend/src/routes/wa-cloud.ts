@@ -10,6 +10,7 @@ import { resolveUserPixel } from "../lib/pixel.js";
 import { sendCapiEvent } from "../lib/meta-capi.js";
 import { getCloudMediaBase64 } from "../lib/wa-cloud.js";
 import { detectPayment } from "../lib/payment-detect.js";
+import { notify } from "../lib/notifications.js";
 
 export const cloudWebhookRouter = Router();
 
@@ -166,6 +167,7 @@ cloudWebhookRouter.post("/", async (req, res) => {
               },
             });
             isNewCtwaLead = !!referral?.ctwa_clid;
+            void notify(userId, "lead", "Nuevo lead 💬", `Te escribió un contacto nuevo (${phone}).`);
           } else {
             const patch: Record<string, unknown> = {};
             if (!contact.waJid) patch.waJid = String(msg.from);

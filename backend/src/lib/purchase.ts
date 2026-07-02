@@ -6,6 +6,7 @@ import { sendCapiEvent } from "./meta-capi.js";
 import { resolveUserPixel } from "./pixel.js";
 import { fireIntegration } from "./integrations.js";
 import { emitToUser } from "./io.js";
+import { notify } from "./notifications.js";
 
 export interface MarkPurchaseResult {
   ok: boolean;
@@ -38,6 +39,8 @@ export async function markPurchase(
       paymentDetected: false,
     },
   });
+
+  void notify(userId, "purchase", "¡Nueva venta! 🎉", `Se registró una compra de ${amount} ${currency}.`);
 
   // Webhook saliente al CRM externo (si está configurado). Best-effort.
   void fireIntegration(userId, "purchase", {

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { getSocket, type InboxMessagePayload } from "../lib/socket";
+import NotificationBell from "./NotificationBell";
 import {
   LayoutDashboard,
   Users,
@@ -86,10 +87,11 @@ export default function AppLayout() {
   return (
     <div className="flex h-full min-h-screen">
       <aside className="flex w-56 flex-col border-r border-slate-800 bg-slate-950/60">
-        <div className="px-5 py-5">
+        <div className="flex items-center justify-between px-5 py-5">
           <span className="text-lg font-bold">
             Publi<span className="text-wa-green">.lat</span>
           </span>
+          <NotificationBell />
         </div>
         <nav className="flex flex-1 flex-col gap-1 px-3">
           {NAV.map((item) => (

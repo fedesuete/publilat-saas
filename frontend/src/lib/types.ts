@@ -44,6 +44,7 @@ export interface Line {
   tokenMask?: string | null;
   webhookUrl?: string | null;
   registered?: boolean;
+  qualityRating?: string | null; // Cloud API: GREEN | YELLOW | RED
 }
 
 export interface Msg {

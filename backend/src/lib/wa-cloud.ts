@@ -82,6 +82,23 @@ export async function debugToken(token: string): Promise<{ wabaIds: string[] }> 
   return { wabaIds: ids };
 }
 
+// Calidad y estado del número en la Cloud API (GREEN|YELLOW|RED). Best-effort: null si falla.
+export async function getPhoneQuality(
+  phoneNumberId: string,
+  token: string,
+): Promise<{ qualityRating?: string; status?: string } | null> {
+  try {
+    const { data } = await axios.get(`${GRAPH}/${phoneNumberId}`, {
+      params: { fields: "quality_rating,name_status,status", access_token: token },
+      timeout: 15000,
+    });
+    return { qualityRating: data?.quality_rating, status: data?.status ?? data?.name_status };
+  } catch (e) {
+    console.warn("[wa-cloud] getPhoneQuality:", graphErrorMessage(e));
+    return null;
+  }
+}
+
 // Lista los números de teléfono de una WABA. Sirve para resolver el phone_number_id
 // cuando el Embedded Signup no lo mandó (a veces sólo llega el waba_id).
 export interface WabaPhoneNumber { id: string; display_phone_number?: string; verified_name?: string }

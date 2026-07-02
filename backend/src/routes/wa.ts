@@ -34,7 +34,7 @@ const CLOUD_WEBHOOK_URL = `${(process.env.APP_BASE_URL ?? "http://localhost:4000
 // Forma pública de una línea (nunca devuelve el access token entero).
 function toPublicLine(l: {
   id: string; phone: string; label: string | null; status: string; provider: string;
-  connected: boolean; expiresAt: Date | null; createdAt: Date; registered?: boolean;
+  connected: boolean; expiresAt: Date | null; createdAt: Date; registered?: boolean; qualityRating?: string | null;
   wabaPhoneNumberId: string | null; wabaId: string | null; accessToken: string | null; verifyToken: string | null;
 }) {
   return {
@@ -47,6 +47,7 @@ function toPublicLine(l: {
     expiresAt: l.expiresAt,
     createdAt: l.createdAt,
     registered: l.registered ?? false,
+    qualityRating: l.qualityRating ?? null,
     wabaPhoneNumberId: l.wabaPhoneNumberId,
     wabaId: l.wabaId,
     verifyToken: l.verifyToken,

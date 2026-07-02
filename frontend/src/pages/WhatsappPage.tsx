@@ -251,11 +251,16 @@ export default function WhatsappPage() {
         });
       }
     };
+    const onHealth = (p: { lineId: string; connected: boolean; qualityRating: string | null }) => {
+      setLines((prev) => prev.map((l) => (l.id === p.lineId ? { ...l, connected: p.connected, qualityRating: p.qualityRating } : l)));
+    };
     socket.on("wa:qr", onQr);
     socket.on("wa:status", onStatus);
+    socket.on("wa:health", onHealth);
     return () => {
       socket.off("wa:qr", onQr);
       socket.off("wa:status", onStatus);
+      socket.off("wa:health", onHealth);
     };
   }, []);
 
@@ -549,6 +554,14 @@ export default function WhatsappPage() {
                         {isCloud && (
                           <span className="rounded-full bg-wa-green/15 px-2 py-0.5 text-[10px] font-semibold text-wa-green">
                             Oficial / CTWA
+                          </span>
+                        )}
+                        {line.qualityRating && (
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                            line.qualityRating === "GREEN" ? "bg-wa-green/15 text-wa-green"
+                              : line.qualityRating === "YELLOW" ? "bg-amber-500/15 text-amber-300"
+                              : "bg-rose-500/15 text-rose-300"}`}>
+                            Calidad {line.qualityRating}
                           </span>
                         )}
                       </div>

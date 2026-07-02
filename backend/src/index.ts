@@ -24,6 +24,7 @@ import { pixelRouter } from "./routes/pixel.js";
 import { setupRouter } from "./routes/setup.js";
 import { adminRouter } from "./routes/admin.js";
 import { supportRouter } from "./routes/support.js";
+import { notificationsRouter } from "./routes/notifications.js";
 import { requireAdmin } from "./middleware/requireAdmin.js";
 import { requireAuth } from "./middleware/requireAuth.js";
 import { verifyToken } from "./lib/auth.js";
@@ -118,6 +119,7 @@ app.use("/api/integrations", apiLimiter, requireAuth, integrationsRouter);
 app.use("/api/pixels", apiLimiter, requireAuth, pixelRouter);
 app.use("/api/setup", apiLimiter, requireAuth, setupRouter);
 app.use("/api/support", apiLimiter, requireAuth, supportRouter);
+app.use("/api/notifications", apiLimiter, requireAuth, notificationsRouter);
 // Panel maestro: admin-only (requireAuth + requireAdmin).
 app.use("/api/admin", apiLimiter, requireAuth, requireAdmin, adminRouter);
 

@@ -7,6 +7,10 @@ import { emitToUser } from "./io.js";
 import { sendCapiEvent } from "./meta-capi.js";
 import { resolveUserPixel } from "./pixel.js";
 import { consumeDayAndActivate } from "./access.js";
+import { connectionState } from "./evolution.js";
+import { getPhoneQuality } from "./wa-cloud.js";
+import { decryptSecret } from "./crypto.js";
+import { notify } from "./notifications.js";
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const parsed = new URL(REDIS_URL);
@@ -102,6 +106,43 @@ export async function retryFailedCapi(opts?: { includeDead?: boolean; max?: numb
   return ok;
 }
 
+// Chequea la salud de cada línea activa: conexión (Baileys) y calidad (Cloud API).
+// Guarda el estado y notifica al dueño si se desconecta o baja la calidad.
+export async function checkLineHealth(): Promise<void> {
+  const lines = await prisma.waLine.findMany({ where: { status: { not: "inactive" } } });
+  for (const line of lines) {
+    try {
+      let connected = line.connected;
+      let quality = line.qualityRating;
+      if (line.provider === "cloud") {
+        if (line.wabaPhoneNumberId && line.accessToken) {
+          const q = await getPhoneQuality(line.wabaPhoneNumberId, decryptSecret(line.accessToken));
+          if (q?.qualityRating) {
+            const prev = line.qualityRating;
+            quality = q.qualityRating;
+            if (quality !== prev && (quality === "RED" || quality === "YELLOW")) {
+              await notify(line.userId, "line_quality", `Calidad de línea ${quality === "RED" ? "ROJA" : "AMARILLA"}`,
+                `La calidad de "${line.label ?? line.phone}" bajó a ${quality}. Cuidá la frecuencia/contenido para no perder el número.`);
+            }
+          }
+        }
+      } else {
+        const inst = line.sessionId ?? `line_${line.id}`;
+        const state = await connectionState(inst);
+        connected = state === "open";
+        if (line.connected && !connected) {
+          await notify(line.userId, "line_down", "Línea desconectada",
+            `Tu WhatsApp "${line.label ?? line.phone}" se desconectó. Reconectalo para no perder mensajes.`);
+        }
+      }
+      await prisma.waLine.update({ where: { id: line.id }, data: { connected, qualityRating: quality ?? null, lastCheckedAt: new Date() } });
+      emitToUser(line.userId, "wa:health", { lineId: line.id, connected, qualityRating: quality ?? null });
+    } catch (e) {
+      console.error("[line-health] error en línea", line.id, e instanceof Error ? e.message : String(e));
+    }
+  }
+}
+
 // Arranca el worker y programa los chequeos periódicos. Idempotente.
 export async function initQueues(): Promise<void> {
   if (queue) return;
@@ -109,7 +150,11 @@ export async function initQueues(): Promise<void> {
     queue = new Queue(QUEUE_NAME, { connection });
     worker = new Worker(
       QUEUE_NAME,
-      async (job: Job) => (job.name === "capi-retry" ? retryFailedCapi() : expireLines()),
+      async (job: Job) => {
+        if (job.name === "capi-retry") return retryFailedCapi();
+        if (job.name === "line-health") return checkLineHealth();
+        return expireLines();
+      },
       { connection }
     );
     worker.on("failed", (job, err) => console.error(`[queue:${job?.name}] job falló:`, err?.message));
@@ -117,7 +162,8 @@ export async function initQueues(): Promise<void> {
     // jobId fijo => no se duplica entre reinicios.
     await queue.add("expire", {}, { repeat: { every: 60_000 }, jobId: "expire-repeat", removeOnComplete: true, removeOnFail: 50 });
     await queue.add("capi-retry", {}, { repeat: { every: 300_000 }, jobId: "capi-retry-repeat", removeOnComplete: true, removeOnFail: 50 });
-    console.log("[queue] BullMQ listo (vencimiento 60s + reintento CAPI 5min)");
+    await queue.add("line-health", {}, { repeat: { every: 300_000 }, jobId: "line-health-repeat", removeOnComplete: true, removeOnFail: 50 });
+    console.log("[queue] BullMQ listo (vencimiento 60s + reintento CAPI 5min + salud de línea 5min)");
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[queue] no se pudo iniciar BullMQ (¿Redis arriba?):", msg);

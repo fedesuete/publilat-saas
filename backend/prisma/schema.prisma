@@ -46,6 +46,21 @@ model User {
   payments    Payment[]
   supportMessages SupportMessage[]
   quickReplies QuickReply[]
+  notifications Notification[]
+}
+
+// Notificaciones del usuario (nuevo lead, venta, línea caída, etc.).
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String   // lead | purchase | line_down | line_quality | system
+  title     String
+  body      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
 }
 
 // Respuestas rápidas / mensajes guardados del Inbox (por usuario).
@@ -111,6 +126,8 @@ model WaLine {
   verifyToken String?        // token de verificación del webhook de Meta
   registerPin String?        // PIN de registro de la Cloud API (cifrado en reposo)
   registered  Boolean   @default(false) // true si el número quedó registrado en la Cloud API
+  qualityRating String?      // Cloud API: GREEN | YELLOW | RED (calidad del número)
+  lastCheckedAt DateTime?    // último chequeo de salud de la línea
   expiresAt   DateTime? // se desactiva al vencer (consumo de días)
   lastUsedAt  DateTime? // para rotación LRU de clics entre líneas activas
   createdAt   DateTime  @default(now())
