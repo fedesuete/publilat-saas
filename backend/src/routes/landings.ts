@@ -17,6 +17,7 @@ const configSchema = z.object({
   subtitle: z.string().max(240).optional(),
   buttonText: z.string().max(40).optional(),
   msg: z.string().max(400).optional(),
+  autoRedirect: z.boolean().optional(), // pasa 1 seg por la landing y redirige a WhatsApp
 });
 type Cfg = z.infer<typeof configSchema>;
 
@@ -43,6 +44,7 @@ async function buildHtml(userId: string, userSlug: string, cfg: Cfg): Promise<st
     subtitle: cfg.subtitle ?? "Escribinos por WhatsApp y te atendemos al toque.",
     buttonText: cfg.buttonText ?? "Hablar por WhatsApp",
     msg: cfg.msg ?? "Hola, quiero info",
+    autoRedirect: cfg.autoRedirect ?? false,
   };
   return renderTrackedLanding(full);
 }

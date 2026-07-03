@@ -11,6 +11,7 @@ export interface LandingConfig {
   subtitle: string;
   buttonText: string;
   msg: string; // texto que se manda a WhatsApp
+  autoRedirect?: boolean; // si true, redirige solo a WhatsApp tras ~1 seg
 }
 
 const esc = (s: string) =>
@@ -22,6 +23,7 @@ export function renderTrackedLanding(cfg: LandingConfig): string {
     slug: cfg.userSlug,
     msg: cfg.msg,
     goBase: cfg.goBase,
+    autoRedirect: !!cfg.autoRedirect,
   }).replace(/</g, "\\u003c");
 
   return `<!doctype html>
@@ -63,7 +65,7 @@ src="https://www.facebook.com/tr?id=${esc(cfg.pixelId)}&ev=PageView&noscript=1"/
     <h1>${esc(cfg.headline)}</h1>
     <p>${esc(cfg.subtitle)}</p>
     <button id="cta"><span class="wa">🟢</span>${esc(cfg.buttonText)}</button>
-    <small>Te redirigimos a WhatsApp de forma segura.</small>
+    <small id="hint">Te redirigimos a WhatsApp de forma segura.</small>
   </div>
 <script>
   var CFG = ${json};
@@ -74,7 +76,9 @@ src="https://www.facebook.com/tr?id=${esc(cfg.pixelId)}&ev=PageView&noscript=1"/
   function newEid(){
     try { return crypto.randomUUID(); } catch(e){ return 'eid-' + Date.now() + '-' + Math.round(Math.random()*1e9); }
   }
-  document.getElementById('cta').addEventListener('click', function(){
+  var redirected = false;
+  function goToWhatsApp(){
+    if (redirected) return; redirected = true;
     var eid = newEid();
     try { fbq('track', 'Lead', {}, { eventID: eid }); } catch(e){}
     var p = new URLSearchParams();
@@ -88,8 +92,15 @@ src="https://www.facebook.com/tr?id=${esc(cfg.pixelId)}&ev=PageView&noscript=1"/
       var v = here.get(k); if (v) p.set(k, v);
     });
     var target = CFG.goBase + '/go?' + p.toString();
-    setTimeout(function(){ window.location.href = target; }, 350);
-  });
+    setTimeout(function(){ window.location.href = target; }, 300);
+  }
+  document.getElementById('cta').addEventListener('click', goToWhatsApp);
+  // Redirección automática: pasa ~1 seg por la landing (deja disparar el PageView) y va a WhatsApp.
+  if (CFG.autoRedirect) {
+    var h = document.getElementById('hint');
+    if (h) h.textContent = 'Redirigiendo a WhatsApp…';
+    setTimeout(goToWhatsApp, 1000);
+  }
 </script>
 </body>
 </html>`;

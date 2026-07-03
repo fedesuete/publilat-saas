@@ -46,7 +46,7 @@ function templates(slug: string): Tpl[] {
   ];
 }
 
-interface LandingConfig { title?: string; headline?: string; subtitle?: string; buttonText?: string; msg?: string }
+interface LandingConfig { title?: string; headline?: string; subtitle?: string; buttonText?: string; msg?: string; autoRedirect?: boolean }
 interface Landing { id: string; name: string; slug: string; config: LandingConfig | null; isPrimary: boolean; published: boolean; publishedUrl: string | null; createdAt: string }
 
 const landingUrl = (slug: string) => `${API_BASE}/p/${slug}`;
@@ -66,8 +66,8 @@ function CopyBtn({ value, label = "Copiar" }: { value: string; label?: string })
   );
 }
 
-interface FormState { name: string; title: string; headline: string; subtitle: string; buttonText: string; msg: string }
-const EMPTY_FORM: FormState = { name: "", title: "", headline: "", subtitle: "", buttonText: "", msg: "" };
+interface FormState { name: string; title: string; headline: string; subtitle: string; buttonText: string; msg: string; autoRedirect: boolean }
+const EMPTY_FORM: FormState = { name: "", title: "", headline: "", subtitle: "", buttonText: "", msg: "", autoRedirect: false };
 
 export default function LandingsPage() {
   const { user } = useAuth();
@@ -115,14 +115,14 @@ export default function LandingsPage() {
       setHtml(body); setSnapshot(`h|${l.name}|${body}`);
     } else {
       setMode("fields"); setHtml("");
-      const f = { name: l.name, title: c.title ?? "", headline: c.headline ?? "", subtitle: c.subtitle ?? "", buttonText: c.buttonText ?? "", msg: c.msg ?? "" };
+      const f = { name: l.name, title: c.title ?? "", headline: c.headline ?? "", subtitle: c.subtitle ?? "", buttonText: c.buttonText ?? "", msg: c.msg ?? "", autoRedirect: c.autoRedirect ?? false };
       setForm(f); setSnapshot(`f|${l.name}|${JSON.stringify(f)}`);
     }
   };
 
   const onUploadHtml = (file: File) => { const r = new FileReader(); r.onload = () => { setHtml(String(r.result ?? "")); setMode("html"); }; r.readAsText(file); };
 
-  const buildConfig = (): LandingConfig => ({ title: form.title || undefined, headline: form.headline || undefined, subtitle: form.subtitle || undefined, buttonText: form.buttonText || undefined, msg: form.msg || undefined });
+  const buildConfig = (): LandingConfig => ({ title: form.title || undefined, headline: form.headline || undefined, subtitle: form.subtitle || undefined, buttonText: form.buttonText || undefined, msg: form.msg || undefined, autoRedirect: form.autoRedirect || undefined });
 
   const save = async (e?: FormEvent) => {
     e?.preventDefault();
@@ -162,7 +162,8 @@ export default function LandingsPage() {
   };
 
   const useTemplate = (t: Tpl) => { setMode("html"); setHtml(t.html); if (!form.name) setForm((f) => ({ ...f, name: t.name })); setShowTpl(false); };
-  const setField = (k: keyof FormState, v: string) => setForm((p) => ({ ...p, [k]: v }));
+  type TextKey = "name" | "title" | "headline" | "subtitle" | "buttonText" | "msg";
+  const setField = (k: TextKey, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
   const campaignUrl = current ? (current.publishedUrl ?? landingUrl(current.slug)) : "";
   const editing = editingId !== null || html !== "" || form.name !== "";
@@ -247,12 +248,16 @@ export default function LandingsPage() {
               </div>
               {mode === "fields" ? (
                 <div className="space-y-3 p-4">
-                  {([["title", "Título de la pestaña"], ["headline", "Encabezado"], ["subtitle", "Subtítulo"], ["buttonText", "Texto del botón"], ["msg", "Mensaje de WhatsApp"]] as Array<[keyof FormState, string]>).map(([k, ph]) => (
+                  {([["title", "Título de la pestaña"], ["headline", "Encabezado"], ["subtitle", "Subtítulo"], ["buttonText", "Texto del botón"], ["msg", "Mensaje de WhatsApp"]] as Array<[TextKey, string]>).map(([k, ph]) => (
                     <div key={k}>
                       <label className="mb-1 block text-xs capitalize text-slate-400">{ph}</label>
                       <Input value={form[k]} onChange={(e) => setField(k, e.target.value)} placeholder={ph} />
                     </div>
                   ))}
+                  <label className="flex items-center gap-2 rounded-md border border-slate-800 bg-slate-900/40 p-2.5 text-xs text-slate-300">
+                    <input type="checkbox" checked={form.autoRedirect} onChange={(e) => setForm((p) => ({ ...p, autoRedirect: e.target.checked }))} className="h-4 w-4 accent-wa-green" />
+                    Redirigir automáticamente a WhatsApp (pasa ~1 seg por la landing y va al chat)
+                  </label>
                 </div>
               ) : (
                 <textarea value={html} onChange={(e) => setHtml(e.target.value)} placeholder="<!doctype html> …"
