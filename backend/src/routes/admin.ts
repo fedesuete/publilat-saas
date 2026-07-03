@@ -430,6 +430,38 @@ adminRouter.get("/export/:type", async (req, res) => {
   return res.send(csv(rows));
 });
 
+// ============================ LANDINGS (global) ============================
+// GET /api/admin/landings — todas las landings de los clientes con su URL pública,
+// para verificar que funcionan sin entrar al panel de cada cliente.
+adminRouter.get("/landings", async (req, res) => {
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  const status = typeof req.query.status === "string" ? req.query.status : "";
+  const where: any = {};
+  if (status === "published") where.published = true;
+  if (status === "draft") where.published = false;
+  if (q) where.OR = [{ name: { contains: q, mode: "insensitive" } }, { slug: { contains: q, mode: "insensitive" } }, { user: { email: { contains: q, mode: "insensitive" } } }];
+
+  const base = (process.env.APP_BASE_URL ?? "").replace(/\/$/, "");
+  const landings = await prisma.landing.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    select: { id: true, name: true, slug: true, isPrimary: true, published: true, publishedUrl: true, createdAt: true, user: { select: { email: true, name: true } } },
+  });
+  return res.json({
+    landings: landings.map((l) => ({
+      id: l.id,
+      name: l.name,
+      slug: l.slug,
+      isPrimary: l.isPrimary,
+      published: l.published,
+      createdAt: l.createdAt,
+      email: l.user.email,
+      ownerName: l.user.name,
+      url: l.publishedUrl ?? (base ? `${base}/p/${l.slug}` : `/p/${l.slug}`),
+    })),
+  });
+});
+
 // ============================ CAPI: eventos fallidos ============================
 // GET /api/admin/capi/failed — resumen de eventos CAPI fallidos (para monitoreo).
 adminRouter.get("/capi/failed", async (_req, res) => {
