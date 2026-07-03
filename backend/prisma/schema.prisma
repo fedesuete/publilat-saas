@@ -47,6 +47,38 @@ model User {
   supportMessages SupportMessage[]
   quickReplies QuickReply[]
   notifications Notification[]
+  flows       Flow[]
+}
+
+// Automatización / secuencia (tipo ManyChat) para WhatsApp.
+model Flow {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  enabled   Boolean  @default(false)
+  trigger   String   @default("first_message") // first_message | keyword
+  keyword   String?                            // si trigger = keyword
+  steps     Json     // [{ id, type: "message"|"delay"|"wait_reply", text?, minutes? }]
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  runs      FlowRun[]
+
+  @@index([userId])
+}
+
+// Estado de ejecución de una secuencia por contacto.
+model FlowRun {
+  id        String   @id @default(cuid())
+  flowId    String
+  contactId String
+  stepIndex Int      @default(0)          // próximo paso a ejecutar
+  status    String   @default("running")  // running | waiting | done
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  flow      Flow     @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId, status])
 }
 
 // Notificaciones del usuario (nuevo lead, venta, línea caída, etc.).
@@ -184,6 +216,7 @@ model Contact {
   user        User     @relation(fields: [userId], references: [id])
   line        WaLine?  @relation(fields: [lineId], references: [id])
   messages    Message[]
+  flowRuns    FlowRun[]
 }
 
 enum Stage {

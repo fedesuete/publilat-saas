@@ -1,0 +1,35 @@
+// Envío de texto a un contacto por su línea (Baileys o Cloud), guardando el mensaje
+// saliente y emitiéndolo al Inbox. Reutilizado por el motor de automatizaciones.
+import { prisma } from "./prisma.js";
+import { emitToUser } from "./io.js";
+import { sendText } from "./evolution.js";
+import { sendCloudText } from "./wa-cloud.js";
+
+export async function sendToContact(userId: string, contactId: string, text: string): Promise<boolean> {
+  const contact = await prisma.contact.findFirst({ where: { id: contactId, userId } });
+  if (!contact?.lineId) return false;
+  const line = await prisma.waLine.findFirst({ where: { id: contact.lineId, userId } });
+  if (!line) return false;
+  const destination = contact.waJid ?? contact.phone;
+  if (!destination) return false;
+
+  try {
+    if (line.provider === "cloud") {
+      if (!line.wabaPhoneNumberId || !line.accessToken) return false;
+      await sendCloudText(line, (contact.phone ?? destination).replace(/\D/g, ""), text);
+    } else {
+      if (!line.sessionId) return false;
+      await sendText(line.sessionId, destination, text);
+    }
+  } catch (e) {
+    console.error("[wa-send] error:", e instanceof Error ? e.message : String(e));
+    return false;
+  }
+
+  const msg = await prisma.message.create({ data: { contactId, lineId: line.id, direction: "out", body: text } });
+  emitToUser(userId, "inbox:message", {
+    contactId,
+    message: { id: msg.id, direction: "out", body: text, createdAt: msg.createdAt },
+  });
+  return true;
+}

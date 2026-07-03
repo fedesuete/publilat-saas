@@ -143,6 +143,16 @@ export async function checkLineHealth(): Promise<void> {
   }
 }
 
+// Programa la reanudación de una secuencia tras un delay (para el motor de automatizaciones).
+export function scheduleFlowResume(runId: string, delaySec: number): void {
+  if (queue) {
+    void queue.add("flow-resume", { runId }, { delay: delaySec * 1000, removeOnComplete: true, removeOnFail: 50 });
+  } else {
+    // Fallback en proceso si la cola no está lista (dev sin Redis).
+    setTimeout(() => { void import("./flow-engine.js").then((m) => m.resumeFlowRun(runId)).catch(() => undefined); }, delaySec * 1000);
+  }
+}
+
 // Arranca el worker y programa los chequeos periódicos. Idempotente.
 export async function initQueues(): Promise<void> {
   if (queue) return;
@@ -153,6 +163,10 @@ export async function initQueues(): Promise<void> {
       async (job: Job) => {
         if (job.name === "capi-retry") return retryFailedCapi();
         if (job.name === "line-health") return checkLineHealth();
+        if (job.name === "flow-resume") {
+          const { resumeFlowRun } = await import("./flow-engine.js");
+          return resumeFlowRun(job.data.runId as string);
+        }
         return expireLines();
       },
       { connection }

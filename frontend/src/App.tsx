@@ -17,6 +17,7 @@ import AgendaPage from "./pages/AgendaPage";
 import SetupPage from "./pages/SetupPage";
 import TutorialesPage from "./pages/TutorialesPage";
 import SupportPage from "./pages/SupportPage";
+import AutomationsPage from "./pages/AutomationsPage";
 import ProtectedAdminRoute from "./components/ProtectedAdminRoute";
 import AdminLayout from "./components/AdminLayout";
 import AdminOverview from "./pages/admin/AdminOverview";
@@ -46,6 +47,7 @@ export default function App() {
             <Route path="/agenda" element={<AgendaPage />} />
             <Route path="/kanban" element={<KanbanPage />} />
             <Route path="/inbox" element={<InboxPage />} />
+            <Route path="/automatizaciones" element={<AutomationsPage />} />
             <Route path="/whatsapp" element={<WhatsappPage />} />
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/pixel" element={<PixelPage />} />

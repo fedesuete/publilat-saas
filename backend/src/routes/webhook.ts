@@ -9,6 +9,7 @@ import { fetchOwnerNumber, getMediaBase64 } from "../lib/evolution.js";
 import { detectPayment } from "../lib/payment-detect.js";
 import { consumeDayAndActivate } from "../lib/access.js";
 import { notify } from "../lib/notifications.js";
+import { onInboundFlow } from "../lib/flow-engine.js";
 
 export const webhookRouter = Router();
 
@@ -206,6 +207,9 @@ webhookRouter.post("/", async (req, res) => {
           imageBase64: mediaData,
           imageMediaType: mediaType,
         });
+
+        // Automatizaciones/secuencias (best-effort).
+        void onInboundFlow(userId, contact.id, text);
       }
       return;
     }
