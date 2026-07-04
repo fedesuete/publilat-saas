@@ -32,6 +32,7 @@ export interface CapiEventInput {
   pixelId?: string;
   capiToken?: string;
   testEventCode?: string;
+  eventTime?: Date; // para backfill: la hora REAL del evento (Meta acepta hasta 7 días atrás)
 }
 
 export interface CapiResult {
@@ -68,7 +69,7 @@ export async function sendCapiEvent(input: CapiEventInput): Promise<CapiResult> 
 
   const event: Record<string, unknown> = {
     event_name: input.eventName,
-    event_time: Math.floor(Date.now() / 1000),
+    event_time: Math.floor((input.eventTime?.getTime() ?? Date.now()) / 1000),
     action_source: actionSource,
     event_id: input.eventId,
     user_data: userData,
