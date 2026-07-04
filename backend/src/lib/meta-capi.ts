@@ -67,8 +67,12 @@ export async function sendCapiEvent(input: CapiEventInput): Promise<CapiResult> 
   if (input.userAgent) userData.client_user_agent = input.userAgent;
   if (isMessaging && input.ctwaClid) userData.ctwa_clid = input.ctwaClid; // NO se hashea
 
+  // business_messaging no acepta "Lead": Meta exige "LeadSubmitted" para leads de
+  // mensajería (error 2804066). "Purchase" es válido en ambos orígenes.
+  const wireEventName = isMessaging && input.eventName === "Lead" ? "LeadSubmitted" : input.eventName;
+
   const event: Record<string, unknown> = {
-    event_name: input.eventName,
+    event_name: wireEventName,
     event_time: Math.floor((input.eventTime?.getTime() ?? Date.now()) / 1000),
     action_source: actionSource,
     event_id: input.eventId,
