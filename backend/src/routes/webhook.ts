@@ -10,6 +10,7 @@ import { detectPayment } from "../lib/payment-detect.js";
 import { consumeDayAndActivate } from "../lib/access.js";
 import { notify } from "../lib/notifications.js";
 import { onInboundFlow } from "../lib/flow-engine.js";
+import { fireCtwaLead, extractCtwaFromBaileys } from "../lib/ctwa.js";
 
 export const webhookRouter = Router();
 
@@ -141,6 +142,12 @@ webhookRouter.post("/", async (req, res) => {
           void notify(userId, "lead", "Nuevo lead 💬", `Te escribió un contacto nuevo (${phone}).`);
         }
 
+        // Atribución CTWA sin landing: si el mensaje viene de un anuncio Click-to-WhatsApp,
+        // Baileys trae el ctwa_clid en el contextInfo.externalAdReply. Lo capturamos para
+        // poder atribuir el Lead/Purchase al anuncio aunque no haya pasado por la landing.
+        const ctwa = extractCtwaFromBaileys(item);
+        const isNewCtwaLead = !!ctwa && !contact.ctwaClid;
+
         // Completa teléfono/JID/línea, alias (nombre de WhatsApp) y avanza la etapa.
         const pushName = typeof item.pushName === "string" ? item.pushName.trim().slice(0, 80) : "";
         const patch: Record<string, unknown> = {};
@@ -148,9 +155,21 @@ webhookRouter.post("/", async (req, res) => {
         if (!contact.waJid && item.key.remoteJid) patch.waJid = item.key.remoteJid; // soporta @lid
         if (!contact.lineId) patch.lineId = line.id;
         if (pushName && !contact.name) patch.name = pushName; // alias = nombre que tiene en WhatsApp
+        if (isNewCtwaLead && ctwa) {
+          patch.ctwaClid = ctwa.ctwaClid;
+          patch.source = "ctwa";
+          if (!contact.campaignId && ctwa.sourceId) patch.campaignId = ctwa.sourceId;
+          if (!contact.adId && ctwa.sourceId) patch.adId = ctwa.sourceId;
+          if (!contact.landingUrl && ctwa.sourceUrl) patch.landingUrl = ctwa.sourceUrl;
+        }
         if (contact.stage === "NUEVO") patch.stage = "CONTACTADO";
         if (Object.keys(patch).length) {
           contact = await prisma.contact.update({ where: { id: contact.id }, data: patch });
+        }
+
+        // Primer mensaje con atribución de anuncio -> disparamos el Lead CTWA por CAPI.
+        if (isNewCtwaLead) {
+          void fireCtwaLead(userId, { id: contact.id, externalId: contact.externalId, phone: contact.phone, ctwaClid: contact.ctwaClid });
         }
 
         // Si el mensaje trae imagen o documento (PDF), lo bajamos UNA vez (para mostrarlo

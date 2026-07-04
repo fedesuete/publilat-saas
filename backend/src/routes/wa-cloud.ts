@@ -6,9 +6,8 @@ import { Router } from "express";
 import crypto from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
-import { resolveUserPixel } from "../lib/pixel.js";
-import { sendCapiEvent } from "../lib/meta-capi.js";
 import { getCloudMediaBase64 } from "../lib/wa-cloud.js";
+import { fireCtwaLead } from "../lib/ctwa.js";
 import { detectPayment } from "../lib/payment-detect.js";
 import { notify } from "../lib/notifications.js";
 import { onInboundFlow } from "../lib/flow-engine.js";
@@ -45,41 +44,6 @@ function extractText(msg: Record<string, any>): string {
     msg?.interactive?.list_reply?.title ??
     ""
   );
-}
-
-// Dispara el Lead de CTWA por CAPI (business_messaging + ctwa_clid). Best-effort.
-async function fireCtwaLead(userId: string, contact: { id: string; externalId: string; phone: string | null; ctwaClid: string | null }) {
-  const creds = await resolveUserPixel(userId, "Lead");
-  const metaEvent = await prisma.metaEvent.create({
-    data: {
-      userId,
-      contactId: contact.id,
-      eventName: "Lead",
-      pixelId: creds?.pixelId ?? process.env.META_PIXEL_ID ?? "",
-      payload: {},
-      status: "pending",
-    },
-  });
-  try {
-    const result = await sendCapiEvent({
-      eventName: "Lead",
-      externalId: contact.externalId,
-      phone: contact.phone ?? undefined,
-      actionSource: "business_messaging",
-      ctwaClid: contact.ctwaClid ?? undefined,
-      eventId: contact.externalId,
-      pixelId: creds?.pixelId,
-      capiToken: creds?.capiToken,
-    });
-    await prisma.metaEvent.update({
-      where: { id: metaEvent.id },
-      data: { status: "sent", pixelId: result.pixelId, payload: result.payload as object, response: result.response as object },
-    });
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    console.error("[CTWA Lead] error:", message);
-    await prisma.metaEvent.update({ where: { id: metaEvent.id }, data: { status: "failed", response: { error: message } } });
-  }
 }
 
 // GET — verificación del webhook (Meta manda hub.challenge + verify token).
