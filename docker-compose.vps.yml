@@ -57,7 +57,11 @@ services:
       - redisdata:/data
 
   evolution:
-    image: evoapicloud/evolution-api:v2.3.7
+    # v2.4 (homolog jun-2026): Baileys nuevo; los envíos vuelven a entregar (el v2.3.7
+    # daba error 463 en pares nuevos). Requiere licencia community (GRATIS) activada:
+    # ya activada el 04/07/2026 desde el Manager (persiste en la DB). Si alguna vez pide
+    # LICENSE_REQUIRED de nuevo: exponer 8085:8080 temporal y activar en /manager.
+    image: evoapicloud/evolution-api:homolog
     restart: unless-stopped
     depends_on:
       postgres:
