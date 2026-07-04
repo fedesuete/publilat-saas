@@ -68,7 +68,7 @@ webhookRouter.post("/", async (req, res) => {
       const connected = state === "open";
       // Si quedó conectada, capturamos el número del WhatsApp vinculado (para los wa.me).
       let ownerPhone = jidToPhone(body.data?.wuid ?? body.sender);
-      if (connected && !line.phone && !ownerPhone) {
+      if (connected && !ownerPhone) {
         ownerPhone = await fetchOwnerNumber(instance);
       }
       await prisma.waLine.update({
@@ -76,7 +76,9 @@ webhookRouter.post("/", async (req, res) => {
         data: {
           connected,
           status: connected ? "active" : "inactive",
-          ...(connected && ownerPhone && !line.phone ? { phone: ownerPhone } : {}),
+          // El número emparejado es la fuente de verdad: si escanean con OTRO número,
+          // actualizamos (antes solo se guardaba si estaba vacío y quedaba el viejo).
+          ...(connected && ownerPhone && ownerPhone !== line.phone ? { phone: ownerPhone } : {}),
         },
       });
       // Primera conexión: arranca el contador (consume 1 día / 24h). Si no hay días,
@@ -122,13 +124,33 @@ webhookRouter.post("/", async (req, res) => {
           });
           if (!known) continue; // chat personal: no lo traemos al CRM
           const fmText = extractText(item.message);
-          if (!fmText) continue; // media desde el celular: por ahora solo texto
+
+          // Media saliente del celular (imagen/audio/documento) -> también se espeja.
+          let fmMediaType: string | null = null;
+          let fmMediaData: string | null = null;
+          const fmImg = item?.message?.imageMessage;
+          const fmAudio = item?.message?.audioMessage;
+          const fmDoc =
+            item?.message?.documentMessage ??
+            item?.message?.documentWithCaptionMessage?.message?.documentMessage;
+          const fmHint = fmImg ?? fmAudio ?? fmDoc;
+          if (fmHint && fmId) {
+            const media = await getMediaBase64(instance, fmId);
+            if (media?.base64) {
+              fmMediaData = media.base64;
+              const fallback = fmImg ? "image/jpeg" : fmAudio ? "audio/ogg" : "application/octet-stream";
+              fmMediaType = media.mimetype ?? fmHint.mimetype ?? fallback;
+            }
+          }
+          if (!fmText && !fmMediaData) continue; // nada que mostrar (stickers/reacciones)
+
           const fmMsg = await prisma.message.create({
-            data: { contactId: known.id, lineId: line.id, direction: "out", body: fmText, waMessageId: fmId },
+            data: { contactId: known.id, lineId: line.id, direction: "out", body: fmText, mediaType: fmMediaType, mediaData: fmMediaData, waMessageId: fmId },
           });
+          const fmMediaUrl = fmMediaData ? `data:${fmMediaType};base64,${fmMediaData}` : null;
           emitToUser(userId, "inbox:message", {
             contactId: known.id,
-            message: { id: fmMsg.id, direction: "out", body: fmText, createdAt: fmMsg.createdAt },
+            message: { id: fmMsg.id, direction: "out", body: fmText, mediaUrl: fmMediaUrl, createdAt: fmMsg.createdAt },
           });
           continue;
         }
