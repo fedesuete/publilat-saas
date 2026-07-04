@@ -157,6 +157,23 @@ export async function getMediaBase64(
   }
 }
 
+// Reinicia la instancia (recupera sesiones trabadas en "close"/flapping SIN re-escanear QR).
+export async function restartInstance(instanceName: string): Promise<boolean> {
+  const c = client();
+  try {
+    await c.put(`/instance/restart/${instanceName}`);
+    return true;
+  } catch {
+    try {
+      await c.post(`/instance/restart/${instanceName}`);
+      return true;
+    } catch (e) {
+      console.warn("[evolution] restartInstance falló:", e instanceof Error ? e.message : String(e));
+      return false;
+    }
+  }
+}
+
 // Cierra sesión (desvincula el teléfono) sin borrar la instancia.
 export async function logoutInstance(instanceName: string): Promise<void> {
   const c = client();

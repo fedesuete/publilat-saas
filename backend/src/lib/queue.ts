@@ -7,7 +7,7 @@ import { emitToUser } from "./io.js";
 import { sendCapiEvent } from "./meta-capi.js";
 import { resolveUserPixel } from "./pixel.js";
 import { consumeDayAndActivate } from "./access.js";
-import { connectionState } from "./evolution.js";
+import { connectionState, restartInstance } from "./evolution.js";
 import { getPhoneQuality } from "./wa-cloud.js";
 import { decryptSecret } from "./crypto.js";
 import { notify } from "./notifications.js";
@@ -131,8 +131,18 @@ export async function checkLineHealth(): Promise<void> {
         const state = await connectionState(inst);
         connected = state === "open";
         if (line.connected && !connected) {
-          await notify(line.userId, "line_down", "Línea desconectada",
-            `Tu WhatsApp "${line.label ?? line.phone}" se desconectó. Reconectalo para no perder mensajes.`);
+          // Auto-recuperación: sesiones que quedan trabadas en close/connecting suelen
+          // volver con un restart de la instancia, SIN re-escanear el QR (flapping 428).
+          console.log(`[line-health] línea ${line.id} en "${state}": intento restart automático`);
+          const restarted = await restartInstance(inst);
+          if (restarted) {
+            await new Promise((r) => setTimeout(r, 15000));
+            connected = (await connectionState(inst)) === "open";
+          }
+          if (!connected) {
+            await notify(line.userId, "line_down", "Línea desconectada",
+              `Tu WhatsApp "${line.label ?? line.phone}" se desconectó. Intentamos reconectar automáticamente; si sigue caída, entrá a WhatsApp y tocá "Conectar / Ver QR".`);
+          }
         }
       }
       await prisma.waLine.update({ where: { id: line.id }, data: { connected, qualityRating: quality ?? null, lastCheckedAt: new Date() } });
