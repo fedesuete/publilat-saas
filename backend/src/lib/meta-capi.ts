@@ -26,7 +26,10 @@ export interface CapiEventInput {
   eventId?: string;            // para deduplicar con el Pixel del navegador
   eventSourceUrl?: string;     // url donde ocurrió el evento (override del global)
   // Atribución por anuncio Click-to-WhatsApp (CTWA, vía Cloud API):
-  actionSource?: "website" | "business_messaging"; // default website (flujo landing)
+  // - website: flujo landing (default). business_messaging: CTWA con ctwa_clid (y WABA).
+  // - chat: lead de conversación SIN clid ni WABA (ej. backfill de mensajes directos);
+  //   business_messaging sin page_id/WABA es rechazado por Meta (subcode 2804069).
+  actionSource?: "website" | "business_messaging" | "chat";
   ctwaClid?: string;           // click id del referral (NO se hashea)
   // Credenciales por usuario; si faltan, caen a las del .env.
   pixelId?: string;
@@ -81,9 +84,10 @@ export async function sendCapiEvent(input: CapiEventInput): Promise<CapiResult> 
   if (isMessaging) {
     // CTWA: el evento ocurre en el chat, no en una web.
     event.messaging_channel = "whatsapp";
-  } else {
+  } else if (actionSource === "website") {
     event.event_source_url = input.eventSourceUrl || SOURCE_URL;
   }
+  // chat: sin event_source_url ni messaging_channel (lead de conversación sin clid).
 
   if (input.eventName === "Purchase") {
     event.custom_data = {

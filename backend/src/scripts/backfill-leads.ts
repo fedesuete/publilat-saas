@@ -46,7 +46,9 @@ async function main() {
         eventName: "Lead",
         externalId: c.externalId,
         phone: c.phone ?? undefined,
-        actionSource: "business_messaging", // llegaron por WhatsApp
+        // Sin ctwa_clid ni WABA, business_messaging es rechazado (exige page_id):
+        // usamos "chat" (lead de conversación) que Meta acepta con teléfono hasheado.
+        actionSource: c.ctwaClid ? "business_messaging" : "chat",
         ctwaClid: c.ctwaClid ?? undefined,
         eventId: c.externalId, // mismo id de siempre -> Meta deduplica si ya existiera
         eventTime: c.createdAt, // hora REAL del primer contacto
