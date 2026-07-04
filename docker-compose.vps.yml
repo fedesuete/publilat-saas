@@ -67,7 +67,9 @@ services:
     environment:
       - SERVER_URL=http://evolution:8080
       - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY}
-      - CONFIG_SESSION_PHONE_VERSION=${CONFIG_SESSION_PHONE_VERSION:-2.3000.1035194821}
+      # CONFIG_SESSION_PHONE_VERSION: NO fijarla. Desde Evolution v2.3.1+ se auto-detecta
+      # la versión de WhatsApp Web vigente; clavarla vieja causa envíos que quedan en
+      # PENDING sin entregarse y sesiones que se caen seguido (issues #1761/#1911).
       - DATABASE_ENABLED=true
       - DATABASE_PROVIDER=postgresql
       - DATABASE_CONNECTION_URI=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/evolution
