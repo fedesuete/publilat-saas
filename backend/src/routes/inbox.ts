@@ -134,13 +134,15 @@ inboxRouter.post("/:contactId/messages", async (req, res) => {
 
   // Preferimos el JID crudo (soporta direcciones @lid de privacidad); si no, el teléfono.
   const destination = contact.waJid ?? contact.phone;
+  let waMessageId: string | undefined;
   if (line.provider === "cloud") {
     // WhatsApp Cloud API oficial (líneas CTWA). La Graph API usa sólo el número.
     if (!line.wabaPhoneNumberId || !line.accessToken) {
       return res.status(400).json({ error: "La línea Cloud no está configurada" });
     }
     try {
-      await sendCloudText(line, (contact.phone ?? destination).replace(/\D/g, ""), parsed.data.body);
+      const sent = await sendCloudText(line, (contact.phone ?? destination).replace(/\D/g, ""), parsed.data.body);
+      waMessageId = sent?.messages?.[0]?.id ?? undefined;
     } catch (e) {
       if (isOutsideWindowError(e)) {
         return res.status(409).json({
@@ -153,15 +155,17 @@ inboxRouter.post("/:contactId/messages", async (req, res) => {
   } else {
     if (!line.sessionId) return res.status(400).json({ error: "La línea no está disponible" });
     try {
-      await sendText(line.sessionId, destination, parsed.data.body);
+      const sent = await sendText(line.sessionId, destination, parsed.data.body);
+      waMessageId = sent?.key?.id ?? undefined;
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       return res.status(502).json({ error: "No se pudo enviar el mensaje", detail: message });
     }
   }
 
+  // Guardamos el waMessageId: el eco fromMe del webhook se deduplica contra él.
   const message = await prisma.message.create({
-    data: { contactId: contact.id, lineId: line.id, direction: "out", body: parsed.data.body },
+    data: { contactId: contact.id, lineId: line.id, direction: "out", body: parsed.data.body, waMessageId },
   });
   emitToUser(req.userId!, "inbox:message", {
     contactId: contact.id,
@@ -243,15 +247,17 @@ inboxRouter.post("/:contactId/audio", async (req, res) => {
   const base64 = parsed.data.audio.replace(/^data:[^;]+;base64,/, "");
   const destination = contact.waJid ?? contact.phone;
   if (!destination) return res.status(400).json({ error: "El contacto aún no tiene teléfono" });
+  let waMessageId: string | undefined;
   try {
-    await sendWhatsAppAudio(line.sessionId, destination, base64);
+    const sent = await sendWhatsAppAudio(line.sessionId, destination, base64);
+    waMessageId = sent?.key?.id ?? undefined;
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     return res.status(502).json({ error: "No se pudo enviar el audio", detail: message });
   }
 
   const message = await prisma.message.create({
-    data: { contactId: contact.id, lineId: line.id, direction: "out", body: "", mediaType: mime, mediaData: base64 },
+    data: { contactId: contact.id, lineId: line.id, direction: "out", body: "", mediaType: mime, mediaData: base64, waMessageId },
   });
   const mediaUrl = `data:${mime};base64,${base64}`;
   emitToUser(req.userId!, "inbox:message", {

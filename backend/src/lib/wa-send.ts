@@ -13,20 +13,23 @@ export async function sendToContact(userId: string, contactId: string, text: str
   const destination = contact.waJid ?? contact.phone;
   if (!destination) return false;
 
+  let waMessageId: string | undefined;
   try {
     if (line.provider === "cloud") {
       if (!line.wabaPhoneNumberId || !line.accessToken) return false;
-      await sendCloudText(line, (contact.phone ?? destination).replace(/\D/g, ""), text);
+      const sent = await sendCloudText(line, (contact.phone ?? destination).replace(/\D/g, ""), text);
+      waMessageId = sent?.messages?.[0]?.id ?? undefined;
     } else {
       if (!line.sessionId) return false;
-      await sendText(line.sessionId, destination, text);
+      const sent = await sendText(line.sessionId, destination, text);
+      waMessageId = sent?.key?.id ?? undefined;
     }
   } catch (e) {
     console.error("[wa-send] error:", e instanceof Error ? e.message : String(e));
     return false;
   }
 
-  const msg = await prisma.message.create({ data: { contactId, lineId: line.id, direction: "out", body: text } });
+  const msg = await prisma.message.create({ data: { contactId, lineId: line.id, direction: "out", body: text, waMessageId } });
   emitToUser(userId, "inbox:message", {
     contactId,
     message: { id: msg.id, direction: "out", body: text, createdAt: msg.createdAt },

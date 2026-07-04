@@ -103,7 +103,36 @@ webhookRouter.post("/", async (req, res) => {
 
       for (const item of items) {
         if (!item?.key) continue;
-        if (item.key.fromMe) continue; // sólo entrantes
+
+        // Mensajes que el dueño manda DESDE EL CELULAR (fromMe): los espejamos en el
+        // CRM como salientes, solo para contactos que ya existen en el Inbox (no
+        // importamos chats personales). Lo enviado desde el CRM se deduplica por
+        // waMessageId (lo guardamos al enviar).
+        if (item.key.fromMe) {
+          const peerPhone = jidToPhone(item.key.remoteJid);
+          if (!peerPhone) continue;
+          const fmId = item.key.id as string | undefined;
+          if (fmId) {
+            const dup = await prisma.message.findFirst({ where: { waMessageId: fmId }, select: { id: true } });
+            if (dup) continue; // ya lo registramos (enviado desde el CRM)
+          }
+          const known = await prisma.contact.findFirst({
+            where: { userId, phone: peerPhone },
+            orderBy: { createdAt: "desc" },
+          });
+          if (!known) continue; // chat personal: no lo traemos al CRM
+          const fmText = extractText(item.message);
+          if (!fmText) continue; // media desde el celular: por ahora solo texto
+          const fmMsg = await prisma.message.create({
+            data: { contactId: known.id, lineId: line.id, direction: "out", body: fmText, waMessageId: fmId },
+          });
+          emitToUser(userId, "inbox:message", {
+            contactId: known.id,
+            message: { id: fmMsg.id, direction: "out", body: fmText, createdAt: fmMsg.createdAt },
+          });
+          continue;
+        }
+
         const phone = jidToPhone(item.key.remoteJid);
         if (!phone) continue;
         const text = extractText(item.message);
