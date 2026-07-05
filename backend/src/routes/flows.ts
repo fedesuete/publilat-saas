@@ -8,18 +8,24 @@ export const flowsRouter = Router();
 // Pasos recursivos: un menú tiene opciones y cada opción su propia rama de pasos.
 type StepInput = {
   id: string;
-  type: "message" | "delay" | "wait_reply" | "menu";
+  type: "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage";
   text?: string;
   minutes?: number;
   options?: Array<{ id: string; label: string; keywords?: string[]; steps: StepInput[] }>;
+  url?: string;
+  urlLabel?: string;
+  stage?: string;
 };
 
 const stepSchema: z.ZodType<StepInput> = z.lazy(() =>
   z.object({
     id: z.string().min(1),
-    type: z.enum(["message", "delay", "wait_reply", "menu"]),
+    type: z.enum(["message", "delay", "wait_reply", "menu", "link", "set_stage"]),
     text: z.string().max(2000).optional(),
     minutes: z.number().min(0).max(10080).optional(),
+    url: z.string().url().max(500).refine((u) => /^https?:\/\//i.test(u), "Solo http(s)").optional(),
+    urlLabel: z.string().max(40).optional(),
+    stage: z.enum(["NUEVO", "CONTACTADO", "INTERESADO", "PERDIDO"]).optional(),
     options: z
       .array(
         z.object({
@@ -56,7 +62,32 @@ flowsRouter.get("/", async (req, res) => {
     if (g.status === "done") s.done += g._count._all;
     else s.active += g._count._all;
   }
-  return res.json({ flows: flows.map((f) => ({ ...f, stats: stats[f.id] ?? { total: 0, done: 0, active: 0 } })) });
+
+  // CTR de links por paso: enviados (rows) y clickeados (clicks>0), agrupado por flowId+stepId.
+  const [sentBy, clickedBy] = ids.length
+    ? await Promise.all([
+        prisma.trackedLink.groupBy({ by: ["flowId", "stepId"], where: { flowId: { in: ids } }, _count: { _all: true } }),
+        prisma.trackedLink.groupBy({ by: ["flowId", "stepId"], where: { flowId: { in: ids }, clicks: { gt: 0 } }, _count: { _all: true } }),
+      ])
+    : [[], []];
+  const linkStats: Record<string, Array<{ stepId: string; sent: number; clicked: number }>> = {};
+  const put = (flowId: string | null, stepId: string | null, field: "sent" | "clicked", n: number) => {
+    if (!flowId || !stepId) return;
+    const arr = (linkStats[flowId] ??= []);
+    let row = arr.find((r) => r.stepId === stepId);
+    if (!row) { row = { stepId, sent: 0, clicked: 0 }; arr.push(row); }
+    row[field] += n;
+  };
+  for (const g of sentBy) put(g.flowId, g.stepId, "sent", g._count._all);
+  for (const g of clickedBy) put(g.flowId, g.stepId, "clicked", g._count._all);
+
+  return res.json({
+    flows: flows.map((f) => ({
+      ...f,
+      stats: stats[f.id] ?? { total: 0, done: 0, active: 0 },
+      linkStats: linkStats[f.id] ?? [],
+    })),
+  });
 });
 
 flowsRouter.post("/", async (req, res) => {

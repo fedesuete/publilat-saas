@@ -66,6 +66,23 @@ model Flow {
   @@index([userId])
 }
 
+// Link rastreado de una automatización: uno por (paso, contacto). Mide quién clickeó
+// (estilo CTR de ManyChat). El código es el id (cuid) y se sirve en GET /r/:code.
+model TrackedLink {
+  id          String    @id @default(cuid())
+  userId      String
+  flowId      String?
+  stepId      String?
+  contactId   String?
+  url         String
+  label       String?
+  clicks      Int       @default(0)
+  lastClickAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([flowId, stepId])
+}
+
 // Estado de ejecución de una secuencia por contacto.
 model FlowRun {
   id        String   @id @default(cuid())

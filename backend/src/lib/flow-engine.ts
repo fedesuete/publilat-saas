@@ -16,10 +16,13 @@ export interface FlowOption {
 
 export interface FlowStep {
   id: string;
-  type: "message" | "delay" | "wait_reply" | "menu";
-  text?: string;          // message y menu (encabezado del menú)
+  type: "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage";
+  text?: string;          // message, menu (encabezado) y link (mensaje que acompaña)
   minutes?: number;       // delay
   options?: FlowOption[]; // menu
+  url?: string;           // link: destino real
+  urlLabel?: string;      // link: texto del "botón"
+  stage?: string;         // set_stage: NUEVO | CONTACTADO | INTERESADO | PERDIDO
 }
 
 const NUM_EMOJI = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
@@ -98,6 +101,29 @@ export async function resumeFlowRun(runId: string): Promise<void> {
 
     if (step.type === "message") {
       if (step.text) await sendToContact(userId, run.contactId, step.text);
+      cursor = cursorWith(cursor, pos.index + 1);
+      await prisma.flowRun.update({ where: { id: run.id }, data: { cursor, status: "running" } });
+    } else if (step.type === "link") {
+      // "Botón" con link medible: creamos un link rastreado ÚNICO para este contacto
+      // y lo mandamos en el mensaje. El clic se registra en GET /r/:code (CTR por paso).
+      if (step.url) {
+        const tl = await prisma.trackedLink.create({
+          data: { userId, flowId: run.flowId, stepId: step.id, contactId: run.contactId, url: step.url, label: step.urlLabel ?? null },
+        });
+        const base = (process.env.APP_BASE_URL ?? "").replace(/\/$/, "");
+        const shortUrl = `${base}/r/${tl.id}`;
+        const body = [step.text, "", `👉 ${step.urlLabel ?? "Abrir link"}: ${shortUrl}`].filter((x) => x !== undefined && x !== null).join("\n").trim();
+        await sendToContact(userId, run.contactId, body);
+      }
+      cursor = cursorWith(cursor, pos.index + 1);
+      await prisma.flowRun.update({ where: { id: run.id }, data: { cursor, status: "running" } });
+    } else if (step.type === "set_stage") {
+      // Acción CRM: mueve al contacto de etapa (COMPRO queda excluido: eso va con monto).
+      const allowed = ["NUEVO", "CONTACTADO", "INTERESADO", "PERDIDO"] as const;
+      const stage = allowed.find((s) => s === step.stage);
+      if (stage) {
+        await prisma.contact.update({ where: { id: run.contactId }, data: { stage } }).catch(() => undefined);
+      }
       cursor = cursorWith(cursor, pos.index + 1);
       await prisma.flowRun.update({ where: { id: run.id }, data: { cursor, status: "running" } });
     } else if (step.type === "delay") {

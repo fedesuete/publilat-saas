@@ -26,6 +26,7 @@ import { adminRouter } from "./routes/admin.js";
 import { supportRouter } from "./routes/support.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { flowsRouter } from "./routes/flows.js";
+import { trackRouter } from "./routes/track.js";
 import { requireAdmin } from "./middleware/requireAdmin.js";
 import { requireAuth } from "./middleware/requireAuth.js";
 import { verifyToken } from "./lib/auth.js";
@@ -84,6 +85,9 @@ app.use("/", goRouter);
 
 // Landings públicas (/l/:slug demo, /p/:slug guardada)
 app.use("/", landingRouter);
+
+// Links rastreados de automatizaciones (público, /r/:code)
+app.use("/", trackRouter);
 
 // Auth (público, rate-limit estricto contra fuerza bruta)
 app.use("/api/auth", authLimiter, authRouter);

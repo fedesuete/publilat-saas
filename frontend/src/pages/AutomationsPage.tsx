@@ -1,19 +1,22 @@
 import { useEffect, useState } from "react";
-import { MessageSquare, Clock, Reply, ListTree, ArrowUp, ArrowDown, Trash2, Plus, X } from "lucide-react";
+import { MessageSquare, Clock, Reply, ListTree, Link2, KanbanSquare, ArrowUp, ArrowDown, Trash2, Plus, X } from "lucide-react";
 import { api, apiError } from "../lib/api";
 import { Button, Input, Card, ErrorMsg } from "../components/ui";
 
-type StepType = "message" | "delay" | "wait_reply" | "menu";
+type StepType = "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage";
 interface Option { id: string; label: string; keywords?: string[]; steps: Step[] }
-interface Step { id: string; type: StepType; text?: string; minutes?: number; options?: Option[] }
+interface Step { id: string; type: StepType; text?: string; minutes?: number; options?: Option[]; url?: string; urlLabel?: string; stage?: string }
 interface FlowStats { total: number; done: number; active: number }
-interface Flow { id: string; name: string; enabled: boolean; trigger: "first_message" | "keyword"; keyword: string | null; steps: Step[]; stats?: FlowStats }
+interface LinkStat { stepId: string; sent: number; clicked: number }
+interface Flow { id: string; name: string; enabled: boolean; trigger: "first_message" | "keyword"; keyword: string | null; steps: Step[]; stats?: FlowStats; linkStats?: LinkStat[] }
 
 const uid = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : "s" + Math.random().toString(36).slice(2));
 const newStep = (type: StepType): Step =>
   type === "message" ? { id: uid(), type, text: "" }
   : type === "delay" ? { id: uid(), type, minutes: 60 }
   : type === "menu" ? { id: uid(), type, text: "¿Qué te interesa?", options: [{ id: uid(), label: "Opción 1", steps: [] }, { id: uid(), label: "Opción 2", steps: [] }] }
+  : type === "link" ? { id: uid(), type, text: "", urlLabel: "Abrir link", url: "" }
+  : type === "set_stage" ? { id: uid(), type, stage: "INTERESADO" }
   : { id: uid(), type };
 
 const STEP_META: Record<StepType, { icon: typeof MessageSquare; label: string; color: string }> = {
@@ -21,10 +24,14 @@ const STEP_META: Record<StepType, { icon: typeof MessageSquare; label: string; c
   delay: { icon: Clock, label: "Esperar", color: "text-amber-300" },
   wait_reply: { icon: Reply, label: "Esperar respuesta", color: "text-sky-300" },
   menu: { icon: ListTree, label: "Menú con opciones (ramifica)", color: "text-violet-300" },
+  link: { icon: Link2, label: "Botón con link (medible)", color: "text-emerald-300" },
+  set_stage: { icon: KanbanSquare, label: "Mover de etapa (CRM)", color: "text-rose-300" },
 };
 
+const STAGES = ["NUEVO", "CONTACTADO", "INTERESADO", "PERDIDO"];
+
 // ---------- Editor recursivo de pasos ----------
-function StepsEditor({ steps, onChange, depth = 0 }: { steps: Step[]; onChange: (s: Step[]) => void; depth?: number }) {
+function StepsEditor({ steps, onChange, depth = 0, linkStats }: { steps: Step[]; onChange: (s: Step[]) => void; depth?: number; linkStats?: LinkStat[] }) {
   const set = (i: number, patch: Partial<Step>) => onChange(steps.map((s, k) => (k === i ? { ...s, ...patch } : s)));
   const move = (i: number, dir: -1 | 1) => { const j = i + dir; if (j < 0 || j >= steps.length) return; const arr = [...steps]; [arr[i], arr[j]] = [arr[j], arr[i]]; onChange(arr); };
   const del = (i: number) => onChange(steps.filter((_, k) => k !== i));
@@ -46,10 +53,18 @@ function StepsEditor({ steps, onChange, depth = 0 }: { steps: Step[]; onChange: 
     <div className="space-y-2">
       {steps.map((s, i) => {
         const M = STEP_META[s.type];
+        const ls = s.type === "link" ? linkStats?.find((l) => l.stepId === s.id) : undefined;
         return (
           <div key={s.id} className={`rounded-lg border p-3 ${depth > 0 ? "border-slate-700/70 bg-slate-900/40" : "border-slate-800 bg-slate-900/50"}`}>
             <div className="mb-2 flex items-center justify-between">
-              <span className={`flex items-center gap-2 text-sm font-medium ${M.color}`}><M.icon className="h-4 w-4" /> {i + 1}. {M.label}</span>
+              <span className={`flex items-center gap-2 text-sm font-medium ${M.color}`}>
+                <M.icon className="h-4 w-4" /> {i + 1}. {M.label}
+                {ls && ls.sent > 0 && (
+                  <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-300">
+                    {ls.clicked}/{ls.sent} clics · CTR {Math.round((ls.clicked / ls.sent) * 100)}%
+                  </span>
+                )}
+              </span>
               <div className="flex items-center gap-1 text-slate-500">
                 <button onClick={() => move(i, -1)} className="rounded p-1 hover:bg-slate-800 hover:text-white"><ArrowUp className="h-4 w-4" /></button>
                 <button onClick={() => move(i, 1)} className="rounded p-1 hover:bg-slate-800 hover:text-white"><ArrowDown className="h-4 w-4" /></button>
@@ -71,6 +86,27 @@ function StepsEditor({ steps, onChange, depth = 0 }: { steps: Step[]; onChange: 
             {s.type === "wait_reply" && (
               <p className="text-xs text-slate-500">Se pausa hasta que el cliente responda; después sigue.</p>
             )}
+            {s.type === "link" && (
+              <div className="space-y-2">
+                <textarea value={s.text ?? ""} onChange={(e) => set(i, { text: e.target.value })} placeholder="Mensaje que acompaña al link (ej: Registrate acá 👇)"
+                  className="h-16 w-full resize-none rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
+                <div className="flex flex-wrap gap-2">
+                  <Input value={s.urlLabel ?? ""} onChange={(e) => set(i, { urlLabel: e.target.value })} placeholder='Texto del "botón" (ej: Crear cuenta)' className="!w-56" />
+                  <Input value={s.url ?? ""} onChange={(e) => set(i, { url: e.target.value })} placeholder="https://tu-destino.com/..." className="flex-1 min-w-[220px]" />
+                </div>
+                <p className="text-[11px] text-slate-500">Se envía como link rastreado único por contacto: medís quién lo tocó y el CTR (como ManyChat).</p>
+              </div>
+            )}
+            {s.type === "set_stage" && (
+              <div className="flex items-center gap-2 text-sm text-slate-300">
+                Mover el contacto a la etapa
+                <select value={s.stage ?? "INTERESADO"} onChange={(e) => set(i, { stage: e.target.value })}
+                  className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green">
+                  {STAGES.map((st) => <option key={st} value={st}>{st}</option>)}
+                </select>
+                <span className="text-xs text-slate-500">(se refleja en Leads/Kanban)</span>
+              </div>
+            )}
             {s.type === "menu" && (
               <div className="space-y-2">
                 <div>
@@ -89,7 +125,7 @@ function StepsEditor({ steps, onChange, depth = 0 }: { steps: Step[]; onChange: 
                     </div>
                     <div className="ml-2 border-l-2 border-violet-500/30 pl-3">
                       <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-violet-300/80">Si elige esta opción →</div>
-                      <StepsEditor steps={o.steps} onChange={(sub) => setOption(i, oi, { steps: sub })} depth={depth + 1} />
+                      <StepsEditor steps={o.steps} onChange={(sub) => setOption(i, oi, { steps: sub })} depth={depth + 1} linkStats={linkStats} />
                     </div>
                   </div>
                 ))}
@@ -104,8 +140,10 @@ function StepsEditor({ steps, onChange, depth = 0 }: { steps: Step[]; onChange: 
 
       <div className="flex flex-wrap gap-2">
         <Button variant="secondary" onClick={() => add("message")}><MessageSquare className="h-4 w-4" /> Mensaje</Button>
+        <Button variant="secondary" onClick={() => add("link")}><Link2 className="h-4 w-4" /> Botón con link</Button>
         <Button variant="secondary" onClick={() => add("delay")}><Clock className="h-4 w-4" /> Espera</Button>
         <Button variant="secondary" onClick={() => add("wait_reply")}><Reply className="h-4 w-4" /> Esperar respuesta</Button>
+        <Button variant="secondary" onClick={() => add("set_stage")}><KanbanSquare className="h-4 w-4" /> Mover etapa</Button>
         {depth < 3 && <Button variant="secondary" onClick={() => add("menu")}><ListTree className="h-4 w-4" /> Menú</Button>}
       </div>
     </div>
@@ -178,7 +216,7 @@ export default function AutomationsPage() {
           )}
 
           <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Pasos</div>
-          <StepsEditor steps={draft.steps} onChange={(s) => setDraft({ ...draft, steps: s })} />
+          <StepsEditor steps={draft.steps} onChange={(s) => setDraft({ ...draft, steps: s })} linkStats={draft.linkStats} />
 
           <div className="mt-5 flex items-center gap-2 border-t border-slate-800 pt-4">
             <label className="flex items-center gap-2 text-sm text-slate-300">
@@ -207,6 +245,7 @@ export default function AutomationsPage() {
                   <div className="mt-0.5 text-xs text-slate-500">
                     Dispara: {f.trigger === "keyword" ? `palabra "${f.keyword}"` : "primer mensaje"} · {(f.steps ?? []).length} paso{(f.steps ?? []).length === 1 ? "" : "s"}
                     {f.stats && <> · <span className="text-slate-300">{f.stats.total}</span> contactos entraron · <span className="text-amber-300">{f.stats.active}</span> en curso · <span className="text-wa-green">{f.stats.done}</span> completaron</>}
+                    {(() => { const sent = (f.linkStats ?? []).reduce((a, l) => a + l.sent, 0); const clicked = (f.linkStats ?? []).reduce((a, l) => a + l.clicked, 0); return sent > 0 ? <> · 🔗 <span className="text-emerald-300">{clicked}/{sent} clics ({Math.round((clicked / sent) * 100)}%)</span></> : null; })()}
                   </div>
                 </div>
                 <div className="flex gap-2">
