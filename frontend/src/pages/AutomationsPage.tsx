@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { MessageSquare, Clock, Reply, ListTree, Link2, KanbanSquare, ArrowUp, ArrowDown, Trash2, Plus, X } from "lucide-react";
+import { MessageSquare, Clock, Reply, ListTree, Link2, KanbanSquare, ArrowUp, ArrowDown, Trash2, Plus, X, Workflow, List } from "lucide-react";
 import { api, apiError } from "../lib/api";
 import { Button, Input, Card, ErrorMsg } from "../components/ui";
+import FlowCanvas from "../components/FlowCanvas";
 
 type StepType = "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage";
 interface Option { id: string; label: string; keywords?: string[]; steps: Step[] }
@@ -29,6 +30,53 @@ const STEP_META: Record<StepType, { icon: typeof MessageSquare; label: string; c
 };
 
 const STAGES = ["NUEVO", "CONTACTADO", "INTERESADO", "PERDIDO"];
+
+// ---------- Helpers de árbol para el canvas (path tipo "2" | "2:1:0") ----------
+function resolveList(steps: Step[], path: string): { list: Step[]; index: number } | null {
+  const parts = path.split(":").map((n) => parseInt(n, 10));
+  if (parts.some((n) => Number.isNaN(n) || n < 0)) return null;
+  let list = steps;
+  for (let i = 0; i + 1 < parts.length; i += 2) {
+    const opt = list[parts[i]]?.options?.[parts[i + 1]];
+    if (!opt) return null;
+    list = opt.steps ?? [];
+  }
+  return { list, index: parts[parts.length - 1] };
+}
+function getStepAt(steps: Step[], path: string): Step | null {
+  const pos = resolveList(steps, path);
+  return pos && pos.index < pos.list.length ? pos.list[pos.index] : null;
+}
+// Clona el árbol y aplica una mutación sobre la lista resuelta del path.
+function mutateAt(steps: Step[], path: string, fn: (list: Step[], index: number) => void): Step[] {
+  const clone: Step[] = JSON.parse(JSON.stringify(steps));
+  const pos = resolveList(clone, path);
+  if (pos) fn(pos.list, pos.index);
+  return clone;
+}
+// Para ramas vacías: path de opción "2:1" -> devuelve option.steps del clon.
+function mutateBranch(steps: Step[], optPath: string, fn: (branch: Step[]) => void): Step[] {
+  const clone: Step[] = JSON.parse(JSON.stringify(steps));
+  const parts = optPath.split(":").map((n) => parseInt(n, 10));
+  let list = clone;
+  for (let i = 0; i + 1 < parts.length - 1; i += 2) {
+    const opt = list[parts[i]]?.options?.[parts[i + 1]];
+    if (!opt) return clone;
+    list = opt.steps ?? [];
+  }
+  const opt = list[parts[parts.length - 2]]?.options?.[parts[parts.length - 1]];
+  if (opt) { opt.steps = opt.steps ?? []; fn(opt.steps); }
+  return clone;
+}
+// ¿Hay pasos después de un menú? (no se ejecutan: cada rama termina el flujo)
+function hasUnreachable(steps: Step[]): boolean {
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i];
+    if (s.type === "menu" && i < steps.length - 1) return true;
+    if (s.type === "menu") for (const o of s.options ?? []) if (hasUnreachable(o.steps ?? [])) return true;
+  }
+  return false;
+}
 
 // ---------- Editor recursivo de pasos ----------
 function StepsEditor({ steps, onChange, depth = 0, linkStats }: { steps: Step[]; onChange: (s: Step[]) => void; depth?: number; linkStats?: LinkStat[] }) {
@@ -157,6 +205,8 @@ export default function AutomationsPage() {
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState<Flow | null>(null);
   const [saving, setSaving] = useState(false);
+  const [view, setView] = useState<"canvas" | "list">("canvas");
+  const [selected, setSelected] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true); setError(null);
@@ -165,8 +215,8 @@ export default function AutomationsPage() {
   };
   useEffect(() => { void load(); }, []);
 
-  const startNew = () => setDraft({ id: "", name: "", enabled: false, trigger: "first_message", keyword: "", steps: [newStep("message")] });
-  const edit = (f: Flow) => setDraft({ ...f, keyword: f.keyword ?? "", steps: f.steps ?? [] });
+  const startNew = () => { setSelected(null); setDraft({ id: "", name: "", enabled: false, trigger: "first_message", keyword: "", steps: [newStep("message")] }); };
+  const edit = (f: Flow) => { setSelected(null); setDraft({ ...f, keyword: f.keyword ?? "", steps: f.steps ?? [] }); };
 
   const save = async () => {
     if (!draft) return;
@@ -215,8 +265,132 @@ export default function AutomationsPage() {
             </div>
           )}
 
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Pasos</div>
-          <StepsEditor steps={draft.steps} onChange={(s) => setDraft({ ...draft, steps: s })} linkStats={draft.linkStats} />
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pasos</span>
+            <div className="inline-flex rounded-md bg-slate-900 p-1 text-xs">
+              <button onClick={() => setView("canvas")} className={`flex items-center gap-1 rounded px-3 py-1 font-medium ${view === "canvas" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}><Workflow className="h-3.5 w-3.5" /> Canvas</button>
+              <button onClick={() => setView("list")} className={`flex items-center gap-1 rounded px-3 py-1 font-medium ${view === "list" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}><List className="h-3.5 w-3.5" /> Lista</button>
+            </div>
+          </div>
+
+          {hasUnreachable(draft.steps) && (
+            <p className="mb-2 rounded-md border border-amber-800 bg-amber-900/30 px-3 py-2 text-xs text-amber-200">
+              ⚠️ Tenés pasos DESPUÉS de un menú: no se ejecutan (cada rama del menú termina el flujo). Mové esos pasos adentro de las ramas.
+            </p>
+          )}
+
+          {view === "list" ? (
+            <StepsEditor steps={draft.steps} onChange={(s) => setDraft({ ...draft, steps: s })} linkStats={draft.linkStats} />
+          ) : (
+            <div className="grid gap-3 lg:grid-cols-[1fr_300px]">
+              <FlowCanvas steps={draft.steps} linkStats={draft.linkStats} selected={selected} onSelect={setSelected} />
+              <div className="max-h-[540px] overflow-y-auto rounded-lg border border-slate-800 bg-slate-900/50 p-3">
+                {!selected ? (
+                  <div className="text-xs text-slate-400">
+                    <p className="mb-2 font-semibold text-slate-300">Tocá un nodo para editarlo.</p>
+                    <p className="mb-3">O agregá un paso al final del flujo:</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(["message", "link", "delay", "wait_reply", "set_stage", "menu"] as StepType[]).map((t) => (
+                        <Button key={t} variant="secondary" onClick={() => { const s = [...draft.steps, newStep(t)]; setDraft({ ...draft, steps: s }); setSelected(String(s.length - 1)); }}>
+                          + {STEP_META[t].label.split(" (")[0]}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                ) : selected.startsWith("opt|") ? (
+                  <div className="text-xs text-slate-400">
+                    <p className="mb-2 font-semibold text-violet-300">Rama vacía — agregá el primer paso:</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(["message", "link", "delay", "wait_reply", "set_stage", "menu"] as StepType[]).map((t) => (
+                        <Button key={t} variant="secondary" onClick={() => {
+                          const optPath = selected.slice(4);
+                          setDraft({ ...draft, steps: mutateBranch(draft.steps, optPath, (b) => b.push(newStep(t))) });
+                          setSelected(`${optPath}:0`);
+                        }}>
+                          + {STEP_META[t].label.split(" (")[0]}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (() => {
+                  const step = getStepAt(draft.steps, selected);
+                  if (!step) return <p className="text-xs text-slate-500">Nodo no encontrado (¿lo borraste?). Tocá otro.</p>;
+                  const M = STEP_META[step.type];
+                  const upd = (patch: Partial<Step>) => setDraft({ ...draft, steps: mutateAt(draft.steps, selected, (l, i) => { l[i] = { ...l[i], ...patch }; }) });
+                  const updOpt = (oi: number, patch: Partial<Option>) => upd({ options: (step.options ?? []).map((o, k) => (k === oi ? { ...o, ...patch } : o)) });
+                  return (
+                    <div className="space-y-3 text-sm">
+                      <div className={`flex items-center gap-2 font-semibold ${M.color}`}><M.icon className="h-4 w-4" /> {M.label}</div>
+
+                      {step.type === "message" && (
+                        <textarea value={step.text ?? ""} onChange={(e) => upd({ text: e.target.value })} placeholder="Texto que se envía…"
+                          className="h-28 w-full resize-none rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
+                      )}
+                      {step.type === "link" && (
+                        <>
+                          <textarea value={step.text ?? ""} onChange={(e) => upd({ text: e.target.value })} placeholder="Mensaje que acompaña al link…"
+                            className="h-20 w-full resize-none rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
+                          <Input value={step.urlLabel ?? ""} onChange={(e) => upd({ urlLabel: e.target.value })} placeholder='Texto del "botón"' />
+                          <Input value={step.url ?? ""} onChange={(e) => upd({ url: e.target.value })} placeholder="https://destino.com/..." />
+                        </>
+                      )}
+                      {step.type === "delay" && (
+                        <div className="flex items-center gap-2 text-slate-300">
+                          Esperar <Input type="number" min={1} value={String(step.minutes ?? 60)} onChange={(e) => upd({ minutes: Number(e.target.value) })} className="w-24" /> min
+                        </div>
+                      )}
+                      {step.type === "wait_reply" && <p className="text-xs text-slate-500">Se pausa hasta que el cliente responda.</p>}
+                      {step.type === "set_stage" && (
+                        <select value={step.stage ?? "INTERESADO"} onChange={(e) => upd({ stage: e.target.value })}
+                          className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green">
+                          {STAGES.map((st) => <option key={st} value={st}>{st}</option>)}
+                        </select>
+                      )}
+                      {step.type === "menu" && (
+                        <>
+                          <Input value={step.text ?? ""} onChange={(e) => upd({ text: e.target.value })} placeholder="Pregunta del menú" />
+                          {(step.options ?? []).map((o, oi) => (
+                            <div key={o.id} className="rounded-md border border-violet-500/25 bg-violet-500/5 p-2">
+                              <div className="mb-1 flex items-center gap-1.5">
+                                <span className="text-xs font-bold text-violet-300">{oi + 1}️⃣</span>
+                                <Input value={o.label} onChange={(e) => updOpt(oi, { label: e.target.value })} className="flex-1" />
+                                <button onClick={() => upd({ options: (step.options ?? []).filter((_, k) => k !== oi) })} className="rounded p-1 text-slate-500 hover:text-rose-400"><X className="h-3.5 w-3.5" /></button>
+                              </div>
+                              <Input value={(o.keywords ?? []).join(", ")} onChange={(e) => updOpt(oi, { keywords: e.target.value.split(",").map((k) => k.trim()).filter(Boolean) })} placeholder="palabras clave (coma)" />
+                            </div>
+                          ))}
+                          {(step.options ?? []).length < 9 && (
+                            <Button variant="ghost" onClick={() => upd({ options: [...(step.options ?? []), { id: uid(), label: `Opción ${(step.options?.length ?? 0) + 1}`, steps: [] }] })}><Plus className="h-4 w-4" /> Opción</Button>
+                          )}
+                          <p className="text-[11px] text-slate-500">Las ramas se editan en el canvas (tocá la rama u opción vacía).</p>
+                        </>
+                      )}
+
+                      <div className="border-t border-slate-800 pt-2">
+                        <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Agregar después</div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {(["message", "link", "delay", "wait_reply", "set_stage", "menu"] as StepType[]).map((t) => (
+                            <button key={t} onClick={() => {
+                              setDraft({ ...draft, steps: mutateAt(draft.steps, selected, (l, i) => l.splice(i + 1, 0, newStep(t))) });
+                              const parts = selected.split(":"); parts[parts.length - 1] = String(parseInt(parts[parts.length - 1], 10) + 1);
+                              setSelected(parts.join(":"));
+                            }} className="rounded bg-slate-800 px-2 py-1 text-[11px] text-slate-300 hover:bg-slate-700">
+                              + {STEP_META[t].label.split(" (")[0]}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="flex gap-2 border-t border-slate-800 pt-2">
+                        <Button variant="ghost" onClick={() => { setDraft({ ...draft, steps: mutateAt(draft.steps, selected, (l, i) => { if (i > 0) [l[i - 1], l[i]] = [l[i], l[i - 1]]; }) }); }}><ArrowUp className="h-4 w-4" /></Button>
+                        <Button variant="ghost" onClick={() => { setDraft({ ...draft, steps: mutateAt(draft.steps, selected, (l, i) => { if (i < l.length - 1) [l[i], l[i + 1]] = [l[i + 1], l[i]]; }) }); }}><ArrowDown className="h-4 w-4" /></Button>
+                        <Button variant="danger" onClick={() => { setDraft({ ...draft, steps: mutateAt(draft.steps, selected, (l, i) => l.splice(i, 1)) }); setSelected(null); }}><Trash2 className="h-4 w-4" /> Borrar</Button>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
 
           <div className="mt-5 flex items-center gap-2 border-t border-slate-800 pt-4">
             <label className="flex items-center gap-2 text-sm text-slate-300">
