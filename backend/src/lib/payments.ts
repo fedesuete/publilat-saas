@@ -5,18 +5,20 @@ import axios from "axios";
 import crypto from "node:crypto";
 import Stripe from "stripe";
 
-export type Provider = "mercadopago" | "stripe" | "usdt";
+export type Provider = "mercadopago" | "stripe" | "usdt" | "pagopar";
 
 const APP_BASE_URL = process.env.APP_BASE_URL ?? "http://localhost:4000";
 const PANEL_BASE_URL = (process.env.PANEL_BASE_URL ?? "http://localhost:5173").split(",")[0].trim();
 
 // ---- Precio por proveedor -------------------------------------------------
-// MercadoPago cobra en moneda local; Stripe y USDT en USD (USDT ~ 1 USD).
+// MercadoPago cobra en moneda local; Stripe y USDT en USD (USDT ~ 1 USD);
+// Pagopar cobra en guaraníes (PYG, sin decimales, mínimo Gs. 1.000 por pedido).
 const MP_CURRENCY = process.env.MP_CURRENCY ?? "ARS";
 const MP_PRICE_PER_DAY = Number(process.env.MP_PRICE_PER_DAY ?? 1000);
 const USD_PRICE_PER_DAY = Number(process.env.PRICE_PER_DAY_USD ?? 1);
 // Descuento por volumen: a partir de 90 días, tarifa más baja por día.
 const USD_PRICE_PER_DAY_90 = Number(process.env.PRICE_PER_DAY_USD_90 ?? 1.5);
+const PAGOPAR_PRICE_PER_DAY = Number(process.env.PAGOPAR_PRICE_PER_DAY ?? 7500);
 
 // Precio por día en USD según la cantidad. El pack grande nunca cuesta más que el base.
 export function usdPerDay(days: number): number {
@@ -26,6 +28,8 @@ export function usdPerDay(days: number): number {
 
 export function priceFor(provider: Provider, days: number): { amount: number; currency: string } {
   if (provider === "mercadopago") return { amount: days * MP_PRICE_PER_DAY, currency: MP_CURRENCY };
+  // Pagopar: guaraníes enteros; el pedido mínimo aceptado por la API es Gs. 1.000.
+  if (provider === "pagopar") return { amount: Math.max(1000, Math.round(days * PAGOPAR_PRICE_PER_DAY)), currency: "PYG" };
   return { amount: days * usdPerDay(days), currency: "USD" }; // stripe + usdt
 }
 
@@ -211,4 +215,107 @@ function sortKeys(obj: unknown): unknown {
       }, {} as Record<string, unknown>);
   }
   return obj;
+}
+
+// ---- Pagopar (Paraguay: tarjetas locales e internacionales, billeteras, QR, PIX) ----
+// API: https://soporte.pagopar.com/portal/es/kb/articles/api-integracion-medios-pagos
+// Flujo: iniciar-transaccion -> hash_pedido -> redirect a pagopar.com/pagos/<hash> ->
+// webhook con token = SHA1(clave_privada + hash_pedido) -> hay que responder 200
+// ECHO del resultado (si no, Pagopar reintenta cada 10 minutos).
+const PAGOPAR_PUBLIC_KEY = process.env.PAGOPAR_PUBLIC_KEY ?? "";
+const PAGOPAR_PRIVATE_KEY = process.env.PAGOPAR_PRIVATE_KEY ?? "";
+export const pagoparEnabled = () => Boolean(PAGOPAR_PUBLIC_KEY && PAGOPAR_PRIVATE_KEY);
+
+// SHA1(clave_privada + partes). El monto va como PHP strval(floatval(x)): "7500", "7500.5".
+export function pagoparToken(...parts: string[]): string {
+  return crypto.createHash("sha1").update(PAGOPAR_PRIVATE_KEY + parts.join("")).digest("hex");
+}
+export const pagoparAmountString = (amount: number) => String(Number(amount));
+
+// "YYYY-MM-DD HH:mm:ss" en hora de Paraguay (la API rechaza fechas pasadas).
+function pagoparDate(date: Date): string {
+  const s = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "America/Asuncion",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false,
+  }).format(date);
+  return s.replace("T", " ");
+}
+
+export interface PagoparBuyer {
+  nombre: string;
+  documento: string; // CI o RUC sin puntos (5-24 caracteres numéricos)
+  email: string;
+  telefono?: string;
+}
+
+// Crea el pedido en Pagopar y devuelve el hash (id externo) + URL de checkout.
+export async function createPagoparOrder(args: {
+  paymentId: string;
+  days: number;
+  buyer: PagoparBuyer;
+}): Promise<{ id: string; url: string }> {
+  const { amount } = priceFor("pagopar", args.days);
+  const descripcion = `Publi.lat — ${args.days} día(s) de línea activa`;
+  const payload = {
+    token: pagoparToken(args.paymentId, pagoparAmountString(amount)),
+    public_key: PAGOPAR_PUBLIC_KEY,
+    monto_total: amount,
+    tipo_pedido: "VENTA-COMERCIO",
+    id_pedido_comercio: args.paymentId, // único y case-sensitive; usamos el id del Payment
+    forma_pago: 9, // tarjetas (el comprador puede elegir otro medio en el checkout)
+    fecha_maxima_pago: pagoparDate(new Date(Date.now() + 48 * 3600_000)),
+    descripcion_resumen: descripcion,
+    comprador: {
+      nombre: args.buyer.nombre,
+      documento: args.buyer.documento,
+      tipo_documento: "CI",
+      email: args.buyer.email,
+      telefono: args.buyer.telefono ?? "",
+      ruc: "",
+      direccion: "",
+      ciudad: "1",
+      coordenadas: "",
+      razon_social: args.buyer.nombre,
+      direccion_referencia: null,
+    },
+    compras_items: [
+      {
+        id_producto: 1,
+        nombre: descripcion,
+        descripcion,
+        cantidad: 1,
+        precio_total: amount,
+        categoria: "909",
+        ciudad: "1",
+        public_key: PAGOPAR_PUBLIC_KEY,
+        url_imagen: "",
+        vendedor_telefono: "",
+        vendedor_direccion: "",
+        vendedor_direccion_referencia: "",
+        vendedor_direccion_coordenadas: "",
+      },
+    ],
+  };
+  const { data } = await axios.post(
+    "https://api.pagopar.com/api/comercios/2.0/iniciar-transaccion",
+    payload,
+    { headers: { "Content-Type": "application/json" }, timeout: 15000 },
+  );
+  if (!data?.respuesta) {
+    throw new Error(typeof data?.resultado === "string" ? data.resultado : "Pagopar rechazó el pedido");
+  }
+  const hash: string | undefined = data?.resultado?.[0]?.data;
+  if (!hash) throw new Error("Pagopar no devolvió el hash del pedido");
+  return { id: hash, url: `https://www.pagopar.com/pagos/${hash}` };
+}
+
+// Valida el token del webhook: SHA1(clave_privada + hash_pedido) === token recibido.
+export function verifyPagoparWebhook(hashPedido: string, token: string): boolean {
+  if (!PAGOPAR_PRIVATE_KEY || !hashPedido || !token) return false;
+  const expected = pagoparToken(hashPedido);
+  const a = Buffer.from(expected);
+  const b = Buffer.from(token);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }

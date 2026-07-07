@@ -17,7 +17,7 @@ import { webhookRouter } from "./routes/webhook.js";
 import { cloudWebhookRouter } from "./routes/wa-cloud.js";
 import { inboxRouter } from "./routes/inbox.js";
 import { analyticsRouter } from "./routes/analytics.js";
-import { billingRouter, billingWebhookRouter, usdtWebhookRouter, stripeWebhookHandler } from "./routes/billing.js";
+import { billingRouter, billingWebhookRouter, usdtWebhookRouter, pagoparWebhookRouter, stripeWebhookHandler } from "./routes/billing.js";
 import { landingsRouter } from "./routes/landings.js";
 import { integrationsRouter } from "./routes/integrations.js";
 import { pixelRouter } from "./routes/pixel.js";
@@ -34,6 +34,7 @@ import { setIo } from "./lib/io.js";
 import { initQueues, closeQueues } from "./lib/queue.js";
 import { validateEnv } from "./lib/env.js";
 import { prisma } from "./lib/prisma.js";
+import { setWebhook } from "./lib/evolution.js";
 
 validateEnv();
 
@@ -96,6 +97,7 @@ app.use("/api/auth", authLimiter, authRouter);
 app.use("/api/wa/cloud/webhook", cloudWebhookRouter); // WhatsApp Cloud API (CTWA)
 app.use("/api/wa/webhook", webhookRouter);
 app.use("/api/billing/webhook/usdt", usdtWebhookRouter); // NOWPayments (USDT)
+app.use("/api/billing/webhook/pagopar", pagoparWebhookRouter); // Pagopar (Paraguay)
 app.use("/api/billing/webhook", billingWebhookRouter); // MercadoPago (debe ir último)
 
 // Solicitud de eliminación de datos (pública). La vía principal es por email (hola@publi.lat);
@@ -184,10 +186,36 @@ io.on("connection", (socket) => {
 process.on("unhandledRejection", (reason) => console.error("[unhandledRejection]", reason));
 process.on("uncaughtException", (err) => console.error("[uncaughtException]", err));
 
+// Re-aplica la configuración del webhook a las instancias Evolution existentes.
+// Necesario al agregar eventos nuevos (ej. MESSAGES_UPDATE): las instancias creadas
+// antes quedaron suscriptas a la lista vieja y no mandarían los acks de entrega.
+async function syncEvolutionWebhooks() {
+  try {
+    const lines = await prisma.waLine.findMany({
+      where: { provider: "baileys", sessionId: { not: null } },
+      select: { sessionId: true },
+    });
+    let ok = 0;
+    for (const l of lines) {
+      if (!l.sessionId) continue;
+      try {
+        await setWebhook(l.sessionId);
+        ok++;
+      } catch (e) {
+        console.warn(`[wa] setWebhook ${l.sessionId} falló:`, e instanceof Error ? e.message : String(e));
+      }
+    }
+    if (lines.length) console.log(`[wa] webhook re-sincronizado en ${ok}/${lines.length} instancia(s)`);
+  } catch (e) {
+    console.error("[wa] syncEvolutionWebhooks:", e instanceof Error ? e.message : String(e));
+  }
+}
+
 const PORT = Number(process.env.PORT ?? 4000);
 server.listen(PORT, () => {
   console.log(`API en http://localhost:${PORT} (${process.env.NODE_ENV ?? "development"})`);
   void initQueues(); // BullMQ: vencimiento automático de líneas
+  void syncEvolutionWebhooks(); // acks de entrega en instancias pre-existentes
 });
 
 // Apagado limpio: cierra HTTP, colas y Prisma.

@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { createHash } from "node:crypto";
 import { slugify } from "./auth.js";
 import { signPayload } from "./integrations.js";
 import { priceFor } from "./payments.js";
@@ -44,6 +45,45 @@ describe("priceFor", () => {
     const perDay90 = priceFor("usdt", 90).amount / 90;
     const perDay10 = priceFor("usdt", 10).amount / 10;
     expect(perDay90).toBeLessThanOrEqual(perDay10);
+  });
+});
+
+describe("pagopar", () => {
+  const sha1 = (s: string) => createHash("sha1").update(s).digest("hex");
+
+  it("monto como PHP strval(floatval(x)): sin decimales de más", async () => {
+    const p = await import("./payments.js");
+    expect(p.pagoparAmountString(7500)).toBe("7500");
+    expect(p.pagoparAmountString(7500.5)).toBe("7500.5");
+    expect(p.pagoparAmountString(7500.0)).toBe("7500");
+  });
+
+  it("priceFor pagopar: guaraníes enteros, mínimo Gs. 1.000", async () => {
+    const p = await import("./payments.js");
+    const q = p.priceFor("pagopar", 3);
+    expect(q.currency).toBe("PYG");
+    expect(Number.isInteger(q.amount)).toBe(true);
+    expect(p.priceFor("pagopar", 1).amount).toBeGreaterThanOrEqual(1000);
+  });
+
+  it("token del pedido y validación del webhook (SHA1 clave privada)", async () => {
+    vi.stubEnv("PAGOPAR_PRIVATE_KEY", "clave-privada-test");
+    vi.stubEnv("PAGOPAR_PUBLIC_KEY", "clave-publica-test");
+    vi.resetModules();
+    const p = await import("./payments.js");
+
+    // iniciar-transaccion: sha1(privada + id_pedido + monto)
+    expect(p.pagoparToken("PED1", p.pagoparAmountString(7500))).toBe(sha1("clave-privada-testPED17500"));
+
+    // webhook: sha1(privada + hash_pedido) === token recibido
+    const hash = "ad57c9c94f745fdd9bc9093bb409297607264af1";
+    expect(p.verifyPagoparWebhook(hash, sha1("clave-privada-test" + hash))).toBe(true);
+    expect(p.verifyPagoparWebhook(hash, sha1("otra-clave" + hash))).toBe(false);
+    expect(p.verifyPagoparWebhook(hash, "")).toBe(false);
+    expect(p.verifyPagoparWebhook("", sha1("clave-privada-test"))).toBe(false);
+
+    vi.unstubAllEnvs();
+    vi.resetModules();
   });
 });
 

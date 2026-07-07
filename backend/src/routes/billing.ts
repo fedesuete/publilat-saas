@@ -10,12 +10,14 @@ import {
   stripeEnabled, createStripeSession, constructStripeEvent,
   usdtEnabled, createUsdtInvoice, verifyUsdtSignature,
   nowpaymentsEnabled, usdtDirectEnabled, usdtAddress, verifyUsdtPayment,
+  pagoparEnabled, createPagoparOrder, verifyPagoparWebhook,
 } from "../lib/payments.js";
 
 export const billingRouter = Router();
 // Webhooks públicos (los monta index.ts sin requireAuth).
 export const billingWebhookRouter = Router(); // MercadoPago
 export const usdtWebhookRouter = Router(); // NOWPayments (USDT)
+export const pagoparWebhookRouter = Router(); // Pagopar (Paraguay)
 
 async function ensureCredit(userId: string) {
   return (
@@ -54,7 +56,7 @@ billingRouter.get("/credit", async (req, res) => {
   return res.json({
     days: credit.days,
     ledger,
-    methods: { mercadopago: mpEnabled(), stripe: stripeEnabled(), usdt: usdtEnabled() },
+    methods: { mercadopago: mpEnabled(), stripe: stripeEnabled(), usdt: usdtEnabled(), pagopar: pagoparEnabled() },
   });
 });
 
@@ -65,7 +67,7 @@ billingRouter.get("/quote", (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "Cantidad de días inválida" });
   const days = parsed.data.days;
   const prices = Object.fromEntries(
-    (["mercadopago", "stripe", "usdt"] as Provider[]).map((p) => [p, priceFor(p, days)]),
+    (["mercadopago", "stripe", "usdt", "pagopar"] as Provider[]).map((p) => [p, priceFor(p, days)]),
   );
   return res.json({ days, prices });
 });
@@ -90,7 +92,15 @@ billingRouter.post("/credit/add", async (req, res) => {
 
 const checkoutSchema = z.object({
   days: z.number().int().positive().max(3650),
-  provider: z.enum(["mercadopago", "stripe", "usdt"]),
+  provider: z.enum(["mercadopago", "stripe", "usdt", "pagopar"]),
+  // Pagopar exige los datos del comprador para crear el pedido (CI/RUC sin puntos).
+  buyer: z
+    .object({
+      nombre: z.string().trim().min(3).max(80),
+      documento: z.string().trim().regex(/^\d{5,24}$/, "CI/RUC: solo números, 5 a 24 dígitos"),
+      telefono: z.string().trim().max(30).optional(),
+    })
+    .optional(),
 });
 
 // POST /api/billing/checkout — inicia el pago con el proveedor elegido. Devuelve la URL
@@ -98,12 +108,19 @@ const checkoutSchema = z.object({
 billingRouter.post("/checkout", async (req, res) => {
   const parsed = checkoutSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
-  const { days, provider } = parsed.data;
+  const { days, provider, buyer } = parsed.data;
   const { amount, currency } = priceFor(provider, days);
 
-  const enabled = provider === "mercadopago" ? mpEnabled() : provider === "stripe" ? stripeEnabled() : usdtEnabled();
+  const enabled =
+    provider === "mercadopago" ? mpEnabled()
+    : provider === "stripe" ? stripeEnabled()
+    : provider === "pagopar" ? pagoparEnabled()
+    : usdtEnabled();
   if (!enabled) {
     return res.json({ stub: true, provider, amount, currency, message: `Pasarela ${provider} no configurada. Usá 'agregar días' en dev.` });
+  }
+  if (provider === "pagopar" && !buyer) {
+    return res.status(400).json({ error: "Pagopar necesita nombre y CI/RUC del comprador." });
   }
 
   const payment = await prisma.payment.create({
@@ -127,6 +144,15 @@ billingRouter.post("/checkout", async (req, res) => {
     const out =
       provider === "mercadopago" ? await createPreference({ paymentId: payment.id, days })
       : provider === "stripe" ? await createStripeSession({ paymentId: payment.id, days })
+      : provider === "pagopar"
+        ? await (async () => {
+            const user = await prisma.user.findUnique({ where: { id: req.userId! }, select: { email: true } });
+            return createPagoparOrder({
+              paymentId: payment.id,
+              days,
+              buyer: { nombre: buyer!.nombre, documento: buyer!.documento, telefono: buyer!.telefono, email: user?.email ?? "" },
+            });
+          })()
       : await createUsdtInvoice({ paymentId: payment.id, days });
     await prisma.payment.update({ where: { id: payment.id }, data: { externalId: out.id } });
     return res.json({ stub: false, provider, url: out.url, paymentId: payment.id });
@@ -220,6 +246,54 @@ export async function stripeWebhookHandler(req: Request, res: Response): Promise
     res.status(400).send("invalid signature");
   }
 }
+
+// --- Webhook Pagopar ---
+// Pagopar POSTea { respuesta, resultado: [ { pagado, cancelado, hash_pedido, token, ... } ] }
+// con token = SHA1(clave_privada + hash_pedido). Hay que responder 200 con el ECHO del
+// resultado; si no devolvemos 200, Pagopar reintenta cada 10 minutos.
+pagoparWebhookRouter.post("/", async (req, res) => {
+  try {
+    if (!pagoparEnabled()) return res.status(503).json({ error: "Pagopar no configurado" });
+    const r = req.body?.resultado?.[0] ?? {};
+    const hashPedido = String(r.hash_pedido ?? "");
+    const token = String(r.token ?? "");
+    if (!hashPedido || !token) {
+      // Prueba de conexión / ping sin datos de pago: OK para no quedar en loop de reintentos.
+      return res.json({ ok: true });
+    }
+    if (!verifyPagoparWebhook(hashPedido, token)) {
+      console.warn("[billing/webhook pagopar] token inválido -> rechazado");
+      return res.status(400).json({ error: "token inválido" });
+    }
+
+    const payment = await prisma.payment.findFirst({ where: { externalId: hashPedido, provider: "pagopar" } });
+    if (payment) {
+      if (r.pagado === true) {
+        await approvePayment(payment.id, "Pagopar");
+      } else if (r.cancelado === true) {
+        await prisma.payment.updateMany({ where: { id: payment.id, status: "pending" }, data: { status: "rejected" } });
+      } else if (r.pagado === false && payment.status === "approved") {
+        // Reversa de un pago ya acreditado: no descontamos días automáticamente; queda para revisión.
+        console.warn(`[billing/webhook pagopar] REVERSA sobre pago aprobado ${payment.id} (hash ${hashPedido})`);
+      }
+    } else {
+      console.warn(`[billing/webhook pagopar] hash sin Payment asociado: ${hashPedido}`);
+    }
+
+    // Echo obligatorio (HTTP 200) para que Pagopar dé por notificado el pedido.
+    return res.json([
+      {
+        pagado: r.pagado,
+        numero_comprobante_interno: r.numero_comprobante_interno,
+        hash_pedido: hashPedido,
+        token,
+      },
+    ]);
+  } catch (e) {
+    console.error("[billing/webhook pagopar] error:", e instanceof Error ? e.message : String(e));
+    return res.status(500).json({ error: "error interno" });
+  }
+});
 
 // --- Webhook USDT (NOWPayments IPN) ---
 usdtWebhookRouter.post("/", async (req, res) => {

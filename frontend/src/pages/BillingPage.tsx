@@ -10,11 +10,12 @@ interface LedgerEntry {
   createdAt: string;
 }
 
-type Provider = "mercadopago" | "stripe" | "usdt";
+type Provider = "mercadopago" | "stripe" | "usdt" | "pagopar";
 interface Methods {
   mercadopago: boolean;
   stripe: boolean;
   usdt: boolean;
+  pagopar: boolean;
 }
 interface CreditResponse {
   days: number;
@@ -26,7 +27,10 @@ const PROVIDER_LABEL: Record<Provider, string> = {
   mercadopago: "MercadoPago",
   stripe: "Tarjeta (Stripe)",
   usdt: "USDT (cripto)",
+  pagopar: "Pagopar (PY)",
 };
+
+const ALL_PROVIDERS: Provider[] = ["mercadopago", "stripe", "usdt", "pagopar"];
 
 export default function BillingPage() {
   const [days, setDays] = useState(0);
@@ -37,8 +41,14 @@ export default function BillingPage() {
   const [buyDays, setBuyDays] = useState("1");
   const [buying, setBuying] = useState<Provider | null>(null);
   const [checkoutMsg, setCheckoutMsg] = useState<string | null>(null);
-  const [methods, setMethods] = useState<Methods>({ mercadopago: false, stripe: false, usdt: false });
+  const [methods, setMethods] = useState<Methods>({ mercadopago: false, stripe: false, usdt: false, pagopar: false });
   const [prices, setPrices] = useState<Record<Provider, { amount: number; currency: string }> | null>(null);
+
+  // Pagopar exige nombre y CI/RUC del comprador para crear el pedido.
+  const [showPagopar, setShowPagopar] = useState(false);
+  const [ppNombre, setPpNombre] = useState("");
+  const [ppDocumento, setPpDocumento] = useState("");
+  const [ppTelefono, setPpTelefono] = useState("");
 
   // Pago USDT directo a wallet propia (red Tron / TRC20).
   const [usdtPay, setUsdtPay] = useState<{ address: string; amountUsdt: number; paymentId: string } | null>(null);
@@ -80,10 +90,16 @@ export default function BillingPage() {
     return () => { cancelled = true; };
   }, [buyDays]);
 
-  const buy = async (provider: Provider) => {
+  const buy = async (provider: Provider, buyer?: { nombre: string; documento: string; telefono?: string }) => {
     const n = parseInt(buyDays, 10);
     if (!Number.isInteger(n) || n <= 0) {
       setError("Ingresá una cantidad de días válida (entero mayor a 0).");
+      return;
+    }
+    // Pagopar necesita los datos del comprador: primero mostramos el mini-formulario.
+    if (provider === "pagopar" && !buyer) {
+      setShowPagopar(true);
+      setCheckoutMsg(null);
       return;
     }
     setBuying(provider);
@@ -96,7 +112,7 @@ export default function BillingPage() {
         | { stub: true; provider: Provider; amount: number; currency: string; message: string }
         | { stub: false; provider: Provider; url: string; paymentId: string }
         | { direct: true; provider: "usdt"; address: string; network: string; amountUsdt: number; paymentId: string }
-      >("/api/billing/checkout", { days: n, provider });
+      >("/api/billing/checkout", { days: n, provider, ...(buyer ? { buyer } : {}) });
       if ("direct" in data && data.direct) {
         setUsdtPay({ address: data.address, amountUsdt: data.amountUsdt, paymentId: data.paymentId });
       } else if ("stub" in data && data.stub) {
@@ -104,6 +120,7 @@ export default function BillingPage() {
       } else if ("url" in data) {
         window.open(data.url, "_blank");
         setCheckoutMsg(`Te abrimos el checkout de ${PROVIDER_LABEL[provider]} en otra pestaña.`);
+        if (provider === "pagopar") setShowPagopar(false);
       }
     } catch (err) {
       setError(apiError(err));
@@ -181,10 +198,10 @@ export default function BillingPage() {
                 </span>
               )}
             </div>
-            {(["mercadopago", "stripe", "usdt"] as Provider[]).filter((p) => methods[p]).length > 0 ? (
+            {ALL_PROVIDERS.filter((p) => methods[p]).length > 0 ? (
               <>
                 <div className="flex flex-wrap gap-2">
-                  {(["mercadopago", "stripe", "usdt"] as Provider[])
+                  {ALL_PROVIDERS
                     .filter((p) => methods[p])
                     .map((p) => {
                       const price = prices?.[p];
@@ -212,6 +229,55 @@ export default function BillingPage() {
               </p>
             )}
           </Card>
+
+          {showPagopar && (
+            <Card className="md:col-span-2">
+              <div className="mb-1 text-sm font-semibold">Pagar con Pagopar</div>
+              <p className="mb-3 text-xs text-slate-400">
+                Tarjetas de crédito/débito (locales e internacionales), billeteras (Tigo Money, Personal Pay, Zimple…),
+                QR y PIX. Pagopar pide los datos del comprador para generar el pedido.
+              </p>
+              <div className="flex flex-wrap items-end gap-2">
+                <div>
+                  <div className="mb-1 text-xs text-slate-400">Nombre y apellido</div>
+                  <Input value={ppNombre} onChange={(e) => setPpNombre(e.target.value)} placeholder="Juan Pérez" className="w-52" />
+                </div>
+                <div>
+                  <div className="mb-1 text-xs text-slate-400">CI / RUC (solo números)</div>
+                  <Input
+                    value={ppDocumento}
+                    onChange={(e) => setPpDocumento(e.target.value.replace(/\D/g, ""))}
+                    placeholder="1234567"
+                    className="w-40"
+                  />
+                </div>
+                <div>
+                  <div className="mb-1 text-xs text-slate-400">Teléfono (opcional)</div>
+                  <Input value={ppTelefono} onChange={(e) => setPpTelefono(e.target.value)} placeholder="+595 9xx xxx xxx" className="w-44" />
+                </div>
+                <Button
+                  type="button"
+                  disabled={buying !== null || ppNombre.trim().length < 3 || !/^\d{5,24}$/.test(ppDocumento)}
+                  onClick={() =>
+                    void buy("pagopar", {
+                      nombre: ppNombre.trim(),
+                      documento: ppDocumento,
+                      ...(ppTelefono.trim() ? { telefono: ppTelefono.trim() } : {}),
+                    })
+                  }
+                >
+                  {buying === "pagopar" ? "…" : "Continuar al pago"}
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => setShowPagopar(false)}>
+                  Cancelar
+                </Button>
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                El pago se procesa en guaraníes (PYG) en el checkout seguro de Pagopar; los días se acreditan
+                automáticamente al confirmarse.
+              </p>
+            </Card>
+          )}
 
           {usdtPay && (
             <Card className="md:col-span-2">
