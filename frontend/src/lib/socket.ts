@@ -19,6 +19,14 @@ export interface InboxMessagePayload {
   stage?: Stage;
 }
 
+// Ack de WhatsApp sobre un mensaje ya enviado (entregado / leído / rechazado).
+export interface InboxMessageStatusPayload {
+  contactId: string;
+  messageId: string;
+  status: NonNullable<Msg["status"]>;
+  error: string | null;
+}
+
 let socket: Socket | null = null;
 
 export function getSocket(): Socket {

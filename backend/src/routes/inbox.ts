@@ -103,13 +103,15 @@ inboxRouter.get("/:contactId/messages", async (req, res) => {
   const rows = await prisma.message.findMany({
     where: { contactId: contact.id },
     orderBy: { createdAt: "asc" },
-    select: { id: true, direction: true, body: true, mediaType: true, mediaData: true, createdAt: true },
+    select: { id: true, direction: true, body: true, status: true, error: true, mediaType: true, mediaData: true, createdAt: true },
   });
   // Las imágenes se devuelven como data URL para mostrarlas directo en el <img>.
   const messages = rows.map((m) => ({
     id: m.id,
     direction: m.direction,
     body: m.body,
+    status: m.status,
+    error: m.error,
     createdAt: m.createdAt,
     mediaUrl: m.mediaData ? `data:${m.mediaType ?? "image/jpeg"};base64,${m.mediaData}` : null,
   }));
@@ -169,9 +171,9 @@ inboxRouter.post("/:contactId/messages", async (req, res) => {
   });
   emitToUser(req.userId!, "inbox:message", {
     contactId: contact.id,
-    message: { id: message.id, direction: "out", body: message.body, createdAt: message.createdAt },
+    message: { id: message.id, direction: "out", body: message.body, status: message.status, createdAt: message.createdAt },
   });
-  return res.status(201).json({ message: { id: message.id, direction: "out", body: message.body, createdAt: message.createdAt } });
+  return res.status(201).json({ message: { id: message.id, direction: "out", body: message.body, status: message.status, createdAt: message.createdAt } });
 });
 
 // GET /api/inbox/:contactId/templates — plantillas APROBADAS de la línea Cloud del contacto.
@@ -262,7 +264,7 @@ inboxRouter.post("/:contactId/audio", async (req, res) => {
   const mediaUrl = `data:${mime};base64,${base64}`;
   emitToUser(req.userId!, "inbox:message", {
     contactId: contact.id,
-    message: { id: message.id, direction: "out", body: "", mediaUrl, createdAt: message.createdAt },
+    message: { id: message.id, direction: "out", body: "", status: message.status, mediaUrl, createdAt: message.createdAt },
   });
-  return res.status(201).json({ message: { id: message.id, direction: "out", body: "", mediaUrl, createdAt: message.createdAt } });
+  return res.status(201).json({ message: { id: message.id, direction: "out", body: "", status: message.status, mediaUrl, createdAt: message.createdAt } });
 });

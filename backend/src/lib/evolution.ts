@@ -6,8 +6,9 @@ const BASE_URL = process.env.EVOLUTION_API_URL ?? "http://localhost:8080";
 const API_KEY = process.env.EVOLUTION_API_KEY ?? "";
 const WEBHOOK_URL = process.env.EVOLUTION_WEBHOOK_URL ?? "";
 
-// Eventos que nos interesan del webhook.
-const WEBHOOK_EVENTS = ["QRCODE_UPDATED", "CONNECTION_UPDATE", "MESSAGES_UPSERT"];
+// Eventos que nos interesan del webhook. MESSAGES_UPDATE trae los acks de entrega:
+// sin él, un envío rechazado por WhatsApp (ej. 463) queda como "enviado" y el Inbox miente.
+const WEBHOOK_EVENTS = ["QRCODE_UPDATED", "CONNECTION_UPDATE", "MESSAGES_UPSERT", "MESSAGES_UPDATE"];
 
 function client(): AxiosInstance {
   if (!API_KEY) throw new Error("Falta EVOLUTION_API_KEY en .env");

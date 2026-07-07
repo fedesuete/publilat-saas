@@ -252,6 +252,8 @@ model Message {
   lineId     String
   direction  String   // in | out
   body       String
+  status     String   @default("sent") // salientes: sent | delivered | read | failed (ack de WhatsApp)
+  error      String?  // motivo si WhatsApp rechazó el envío (ej: código 463)
   mediaType  String?  // mimetype si el mensaje trae imagen (ej image/jpeg)
   mediaData  String?  @db.Text // imagen en base64 (sin prefijo data:) para mostrar en el Inbox
   waMessageId String?  @unique // idempotencia: no procesar dos veces el mismo evento de WhatsApp

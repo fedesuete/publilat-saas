@@ -91,6 +91,48 @@ webhookRouter.post("/", async (req, res) => {
       return;
     }
 
+    if (event === "messages.update") {
+      // Acks de WhatsApp sobre mensajes ya enviados. Evolution v2 manda el status como
+      // string (ERROR | PENDING | SERVER_ACK | DELIVERY_ACK | READ | PLAYED); por las
+      // dudas soportamos también el numérico crudo de Baileys (0..5, mismo orden).
+      const NUM_STATUS = ["ERROR", "PENDING", "SERVER_ACK", "DELIVERY_ACK", "READ", "PLAYED"];
+      const raw = body.data;
+      const items: any[] = Array.isArray(raw) ? raw : raw?.messages ?? [raw];
+      for (const u of items) {
+        if (!u) continue;
+        const waMessageId: string | undefined = u.keyId ?? u.key?.id ?? u.messageId;
+        if (!waMessageId) continue;
+        const rawStatus = u.status ?? u.update?.status;
+        if (rawStatus === undefined || rawStatus === null) continue; // ediciones/polls: no aplican
+        const stub = u.messageStubParameters ?? u.update?.messageStubParameters;
+        const st = typeof rawStatus === "number" ? NUM_STATUS[rawStatus] ?? "" : String(rawStatus).toUpperCase();
+
+        let status: string;
+        let error: string | null = null;
+        if (st === "ERROR") {
+          status = "failed";
+          const code = Array.isArray(stub) && stub.length ? String(stub[0]) : "";
+          error = code ? `WhatsApp rechazó el envío (código ${code})` : "WhatsApp rechazó el envío";
+        } else if (st === "DELIVERY_ACK") {
+          status = "delivered";
+        } else if (st === "READ" || st === "PLAYED") {
+          status = "read";
+        } else {
+          continue; // PENDING / SERVER_ACK: sin cambio visible
+        }
+
+        const msg = await prisma.message.findUnique({ where: { waMessageId } });
+        if (!msg || msg.direction !== "out") continue;
+        // Los acks llegan duplicados y fuera de orden (uno por dispositivo del destinatario):
+        // solo avanzamos (sent < delivered < read) y "failed" pisa todo.
+        const rank: Record<string, number> = { sent: 0, delivered: 1, read: 2, failed: 3 };
+        if ((rank[status] ?? 0) <= (rank[msg.status] ?? 0)) continue;
+        await prisma.message.update({ where: { id: msg.id }, data: { status, error } });
+        emitToUser(userId, "inbox:message-status", { contactId: msg.contactId, messageId: msg.id, status, error });
+      }
+      return;
+    }
+
     if (event === "messages.upsert") {
       // data puede venir como objeto único o como { messages: [...] }.
       const raw = body.data;

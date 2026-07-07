@@ -51,6 +51,8 @@ export interface Msg {
   id: string;
   direction: "in" | "out";
   body: string;
+  status?: "sent" | "delivered" | "read" | "failed" | null; // ack de WhatsApp (solo salientes)
+  error?: string | null; // motivo si WhatsApp rechazó el envío
   mediaUrl?: string | null; // data URL de la imagen (comprobante), si el mensaje trae una
   createdAt: string;
 }

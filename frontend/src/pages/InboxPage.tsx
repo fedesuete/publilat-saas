@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { PanelLeftClose, PanelLeftOpen, Smile, Mic, Square, MessageSquareText, Trash2, Send, X } from "lucide-react";
 import { api, apiError } from "../lib/api";
-import { getSocket, type InboxMessagePayload } from "../lib/socket";
+import { getSocket, type InboxMessagePayload, type InboxMessageStatusPayload } from "../lib/socket";
 import type { Msg, Stage } from "../lib/types";
 import { fmtDate } from "../lib/format";
 import { Button, Input, StageBadge, ErrorMsg } from "../components/ui";
@@ -25,6 +25,14 @@ const shortTime = (iso: string) =>
 
 // Agrega un mensaje sólo si su id no está ya en la lista (evita el duplicado salida POST + socket).
 const appendUnique = (prev: Msg[], m: Msg) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]);
+
+// Tildes de estado del mensaje saliente (ack REAL de WhatsApp, no optimista).
+function AckTicks({ status }: { status?: Msg["status"] }) {
+  if (status === "failed") return null; // el fallo se muestra aparte, en rojo
+  if (status === "read") return <span className="font-bold text-sky-700" title="Leído">✓✓</span>;
+  if (status === "delivered") return <span title="Entregado">✓✓</span>;
+  return <span title="Enviado">✓</span>; // sent (o mensajes previos al tracking)
+}
 
 const EMOJIS = ["😀","😅","😂","🤣","😊","😍","😘","😎","🤩","🥳","👍","🙏","🙌","👏","💪","🔥","✨","🎉","🎁","💯","❤️","💚","💙","✅","❌","⚠️","⏰","📞","📲","💬","🤝","🙋","😉","😜","🤔","😢","😭","😡","🥰","😴","💰","💵","🏦","🛒","📷","🎤","📄"];
 
@@ -69,8 +77,14 @@ export default function InboxPage() {
       if (payload.contactId === selectedRef.current) setMessages((prev) => appendUnique(prev, payload.message));
       void loadConvs();
     };
+    // Ack real de WhatsApp (entregado / leído / rechazado) sobre un mensaje ya mostrado.
+    const onStatus = (p: InboxMessageStatusPayload) => {
+      if (p.contactId !== selectedRef.current) return;
+      setMessages((prev) => prev.map((m) => (m.id === p.messageId ? { ...m, status: p.status, error: p.error } : m)));
+    };
     socket.on("inbox:message", onMessage);
-    return () => { socket.off("inbox:message", onMessage); };
+    socket.on("inbox:message-status", onStatus);
+    return () => { socket.off("inbox:message", onMessage); socket.off("inbox:message-status", onStatus); };
   }, []);
 
   useEffect(() => {
@@ -245,7 +259,13 @@ export default function InboxPage() {
               {chatError && <ErrorMsg>{chatError}</ErrorMsg>}
               {messages.map((m) => (
                 <div key={m.id} className={`flex ${m.direction === "out" ? "justify-end" : "justify-start"}`}>
-                  <div className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${m.direction === "out" ? "bg-wa-green text-slate-900" : "bg-slate-700 text-slate-100"}`}>
+                  <div className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${
+                    m.direction === "out"
+                      ? m.status === "failed"
+                        ? "border border-rose-500 bg-rose-100 text-rose-900"
+                        : "bg-wa-green text-slate-900"
+                      : "bg-slate-700 text-slate-100"
+                  }`}>
                     {m.mediaUrl && m.mediaUrl.startsWith("data:audio") && (
                       <audio controls src={m.mediaUrl} className="mb-1 w-56 max-w-full" />
                     )}
@@ -261,7 +281,15 @@ export default function InboxPage() {
                     )}
                     {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
                     {!m.body && !m.mediaUrl && <div className="italic opacity-60">[mensaje no soportado]</div>}
-                    <div className={`mt-1 text-[10px] ${m.direction === "out" ? "text-slate-800/70" : "text-slate-400"}`}>{fmtDate(m.createdAt)}</div>
+                    {m.direction === "out" && m.status === "failed" && (
+                      <div className="mt-1 text-[11px] font-semibold text-rose-700">
+                        ⚠ No entregado{m.error ? ` — ${m.error}` : ""}
+                      </div>
+                    )}
+                    <div className={`mt-1 flex items-center gap-1 text-[10px] ${m.direction === "out" ? (m.status === "failed" ? "text-rose-700/80" : "text-slate-800/70") : "text-slate-400"}`}>
+                      {fmtDate(m.createdAt)}
+                      {m.direction === "out" && <AckTicks status={m.status} />}
+                    </div>
                   </div>
                 </div>
               ))}
