@@ -311,6 +311,38 @@ export async function createPagoparOrder(args: {
   return { id: hash, url: `https://www.pagopar.com/pagos/${hash}` };
 }
 
+// Consulta el estado REAL de un pedido, server-to-server (endpoint pedidos/1.1/traer).
+// Además de robustecer el webhook, es el "Paso 3" del circuito de certificación que
+// Pagopar exige completar en staging para habilitar el pase a producción.
+export interface PagoparOrderStatus {
+  pagado: boolean;
+  cancelado: boolean;
+  monto?: string;
+  formaPago?: string;
+  numeroPedido?: string;
+}
+export async function getPagoparOrder(hashPedido: string): Promise<PagoparOrderStatus | null> {
+  try {
+    const { data } = await axios.post(
+      "https://api.pagopar.com/api/pedidos/1.1/traer",
+      { hash_pedido: hashPedido, token: pagoparToken("CONSULTA"), token_publico: PAGOPAR_PUBLIC_KEY },
+      { headers: { "Content-Type": "application/json" }, timeout: 15000 },
+    );
+    const r = data?.resultado?.[0];
+    if (!data?.respuesta || !r) return null;
+    return {
+      pagado: r.pagado === true,
+      cancelado: r.cancelado === true,
+      monto: r.monto,
+      formaPago: r.forma_pago,
+      numeroPedido: r.numero_pedido,
+    };
+  } catch (e) {
+    console.warn("[pagopar] consulta de pedido falló:", e instanceof Error ? e.message : String(e));
+    return null;
+  }
+}
+
 // Valida el token del webhook: SHA1(clave_privada + hash_pedido) === token recibido.
 export function verifyPagoparWebhook(hashPedido: string, token: string): boolean {
   if (!PAGOPAR_PRIVATE_KEY || !hashPedido || !token) return false;

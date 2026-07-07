@@ -10,7 +10,7 @@ import {
   stripeEnabled, createStripeSession, constructStripeEvent,
   usdtEnabled, createUsdtInvoice, verifyUsdtSignature,
   nowpaymentsEnabled, usdtDirectEnabled, usdtAddress, verifyUsdtPayment,
-  pagoparEnabled, createPagoparOrder, verifyPagoparWebhook,
+  pagoparEnabled, createPagoparOrder, verifyPagoparWebhook, getPagoparOrder,
 } from "../lib/payments.js";
 
 export const billingRouter = Router();
@@ -268,13 +268,20 @@ pagoparWebhookRouter.post("/", async (req, res) => {
       return res.status(400).json({ error: "token inválido" });
     }
 
+    // Verificación server-to-server: consultamos el estado REAL del pedido en Pagopar
+    // (no confiamos solo en el aviso; además completa el "Paso 3" de su certificación).
+    // Si la consulta falla (red), caemos al contenido del aviso, ya validado por token.
+    const consulted = await getPagoparOrder(hashPedido);
+    const pagado = consulted ? consulted.pagado : r.pagado === true;
+    const cancelado = consulted ? consulted.cancelado : r.cancelado === true;
+
     const payment = await prisma.payment.findFirst({ where: { externalId: hashPedido, provider: "pagopar" } });
     if (payment) {
-      if (r.pagado === true) {
+      if (pagado) {
         await approvePayment(payment.id, "Pagopar");
-      } else if (r.cancelado === true) {
+      } else if (cancelado) {
         await prisma.payment.updateMany({ where: { id: payment.id, status: "pending" }, data: { status: "rejected" } });
-      } else if (r.pagado === false && payment.status === "approved") {
+      } else if (payment.status === "approved") {
         // Reversa de un pago ya acreditado: no descontamos días automáticamente; queda para revisión.
         console.warn(`[billing/webhook pagopar] REVERSA sobre pago aprobado ${payment.id} (hash ${hashPedido})`);
       }

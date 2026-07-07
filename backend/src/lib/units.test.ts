@@ -75,6 +75,9 @@ describe("pagopar", () => {
     // iniciar-transaccion: sha1(privada + id_pedido + monto)
     expect(p.pagoparToken("PED1", p.pagoparAmountString(7500))).toBe(sha1("clave-privada-testPED17500"));
 
+    // consulta de pedido: sha1(privada + "CONSULTA")
+    expect(p.pagoparToken("CONSULTA")).toBe(sha1("clave-privada-testCONSULTA"));
+
     // webhook: sha1(privada + hash_pedido) === token recibido
     const hash = "ad57c9c94f745fdd9bc9093bb409297607264af1";
     expect(p.verifyPagoparWebhook(hash, sha1("clave-privada-test" + hash))).toBe(true);
