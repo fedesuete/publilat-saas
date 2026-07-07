@@ -22,8 +22,10 @@ api.interceptors.response.use(
 
 export function apiError(err: unknown, fallback = "Ocurrió un error"): string {
   if (axios.isAxiosError(err)) {
-    const data = err.response?.data as { error?: string; message?: string } | undefined;
-    return data?.error ?? data?.message ?? err.message ?? fallback;
+    const data = err.response?.data as { error?: string; message?: string; detail?: string } | undefined;
+    const base = data?.error ?? data?.message ?? err.message ?? fallback;
+    // El backend manda el motivo fino en `detail` (ej. respuesta de la pasarela): mostrarlo.
+    return data?.detail ? `${base} — ${data.detail}` : base;
   }
   if (err instanceof Error) return err.message;
   return fallback;

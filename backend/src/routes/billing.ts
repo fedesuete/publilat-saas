@@ -157,8 +157,10 @@ billingRouter.post("/checkout", async (req, res) => {
     await prisma.payment.update({ where: { id: payment.id }, data: { externalId: out.id } });
     return res.json({ stub: false, provider, url: out.url, paymentId: payment.id });
   } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    console.error(`[billing/checkout] ${provider} falló:`, detail);
     await prisma.payment.update({ where: { id: payment.id }, data: { status: "rejected" } });
-    return res.status(502).json({ error: "No se pudo crear el checkout", detail: e instanceof Error ? e.message : String(e) });
+    return res.status(502).json({ error: "No se pudo crear el checkout", detail });
   }
 });
 
