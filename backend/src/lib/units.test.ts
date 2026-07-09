@@ -5,6 +5,7 @@ import { signPayload } from "./integrations.js";
 import { priceFor } from "./payments.js";
 import { renderTrackedLanding } from "./landing-template.js";
 import { textSignalsPayment } from "./payment-detect.js";
+import { parseInboundAmount, normalizeRef } from "../routes/integrations.js";
 
 describe("slugify", () => {
   it("normaliza acentos, espacios y mayúsculas", () => {
@@ -108,6 +109,25 @@ describe("renderTrackedLanding", () => {
   it("escapa HTML en el contenido (anti-XSS)", () => {
     expect(html).toContain("Hola &lt;b&gt;");
     expect(html).not.toContain("Hola <b>");
+  });
+});
+
+describe("webhook entrante de compra (Kommo → Purchase)", () => {
+  it("parsea montos en formatos varios", () => {
+    expect(parseInboundAmount(15000)).toBe(15000);
+    expect(parseInboundAmount("15000")).toBe(15000);
+    expect(parseInboundAmount("15.000")).toBe(15000);       // miles con punto (es-AR/PY)
+    expect(parseInboundAmount("15.000,50")).toBe(15000.5);   // miles + decimal con coma
+    expect(parseInboundAmount("Gs 15000")).toBe(15000);      // con prefijo de moneda
+    expect(parseInboundAmount("1500,50")).toBe(1500.5);
+    expect(Number.isNaN(parseInboundAmount(""))).toBe(true);
+    expect(Number.isNaN(parseInboundAmount("abc"))).toBe(true);
+  });
+  it("normaliza el ref (mayúsculas, sin símbolos)", () => {
+    expect(normalizeRef("28c4b1a2")).toBe("28C4B1A2");
+    expect(normalizeRef(" 28C4B1A2 ")).toBe("28C4B1A2");
+    expect(normalizeRef("ref: 28C4B1A2")).toBe("REF28C4B1A2"); // el llamador manda solo el code; defensivo
+    expect(normalizeRef(undefined)).toBe("");
   });
 });
 

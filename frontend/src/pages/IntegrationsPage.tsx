@@ -11,6 +11,7 @@ interface Integration {
   onLead: boolean;
   onPurchase: boolean;
   enabled: boolean;
+  inboundPurchaseUrl?: string | null;
 }
 
 const MODE_HELP: Record<Mode, string> = {
@@ -54,6 +55,8 @@ export default function IntegrationsPage() {
   const [onLead, setOnLead] = useState(true);
   const [onPurchase, setOnPurchase] = useState(true);
   const [enabled, setEnabled] = useState(false);
+  const [inboundUrl, setInboundUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const applyIntegration = (i: Integration) => {
     setMode(i.mode);
@@ -62,6 +65,7 @@ export default function IntegrationsPage() {
     setOnLead(i.onLead);
     setOnPurchase(i.onPurchase);
     setEnabled(i.enabled);
+    setInboundUrl(i.inboundPurchaseUrl ?? null);
   };
 
   const load = async () => {
@@ -212,6 +216,42 @@ export default function IntegrationsPage() {
               </Button>
             </div>
           </form>
+        </Card>
+      )}
+
+      {/* Webhook ENTRANTE: Kommo/otro CRM → Publi.lat dispara el Purchase al cerrar la venta. */}
+      {!loading && inboundUrl && (
+        <Card className="mt-6 max-w-lg">
+          <div className="mb-1 text-sm font-semibold text-slate-100">
+            Webhook de compra (Kommo → Publi.lat)
+          </div>
+          <p className="mb-3 text-xs text-slate-400">
+            Pegá esta URL en un <b>Salesbot de Kommo</b> que se dispare cuando la venta pasa a
+            “ganada”. Enviá un <span className="font-mono">POST</span> con{" "}
+            <span className="font-mono">{`{ ref, amount }`}</span> (el <span className="font-mono">ref</span> es el
+            código que llegó en el primer mensaje, ej. <span className="font-mono">ref: 28C4B…</span>). Publi.lat
+            matchea el contacto y dispara el <b>Purchase</b> a Meta con el mismo identificador.
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 break-all rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs text-slate-200">
+              {inboundUrl}
+            </code>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                void navigator.clipboard.writeText(inboundUrl);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              }}
+            >
+              {copied ? "¡Listo!" : "Copiar"}
+            </Button>
+          </div>
+          <p className="mt-2 text-[11px] text-slate-500">
+            Cuerpo de ejemplo: <span className="font-mono">{`{"ref":"28C4B1A2","amount":15000,"currency":"PYG"}`}</span>.
+            La URL lleva tu token secreto — no la compartas.
+          </p>
         </Card>
       )}
     </div>

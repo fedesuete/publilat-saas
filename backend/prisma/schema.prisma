@@ -283,7 +283,8 @@ model Integration {
   userId     String   @unique
   mode       String   @default("nativo") // nativo | webhook | kommo
   webhookUrl String?
-  secret     String?                     // para firmar el payload (HMAC)
+  secret     String?                     // para firmar el payload (HMAC) saliente
+  inboundToken String? @unique           // token del webhook ENTRANTE (Kommo → Publi.lat: marca compra + Purchase)
   onLead     Boolean  @default(true)
   onPurchase Boolean  @default(true)
   enabled    Boolean  @default(false)

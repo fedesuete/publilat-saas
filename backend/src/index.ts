@@ -19,7 +19,7 @@ import { inboxRouter } from "./routes/inbox.js";
 import { analyticsRouter } from "./routes/analytics.js";
 import { billingRouter, billingWebhookRouter, usdtWebhookRouter, pagoparWebhookRouter, stripeWebhookHandler } from "./routes/billing.js";
 import { landingsRouter } from "./routes/landings.js";
-import { integrationsRouter } from "./routes/integrations.js";
+import { integrationsRouter, inboundIntegrationsRouter } from "./routes/integrations.js";
 import { pixelRouter } from "./routes/pixel.js";
 import { setupRouter } from "./routes/setup.js";
 import { adminRouter } from "./routes/admin.js";
@@ -96,6 +96,7 @@ app.use("/api/auth", authLimiter, authRouter);
 // Webhooks públicos (los llaman servicios externos, sin Bearer)
 app.use("/api/wa/cloud/webhook", cloudWebhookRouter); // WhatsApp Cloud API (CTWA)
 app.use("/api/wa/webhook", webhookRouter);
+app.use("/api/integrations/inbound", inboundIntegrationsRouter); // CRM externo (Kommo) → Purchase
 app.use("/api/billing/webhook/usdt", usdtWebhookRouter); // NOWPayments (USDT)
 app.use("/api/billing/webhook/pagopar", pagoparWebhookRouter); // Pagopar (Paraguay)
 app.use("/api/billing/webhook", billingWebhookRouter); // MercadoPago (debe ir último)
