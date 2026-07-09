@@ -111,6 +111,8 @@ export async function retryFailedCapi(opts?: { includeDead?: boolean; max?: numb
 export async function checkLineHealth(): Promise<void> {
   const lines = await prisma.waLine.findMany({ where: { status: { not: "inactive" } } });
   for (const line of lines) {
+    // Número externo: no hay sesión propia que monitorear (el WhatsApp vive en otro sistema).
+    if (line.provider === "external") continue;
     try {
       let connected = line.connected;
       let quality = line.qualityRating;

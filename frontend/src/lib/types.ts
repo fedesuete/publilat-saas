@@ -33,7 +33,7 @@ export interface Line {
   phone: string;
   label: string | null;
   status: string;
-  provider: "baileys" | "cloud";
+  provider: "baileys" | "cloud" | "external";
   connected: boolean;
   expiresAt: string | null;
   createdAt: string;

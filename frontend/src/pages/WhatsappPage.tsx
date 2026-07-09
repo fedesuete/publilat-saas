@@ -37,8 +37,10 @@ export default function WhatsappPage() {
   const [activatingId, setActivatingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ id: string; text: string } | null>(null);
   // Alta: tipo de conexión + datos de Cloud API (CTWA).
-  const [provider, setProvider] = useState<"baileys" | "cloud">("baileys");
+  const [provider, setProvider] = useState<"baileys" | "cloud" | "external">("baileys");
   const [cloud, setCloud] = useState({ phoneNumberId: "", wabaId: "", accessToken: "", verifyToken: "", phone: "" });
+  // Número externo (el WhatsApp vive en otro sistema, ej. Kommo): solo destino + tracking.
+  const [externalPhone, setExternalPhone] = useState("");
   // Embedded Signup (Tech Provider).
   const [esConfig, setEsConfig] = useState<EsConfig | null>(null);
   const [fbReady, setFbReady] = useState(false);
@@ -280,11 +282,14 @@ export default function WhatsappPage() {
               accessToken: cloud.accessToken,
               verifyToken: cloud.verifyToken,
             }
-          : { label: label || undefined };
+          : provider === "external"
+            ? { provider: "external" as const, label: label || undefined, phone: externalPhone }
+            : { label: label || undefined };
       const { data } = await api.post<{ line: Line; qr: string | null }>("/api/wa/lines", payload);
       setLines((prev) => [...prev, data.line]);
       if (data.qr) setQrs((prev) => ({ ...prev, [data.line.id]: data.qr! }));
       setLabel("");
+      setExternalPhone("");
       setCloud({ phoneNumberId: "", wabaId: "", accessToken: "", verifyToken: "", phone: "" });
     } catch (err) {
       setError(apiError(err));
@@ -423,7 +428,7 @@ export default function WhatsappPage() {
 
       <Card className="mb-6 max-w-xl">
         {/* Selector de tipo de conexión */}
-        <div className="mb-4 grid grid-cols-2 gap-2">
+        <div className="mb-4 grid grid-cols-3 gap-2">
           <button
             type="button"
             onClick={() => setProvider("baileys")}
@@ -443,6 +448,16 @@ export default function WhatsappPage() {
           >
             <div className="text-sm font-semibold text-slate-100">API oficial (Cloud API)</div>
             <div className="mt-0.5 text-xs text-slate-500">Para anuncios Click-to-WhatsApp (CTWA).</div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setProvider("external")}
+            className={`rounded-md border p-3 text-left transition ${
+              provider === "external" ? "border-wa-green bg-wa-green/10" : "border-slate-700 bg-slate-900/40 hover:border-slate-600"
+            }`}
+          >
+            <div className="text-sm font-semibold text-slate-100">Número externo</div>
+            <div className="mt-0.5 text-xs text-slate-500">Tu WhatsApp vive en otro sistema (Kommo, etc.). Solo destino + tracking.</div>
           </button>
         </div>
 
@@ -513,6 +528,22 @@ export default function WhatsappPage() {
                 </div>
               )}
             </div>
+          ) : provider === "external" ? (
+            <div className="space-y-2">
+              <Input
+                placeholder="Número de WhatsApp con código de país (ej: 595971234567)"
+                value={externalPhone}
+                onChange={(e) => setExternalPhone(e.target.value)}
+              />
+              <p className="text-xs text-slate-500">
+                Es el número que ya usás en tu otro sistema (ej. Kommo). Publi.lat NO lo conecta ni
+                recibe sus chats: lo usa como destino del link rastreado y dispara el Lead con tu
+                pixel. Consume días igual que una línea propia.
+              </p>
+              <Button type="submit" disabled={creating || externalPhone.replace(/\D/g, "").length < 6}>
+                {creating ? "…" : "Agregar número externo"}
+              </Button>
+            </div>
           ) : (
             <Button type="submit" disabled={creating}>
               {creating ? "…" : "Crear línea"}
@@ -543,6 +574,8 @@ export default function WhatsappPage() {
           {lines.map((line) => {
             const qr = qrs[line.id];
             const isCloud = line.provider === "cloud";
+            const isExternal = line.provider === "external";
+            const isBaileys = line.provider === "baileys";
             return (
               <Card key={line.id}>
                 <div className="mb-3 flex items-center justify-between">
@@ -554,6 +587,11 @@ export default function WhatsappPage() {
                         {isCloud && (
                           <span className="rounded-full bg-wa-green/15 px-2 py-0.5 text-[10px] font-semibold text-wa-green">
                             Oficial / CTWA
+                          </span>
+                        )}
+                        {isExternal && (
+                          <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold text-sky-300">
+                            Número externo
                           </span>
                         )}
                         {line.qualityRating && (
@@ -651,6 +689,11 @@ export default function WhatsappPage() {
                       <p className={subscribeMsg.ok ? "text-wa-green" : "text-rose-400"}>{subscribeMsg.text}</p>
                     )}
                   </div>
+                ) : isExternal ? (
+                  <div className="mb-3 rounded-md border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-xs text-slate-300">
+                    El WhatsApp de este número lo gestionás en tu otro sistema (ej. Kommo). Publi.lat lo usa como
+                    destino del link rastreado y dispara el <b>Lead</b> con tu pixel. Los chats <b>no</b> entran al Inbox de acá.
+                  </div>
                 ) : line.connected ? (
                   <div className="mb-3 rounded-md border border-wa-green/40 bg-wa-green/10 px-3 py-2 text-sm text-wa-green">
                     Línea conectada
@@ -661,7 +704,7 @@ export default function WhatsappPage() {
                   </div>
                 ) : null}
 
-                {!isCloud && !line.connected && pairingCodes[line.id] && (
+                {isBaileys && !line.connected && pairingCodes[line.id] && (
                   <div className="mb-3 rounded-md border border-wa-green/40 bg-slate-900/60 p-3 text-center">
                     <div className="text-xs text-slate-400">Código de vinculación</div>
                     <div className="my-1 text-2xl font-bold tracking-[0.3em] text-wa-green">{pairingCodes[line.id]}</div>
@@ -672,7 +715,7 @@ export default function WhatsappPage() {
                 )}
 
                 <div className="flex flex-wrap gap-2">
-                  {!isCloud && (
+                  {isBaileys && (
                     <>
                       <Button variant="secondary" onClick={() => void connect(line.id)}>
                         Conectar / Ver QR
@@ -694,7 +737,7 @@ export default function WhatsappPage() {
                       Pausar
                     </Button>
                   )}
-                  {!isCloud && (
+                  {isBaileys && (
                     <Button variant="ghost" onClick={() => void logout(line.id)}>
                       Desvincular
                     </Button>
@@ -704,7 +747,7 @@ export default function WhatsappPage() {
                   </Button>
                 </div>
 
-                {!isCloud && !line.connected && (
+                {isBaileys && !line.connected && (
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <Input
                       value={numberInputs[line.id] ?? ""}

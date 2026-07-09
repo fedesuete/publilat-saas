@@ -68,7 +68,7 @@ waRouter.get("/lines", async (req, res) => {
 const createSchema = z.object({
   label: z.string().min(1).max(60).optional(),
   phone: z.string().min(6).max(20).optional(),
-  provider: z.enum(["baileys", "cloud"]).default("baileys"),
+  provider: z.enum(["baileys", "cloud", "external"]).default("baileys"),
   // Cloud API (CTWA):
   wabaPhoneNumberId: z.string().min(3).max(40).optional(),
   wabaId: z.string().min(3).max(40).optional(),
@@ -127,6 +127,24 @@ waRouter.post("/lines", async (req, res) => {
     await consumeDayAndActivate(userId, line.id, line.label);
     const fresh = await prisma.waLine.findUnique({ where: { id: line.id } });
     return res.status(201).json({ line: toPublicLine(fresh ?? line), webhookUrl: CLOUD_WEBHOOK_URL });
+  }
+
+  // --- Línea de número externo (el WhatsApp vive en otro sistema, ej. Kommo). ---
+  // Publi.lat NO hostea el número: sólo lo usa como destino del wa.me y trackea el Lead
+  // por el pixel/CAPI del usuario. No hay instancia de Evolution ni Inbox; entra a la
+  // rotación como cualquier línea activa y consume días igual que una línea propia.
+  if (provider === "external") {
+    const digits = (phone ?? "").replace(/\D/g, "");
+    if (digits.length < 6) {
+      return res.status(400).json({ error: "Ingresá el número externo en formato internacional, solo dígitos (ej: 595971234567)." });
+    }
+    const line = await prisma.waLine.create({
+      data: { userId, label, phone: digits, provider: "external", status: "active", connected: true },
+    });
+    // Arranca el contador: consume 1 día / 24h (mismo modelo que las líneas propias).
+    await consumeDayAndActivate(userId, line.id, line.label);
+    const fresh = await prisma.waLine.findUnique({ where: { id: line.id } });
+    return res.status(201).json({ line: toPublicLine(fresh ?? line) });
   }
 
   // --- Línea Baileys (QR/Evolution) ---
@@ -316,6 +334,7 @@ waRouter.post("/lines/:id/subscribe", async (req, res) => {
 waRouter.post("/lines/:id/connect", async (req, res) => {
   const line = await getOwnedLine(req.userId!, req.params.id);
   if (!line) return res.status(404).json({ error: "Línea no encontrada" });
+  if (line.provider !== "baileys") return res.status(400).json({ error: "Esta línea no se conecta por QR." });
   const instanceName = line.sessionId ?? `line_${line.id}`;
   const number = typeof req.body?.number === "string" ? req.body.number.replace(/\D/g, "") : "";
 
@@ -357,6 +376,10 @@ waRouter.post("/lines/:id/reset", async (req, res) => {
 waRouter.get("/lines/:id/status", async (req, res) => {
   const line = await getOwnedLine(req.userId!, req.params.id);
   if (!line) return res.status(404).json({ error: "Línea no encontrada" });
+  // Número externo: no hay instancia que consultar; reportamos el estado guardado.
+  if (line.provider === "external") {
+    return res.json({ state: "external", connected: line.connected, line: { id: line.id, status: line.status, phone: line.phone } });
+  }
   const instanceName = line.sessionId ?? `line_${line.id}`;
 
   const state = await connectionState(instanceName);
@@ -435,7 +458,7 @@ waRouter.post("/lines/:id/resume", async (req, res) => {
 waRouter.post("/lines/:id/logout", async (req, res) => {
   const line = await getOwnedLine(req.userId!, req.params.id);
   if (!line) return res.status(404).json({ error: "Línea no encontrada" });
-  await logoutInstance(line.sessionId ?? `line_${line.id}`);
+  if (line.provider === "baileys") await logoutInstance(line.sessionId ?? `line_${line.id}`);
   const updated = await prisma.waLine.update({
     where: { id: line.id },
     data: { connected: false, status: "inactive" },
@@ -448,7 +471,7 @@ waRouter.delete("/lines/:id", async (req, res) => {
   const line = await getOwnedLine(req.userId!, req.params.id);
   if (!line) return res.status(404).json({ error: "Línea no encontrada" });
   try {
-    if (line.provider !== "cloud") await deleteInstance(line.sessionId ?? `line_${line.id}`);
+    if (line.provider === "baileys") await deleteInstance(line.sessionId ?? `line_${line.id}`);
     // Orden por las FKs: mensajes (lineId obligatorio) -> soltar contactos -> línea.
     await prisma.message.deleteMany({ where: { lineId: line.id } });
     await prisma.contact.updateMany({ where: { lineId: line.id }, data: { lineId: null } });
