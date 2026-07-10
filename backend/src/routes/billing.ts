@@ -289,15 +289,9 @@ pagoparWebhookRouter.post("/", async (req, res) => {
       console.warn(`[billing/webhook pagopar] hash sin Payment asociado: ${hashPedido}`);
     }
 
-    // Echo obligatorio (HTTP 200) para que Pagopar dé por notificado el pedido.
-    return res.json([
-      {
-        pagado: r.pagado,
-        numero_comprobante_interno: r.numero_comprobante_interno,
-        hash_pedido: hashPedido,
-        token,
-      },
-    ]);
+    // Echo obligatorio (HTTP 200): Pagopar valida que respondamos el resultado COMPLETO
+    // tal cual lo envió (todos los campos, no un subconjunto).
+    return res.json([r]);
   } catch (e) {
     console.error("[billing/webhook pagopar] error:", e instanceof Error ? e.message : String(e));
     return res.status(500).json({ error: "error interno" });
