@@ -19,11 +19,20 @@ services:
       - "3001:3000" # puerto de prueba, distinto a Evolution (8080)
     environment:
       - WAHA_API_KEY=${WAHA_API_KEY:-cambia-esta-clave}
+      # Dashboard (/dashboard): SIEMPRE con credenciales propias si el puerto queda
+      # expuesto a internet (el default de WAHA es admin/admin).
+      - WAHA_DASHBOARD_USERNAME=${WAHA_DASHBOARD_USERNAME:-admin}
+      - WAHA_DASHBOARD_PASSWORD=${WAHA_DASHBOARD_PASSWORD:-cambia-esta-clave}
       # Engine por defecto de las sesiones nuevas: WEBJS (opción 1) o NOWEB (opción 2).
       # El backend también lo manda por sesión (config.engine, env WAHA_ENGINE).
       - WHATSAPP_DEFAULT_ENGINE=${WAHA_ENGINE:-WEBJS}
+      # Store de mensajes de NOWEB: sin esto, GET /api/messages (para leer los acks a
+      # demanda) no funciona con el engine NOWEB. Para WEBJS es inocuo.
+      - WHATSAPP_NOWEB_STORE_ENABLED=true
+      - WHATSAPP_NOWEB_STORE_FULLSYNC=false
       # Webhook global de respaldo (el backend además configura webhooks por sesión).
       # message.any incluye los fromMe del teléfono (espejo al CRM); message.ack = tildes/463.
+      # En el VPS de prueba se puede apuntar a un blackhole (los acks se leen por API).
       - WHATSAPP_HOOK_URL=${WAHA_WEBHOOK_URL:-http://host.docker.internal:4000/api/wa/webhook}
       - WHATSAPP_HOOK_EVENTS=message.any,message.ack,session.status
     volumes:
