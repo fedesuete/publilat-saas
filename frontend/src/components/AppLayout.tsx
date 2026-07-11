@@ -142,6 +142,16 @@ export default function AppLayout() {
   // comprobante (imagen/PDF) = caja registradora 💰; mensaje común = ding.
   useEffect(() => {
     void refreshUnread();
+    // Chrome bloquea el audio hasta el primer gesto del usuario: desbloqueamos el
+    // AudioContext con el primer click/tap en el panel, así los sonidos que disparan
+    // los sockets (sin gesto) ya salen con volumen.
+    const unlockAudio = () => {
+      ensureCtx();
+      window.removeEventListener("pointerdown", unlockAudio);
+      window.removeEventListener("keydown", unlockAudio);
+    };
+    window.addEventListener("pointerdown", unlockAudio);
+    window.addEventListener("keydown", unlockAudio);
     const socket = getSocket();
     const onMsg = (p: InboxMessagePayload) => {
       if (p.message?.direction === "in") {
@@ -156,6 +166,8 @@ export default function AppLayout() {
     return () => {
       socket.off("inbox:message", onMsg);
       window.clearTimeout(unreadTimer.current);
+      window.removeEventListener("pointerdown", unlockAudio);
+      window.removeEventListener("keydown", unlockAudio);
     };
   }, []);
 
