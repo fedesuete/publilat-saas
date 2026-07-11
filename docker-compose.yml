@@ -35,6 +35,8 @@ services:
       - redisdata:/data
 
   # WhatsApp — Evolution API (corre sobre Baileys). Lo usás desde la Fase 2.
+  # OJO: v2.1.1 NO manda el tctoken (error 463 en envíos a pares fríos). Para dev alcanza;
+  # producción corre evoapicloud/evolution-api:2.4.0-rc2 (ver docker-compose.vps.yml).
   evolution-api:
     image: atendai/evolution-api:v2.1.1
     container_name: publilat-evolution
@@ -50,10 +52,11 @@ services:
       - SERVER_URL=http://localhost:8080
       # Cambiá esta API key y poné la misma en tu .env (EVOLUTION_API_KEY)
       - AUTHENTICATION_API_KEY=publilat-dev-key-cambiame
-      # Versión de WhatsApp Web que usa Baileys. La que trae la imagen queda vieja
-      # y WhatsApp rechaza el handshake con 405 (no genera QR). Actualizar cuando
-      # vuelva a fallar: ver https://raw.githubusercontent.com/WhiskeySockets/Baileys/master/src/Defaults/baileys-version.json
-      - CONFIG_SESSION_PHONE_VERSION=2.3000.1035194821
+      # Versión de WhatsApp Web que usa Baileys. EXPIRA (~2 meses): vencida, la sesión
+      # conecta y recibe pero los envíos se descartan en silencio (y sin QR da 405).
+      # Vigente: https://raw.githubusercontent.com/wppconnect-team/wa-version/main/versions.json
+      # (campo currentVersion, sin sufijo -alpha).
+      - CONFIG_SESSION_PHONE_VERSION=2.3000.1042991638
       - DATABASE_ENABLED=true
       - DATABASE_PROVIDER=postgresql
       - DATABASE_CONNECTION_URI=postgresql://postgres:postgres@postgres:5432/evolution?schema=public

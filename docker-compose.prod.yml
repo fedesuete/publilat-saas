@@ -91,6 +91,9 @@ services:
     volumes:
       - redisdata:/data
 
+  # OJO: este compose está DESACTUALIZADO respecto del deploy real (docker-compose.vps.yml).
+  # v2.1.1 no manda el tctoken -> error 463 en envíos a pares fríos. Producción corre
+  # evoapicloud/evolution-api:2.4.0-rc2 (requiere licencia community gratis + backup de DB).
   evolution-api:
     image: atendai/evolution-api:v2.1.1
     restart: unless-stopped
@@ -104,7 +107,7 @@ services:
     environment:
       - SERVER_URL=${EVOLUTION_SERVER_URL:-http://localhost:8080}
       - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY:-publilat-dev-key-cambiame}
-      - CONFIG_SESSION_PHONE_VERSION=${CONFIG_SESSION_PHONE_VERSION:-2.3000.1035194821}
+      - CONFIG_SESSION_PHONE_VERSION=${CONFIG_SESSION_PHONE_VERSION:-2.3000.1042991638}
       - DATABASE_ENABLED=true
       - DATABASE_PROVIDER=postgresql
       - DATABASE_CONNECTION_URI=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/evolution?schema=public

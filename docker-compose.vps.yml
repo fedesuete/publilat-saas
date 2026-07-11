@@ -57,11 +57,15 @@ services:
       - redisdata:/data
 
   evolution:
-    # v2.4 (homolog jun-2026): Baileys nuevo; los envíos vuelven a entregar (el v2.3.7
-    # daba error 463 en pares nuevos). Requiere licencia community (GRATIS) activada:
-    # ya activada el 04/07/2026 desde el Manager (persiste en la DB). Si alguna vez pide
-    # LICENSE_REQUIRED de nuevo: exponer 8085:8080 temporal y activar en /manager.
-    image: evoapicloud/evolution-api:homolog
+    # v2.4 (Baileys con tctoken): los envíos vuelven a entregar (el v2.3.7 daba error 463
+    # en pares nuevos). Requiere licencia community (GRATIS) activada: ya activada el
+    # 04/07/2026 desde el Manager (persiste en la DB). Si alguna vez pide LICENSE_REQUIRED
+    # de nuevo: exponer 8085:8080 temporal y activar en /manager.
+    # OJO: NO volver al tag "homolog" (build v2.4.0-170 del 04/07): /instance/create está
+    # ROTO ahí (400 PrismaClientValidationError, incidente 09/07/2026). rc2 crea OK.
+    # Tampoco downgradear a la ligera: rc2 no lee sesiones escritas por otro build
+    # (las líneas caen a pedir QR). Cambiar de imagen SOLO con backup de la DB evolution.
+    image: evoapicloud/evolution-api:2.4.0-rc2
     restart: unless-stopped
     depends_on:
       postgres:
@@ -75,7 +79,8 @@ services:
       # que la sesión conecte y RECIBA pero los envíos se descarten en silencio.
       # Versión vigente: https://raw.githubusercontent.com/wppconnect-team/wa-version/main/versions.json
       # (campo currentVersion, sin el sufijo -alpha). Actualizarla en el .env del VPS.
-      - CONFIG_SESSION_PHONE_VERSION=${CONFIG_SESSION_PHONE_VERSION:-2.3000.1042620056}
+      # El backend la vigila (job wa-version-check) y avisa al admin cuando hay que renovarla.
+      - CONFIG_SESSION_PHONE_VERSION=${CONFIG_SESSION_PHONE_VERSION:-2.3000.1042991638}
       - DATABASE_ENABLED=true
       - DATABASE_PROVIDER=postgresql
       - DATABASE_CONNECTION_URI=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/evolution
