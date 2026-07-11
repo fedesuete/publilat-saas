@@ -189,7 +189,9 @@ export default function InboxPage() {
   const current = convs.find((c) => c.id === selected);
 
   return (
-    <div className="flex h-screen">
+    // h-full: llena el <main> del layout (que ya mide el viewport exacto) — sin h-screen,
+    // que sumado al alto del menú hacía scrollear la ventana y dejaba margen abajo.
+    <div className="flex h-full">
       {/* ---- Lista de conversaciones (plegable) ---- */}
       {listOpen && (
         <div className="flex w-80 shrink-0 flex-col border-r border-slate-800">
