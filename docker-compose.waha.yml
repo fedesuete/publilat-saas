@@ -16,7 +16,9 @@ services:
     image: devlikeapro/waha:latest
     restart: unless-stopped
     ports:
-      - "3001:3000" # puerto de prueba, distinto a Evolution (8080)
+      # Puerto de prueba, distinto a Evolution (8080). Configurable: en el VPS el 3001
+      # ya lo usa prospeccion-api (otra app), ahí va WAHA_PORT=3009.
+      - "${WAHA_PORT:-3001}:3000"
     environment:
       - WAHA_API_KEY=${WAHA_API_KEY:-cambia-esta-clave}
       # Dashboard (/dashboard): SIEMPRE con credenciales propias si el puerto queda
