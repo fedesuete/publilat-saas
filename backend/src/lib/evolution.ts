@@ -158,6 +158,49 @@ export async function getMediaBase64(
   }
 }
 
+// Proxy de salida por instancia. Evolution lo aplica al websocket de Baileys (la conexión
+// a WhatsApp sale por el proxy), pero recién en la PRÓXIMA conexión: hay que reiniciar la
+// instancia después de setearlo. Evolution valida el proxy en vivo (compara la IP con y
+// sin proxy contra icanhazip.com) y responde 400 "Invalid proxy" si no funciona.
+export interface ProxyConfig {
+  host: string;
+  port: string; // el schema de Evolution exige string, no number
+  protocol: string; // http | https | socks4 | socks5
+  username?: string;
+  password?: string;
+}
+
+// Parsea "socks5://user:pass@host:1080" (o http/https/socks4) a la forma de Evolution.
+// Devuelve null si la URL no es válida o el protocolo no está soportado.
+export function parseProxyUrl(url: string): ProxyConfig | null {
+  try {
+    const u = new URL(url.trim());
+    const protocol = u.protocol.replace(/:$/, "").toLowerCase();
+    if (!["http", "https", "socks4", "socks5"].includes(protocol)) return null;
+    // Ojo WHATWG: en http/https el puerto default (80/443) queda como "" -> lo reponemos.
+    const port = u.port || (protocol === "http" ? "80" : protocol === "https" ? "443" : "");
+    if (!u.hostname || !port) return null;
+    return {
+      host: u.hostname,
+      port,
+      protocol,
+      ...(u.username ? { username: decodeURIComponent(u.username) } : {}),
+      ...(u.password ? { password: decodeURIComponent(u.password) } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function setProxy(instanceName: string, proxy: ProxyConfig | null): Promise<void> {
+  const c = client();
+  // Para apagar, el schema igual exige host/port/protocol no vacíos: van dummies.
+  const body = proxy
+    ? { enabled: true, ...proxy }
+    : { enabled: false, host: "127.0.0.1", port: "1", protocol: "http" };
+  await c.post(`/proxy/set/${instanceName}`, body);
+}
+
 // Reinicia la instancia (recupera sesiones trabadas en "close"/flapping SIN re-escanear QR).
 export async function restartInstance(instanceName: string): Promise<boolean> {
   const c = client();

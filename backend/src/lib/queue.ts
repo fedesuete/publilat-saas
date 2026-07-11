@@ -11,6 +11,8 @@ import { connectionState, restartInstance } from "./evolution.js";
 import { getPhoneQuality } from "./wa-cloud.js";
 import { decryptSecret } from "./crypto.js";
 import { notify } from "./notifications.js";
+import { sendMail, sendAdminMail } from "./mailer.js";
+import { checkWaWebVersion } from "./wa-version.js";
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const parsed = new URL(REDIS_URL);
@@ -142,8 +144,28 @@ export async function checkLineHealth(): Promise<void> {
             connected = (await connectionState(inst)) === "open";
           }
           if (!connected) {
-            await notify(line.userId, "line_down", "Línea desconectada",
-              `Tu WhatsApp "${line.label ?? line.phone}" se desconectó. Intentamos reconectar automáticamente; si sigue caída, entrá a WhatsApp y tocá "Conectar / Ver QR".`);
+            const name = line.label ?? line.phone;
+            const body = `Tu WhatsApp "${name}" se desconectó. Intentamos reconectar automáticamente; si sigue caída, entrá a WhatsApp y tocá "Conectar / Ver QR".`;
+            // Si la línea FLAPEA (cae y reconecta en loop), cada ciclo es una transición
+            // nueva: el email se manda a lo sumo una vez cada 6 h por línea (el chequeo
+            // va ANTES del notify de abajo, que crea justamente esa notificación).
+            const recent = await prisma.notification.findFirst({
+              where: { userId: line.userId, type: "line_down", body, createdAt: { gte: new Date(Date.now() - 6 * 60 * 60 * 1000) } },
+              select: { id: true },
+            });
+            await notify(line.userId, "line_down", "Línea desconectada", body);
+            // La campana in-app no alcanza si el cliente no está mirando el panel
+            // (joaco estuvo 3 h caído sin enterarse): también va por email, al dueño
+            // y al operador.
+            if (!recent) {
+              const owner = await prisma.user.findUnique({ where: { id: line.userId }, select: { email: true } });
+              if (owner?.email) {
+                void sendMail(owner.email, `⚠️ Tu línea de WhatsApp "${name}" se desconectó`,
+                  `${body}\n\nPanel: ${(process.env.PANEL_BASE_URL ?? "").split(",")[0] || "https://app.publi.lat"}/whatsapp`);
+              }
+              void sendAdminMail(`Línea caída: "${name}" (${owner?.email ?? line.userId})`,
+                `La línea ${line.id} ("${name}") de ${owner?.email ?? line.userId} quedó caída tras el restart automático (estado "${state}").`);
+            }
           }
         }
       }
@@ -153,6 +175,38 @@ export async function checkLineHealth(): Promise<void> {
       console.error("[line-health] error en línea", line.id, e instanceof Error ? e.message : String(e));
     }
   }
+}
+
+// Vigila la versión de WhatsApp Web fijada en Evolution: si venció o vence en <=7 días,
+// avisa a los admins (in-app + email). Una versión vencida hace que la sesión conecte y
+// reciba pero los envíos se DESCARTEN en silencio — hay que renovarla antes de que pase.
+export async function checkWaVersionJob(): Promise<void> {
+  const st = await checkWaWebVersion();
+  if (!st) return; // sin CONFIG_SESSION_PHONE_VERSION en el env, o fetch fallido: nada que hacer
+  if (!st.needsAction) return;
+  const detail =
+    st.daysLeft === null
+      ? `La versión fijada (${st.pinned}) YA NO FIGURA como vigente: lo más probable es que haya vencido y los envíos se estén descartando en silencio.`
+      : `La versión fijada (${st.pinned}) vence en ${st.daysLeft} día${st.daysLeft === 1 ? "" : "s"} (${st.expiresAt?.toISOString().slice(0, 10)}).`;
+  const body =
+    `${detail}\n\nActualizá CONFIG_SESSION_PHONE_VERSION=${st.latest} en el .env del VPS ` +
+    `(/opt/publilat/.env) y levantá Evolution de nuevo: docker compose -f docker-compose.vps.yml up -d evolution`;
+  const title = "⚠️ Renovar la versión de WhatsApp Web (Evolution)";
+  const admins = await prisma.user.findMany({ where: { role: "ADMIN" }, select: { id: true } });
+  let alerted = false;
+  for (const a of admins) {
+    // Aviso una vez cada 20 h por admin (el job corre varias veces al día).
+    const recent = await prisma.notification.findFirst({
+      where: { userId: a.id, title, createdAt: { gte: new Date(Date.now() - 20 * 60 * 60 * 1000) } },
+      select: { id: true },
+    });
+    if (recent) continue;
+    await notify(a.id, "system", title, body);
+    alerted = true;
+  }
+  // El email acompaña al primer aviso in-app del día (o va solo si no hay admins en la DB).
+  if (alerted || admins.length === 0) void sendAdminMail(title, body);
+  console.warn(`[wa-version] ${detail}`);
 }
 
 // Programa la reanudación de una secuencia tras un delay (para el motor de automatizaciones).
@@ -175,6 +229,7 @@ export async function initQueues(): Promise<void> {
       async (job: Job) => {
         if (job.name === "capi-retry") return retryFailedCapi();
         if (job.name === "line-health") return checkLineHealth();
+        if (job.name === "wa-version-check") return checkWaVersionJob();
         if (job.name === "flow-resume") {
           const { resumeFlowRun } = await import("./flow-engine.js");
           return resumeFlowRun(job.data.runId as string);
@@ -189,7 +244,8 @@ export async function initQueues(): Promise<void> {
     await queue.add("expire", {}, { repeat: { every: 60_000 }, jobId: "expire-repeat", removeOnComplete: true, removeOnFail: 50 });
     await queue.add("capi-retry", {}, { repeat: { every: 300_000 }, jobId: "capi-retry-repeat", removeOnComplete: true, removeOnFail: 50 });
     await queue.add("line-health", {}, { repeat: { every: 300_000 }, jobId: "line-health-repeat", removeOnComplete: true, removeOnFail: 50 });
-    console.log("[queue] BullMQ listo (vencimiento 60s + reintento CAPI 5min + salud de línea 5min)");
+    await queue.add("wa-version-check", {}, { repeat: { every: 43_200_000 }, jobId: "wa-version-check-repeat", removeOnComplete: true, removeOnFail: 50 });
+    console.log("[queue] BullMQ listo (vencimiento 60s + reintento CAPI 5min + salud de línea 5min + versión WA Web 12h)");
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[queue] no se pudo iniciar BullMQ (¿Redis arriba?):", msg);

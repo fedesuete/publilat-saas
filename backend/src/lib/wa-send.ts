@@ -4,6 +4,7 @@ import { prisma } from "./prisma.js";
 import { emitToUser } from "./io.js";
 import { sendText } from "./evolution.js";
 import { sendCloudText } from "./wa-cloud.js";
+import { checkWarmupGate } from "./warmup.js";
 
 export async function sendToContact(userId: string, contactId: string, text: string): Promise<boolean> {
   const contact = await prisma.contact.findFirst({ where: { id: contactId, userId } });
@@ -12,6 +13,15 @@ export async function sendToContact(userId: string, contactId: string, text: str
   if (!line) return false;
   const destination = contact.waJid ?? contact.phone;
   if (!destination) return false;
+
+  // Rampa de calentamiento: cubre TODOS los envíos del motor de flujos (este es el
+  // único camino, incluidas las reanudaciones por BullMQ). Si el cupo se agotó, el
+  // paso se saltea (queda logueado y el dueño recibe la notificación del gate).
+  const gate = await checkWarmupGate(line);
+  if (!gate.ok) {
+    console.warn(`[wa-send] envío bloqueado por calentamiento (línea ${line.id}, contacto ${contactId})`);
+    return false;
+  }
 
   let waMessageId: string | undefined;
   try {

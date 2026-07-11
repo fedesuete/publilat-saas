@@ -79,6 +79,12 @@ webhookRouter.post("/", async (req, res) => {
           // El número emparejado es la fuente de verdad: si escanean con OTRO número,
           // actualizamos (antes solo se guardaba si estaba vacío y quedaba el viejo).
           ...(connected && ownerPhone && ownerPhone !== line.phone ? { phone: ownerPhone } : {}),
+          // Calentamiento: arranca en el PRIMER emparejamiento de la línea, y se resetea
+          // si la re-emparejan con un número DISTINTO (chip nuevo = volver a calentar).
+          ...(connected && !line.warmupStartedAt ? { warmupStartedAt: new Date() } : {}),
+          ...(connected && ownerPhone && line.phone && ownerPhone !== line.phone
+            ? { warmupStartedAt: new Date() }
+            : {}),
         },
       });
       // Primera conexión: arranca el contador (consume 1 día / 24h). Si no hay días,
@@ -111,8 +117,17 @@ webhookRouter.post("/", async (req, res) => {
         let error: string | null = null;
         if (st === "ERROR") {
           status = "failed";
+          // Evolution 2.x NO reenvía messageStubParameters en el webhook (verificado en el
+          // fuente de 2.4.0-rc2/develop/main: arma el payload a mano y descarta el stub),
+          // así que el código casi nunca llega. Lo parseamos igual por si el motor algún
+          // día lo incluye, y sin código mostramos la guía del caso típico (463).
           const code = Array.isArray(stub) && stub.length ? String(stub[0]) : "";
-          error = code ? `WhatsApp rechazó el envío (código ${code})` : "WhatsApp rechazó el envío";
+          const guia463 =
+            "número frío o restringido por WhatsApp: bajá el volumen, reintentá en unos " +
+            "minutos y, si sigue, respondé desde el teléfono (se espeja al CRM)";
+          error = code
+            ? `WhatsApp rechazó el envío (código ${code})${code === "463" ? ` — ${guia463}` : ""}`
+            : `WhatsApp rechazó el envío (típico código 463 — ${guia463})`;
         } else if (st === "DELIVERY_ACK") {
           status = "delivered";
         } else if (st === "READ" || st === "PLAYED") {

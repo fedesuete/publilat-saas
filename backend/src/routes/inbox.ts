@@ -6,6 +6,7 @@ import { emitToUser } from "../lib/io.js";
 import { sendText, sendWhatsAppAudio } from "../lib/evolution.js";
 import { sendCloudText, isOutsideWindowError, graphErrorMessage, listTemplates, sendCloudTemplate } from "../lib/wa-cloud.js";
 import { decryptSecret } from "../lib/crypto.js";
+import { checkWarmupGate } from "../lib/warmup.js";
 
 export const inboxRouter = Router();
 
@@ -134,6 +135,10 @@ inboxRouter.post("/:contactId/messages", async (req, res) => {
   const line = await prisma.waLine.findFirst({ where: { id: contact.lineId, userId: req.userId! } });
   if (!line) return res.status(400).json({ error: "La línea no está disponible" });
 
+  // Rampa de calentamiento (líneas Baileys nuevas): cupo de envíos por 24 h.
+  const gate = await checkWarmupGate(line);
+  if (!gate.ok) return res.status(429).json({ error: gate.reason, code: "WARMUP_LIMIT" });
+
   // Preferimos el JID crudo (soporta direcciones @lid de privacidad); si no, el teléfono.
   const destination = contact.waJid ?? contact.phone;
   let waMessageId: string | undefined;
@@ -212,14 +217,16 @@ inboxRouter.post("/:contactId/template", async (req, res) => {
 
   const to = (contact.phone ?? contact.waJid ?? "").replace(/\D/g, "");
   if (!to) return res.status(400).json({ error: "El contacto no tiene teléfono" });
+  let waMessageId: string | undefined;
   try {
-    await sendCloudTemplate(line, to, parsed.data.name, parsed.data.language, parsed.data.params);
+    const sent = await sendCloudTemplate(line, to, parsed.data.name, parsed.data.language, parsed.data.params);
+    waMessageId = sent?.messages?.[0]?.id ?? undefined;
   } catch (e) {
     return res.status(502).json({ error: "No se pudo enviar la plantilla", detail: graphErrorMessage(e) });
   }
 
   const body = `📋 Plantilla: ${parsed.data.name}${parsed.data.params?.length ? ` (${parsed.data.params.join(", ")})` : ""}`;
-  const message = await prisma.message.create({ data: { contactId: contact.id, lineId: line.id, direction: "out", body } });
+  const message = await prisma.message.create({ data: { contactId: contact.id, lineId: line.id, direction: "out", body, waMessageId } });
   emitToUser(req.userId!, "inbox:message", {
     contactId: contact.id,
     message: { id: message.id, direction: "out", body, createdAt: message.createdAt },
@@ -243,6 +250,10 @@ inboxRouter.post("/:contactId/audio", async (req, res) => {
     return res.status(400).json({ error: "El envío de audios todavía no está disponible en líneas Cloud API." });
   }
   if (!line.sessionId) return res.status(400).json({ error: "La línea no está disponible" });
+
+  // Rampa de calentamiento (líneas Baileys nuevas): cupo de envíos por 24 h.
+  const gate = await checkWarmupGate(line);
+  if (!gate.ok) return res.status(429).json({ error: gate.reason, code: "WARMUP_LIMIT" });
 
   const mimeMatch = parsed.data.audio.match(/^data:([^;]+);base64,/);
   const mime = mimeMatch?.[1] ?? "audio/ogg";

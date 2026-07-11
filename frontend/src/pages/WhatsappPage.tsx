@@ -51,6 +51,11 @@ export default function WhatsappPage() {
   const [registerMsg, setRegisterMsg] = useState<{ id: string; ok: boolean; text: string } | null>(null);
   const [subscribingId, setSubscribingId] = useState<string | null>(null);
   const [subscribeMsg, setSubscribeMsg] = useState<{ id: string; ok: boolean; text: string } | null>(null);
+  // Anti-ban por línea: proxy de salida + rampa de calentamiento.
+  const [proxyInputs, setProxyInputs] = useState<Record<string, string>>({});
+  const [proxyBusyId, setProxyBusyId] = useState<string | null>(null);
+  const [warmupBusyId, setWarmupBusyId] = useState<string | null>(null);
+  const [showAntiBan, setShowAntiBan] = useState<Record<string, boolean>>({});
   const esSessionRef = useRef<{ phoneNumberId?: string; wabaId?: string }>({});
   const lastAttemptRef = useRef<{ code: string; phoneNumberId?: string; wabaId?: string } | null>(null);
 
@@ -384,6 +389,49 @@ export default function WhatsappPage() {
     }
   };
 
+  // Setea o quita el proxy de salida de la línea (Evolution lo valida en vivo).
+  const saveProxy = async (id: string, url: string) => {
+    setProxyBusyId(id);
+    setError(null);
+    try {
+      const { data } = await api.post<{ ok: boolean; proxyLabel: string | null; line?: Line }>(
+        `/api/wa/lines/${id}/proxy`,
+        { url },
+      );
+      setLines((prev) => prev.map((l) => (l.id === id ? { ...l, proxyLabel: data.proxyLabel } : l)));
+      setProxyInputs((p) => ({ ...p, [id]: "" }));
+      setNotice({
+        id,
+        text: data.proxyLabel
+          ? `Proxy configurado (${data.proxyLabel}). La línea se reinicia para salir por la IP nueva.`
+          : "Proxy quitado. La línea vuelve a salir por la IP del servidor.",
+      });
+    } catch (err) {
+      setError(apiError(err));
+    } finally {
+      setProxyBusyId(null);
+    }
+  };
+
+  // Activa/desactiva la rampa de calentamiento de la línea.
+  const toggleWarmup = async (line: Line) => {
+    setWarmupBusyId(line.id);
+    setError(null);
+    try {
+      const { data } = await api.post<{ line: { id: string; warmupEnabled: boolean }; warmup: Line["warmup"] }>(
+        `/api/wa/lines/${line.id}/warmup`,
+        { enabled: !(line.warmupEnabled ?? true) },
+      );
+      setLines((prev) =>
+        prev.map((l) => (l.id === line.id ? { ...l, warmupEnabled: data.line.warmupEnabled, warmup: data.warmup } : l)),
+      );
+    } catch (err) {
+      setError(apiError(err));
+    } finally {
+      setWarmupBusyId(null);
+    }
+  };
+
   const activate = async (id: string) => {
     const raw = activateDays[id] ?? "1";
     const n = parseInt(raw, 10);
@@ -602,6 +650,14 @@ export default function WhatsappPage() {
                             Calidad {line.qualityRating}
                           </span>
                         )}
+                        {line.warmup?.active && (
+                          <span
+                            className="rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-semibold text-orange-300"
+                            title={`Rampa anti-ban: la línea es nueva y tiene un cupo de envíos que sube con los días (hoy ${line.warmup.used ?? 0}/${line.warmup.cap} en 24 h).`}
+                          >
+                            🔥 Calentando día {line.warmup.day}/{line.warmup.totalDays} · {line.warmup.used ?? 0}/{line.warmup.cap}
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs text-slate-400">
                         {line.phone || "Sin número"} ·{" "}
@@ -758,6 +814,78 @@ export default function WhatsappPage() {
                     <Button variant="secondary" onClick={() => void linkByNumber(line.id)}>
                       Vincular por número
                     </Button>
+                  </div>
+                )}
+
+                {isBaileys && (
+                  <div className="mt-3 border-t border-slate-800 pt-3 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setShowAntiBan((p) => ({ ...p, [line.id]: !p[line.id] }))}
+                      className="text-slate-400 underline hover:text-slate-200"
+                    >
+                      {showAntiBan[line.id] ? "Ocultar anti-ban (proxy / calentamiento)" : "Anti-ban: proxy y calentamiento"}
+                    </button>
+                    {showAntiBan[line.id] && (
+                      <div className="mt-2 space-y-3 rounded-md border border-slate-800 bg-slate-900/40 p-3">
+                        {/* Rampa de calentamiento */}
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <div className="font-semibold text-slate-200">Calentamiento (rampa de envíos)</div>
+                            <div className="text-slate-500">
+                              {line.warmup?.active
+                                ? `Día ${line.warmup.day} de ${line.warmup.totalDays}: cupo de ${line.warmup.cap} envíos/24 h (llevás ${line.warmup.used ?? 0}).`
+                                : (line.warmupEnabled ?? true)
+                                  ? "Activo. Limita los envíos los primeros días de una línea recién emparejada (anti-ban)."
+                                  : "Desactivado: la línea envía sin cupo. Con números nuevos es riesgo de baneo/463."}
+                            </div>
+                          </div>
+                          <Button
+                            variant={line.warmupEnabled ?? true ? "ghost" : "secondary"}
+                            disabled={warmupBusyId === line.id}
+                            onClick={() => void toggleWarmup(line)}
+                          >
+                            {warmupBusyId === line.id ? "…" : (line.warmupEnabled ?? true) ? "Desactivar" : "Activar"}
+                          </Button>
+                        </div>
+                        {/* Proxy de salida */}
+                        <div className="border-t border-slate-800 pt-2">
+                          <div className="font-semibold text-slate-200">Proxy de salida</div>
+                          <div className="mb-2 text-slate-500">
+                            {line.proxyLabel
+                              ? <>Activo: <code className="text-slate-300">{line.proxyLabel}</code></>
+                              : "Sin proxy: la línea sale a WhatsApp desde la IP del servidor. Un proxy residencial del país del número baja el riesgo antispam."}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Input
+                              value={proxyInputs[line.id] ?? ""}
+                              onChange={(e) => setProxyInputs((p) => ({ ...p, [line.id]: e.target.value }))}
+                              placeholder="socks5://usuario:clave@host:puerto"
+                              className="max-w-[280px]"
+                            />
+                            <Button
+                              variant="secondary"
+                              disabled={proxyBusyId === line.id || !(proxyInputs[line.id] ?? "").trim()}
+                              onClick={() => void saveProxy(line.id, (proxyInputs[line.id] ?? "").trim())}
+                            >
+                              {proxyBusyId === line.id ? "Probando…" : "Guardar proxy"}
+                            </Button>
+                            {line.proxyLabel && (
+                              <Button
+                                variant="ghost"
+                                disabled={proxyBusyId === line.id}
+                                onClick={() => void saveProxy(line.id, "")}
+                              >
+                                Quitar
+                              </Button>
+                            )}
+                          </div>
+                          <p className="mt-1 text-slate-600">
+                            Se valida en vivo y la línea se reinicia para aplicar el cambio (sin re-escanear QR).
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

@@ -45,6 +45,10 @@ export interface Line {
   webhookUrl?: string | null;
   registered?: boolean;
   qualityRating?: string | null; // Cloud API: GREEN | YELLOW | RED
+  // Anti-ban (líneas Baileys):
+  warmupEnabled?: boolean;
+  warmup?: { active: boolean; day?: number; totalDays?: number; cap?: number; used?: number } | null;
+  proxyLabel?: string | null; // proxy de salida (sin credenciales), ej "socks5://host:1080"
 }
 
 export interface Msg {

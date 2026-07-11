@@ -13,7 +13,12 @@ import {
   fetchOwnerNumber,
   logoutInstance,
   deleteInstance,
+  setProxy,
+  parseProxyUrl,
+  restartInstance,
 } from "../lib/evolution.js";
+import { warmupState } from "../lib/warmup.js";
+import { assertPublicHost } from "../lib/ssrf.js";
 import axios from "axios";
 import crypto from "node:crypto";
 import {
@@ -31,12 +36,24 @@ export const waRouter = Router();
 // URL pública del webhook de la Cloud API (para pegar en Meta).
 const CLOUD_WEBHOOK_URL = `${(process.env.APP_BASE_URL ?? "http://localhost:4000").replace(/\/$/, "")}/api/wa/cloud/webhook`;
 
-// Forma pública de una línea (nunca devuelve el access token entero).
+// Forma pública de una línea (nunca devuelve el access token entero ni el proxy con credenciales).
 function toPublicLine(l: {
   id: string; phone: string; label: string | null; status: string; provider: string;
   connected: boolean; expiresAt: Date | null; createdAt: Date; registered?: boolean; qualityRating?: string | null;
   wabaPhoneNumberId: string | null; wabaId: string | null; accessToken: string | null; verifyToken: string | null;
+  proxyUrl?: string | null; warmupEnabled?: boolean;
 }) {
+  // Del proxy solo se muestra protocolo/host/puerto (las credenciales quedan en el server).
+  // Un valor indescifrable (clave rotada, dato corrupto) no puede tumbar GET /lines.
+  let proxyLabel: string | null = null;
+  if (l.proxyUrl) {
+    try {
+      const p = parseProxyUrl(decryptSecret(l.proxyUrl));
+      proxyLabel = p ? `${p.protocol}://${p.host}:${p.port}` : "configurado";
+    } catch {
+      proxyLabel = "configurado";
+    }
+  }
   return {
     id: l.id,
     phone: l.phone,
@@ -53,16 +70,25 @@ function toPublicLine(l: {
     verifyToken: l.verifyToken,
     tokenMask: l.accessToken ? maskSecret(l.accessToken.replace(/^enc:v1:/, "")) : null,
     webhookUrl: l.provider === "cloud" ? CLOUD_WEBHOOK_URL : null,
+    warmupEnabled: l.warmupEnabled ?? true,
+    proxyLabel,
   };
 }
 
 // GET /api/wa/lines — líneas del usuario con su estado (según DB; el webhook lo mantiene).
+// Incluye el estado de la rampa de calentamiento (día/cupo/usados) por línea.
 waRouter.get("/lines", async (req, res) => {
   const lines = await prisma.waLine.findMany({
     where: { userId: req.userId! },
     orderBy: { createdAt: "asc" },
   });
-  return res.json({ lines: lines.map(toPublicLine) });
+  const out = await Promise.all(
+    lines.map(async (l) => ({
+      ...toPublicLine(l),
+      warmup: await warmupState(l),
+    })),
+  );
+  return res.json({ lines: out });
 });
 
 const createSchema = z.object({
@@ -359,6 +385,12 @@ waRouter.post("/lines/:id/reset", async (req, res) => {
     await logoutInstance(instanceName);
     await deleteInstance(instanceName);
     const qr = await createInstance(instanceName);
+    // La instancia recreada pierde la config de proxy de Evolution: se re-aplica.
+    if (line.proxyUrl) {
+      const proxy = parseProxyUrl(decryptSecret(line.proxyUrl));
+      if (proxy) await setProxy(instanceName, proxy).catch((e) =>
+        console.warn(`[wa/lines/reset] no se pudo re-aplicar el proxy:`, e instanceof Error ? e.message : String(e)));
+    }
     await prisma.waLine.update({
       where: { id: line.id },
       data: { sessionId: instanceName, connected: false, status: "inactive" },
@@ -395,6 +427,76 @@ waRouter.get("/lines/:id/status", async (req, res) => {
     state,
     connected,
     line: { id: updated.id, status: updated.status, phone: updated.phone },
+  });
+});
+
+const warmupSchema = z.object({ enabled: z.boolean() });
+
+// POST /api/wa/lines/:id/warmup — activa/desactiva la rampa de calentamiento de la línea.
+// Desactivarla es bajo responsabilidad del usuario (números nuevos con volumen = ban).
+waRouter.post("/lines/:id/warmup", async (req, res) => {
+  const parsed = warmupSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const line = await getOwnedLine(req.userId!, req.params.id);
+  if (!line) return res.status(404).json({ error: "Línea no encontrada" });
+  if (line.provider !== "baileys") return res.status(400).json({ error: "El calentamiento aplica a líneas por QR (Baileys)" });
+  const updated = await prisma.waLine.update({ where: { id: line.id }, data: { warmupEnabled: parsed.data.enabled } });
+  return res.json({ line: { id: updated.id, warmupEnabled: updated.warmupEnabled }, warmup: await warmupState(updated) });
+});
+
+const proxySchema = z.object({
+  // URL completa: socks5://user:pass@host:1080 (también http/https/socks4). Vacía = quitar.
+  url: z.string().max(300),
+});
+
+// POST /api/wa/lines/:id/proxy — setea (o quita) el proxy de salida de la línea en
+// Evolution. El proxy aplica al websocket de Baileys: la línea "sale" a WhatsApp desde
+// esa IP (proxy residencial del país del número = menos bandera antispam que la IP del
+// datacenter). Evolution valida el proxy en vivo y el cambio recién rige al reiniciar
+// la instancia, así que acá se setea Y se reinicia.
+waRouter.post("/lines/:id/proxy", async (req, res) => {
+  const parsed = proxySchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const line = await getOwnedLine(req.userId!, req.params.id);
+  if (!line) return res.status(404).json({ error: "Línea no encontrada" });
+  if (line.provider !== "baileys") return res.status(400).json({ error: "El proxy aplica a líneas por QR (Baileys)" });
+  const instanceName = line.sessionId ?? `line_${line.id}`;
+
+  const url = parsed.data.url.trim();
+  const proxy = url ? parseProxyUrl(url) : null;
+  if (url && !proxy) {
+    return res.status(400).json({ error: "URL de proxy inválida. Formato: socks5://usuario:clave@host:puerto (o http/https/socks4)." });
+  }
+  // Anti-SSRF: el "proxy" no puede apuntar a la red interna (Evolution se conectaría ahí).
+  if (proxy) {
+    try {
+      await assertPublicHost(proxy.host, "proxy");
+    } catch (e) {
+      return res.status(400).json({ error: e instanceof Error ? e.message : "Proxy no permitido" });
+    }
+  }
+  try {
+    await setProxy(instanceName, proxy);
+  } catch (e) {
+    // Evolution testea el proxy contra icanhazip y devuelve 400 "Invalid proxy" si no anda.
+    const detail = axios.isAxiosError(e)
+      ? JSON.stringify(e.response?.data?.response?.message ?? e.response?.data ?? e.message)
+      : e instanceof Error ? e.message : String(e);
+    return res.status(502).json({ error: "Evolution rechazó el proxy (¿funciona y cambia la IP?)", detail });
+  }
+  await prisma.waLine.update({
+    where: { id: line.id },
+    data: { proxyUrl: proxy ? encryptSecret(url) : null },
+  });
+  // El proxy rige recién en la próxima conexión: reiniciamos SIEMPRE (también sin
+  // emparejar, porque el socket del QR ya está abierto sin proxy y el emparejamiento
+  // saldría por la IP del server — justo lo que el proxy quiere evitar).
+  await restartInstance(instanceName);
+  const fresh = await prisma.waLine.findUnique({ where: { id: line.id } });
+  return res.json({
+    ok: true,
+    proxyLabel: proxy ? `${proxy.protocol}://${proxy.host}:${proxy.port}` : null,
+    line: fresh ? toPublicLine(fresh) : undefined,
   });
 });
 

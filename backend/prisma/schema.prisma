@@ -178,6 +178,10 @@ model WaLine {
   registered  Boolean   @default(false) // true si el número quedó registrado en la Cloud API
   qualityRating String?      // Cloud API: GREEN | YELLOW | RED (calidad del número)
   lastCheckedAt DateTime?    // último chequeo de salud de la línea
+  // --- Anti-ban (líneas Baileys) ---
+  proxyUrl        String?    // proxy de salida por línea (URL completa, cifrada en reposo)
+  warmupEnabled   Boolean   @default(true)  // rampa de calentamiento activable por línea
+  warmupStartedAt DateTime?  // arranca al primer emparejamiento; se resetea si cambia el número
   expiresAt   DateTime? // se desactiva al vencer (consumo de días)
   lastUsedAt  DateTime? // para rotación LRU de clics entre líneas activas
   createdAt   DateTime  @default(now())
