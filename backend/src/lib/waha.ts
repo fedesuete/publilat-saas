@@ -54,9 +54,17 @@ function sessionConfig(proxy?: ProxyConfig | null) {
 const toChatId = (number: string) =>
   number.includes("@") ? number.replace("@s.whatsapp.net", "@c.us") : `${number.replace(/\D/g, "")}@c.us`;
 
+// id de mensaje como STRING serializado. WAHA lo manda distinto según engine/versión:
+// WEBJS puede traer un objeto { _serialized } y NOWEB un string plano. El ack y el
+// mensaje guardado tienen que usar LA MISMA forma, si no el ERROR del 463 no matchea
+// el waMessageId y la burbuja roja nunca aparece.
+function serializeId(x: any): string | undefined {
+  return x?._serialized ?? (typeof x === "string" ? x : x?.id) ?? undefined;
+}
+
 // id serializado del mensaje enviado (los acks llegan con ESTA forma; hay que guardarla).
 function sentId(data: any): string | undefined {
-  return data?.id?._serialized ?? (typeof data?.id === "string" ? data.id : data?.id?.id) ?? undefined;
+  return serializeId(data?.id);
 }
 
 async function fetchQr(instanceName: string): Promise<string | undefined> {
@@ -234,7 +242,7 @@ export function normalizeWahaEvent(body: any): Record<string, any> | null {
   if (event === "message.ack") {
     const status =
       (typeof p.ackName === "string" ? ACK_NAME[p.ackName.toUpperCase()] : undefined) ?? ACK_NUM[Number(p.ack)];
-    return { event: "messages.update", instance: session, data: status ? { keyId: p.id, status } : {} };
+    return { event: "messages.update", instance: session, data: status ? { keyId: serializeId(p.id), status } : {} };
   }
 
   // message / message.any. En los fromMe (enviados desde el teléfono) el peer es `to`.
@@ -242,7 +250,7 @@ export function normalizeWahaEvent(body: any): Record<string, any> | null {
     event: "messages.upsert",
     instance: session,
     data: {
-      key: { id: p.id, remoteJid: p.fromMe ? p.to : p.from, fromMe: !!p.fromMe },
+      key: { id: serializeId(p.id), remoteJid: p.fromMe ? p.to : p.from, fromMe: !!p.fromMe },
       pushName: p?._data?.notifyName ?? p?._data?.pushName ?? undefined,
       message: { conversation: typeof p.body === "string" ? p.body : "" },
     },
