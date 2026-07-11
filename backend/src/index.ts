@@ -34,7 +34,7 @@ import { setIo } from "./lib/io.js";
 import { initQueues, closeQueues } from "./lib/queue.js";
 import { validateEnv } from "./lib/env.js";
 import { prisma } from "./lib/prisma.js";
-import { setWebhook } from "./lib/evolution.js";
+import { getEngine } from "./lib/wa-engine.js";
 
 validateEnv();
 
@@ -200,7 +200,7 @@ async function syncEvolutionWebhooks() {
     for (const l of lines) {
       if (!l.sessionId) continue;
       try {
-        await setWebhook(l.sessionId);
+        await getEngine().setWebhook(l.sessionId);
         ok++;
       } catch (e) {
         console.warn(`[wa] setWebhook ${l.sessionId} falló:`, e instanceof Error ? e.message : String(e));

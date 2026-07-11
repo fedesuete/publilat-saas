@@ -3,7 +3,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
-import { sendText, sendWhatsAppAudio } from "../lib/evolution.js";
+import { getEngine } from "../lib/wa-engine.js";
 import { sendCloudText, isOutsideWindowError, graphErrorMessage, listTemplates, sendCloudTemplate } from "../lib/wa-cloud.js";
 import { decryptSecret } from "../lib/crypto.js";
 import { checkWarmupGate } from "../lib/warmup.js";
@@ -162,7 +162,7 @@ inboxRouter.post("/:contactId/messages", async (req, res) => {
   } else {
     if (!line.sessionId) return res.status(400).json({ error: "La línea no está disponible" });
     try {
-      const sent = await sendText(line.sessionId, destination, parsed.data.body);
+      const sent = await getEngine().sendText(line.sessionId, destination, parsed.data.body);
       waMessageId = sent?.key?.id ?? undefined;
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -262,7 +262,7 @@ inboxRouter.post("/:contactId/audio", async (req, res) => {
   if (!destination) return res.status(400).json({ error: "El contacto aún no tiene teléfono" });
   let waMessageId: string | undefined;
   try {
-    const sent = await sendWhatsAppAudio(line.sessionId, destination, base64);
+    const sent = await getEngine().sendWhatsAppAudio(line.sessionId, destination, base64);
     waMessageId = sent?.key?.id ?? undefined;
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

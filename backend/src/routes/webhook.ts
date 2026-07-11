@@ -5,7 +5,8 @@ import { Router } from "express";
 import crypto from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
-import { fetchOwnerNumber, getMediaBase64 } from "../lib/evolution.js";
+import { getEngine } from "../lib/wa-engine.js";
+import { normalizeWahaEvent } from "../lib/waha.js";
 import { detectPayment } from "../lib/payment-detect.js";
 import { consumeDayAndActivate } from "../lib/access.js";
 import { notify } from "../lib/notifications.js";
@@ -44,7 +45,10 @@ webhookRouter.post("/", async (req, res) => {
   res.json({ ok: true });
 
   try {
-    const body = req.body ?? {};
+    const raw = req.body ?? {};
+    // WAHA usa otro envelope ({ event, session, payload }): se traduce acá arriba al
+    // formato de Evolution para reusar TODA la lógica de abajo sin duplicarla.
+    const body = normalizeWahaEvent(raw) ?? raw;
     const event = normEvent(body.event);
     const instance: string = body.instance ?? body.instanceName ?? "";
     if (!instance) return;
@@ -69,7 +73,7 @@ webhookRouter.post("/", async (req, res) => {
       // Si quedó conectada, capturamos el número del WhatsApp vinculado (para los wa.me).
       let ownerPhone = jidToPhone(body.data?.wuid ?? body.sender);
       if (connected && !ownerPhone) {
-        ownerPhone = await fetchOwnerNumber(instance);
+        ownerPhone = await getEngine().fetchOwnerNumber(instance);
       }
       await prisma.waLine.update({
         where: { id: line.id },
@@ -192,7 +196,7 @@ webhookRouter.post("/", async (req, res) => {
             item?.message?.documentWithCaptionMessage?.message?.documentMessage;
           const fmHint = fmImg ?? fmAudio ?? fmDoc;
           if (fmHint && fmId) {
-            const media = await getMediaBase64(instance, fmId);
+            const media = await getEngine().getMediaBase64(instance, fmId);
             if (media?.base64) {
               fmMediaData = media.base64;
               const fallback = fmImg ? "image/jpeg" : fmAudio ? "audio/ogg" : "application/octet-stream";
@@ -291,7 +295,7 @@ webhookRouter.post("/", async (req, res) => {
           item?.message?.documentWithCaptionMessage?.message?.documentMessage;
         const mediaHint = img ?? audio ?? doc;
         if (mediaHint && waMessageId) {
-          const media = await getMediaBase64(instance, waMessageId);
+          const media = await getEngine().getMediaBase64(instance, waMessageId);
           if (media?.base64) {
             mediaData = media.base64;
             const fallbackMime = img ? "image/jpeg" : audio ? "audio/ogg" : "application/octet-stream";

@@ -1,0 +1,33 @@
+# WAHA — instancia de PRUEBA del motor de WhatsApp alternativo (no toca producción).
+# WAHA trae dos engines: WEBJS (Chromium real, whatsapp-web.js — el más resistente al
+# error 463 en fríos) y NOWEB (Baileys al día). El objetivo es el experimento del 463:
+# levantar esto aparte, apuntar el backend de prueba con WA_ENGINE=waha y comparar
+# entregas frío/caliente contra Evolution el mismo día con chips equivalentes.
+#
+#   docker compose -f docker-compose.waha.yml up -d
+#   Dashboard para probar a mano: http://localhost:3001/dashboard  (API key abajo)
+#
+# Notas:
+# - Core (esta imagen) alcanza para texto + acks + estado. Enviar/bajar MEDIA y varias
+#   sesiones avanzadas son WAHA Plus (de pago): no hace falta para la prueba.
+# - El backend se conecta con WAHA_BASE_URL/WAHA_API_KEY y WA_ENGINE=waha (.env).
+services:
+  waha:
+    image: devlikeapro/waha:latest
+    restart: unless-stopped
+    ports:
+      - "3001:3000" # puerto de prueba, distinto a Evolution (8080)
+    environment:
+      - WAHA_API_KEY=${WAHA_API_KEY:-cambia-esta-clave}
+      # Engine por defecto de las sesiones nuevas: WEBJS (opción 1) o NOWEB (opción 2).
+      # El backend también lo manda por sesión (config.engine, env WAHA_ENGINE).
+      - WHATSAPP_DEFAULT_ENGINE=${WAHA_ENGINE:-WEBJS}
+      # Webhook global de respaldo (el backend además configura webhooks por sesión).
+      # message.any incluye los fromMe del teléfono (espejo al CRM); message.ack = tildes/463.
+      - WHATSAPP_HOOK_URL=${WAHA_WEBHOOK_URL:-http://host.docker.internal:4000/api/wa/webhook}
+      - WHATSAPP_HOOK_EVENTS=message.any,message.ack,session.status
+    volumes:
+      - waha-sessions:/app/.sessions # persiste sesiones (evita re-escanear)
+
+volumes:
+  waha-sessions:

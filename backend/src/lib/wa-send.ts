@@ -2,7 +2,7 @@
 // saliente y emitiéndolo al Inbox. Reutilizado por el motor de automatizaciones.
 import { prisma } from "./prisma.js";
 import { emitToUser } from "./io.js";
-import { sendText } from "./evolution.js";
+import { getEngine } from "./wa-engine.js";
 import { sendCloudText } from "./wa-cloud.js";
 import { checkWarmupGate } from "./warmup.js";
 
@@ -31,7 +31,7 @@ export async function sendToContact(userId: string, contactId: string, text: str
       waMessageId = sent?.messages?.[0]?.id ?? undefined;
     } else {
       if (!line.sessionId) return false;
-      const sent = await sendText(line.sessionId, destination, text);
+      const sent = await getEngine().sendText(line.sessionId, destination, text);
       waMessageId = sent?.key?.id ?? undefined;
     }
   } catch (e) {

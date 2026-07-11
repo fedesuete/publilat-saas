@@ -6,17 +6,8 @@ import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
 import { encryptSecret, decryptSecret, maskSecret } from "../lib/crypto.js";
 import { getAvailableDays, consumeDayAndActivate } from "../lib/access.js";
-import {
-  createInstance,
-  connectInstance,
-  connectionState,
-  fetchOwnerNumber,
-  logoutInstance,
-  deleteInstance,
-  setProxy,
-  parseProxyUrl,
-  restartInstance,
-} from "../lib/evolution.js";
+import { parseProxyUrl } from "../lib/evolution.js";
+import { getEngine } from "../lib/wa-engine.js";
 import { warmupState } from "../lib/warmup.js";
 import { assertPublicHost } from "../lib/ssrf.js";
 import axios from "axios";
@@ -180,7 +171,7 @@ waRouter.post("/lines", async (req, res) => {
   const instanceName = `line_${line.id}`;
 
   try {
-    const qr = await createInstance(instanceName);
+    const qr = await getEngine().createInstance(instanceName);
     const updated = await prisma.waLine.update({ where: { id: line.id }, data: { sessionId: instanceName } });
     if (qr.base64) emitToUser(req.userId!, "wa:qr", { lineId: line.id, qr: qr.base64 });
     return res.status(201).json({ line: toPublicLine(updated), qr: qr.base64 ?? null });
@@ -365,7 +356,7 @@ waRouter.post("/lines/:id/connect", async (req, res) => {
   const number = typeof req.body?.number === "string" ? req.body.number.replace(/\D/g, "") : "";
 
   try {
-    const qr = await connectInstance(instanceName, number || undefined);
+    const qr = await getEngine().connectInstance(instanceName, number || undefined);
     if (qr.base64) emitToUser(req.userId!, "wa:qr", { lineId: line.id, qr: qr.base64 });
     return res.json({ qr: qr.base64 ?? null, pairingCode: qr.pairingCode ?? null });
   } catch (e) {
@@ -382,13 +373,13 @@ waRouter.post("/lines/:id/reset", async (req, res) => {
   if (line.provider !== "baileys") return res.status(400).json({ error: "El reinicio aplica a líneas por QR (Baileys)" });
   const instanceName = line.sessionId ?? `line_${line.id}`;
   try {
-    await logoutInstance(instanceName);
-    await deleteInstance(instanceName);
-    const qr = await createInstance(instanceName);
+    await getEngine().logoutInstance(instanceName);
+    await getEngine().deleteInstance(instanceName);
+    const qr = await getEngine().createInstance(instanceName);
     // La instancia recreada pierde la config de proxy de Evolution: se re-aplica.
     if (line.proxyUrl) {
       const proxy = parseProxyUrl(decryptSecret(line.proxyUrl));
-      if (proxy) await setProxy(instanceName, proxy).catch((e) =>
+      if (proxy) await getEngine().setProxy(instanceName, proxy).catch((e) =>
         console.warn(`[wa/lines/reset] no se pudo re-aplicar el proxy:`, e instanceof Error ? e.message : String(e)));
     }
     await prisma.waLine.update({
@@ -414,11 +405,11 @@ waRouter.get("/lines/:id/status", async (req, res) => {
   }
   const instanceName = line.sessionId ?? `line_${line.id}`;
 
-  const state = await connectionState(instanceName);
+  const state = await getEngine().connectionState(instanceName);
   const connected = state === "open";
   // Al conectar, capturamos el número del WhatsApp vinculado (para armar los wa.me).
   let phone = line.phone;
-  if (connected && !phone) phone = await fetchOwnerNumber(instanceName);
+  if (connected && !phone) phone = await getEngine().fetchOwnerNumber(instanceName);
   const updated = await prisma.waLine.update({
     where: { id: line.id },
     data: { connected, status: connected ? "active" : line.status, ...(phone ? { phone } : {}) },
@@ -476,7 +467,7 @@ waRouter.post("/lines/:id/proxy", async (req, res) => {
     }
   }
   try {
-    await setProxy(instanceName, proxy);
+    await getEngine().setProxy(instanceName, proxy);
   } catch (e) {
     // Evolution testea el proxy contra icanhazip y devuelve 400 "Invalid proxy" si no anda.
     const detail = axios.isAxiosError(e)
@@ -491,7 +482,7 @@ waRouter.post("/lines/:id/proxy", async (req, res) => {
   // El proxy rige recién en la próxima conexión: reiniciamos SIEMPRE (también sin
   // emparejar, porque el socket del QR ya está abierto sin proxy y el emparejamiento
   // saldría por la IP del server — justo lo que el proxy quiere evitar).
-  await restartInstance(instanceName);
+  await getEngine().restartInstance(instanceName);
   const fresh = await prisma.waLine.findUnique({ where: { id: line.id } });
   return res.json({
     ok: true,
@@ -560,7 +551,7 @@ waRouter.post("/lines/:id/resume", async (req, res) => {
 waRouter.post("/lines/:id/logout", async (req, res) => {
   const line = await getOwnedLine(req.userId!, req.params.id);
   if (!line) return res.status(404).json({ error: "Línea no encontrada" });
-  if (line.provider === "baileys") await logoutInstance(line.sessionId ?? `line_${line.id}`);
+  if (line.provider === "baileys") await getEngine().logoutInstance(line.sessionId ?? `line_${line.id}`);
   const updated = await prisma.waLine.update({
     where: { id: line.id },
     data: { connected: false, status: "inactive" },
@@ -573,7 +564,7 @@ waRouter.delete("/lines/:id", async (req, res) => {
   const line = await getOwnedLine(req.userId!, req.params.id);
   if (!line) return res.status(404).json({ error: "Línea no encontrada" });
   try {
-    if (line.provider === "baileys") await deleteInstance(line.sessionId ?? `line_${line.id}`);
+    if (line.provider === "baileys") await getEngine().deleteInstance(line.sessionId ?? `line_${line.id}`);
     // Orden por las FKs: mensajes (lineId obligatorio) -> soltar contactos -> línea.
     await prisma.message.deleteMany({ where: { lineId: line.id } });
     await prisma.contact.updateMany({ where: { lineId: line.id }, data: { lineId: null } });

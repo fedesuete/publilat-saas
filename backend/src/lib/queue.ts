@@ -7,7 +7,7 @@ import { emitToUser } from "./io.js";
 import { sendCapiEvent } from "./meta-capi.js";
 import { resolveUserPixel } from "./pixel.js";
 import { consumeDayAndActivate } from "./access.js";
-import { connectionState, restartInstance } from "./evolution.js";
+import { getEngine } from "./wa-engine.js";
 import { getPhoneQuality } from "./wa-cloud.js";
 import { decryptSecret } from "./crypto.js";
 import { notify } from "./notifications.js";
@@ -132,16 +132,16 @@ export async function checkLineHealth(): Promise<void> {
         }
       } else {
         const inst = line.sessionId ?? `line_${line.id}`;
-        const state = await connectionState(inst);
+        const state = await getEngine().connectionState(inst);
         connected = state === "open";
         if (line.connected && !connected) {
           // Auto-recuperación: sesiones que quedan trabadas en close/connecting suelen
           // volver con un restart de la instancia, SIN re-escanear el QR (flapping 428).
           console.log(`[line-health] línea ${line.id} en "${state}": intento restart automático`);
-          const restarted = await restartInstance(inst);
+          const restarted = await getEngine().restartInstance(inst);
           if (restarted) {
             await new Promise((r) => setTimeout(r, 15000));
-            connected = (await connectionState(inst)) === "open";
+            connected = (await getEngine().connectionState(inst)) === "open";
           }
           if (!connected) {
             const name = line.label ?? line.phone;
