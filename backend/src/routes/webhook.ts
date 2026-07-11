@@ -6,7 +6,7 @@ import crypto from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
 import { getEngine } from "../lib/wa-engine.js";
-import { normalizeWahaEvent } from "../lib/waha.js";
+import { normalizeWahaEvent, downloadWahaMedia } from "../lib/waha.js";
 import { detectPayment } from "../lib/payment-detect.js";
 import { consumeDayAndActivate } from "../lib/access.js";
 import { notify } from "../lib/notifications.js";
@@ -196,7 +196,10 @@ webhookRouter.post("/", async (req, res) => {
             item?.message?.documentWithCaptionMessage?.message?.documentMessage;
           const fmHint = fmImg ?? fmAudio ?? fmDoc;
           if (fmHint && fmId) {
-            const media = await getEngine().getMediaBase64(instance, fmId);
+            // WAHA trae la media como URL en el propio evento; Evolution se re-baja por id.
+            const media = item._wahaMedia?.url
+              ? await downloadWahaMedia(item._wahaMedia.url, item._wahaMedia.mimetype)
+              : await getEngine().getMediaBase64(instance, fmId);
             if (media?.base64) {
               fmMediaData = media.base64;
               const fallback = fmImg ? "image/jpeg" : fmAudio ? "audio/ogg" : "application/octet-stream";
@@ -295,7 +298,10 @@ webhookRouter.post("/", async (req, res) => {
           item?.message?.documentWithCaptionMessage?.message?.documentMessage;
         const mediaHint = img ?? audio ?? doc;
         if (mediaHint && waMessageId) {
-          const media = await getEngine().getMediaBase64(instance, waMessageId);
+          // WAHA trae la media como URL en el propio evento; Evolution se re-baja por id.
+          const media = item._wahaMedia?.url
+            ? await downloadWahaMedia(item._wahaMedia.url, item._wahaMedia.mimetype)
+            : await getEngine().getMediaBase64(instance, waMessageId);
           if (media?.base64) {
             mediaData = media.base64;
             const fallbackMime = img ? "image/jpeg" : audio ? "audio/ogg" : "application/octet-stream";

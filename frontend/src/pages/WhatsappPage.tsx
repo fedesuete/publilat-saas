@@ -56,6 +56,7 @@ export default function WhatsappPage() {
   const [proxyBusyId, setProxyBusyId] = useState<string | null>(null);
   const [warmupBusyId, setWarmupBusyId] = useState<string | null>(null);
   const [showAntiBan, setShowAntiBan] = useState<Record<string, boolean>>({});
+  const [engine, setEngine] = useState<string>("evolution");
   const esSessionRef = useRef<{ phoneNumberId?: string; wabaId?: string }>({});
   const lastAttemptRef = useRef<{ code: string; phoneNumberId?: string; wabaId?: string } | null>(null);
 
@@ -63,8 +64,9 @@ export default function WhatsappPage() {
     setLoading(true);
     setError(null);
     try {
-      const { data } = await api.get<{ lines: Line[] }>("/api/wa/lines");
+      const { data } = await api.get<{ lines: Line[]; engine?: string }>("/api/wa/lines");
       setLines(data.lines);
+      if (data.engine) setEngine(data.engine);
     } catch (err) {
       setError(apiError(err));
     } finally {
@@ -599,6 +601,15 @@ export default function WhatsappPage() {
           )}
         </form>
       </Card>
+
+      {/* Post-migración de motor: las sesiones no viajan, hay que re-escanear UNA vez. */}
+      {engine === "waha" && lines.some((l) => l.provider === "baileys" && !l.connected) && (
+        <div className="mb-4 max-w-3xl rounded-md border border-amber-700 bg-amber-900/30 px-4 py-3 text-sm text-amber-100">
+          <b>⚙️ Actualizamos el motor de WhatsApp para mejorar la entrega de mensajes.</b>{" "}
+          Reconectá tu número una sola vez: tocá <b>"Conectar / Ver QR"</b> en tu línea y escaneá
+          el código (o vinculá por número). Tus chats, contactos e historial no se pierden.
+        </div>
+      )}
 
       {error && (
         <div className="mb-4">

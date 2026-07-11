@@ -23,6 +23,12 @@ services:
       REDIS_URL: redis://redis:6379
       EVOLUTION_API_URL: http://evolution:8080
       EVOLUTION_WEBHOOK_URL: http://app:4000/api/wa/webhook?token=${EVOLUTION_WEBHOOK_TOKEN}
+      # Motor de WhatsApp: waha (WEBJS, actual) | evolution (rollback inmediato).
+      WA_ENGINE: ${WA_ENGINE:-evolution}
+      WAHA_BASE_URL: http://waha:3000
+      # Pisa el WAHA_WEBHOOK_URL del .env (que apunta al blackhole de la instancia de
+      # prueba): acá las sesiones se configuran con el webhook interno real.
+      WAHA_WEBHOOK_URL: http://app:4000/api/wa/webhook?token=${EVOLUTION_WEBHOOK_TOKEN}
     ports:
       - "4010:4000" # Traefik -> http://IP:4010
 
@@ -94,7 +100,36 @@ services:
     volumes:
       - evolution_instances:/evolution/instances
 
+  # Motor de WhatsApp ACTUAL (WA_ENGINE=waha): WAHA con engine WEBJS (whatsapp-web.js,
+  # Chromium real -> manda el tctoken y resuelve el 463 en fríos). Desde 2026.6.1 la
+  # imagen Core es gratis con media incluida. Sin puerto público: el backend le pega por
+  # la red interna y los clientes pasan por el panel. OJO: WEBJS corre un Chromium por
+  # línea (más RAM/CPU que Baileys) — monitorear memoria al sumar líneas.
+  waha:
+    image: devlikeapro/waha:latest
+    restart: unless-stopped
+    environment:
+      - WAHA_API_KEY=${WAHA_API_KEY}
+      - WAHA_DASHBOARD_USERNAME=${WAHA_DASHBOARD_USERNAME:-admin}
+      - WAHA_DASHBOARD_PASSWORD=${WAHA_DASHBOARD_PASSWORD:-cambia-esta-clave}
+      - WHATSAPP_DEFAULT_ENGINE=${WAHA_ENGINE:-WEBJS}
+      # Webhook global de respaldo (el backend además configura webhooks por sesión).
+      - WHATSAPP_HOOK_URL=http://app:4000/api/wa/webhook?token=${EVOLUTION_WEBHOOK_TOKEN}
+      - WHATSAPP_HOOK_EVENTS=message.any,message.ack,session.status
+      # Las URLs de media del webhook se generan con este hostname (resoluble por `app`).
+      - WHATSAPP_API_HOSTNAME=waha
+      - WHATSAPP_NOWEB_STORE_ENABLED=true
+      - WHATSAPP_NOWEB_STORE_FULLSYNC=false
+    volumes:
+      - waha_sessions:/app/.sessions # persiste sesiones (evita re-escanear en cada deploy)
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/ping').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
 volumes:
   pgdata:
   redisdata:
   evolution_instances:
+  waha_sessions:

@@ -11,8 +11,9 @@
 //    que llega después en los acks (message.ack).
 //  - Los webhooks de WAHA se traducen al formato Evolution en normalizeWahaEvent().
 //
-// Limitaciones de WAHA Core (la imagen gratis): enviar/bajar MEDIA es feature de WAHA
-// Plus. Para la fase de prueba del 463 (texto frío/caliente) alcanza de sobra.
+// Desde WAHA 2026.6.1 las features de Plus están en la imagen Core gratis (release notes:
+// "WAHA Plus features are now part of the WAHA Core image"); el envío de media está
+// VERIFICADO empíricamente en nuestra 2026.6.2 (sendImage entregado el 2026-07-11).
 import axios, { type AxiosInstance } from "axios";
 import type { QrResult, MediaBase64, ProxyConfig } from "./evolution.js";
 
@@ -106,9 +107,16 @@ export async function setWebhook(instanceName: string): Promise<void> {
 }
 
 // QR (sin número) o pairing code (con número, si el engine lo soporta).
+// Si la sesión NO existe todavía (ej: línea creada en la era Evolution y el usuario toca
+// "Conectar / Ver QR" tras la migración), se crea acá mismo: el botón del panel tiene
+// que funcionar sin pasos previos.
 export async function connectInstance(instanceName: string, number?: string): Promise<QrResult> {
   const c = client();
-  await c.post(`/api/sessions/${instanceName}/start`).catch(() => undefined); // por si estaba parada
+  try {
+    await c.post(`/api/sessions/${instanceName}/start`);
+  } catch {
+    await createInstance(instanceName).catch(() => undefined);
+  }
   if (number) {
     const digits = number.replace(/\D/g, "");
     const { data } = await c.post(`/api/${instanceName}/auth/request-code`, { phoneNumber: digits });
@@ -162,23 +170,52 @@ export async function sendWhatsAppAudio(instanceName: string, number: string, au
     const { data } = await client().post("/api/sendVoice", {
       session: instanceName,
       chatId: toChatId(number),
+      // convert: WAHA transcodea a ogg/opus (nota de voz real) si el origen es otro formato.
       file: { mimetype: "audio/ogg; codecs=opus", data: audioBase64 },
+      convert: true,
     });
     return { ...data, key: { id: sentId(data) } };
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
-      // En WAHA Core mandar media es feature Plus: que el error lo diga claro.
-      throw new Error(`WAHA rechazó el audio (HTTP ${e.response.status}). Enviar media requiere WAHA Plus; en Core probá solo texto.`);
+      const detail = JSON.stringify(e.response.data ?? {}).slice(0, 200);
+      throw new Error(`WAHA rechazó el audio (HTTP ${e.response.status}): ${detail}`);
     }
     throw e;
   }
 }
 
+// La media entrante de WAHA llega como URL dentro del webhook (payload.media.url) y se
+// baja de ahí — no existe el "re-bajar por key id" de Evolution, así que este camino
+// devuelve null y routes/webhook.ts usa downloadWahaMedia() con la URL del evento.
 export async function getMediaBase64(_instanceName: string, _messageKeyId: string): Promise<MediaBase64 | null> {
-  // WAHA entrega la media por URL dentro del propio webhook (payload.media.url, feature
-  // Plus); no existe el "re-bajar por id" de Evolution. En la fase de prueba, los chats
-  // de texto andan completos; la media entrante queda pendiente para la migración real.
   return null;
+}
+
+// Baja la media servida por WAHA (URL del webhook) y la devuelve como base64.
+// La URL puede venir con el hostname interno del contenedor: se re-basa contra
+// WAHA_BASE_URL para que siempre resuelva desde el backend.
+export async function downloadWahaMedia(url: string, mimetype?: string): Promise<MediaBase64 | null> {
+  try {
+    let target = url;
+    try {
+      const u = new URL(url);
+      target = `${BASE_URL.replace(/\/$/, "")}${u.pathname}${u.search}`;
+    } catch {
+      /* URL relativa o rara: se intenta tal cual */
+    }
+    const { data, headers } = await axios.get(target, {
+      headers: { "X-Api-Key": API_KEY },
+      responseType: "arraybuffer",
+      timeout: 30000,
+    });
+    return {
+      base64: Buffer.from(data).toString("base64"),
+      mimetype: mimetype ?? (headers["content-type"] as string | undefined),
+    };
+  } catch (e) {
+    console.error("[waha] downloadWahaMedia error:", e instanceof Error ? e.message : String(e));
+    return null;
+  }
 }
 
 export async function restartInstance(instanceName: string): Promise<boolean> {
@@ -246,13 +283,27 @@ export function normalizeWahaEvent(body: any): Record<string, any> | null {
   }
 
   // message / message.any. En los fromMe (enviados desde el teléfono) el peer es `to`.
+  // Media: WAHA la manda como URL (p.media.url). Se arma el "hint" con la MISMA forma de
+  // Baileys (imageMessage/audioMessage/documentMessage) para que routes/webhook.ts entre
+  // por su rama de media sin cambios, y la URL viaja en _wahaMedia para bajarla de ahí.
+  const mime: string = p?.media?.mimetype ?? p?._data?.mimetype ?? "";
+  const mediaUrl: string | undefined = p?.media?.url ?? undefined;
+  const mediaHint =
+    p?.hasMedia && mediaUrl
+      ? mime.startsWith("image")
+        ? { imageMessage: { mimetype: mime || "image/jpeg" } }
+        : mime.startsWith("audio")
+          ? { audioMessage: { mimetype: mime || "audio/ogg" } }
+          : { documentMessage: { mimetype: mime || "application/octet-stream" } }
+      : {};
   return {
     event: "messages.upsert",
     instance: session,
     data: {
       key: { id: serializeId(p.id), remoteJid: p.fromMe ? p.to : p.from, fromMe: !!p.fromMe },
       pushName: p?._data?.notifyName ?? p?._data?.pushName ?? undefined,
-      message: { conversation: typeof p.body === "string" ? p.body : "" },
+      message: { conversation: typeof p.body === "string" ? p.body : "", ...mediaHint },
+      ...(mediaUrl ? { _wahaMedia: { url: mediaUrl, mimetype: mime || undefined } } : {}),
     },
   };
 }

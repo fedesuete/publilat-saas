@@ -79,7 +79,8 @@ waRouter.get("/lines", async (req, res) => {
       warmup: await warmupState(l),
     })),
   );
-  return res.json({ lines: out });
+  // engine: para que el panel sepa qué motor corre (banner de re-escaneo post-migración).
+  return res.json({ lines: out, engine: getEngine().name });
 });
 
 const createSchema = z.object({
