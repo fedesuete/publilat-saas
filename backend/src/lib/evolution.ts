@@ -144,10 +144,13 @@ export async function getMediaBase64(
 ): Promise<MediaBase64 | null> {
   try {
     const c = client();
+    // Cota de tamaño: la media viene como base64 en el JSON; sin límite un archivo enorme
+    // entra entero a RAM y se persiste en la DB (DoS/OOM). El *1.4 cubre el overhead base64.
+    const MAX_MEDIA_BYTES = Number(process.env.MAX_MEDIA_BYTES ?? 15 * 1024 * 1024);
     const { data } = await c.post(`/chat/getBase64FromMediaMessage/${instanceName}`, {
       message: { key: { id: messageKeyId } },
       convertToMp4: false,
-    });
+    }, { maxContentLength: Math.ceil(MAX_MEDIA_BYTES * 1.4), maxBodyLength: Math.ceil(MAX_MEDIA_BYTES * 1.4) });
     const base64: string | undefined = data?.base64 ?? data?.media ?? data?.data;
     if (!base64) return null;
     return { base64, mimetype: data?.mimetype ?? data?.mediaType };

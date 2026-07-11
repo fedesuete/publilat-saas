@@ -8,6 +8,11 @@ export const GRAPH_VERSION =
   process.env.META_GRAPH_VERSION ?? process.env.WHATSAPP_GRAPH_VERSION ?? "v20.0";
 const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
+// Tope de tamaño para media entrante que se baja server-side y se persiste como base64.
+// Compartido por los 3 motores (Cloud/Evolution/WAHA). WhatsApp permite hasta ~100MB;
+// sin cota, un tercero puede inflar la DB / tumbar el proceso con archivos grandes.
+export const MAX_MEDIA_BYTES = Number(process.env.MAX_MEDIA_BYTES ?? 15 * 1024 * 1024);
+
 interface CloudLine {
   wabaPhoneNumberId: string | null;
   accessToken: string | null;
@@ -234,11 +239,14 @@ export async function getCloudMediaBase64(
     const { data: meta } = await axios.get(`${GRAPH}/${mediaId}`, { headers: auth, timeout: 15000 });
     const url: string | undefined = meta?.url;
     if (!url) return null;
-    // 2) descargamos el binario (requiere el mismo Bearer).
+    // 2) descargamos el binario (requiere el mismo Bearer). Cota de tamaño: un media
+    //    enorme entraría entero a RAM y se guardaría como base64 en Postgres (DoS/OOM).
     const { data: bin } = await axios.get<ArrayBuffer>(url, {
       headers: auth,
       responseType: "arraybuffer",
       timeout: 20000,
+      maxContentLength: MAX_MEDIA_BYTES,
+      maxBodyLength: MAX_MEDIA_BYTES,
     });
     return { base64: Buffer.from(bin).toString("base64"), mimetype: meta?.mime_type };
   } catch (e) {

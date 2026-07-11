@@ -76,6 +76,10 @@ app.use(cookieParser());
 const apiLimiter = rateLimit({ windowMs: 60_000, max: 300, standardHeaders: true, legacyHeaders: false });
 const authLimiter = rateLimit({ windowMs: 15 * 60_000, max: 30, standardHeaders: true, legacyHeaders: false });
 const goLimiter = rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false });
+// Techo para webhooks públicos que vienen de IPs externas (pagos, CRM). Generoso para no
+// estrangular ráfagas legítimas, pero corta un flood. El webhook de WhatsApp NO lo usa:
+// su tráfico legítimo llega todo desde la IP interna de WAHA/Evolution y ya exige token.
+const webhookLimiter = rateLimit({ windowMs: 60_000, max: 600, standardHeaders: true, legacyHeaders: false });
 
 // Health (sin rate-limit, para chequeos del orquestador)
 app.get("/health", (_req, res) => res.json({ ok: true, service: "publilat-backend" }));
@@ -96,20 +100,25 @@ app.use("/api/auth", authLimiter, authRouter);
 // Webhooks públicos (los llaman servicios externos, sin Bearer)
 app.use("/api/wa/cloud/webhook", cloudWebhookRouter); // WhatsApp Cloud API (CTWA)
 app.use("/api/wa/webhook", webhookRouter);
-app.use("/api/integrations/inbound", inboundIntegrationsRouter); // CRM externo (Kommo) → Purchase
-app.use("/api/billing/webhook/usdt", usdtWebhookRouter); // NOWPayments (USDT)
-app.use("/api/billing/webhook/pagopar", pagoparWebhookRouter); // Pagopar (Paraguay)
-app.use("/api/billing/webhook", billingWebhookRouter); // MercadoPago (debe ir último)
+app.use("/api/integrations/inbound", webhookLimiter, inboundIntegrationsRouter); // CRM externo (Kommo) → Purchase
+app.use("/api/billing/webhook/usdt", webhookLimiter, usdtWebhookRouter); // NOWPayments (USDT)
+app.use("/api/billing/webhook/pagopar", webhookLimiter, pagoparWebhookRouter); // Pagopar (Paraguay)
+app.use("/api/billing/webhook", webhookLimiter, billingWebhookRouter); // MercadoPago (debe ir último)
 
 // Solicitud de eliminación de datos (pública). La vía principal es por email (hola@publi.lat);
 // este endpoint deja registrado el pedido. No expone datos.
-app.post("/api/data-deletion", (req, res) => {
+app.post("/api/data-deletion", webhookLimiter, (req, res) => {
   const account = typeof req.body?.account === "string" ? req.body.account.trim().slice(0, 200) : "";
   const phone = typeof req.body?.phone === "string" ? req.body.phone.trim().slice(0, 40) : "";
   if (!account && !phone) {
     return res.status(400).json({ error: "Indicá el email de la cuenta o el teléfono del contacto." });
   }
-  console.log(`[data-deletion] solicitud recibida -> account="${account}" phone="${phone}"`);
+  // No loguear PII en claro (regla del proyecto) ni permitir inyección de líneas en el log:
+  // se enmascara el teléfono y se sanitizan saltos de línea del input.
+  const mask = (s: string) => s.replace(/[\r\n\t]/g, " ").slice(0, 60);
+  const maskedPhone = phone ? `••••${phone.replace(/\D/g, "").slice(-4)}` : "";
+  const maskedAccount = account ? mask(account).replace(/(.{2}).*(@.*)/, "$1•••$2") : "";
+  console.log(`[data-deletion] solicitud recibida -> account="${maskedAccount}" phone="${maskedPhone}"`);
   return res.json({
     ok: true,
     message: "Recibimos tu solicitud y la procesaremos a la brevedad. También podés escribir a hola@publi.lat.",
@@ -159,7 +168,7 @@ setIo(io);
 
 // Auth del socket: el JWT viene por la cookie httpOnly (mismo origen) o, como fallback,
 // en handshake.auth.token.
-io.use((socket, next) => {
+io.use(async (socket, next) => {
   const fromAuth = socket.handshake.auth?.token as string | undefined;
   const cookieHeader = socket.handshake.headers.cookie ?? "";
   const fromCookie = cookieHeader
@@ -170,8 +179,19 @@ io.use((socket, next) => {
   const token = fromAuth || (fromCookie ? decodeURIComponent(fromCookie) : undefined);
   if (!token) return next(new Error("No autenticado"));
   try {
-    const { userId } = verifyToken(token);
-    socket.data.userId = userId;
+    const payload = verifyToken(token);
+    // Revalida contra la DB igual que requireAuth: una sesión revocada (tokenVersion) o
+    // una cuenta suspendida NO debe seguir recibiendo eventos en vivo hasta que expire el JWT.
+    if (typeof payload.tv === "number") {
+      const u = await prisma.user.findUnique({
+        where: { id: payload.userId },
+        select: { tokenVersion: true, suspended: true },
+      });
+      if (!u || u.suspended || u.tokenVersion !== payload.tv) {
+        return next(new Error("Sesión revocada"));
+      }
+    }
+    socket.data.userId = payload.userId;
     return next();
   } catch {
     return next(new Error("Token inválido"));

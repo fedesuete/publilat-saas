@@ -16,6 +16,7 @@
 // VERIFICADO empíricamente en nuestra 2026.6.2 (sendImage entregado el 2026-07-11).
 import axios, { type AxiosInstance } from "axios";
 import type { QrResult, MediaBase64, ProxyConfig } from "./evolution.js";
+import { MAX_MEDIA_BYTES } from "./wa-cloud.js";
 
 const BASE_URL = process.env.WAHA_BASE_URL ?? "http://localhost:3001";
 const API_KEY = process.env.WAHA_API_KEY ?? "";
@@ -207,6 +208,9 @@ export async function downloadWahaMedia(url: string, mimetype?: string): Promise
       headers: { "X-Api-Key": API_KEY },
       responseType: "arraybuffer",
       timeout: 30000,
+      // Cota de tamaño: sin esto, un media enorme entra entero a RAM y a la DB (DoS/OOM).
+      maxContentLength: MAX_MEDIA_BYTES,
+      maxBodyLength: MAX_MEDIA_BYTES,
     });
     return {
       base64: Buffer.from(data).toString("base64"),

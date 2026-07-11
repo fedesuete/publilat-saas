@@ -188,6 +188,9 @@ model WaLine {
   user        User      @relation(fields: [userId], references: [id])
   contacts    Contact[]
   messages    Message[]
+
+  @@index([sessionId]) // lookup por instancia en cada evento del webhook
+  @@index([userId])
 }
 
 // Crédito prepago: "días disponibles" (1 día = 1 línea activa 24h).
@@ -239,6 +242,9 @@ model Contact {
   line        WaLine?  @relation(fields: [lineId], references: [id])
   messages    Message[]
   flowRuns    FlowRun[]
+
+  @@index([userId, phone])  // match del contacto en cada mensaje entrante
+  @@index([userId, stage])  // kanban / listados por etapa
 }
 
 enum Stage {
@@ -264,6 +270,9 @@ model Message {
   createdAt  DateTime @default(now())
   contact    Contact  @relation(fields: [contactId], references: [id])
   line       WaLine   @relation(fields: [lineId], references: [id])
+
+  @@index([contactId, createdAt])          // historial de conversación
+  @@index([lineId, direction, createdAt])  // cupo de warmup + heatmap por línea
 }
 
 // Landing alojada (S3/CloudFront), una o varias por usuario.

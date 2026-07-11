@@ -103,10 +103,13 @@ services:
       redis:
         condition: service_started
     ports:
-      - "8080:8080"
+      # Solo loopback: el backend alcanza Evolution por la red interna (http://evolution-api:8080).
+      # Exponer 8080 a 0.0.0.0 dejaba la API admin de WhatsApp accesible desde internet.
+      - "127.0.0.1:8080:8080"
     environment:
       - SERVER_URL=${EVOLUTION_SERVER_URL:-http://localhost:8080}
-      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY:-publilat-dev-key-cambiame}
+      # Sin default: si falta EVOLUTION_API_KEY el arranque falla (no queda la key del repo).
+      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY:?definí EVOLUTION_API_KEY en el .env}
       - CONFIG_SESSION_PHONE_VERSION=${CONFIG_SESSION_PHONE_VERSION:-2.3000.1042991638}
       - DATABASE_ENABLED=true
       - DATABASE_PROVIDER=postgresql

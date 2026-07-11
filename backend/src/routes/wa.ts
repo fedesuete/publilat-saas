@@ -45,6 +45,16 @@ function toPublicLine(l: {
       proxyLabel = "configurado";
     }
   }
+  // Máscara del token: hay que DESCIFRAR y luego mostrar los últimos 4 del token REAL
+  // (antes se enmascaraba el base64 del ciphertext -> los "últimos 4" eran basura).
+  let tokenMask: string | null = null;
+  if (l.accessToken) {
+    try {
+      tokenMask = maskSecret(decryptSecret(l.accessToken));
+    } catch {
+      tokenMask = "••••";
+    }
+  }
   return {
     id: l.id,
     phone: l.phone,
@@ -59,7 +69,7 @@ function toPublicLine(l: {
     wabaPhoneNumberId: l.wabaPhoneNumberId,
     wabaId: l.wabaId,
     verifyToken: l.verifyToken,
-    tokenMask: l.accessToken ? maskSecret(l.accessToken.replace(/^enc:v1:/, "")) : null,
+    tokenMask,
     webhookUrl: l.provider === "cloud" ? CLOUD_WEBHOOK_URL : null,
     warmupEnabled: l.warmupEnabled ?? true,
     proxyLabel,
@@ -216,6 +226,25 @@ waRouter.post("/cloud/connect", async (req, res) => {
   let wabaId = parsed.data.wabaId;
   let phoneNumberId = parsed.data.phoneNumberId;
   let phone = parsed.data.phone;
+
+  // Paywall + límite de plan: este camino de alta (Embedded Signup) los salteaba, dejando
+  // conectar líneas Cloud gratis e ilimitadas. Se aplican los MISMOS gates que POST /lines.
+  const days = await getAvailableDays(req.userId!);
+  if (days < 1) {
+    return res.status(402).json({
+      error: "Necesitás días para conectar un número. Comprá días en Créditos para activar tu línea.",
+      code: "NEEDS_CREDITS",
+    });
+  }
+  const meLimit = await prisma.user.findUnique({ where: { id: req.userId! }, select: { maxLines: true } });
+  const lineCount = await prisma.waLine.count({ where: { userId: req.userId! } });
+  if (lineCount >= (meLimit?.maxLines ?? 1)) {
+    return res.status(403).json({
+      error: `Alcanzaste el límite de líneas de tu plan (${meLimit?.maxLines ?? 1}). Escribinos para ampliarlo.`,
+      code: "LINE_LIMIT",
+    });
+  }
+
   try {
     const token = await exchangeCodeForToken(code);
 
@@ -269,7 +298,10 @@ waRouter.post("/cloud/connect", async (req, res) => {
       },
     });
 
-    // e) Registrar el número en la Cloud API (saca la línea de "Pendiente").
+    // e) Arranca el contador: consume 1 día / 24h (igual que las demás altas de línea).
+    await consumeDayAndActivate(req.userId!, line.id, line.label);
+
+    // f) Registrar el número en la Cloud API (saca la línea de "Pendiente").
     //    Best-effort: si falla (ej. falta método de pago en la WABA) se reintenta desde el panel.
     const reg = await registerCloudNumber(phoneNumberId, token, pin);
     if (reg.ok) await prisma.waLine.update({ where: { id: line.id }, data: { registered: true } });

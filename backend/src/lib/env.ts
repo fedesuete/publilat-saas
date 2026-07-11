@@ -19,8 +19,9 @@ export function validateEnv(): void {
     if (!process.env.APP_ENCRYPTION_KEY) problems.push("APP_ENCRYPTION_KEY (cifra los tokens de CAPI por usuario)");
     if (!process.env.META_PIXEL_ID || !process.env.META_CAPI_TOKEN)
       warn.push("META_PIXEL_ID/META_CAPI_TOKEN (sin esto el loop de atribución no matchea)");
+    // Obligatorio en prod: sin él, /api/wa/webhook queda sin autenticar y falla cerrado (503).
     if (!process.env.EVOLUTION_WEBHOOK_TOKEN)
-      warn.push("EVOLUTION_WEBHOOK_TOKEN (recomendado para asegurar el webhook de WhatsApp)");
+      problems.push("EVOLUTION_WEBHOOK_TOKEN (autentica el webhook de WhatsApp; sin él el endpoint rechaza todo)");
   }
 
   for (const w of warn) console.warn(`[env] aviso: falta ${w}`);

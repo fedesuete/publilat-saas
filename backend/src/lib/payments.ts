@@ -201,7 +201,10 @@ export function verifyUsdtSignature(body: unknown, signature: string | undefined
   if (!NOW_IPN_SECRET || !signature) return false;
   const sorted = JSON.stringify(sortKeys(body));
   const hmac = crypto.createHmac("sha512", NOW_IPN_SECRET).update(sorted).digest("hex");
-  return hmac === signature;
+  // Comparación en tiempo constante (consistente con MP/Pagopar); es un endpoint de dinero.
+  const a = Buffer.from(hmac);
+  const b = Buffer.from(signature);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
 function sortKeys(obj: unknown): unknown {

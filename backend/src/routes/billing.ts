@@ -26,21 +26,27 @@ async function ensureCredit(userId: string) {
   );
 }
 
-// Acredita los días de un pago aprobado. Idempotente (no acredita dos veces).
+// Acredita los días de un pago aprobado. Idempotente de verdad: la transición
+// pending->approved es una escritura CONDICIONAL atómica (updateMany where status=pending);
+// si N llamadas concurrentes entran con el mismo pago (webhook reenviado, o el usuario
+// dispara /usdt/verify en paralelo), solo UNA transiciona y solo esa acredita. El
+// read-check-write anterior tenía una ventana TOCTOU que permitía doble/N-ple crédito.
 async function approvePayment(paymentId: string, providerLabel: string): Promise<void> {
   const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
   if (!payment || payment.status === "approved") return;
   const credit = await ensureCredit(payment.userId);
-  await prisma.$transaction([
-    prisma.payment.update({ where: { id: payment.id }, data: { status: "approved" } }),
-    prisma.credit.update({
-      where: { id: credit.id },
-      data: {
-        days: { increment: payment.days },
-        ledger: { create: { delta: payment.days, reason: `compra ${providerLabel} (${payment.days}d)` } },
-      },
-    }),
-  ]);
+  const claimed = await prisma.payment.updateMany({
+    where: { id: paymentId, status: { not: "approved" } },
+    data: { status: "approved" },
+  });
+  if (claimed.count !== 1) return; // otra ejecución ya lo aprobó: no acreditar de nuevo
+  await prisma.credit.update({
+    where: { id: credit.id },
+    data: {
+      days: { increment: payment.days },
+      ledger: { create: { delta: payment.days, reason: `compra ${providerLabel} (${payment.days}d)` } },
+    },
+  });
   console.log(`[billing] ${providerLabel}: +${payment.days} días a user ${payment.userId}`);
 }
 

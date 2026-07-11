@@ -13,6 +13,18 @@ import { markPurchase } from "./purchase.js";
 const DEFAULT_CURRENCY = process.env.DEFAULT_CURRENCY ?? "PYG";
 // Umbral de confianza para disparar el Purchase automáticamente (modo auto).
 const AUTO_MIN_CONFIDENCE = Number(process.env.PAYMENT_AUTO_MIN_CONFIDENCE ?? "0.7");
+// Máximo de análisis de comprobante por IA por contacto por hora (anti cost-DoS).
+const RECEIPT_AI_MAX_PER_HOUR = Number(process.env.RECEIPT_AI_MAX_PER_HOUR ?? "20");
+
+// ¿Se permite analizar otro comprobante de este contacto? Cuenta las imágenes/PDF
+// entrantes de la última hora (proxy del nº de análisis disparables por esa persona).
+async function receiptAnalysisAllowed(contactId: string): Promise<boolean> {
+  const since = new Date(Date.now() - 60 * 60 * 1000);
+  const recentMedia = await prisma.message.count({
+    where: { contactId, direction: "in", mediaType: { not: null }, createdAt: { gte: since } },
+  });
+  return recentMedia <= RECEIPT_AI_MAX_PER_HOUR;
+}
 
 // Palabras/frases que indican que el cliente avisa de un pago.
 // Nota: no usamos \b al final de stems con vocal acentuada (é/í) porque \b es ASCII
@@ -63,6 +75,12 @@ export async function detectPayment(args: DetectPaymentArgs): Promise<void> {
       item?.message?.documentMessage ??
       item?.message?.documentWithCaptionMessage?.message?.documentMessage;
     const hasMedia = !!args.imageBase64 || !!item?.message?.imageMessage || !!doc;
+    // Throttle anti cost-DoS: cada análisis es una llamada FACTURADA a la IA de visión, y
+    // el input lo provee la contraparte del chat. Un tercero que inunda con imágenes no
+    // puede disparar gasto ilimitado: se acota por contacto en una ventana de 1 h.
+    if (hasMedia && aiEnabled() && !(await receiptAnalysisAllowed(contact.id))) {
+      return; // el mensaje ya quedó guardado por el webhook; solo se saltea el análisis IA
+    }
     if (hasMedia && aiEnabled()) {
       // Si el webhook ya bajó el archivo, lo reusamos (no lo bajamos dos veces).
       let base64: string | undefined =

@@ -16,15 +16,16 @@ services:
     image: devlikeapro/waha:latest
     restart: unless-stopped
     ports:
-      # Puerto de prueba, distinto a Evolution (8080). Configurable: en el VPS el 3001
-      # ya lo usa prospeccion-api (otra app), ahí va WAHA_PORT=3009.
-      - "${WAHA_PORT:-3001}:3000"
+      # Solo loopback por defecto: esta instancia de PRUEBA no debe quedar abierta a
+      # internet (dashboard + API controlan sesiones de WhatsApp). Para acceder de afuera,
+      # túnel SSH (-L 3009:localhost:3009) en vez de publicar a 0.0.0.0.
+      # Configurable: en el VPS el 3001 ya lo usa prospeccion-api, ahí va WAHA_PORT=3009.
+      - "127.0.0.1:${WAHA_PORT:-3001}:3000"
     environment:
-      - WAHA_API_KEY=${WAHA_API_KEY:-cambia-esta-clave}
-      # Dashboard (/dashboard): SIEMPRE con credenciales propias si el puerto queda
-      # expuesto a internet (el default de WAHA es admin/admin).
-      - WAHA_DASHBOARD_USERNAME=${WAHA_DASHBOARD_USERNAME:-admin}
-      - WAHA_DASHBOARD_PASSWORD=${WAHA_DASHBOARD_PASSWORD:-cambia-esta-clave}
+      # Sin defaults débiles: hay que definir estas 3 en el .env o el arranque falla.
+      - WAHA_API_KEY=${WAHA_API_KEY:?definí WAHA_API_KEY}
+      - WAHA_DASHBOARD_USERNAME=${WAHA_DASHBOARD_USERNAME:-federico}
+      - WAHA_DASHBOARD_PASSWORD=${WAHA_DASHBOARD_PASSWORD:?definí WAHA_DASHBOARD_PASSWORD}
       # Engine por defecto de las sesiones nuevas: WEBJS (opción 1) o NOWEB (opción 2).
       # El backend también lo manda por sesión (config.engine, env WAHA_ENGINE).
       - WHATSAPP_DEFAULT_ENGINE=${WAHA_ENGINE:-WEBJS}

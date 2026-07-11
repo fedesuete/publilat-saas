@@ -35,11 +35,27 @@ function extractText(message: Record<string, any> | undefined): string {
 // "5492944...@s.whatsapp.net" -> "5492944..."
 const jidToPhone = (jid: string | undefined) => (jid ? jid.split("@")[0].replace(/\D/g, "") : "");
 
+// Comparación de tokens en tiempo constante (evita side-channel de timing).
+function safeTokenEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && crypto.timingSafeEqual(ab, bb);
+}
+
 webhookRouter.post("/", async (req, res) => {
-  // Seguridad opcional: si hay EVOLUTION_WEBHOOK_TOKEN, exigirlo como ?token=.
+  // El webhook muta estado sensible (crea contactos/leads, dispara Lead/Purchase CAPI y la
+  // detección de pago), así que el token es OBLIGATORIO en producción y se compara timing-safe.
   const expected = process.env.EVOLUTION_WEBHOOK_TOKEN;
-  if (expected && req.query.token !== expected) {
-    return res.status(401).json({ error: "token inválido" });
+  if (!expected) {
+    if (process.env.NODE_ENV === "production") {
+      return res.status(503).json({ error: "webhook no configurado" }); // falla cerrado
+    }
+    // dev sin token: se permite para no trabar el desarrollo local.
+  } else {
+    const got = typeof req.query.token === "string" ? req.query.token : "";
+    if (!safeTokenEqual(got, expected)) {
+      return res.status(401).json({ error: "token inválido" });
+    }
   }
   // Respondemos 200 siempre y rápido; Evolution reintenta si fallamos.
   res.json({ ok: true });
