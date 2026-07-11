@@ -170,10 +170,19 @@ inboxRouter.post("/:contactId/messages", async (req, res) => {
     }
   }
 
-  // Guardamos el waMessageId: el eco fromMe del webhook se deduplica contra él.
-  const message = await prisma.message.create({
-    data: { contactId: contact.id, lineId: line.id, direction: "out", body: parsed.data.body, waMessageId },
-  });
+  // Guardamos el waMessageId: el eco fromMe del webhook se deduplica contra él. OJO:
+  // con WAHA el eco llega casi instantáneo y puede ganarle la carrera a este create
+  // (unique de waMessageId) — en ese caso reusamos la fila que ya insertó el webhook.
+  let message;
+  try {
+    message = await prisma.message.create({
+      data: { contactId: contact.id, lineId: line.id, direction: "out", body: parsed.data.body, waMessageId },
+    });
+  } catch (e) {
+    const dup = waMessageId ? await prisma.message.findUnique({ where: { waMessageId } }) : null;
+    if (!dup) throw e;
+    message = dup;
+  }
   emitToUser(req.userId!, "inbox:message", {
     contactId: contact.id,
     message: { id: message.id, direction: "out", body: message.body, status: message.status, createdAt: message.createdAt },
@@ -269,9 +278,17 @@ inboxRouter.post("/:contactId/audio", async (req, res) => {
     return res.status(502).json({ error: "No se pudo enviar el audio", detail: message });
   }
 
-  const message = await prisma.message.create({
-    data: { contactId: contact.id, lineId: line.id, direction: "out", body: "", mediaType: mime, mediaData: base64, waMessageId },
-  });
+  // Mismo cuidado que en el texto: el eco fromMe de WAHA puede insertar primero.
+  let message;
+  try {
+    message = await prisma.message.create({
+      data: { contactId: contact.id, lineId: line.id, direction: "out", body: "", mediaType: mime, mediaData: base64, waMessageId },
+    });
+  } catch (e) {
+    const dup = waMessageId ? await prisma.message.findUnique({ where: { waMessageId } }) : null;
+    if (!dup) throw e;
+    message = dup;
+  }
   const mediaUrl = `data:${mime};base64,${base64}`;
   emitToUser(req.userId!, "inbox:message", {
     contactId: contact.id,

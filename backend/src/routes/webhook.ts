@@ -208,9 +208,17 @@ webhookRouter.post("/", async (req, res) => {
           }
           if (!fmText && !fmMediaData) continue; // nada que mostrar (stickers/reacciones)
 
-          const fmMsg = await prisma.message.create({
-            data: { contactId: known.id, lineId: line.id, direction: "out", body: fmText, mediaType: fmMediaType, mediaData: fmMediaData, waMessageId: fmId },
-          });
+          // Carrera con el create del CRM (unique waMessageId): si el envío desde el
+          // Inbox insertó primero, este eco se saltea sin romper el resto del batch.
+          let fmMsg;
+          try {
+            fmMsg = await prisma.message.create({
+              data: { contactId: known.id, lineId: line.id, direction: "out", body: fmText, mediaType: fmMediaType, mediaData: fmMediaData, waMessageId: fmId },
+            });
+          } catch (e) {
+            if ((e as { code?: string })?.code === "P2002") continue;
+            throw e;
+          }
           const fmMediaUrl = fmMediaData ? `data:${fmMediaType};base64,${fmMediaData}` : null;
           emitToUser(userId, "inbox:message", {
             contactId: known.id,
@@ -309,17 +317,25 @@ webhookRouter.post("/", async (req, res) => {
           }
         }
 
-        const message = await prisma.message.create({
-          data: {
-            contactId: contact.id,
-            lineId: line.id,
-            direction: "in",
-            body: text,
-            mediaType,
-            mediaData,
-            waMessageId,
-          },
-        });
+        // Idempotencia dura: si otro evento del mismo mensaje ganó la carrera (los
+        // webhooks pueden llegar duplicados/concurrentes), se saltea sin romper el batch.
+        let message;
+        try {
+          message = await prisma.message.create({
+            data: {
+              contactId: contact.id,
+              lineId: line.id,
+              direction: "in",
+              body: text,
+              mediaType,
+              mediaData,
+              waMessageId,
+            },
+          });
+        } catch (e) {
+          if ((e as { code?: string })?.code === "P2002") continue;
+          throw e;
+        }
 
         const mediaUrl = mediaData ? `data:${mediaType};base64,${mediaData}` : null;
         emitToUser(userId, "inbox:message", {

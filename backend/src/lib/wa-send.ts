@@ -39,7 +39,15 @@ export async function sendToContact(userId: string, contactId: string, text: str
     return false;
   }
 
-  const msg = await prisma.message.create({ data: { contactId, lineId: line.id, direction: "out", body: text, waMessageId } });
+  // El eco fromMe de WAHA puede ganarle la carrera a este create (unique waMessageId).
+  let msg;
+  try {
+    msg = await prisma.message.create({ data: { contactId, lineId: line.id, direction: "out", body: text, waMessageId } });
+  } catch (e) {
+    const dup = waMessageId ? await prisma.message.findUnique({ where: { waMessageId } }) : null;
+    if (!dup) throw e;
+    msg = dup;
+  }
   emitToUser(userId, "inbox:message", {
     contactId,
     message: { id: msg.id, direction: "out", body: text, createdAt: msg.createdAt },
