@@ -34,9 +34,34 @@ export default function AdminClients() {
   // Alta manual de cliente desde el panel.
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [createMsg, setCreateMsg] = useState<string | null>(null);
   const emptyForm = { email: "", password: "", name: "", phone: "", days: "0", maxLines: "1" };
   const [form, setForm] = useState(emptyForm);
+  // Credenciales del último cliente creado (para copiar y mandarle por WhatsApp).
+  const [createdCreds, setCreatedCreds] = useState<{ email: string; password: string; days: number; name: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const panelUrl = window.location.origin;
+  const credsMessage = (c: { email: string; password: string; days: number; name: string }) =>
+    [
+      `¡Bienvenido/a a Publi.lat! 🎉`,
+      ``,
+      `Estas son tus credenciales de acceso:`,
+      `🔗 Ingresá en: ${panelUrl}`,
+      `👤 Usuario: ${c.email}`,
+      `🔑 Contraseña: ${c.password}`,
+      ...(c.days > 0 ? [``, `🎁 Te regalamos ${c.days} día${c.days === 1 ? "" : "s"} de prueba para que arranques.`] : []),
+      ``,
+      `Cualquier duda, escribinos. ¡Éxitos! 🚀`,
+    ].join("\n");
+
+  const copyCreds = async () => {
+    if (!createdCreds) return;
+    try {
+      await navigator.clipboard.writeText(credsMessage(createdCreds));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch { /* si el navegador bloquea el clipboard, el texto igual se ve para copiar a mano */ }
+  };
 
   const load = async (p = page, search = q, st = status) => {
     setError(null);
@@ -73,7 +98,7 @@ export default function AdminClients() {
 
   const createClient = async (e: FormEvent) => {
     e.preventDefault();
-    setCreating(true); setError(null); setCreateMsg(null);
+    setCreating(true); setError(null); setCreatedCreds(null); setCopied(false);
     try {
       const payload = {
         email: form.email.trim(),
@@ -84,7 +109,8 @@ export default function AdminClients() {
         maxLines: Number(form.maxLines) || 1,
       };
       const { data } = await api.post<{ client: { email: string; slug: string } }>("/api/admin/clients", payload);
-      setCreateMsg(`Cliente creado: ${data.client.email} (/${data.client.slug}). Ya puede iniciar sesión con su email y contraseña.`);
+      // Guardamos las credenciales (la contraseña la escribió el admin) para el botón copiar.
+      setCreatedCreds({ email: data.client.email, password: form.password, days: Number(form.days) || 0, name: form.name.trim() });
       setForm(emptyForm);
       await load(1, "", "");
     } catch (err) { setError(apiError(err)); }
@@ -95,12 +121,23 @@ export default function AdminClients() {
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-xl font-bold">Clientes</h1>
-        <Button onClick={() => { setShowCreate((v) => !v); setCreateMsg(null); }}>
+        <Button onClick={() => { setShowCreate((v) => !v); setCreatedCreds(null); }}>
           {showCreate ? "Cerrar" : "+ Crear cliente"}
         </Button>
       </div>
       {error && <div className="mb-3"><ErrorMsg>{error}</ErrorMsg></div>}
-      {createMsg && <div className="mb-3 rounded-md border border-wa-green/40 bg-wa-green/10 px-3 py-2 text-sm text-wa-green">{createMsg}</div>}
+
+      {createdCreds && (
+        <Card className="mb-5 max-w-2xl border-wa-green/40">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-sm font-semibold text-wa-green">✅ Cliente creado — pasale estas credenciales</div>
+            <button onClick={() => setCreatedCreds(null)} className="text-xs text-slate-500 hover:text-slate-300">Cerrar</button>
+          </div>
+          <pre className="mb-3 whitespace-pre-wrap rounded-md bg-slate-900 p-3 text-sm text-slate-200">{credsMessage(createdCreds)}</pre>
+          <Button onClick={() => void copyCreds()}>{copied ? "¡Copiado! ✓" : "📋 Copiar credenciales"}</Button>
+          <span className="ml-3 text-xs text-slate-500">Copialo y mandáselo al cliente por WhatsApp.</span>
+        </Card>
+      )}
 
       {showCreate && (
         <Card className="mb-5 max-w-2xl">
