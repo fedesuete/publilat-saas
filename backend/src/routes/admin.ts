@@ -3,9 +3,12 @@
 // No expone secretos (CAPI token, access token) ni el contenido de Inbox de los clientes.
 import { Router } from "express";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
 import { retryFailedCapi } from "../lib/queue.js";
+import { hashPassword } from "../lib/auth.js";
+import { uniqueSlug } from "./auth.js";
 
 export const adminRouter = Router();
 
@@ -171,6 +174,51 @@ adminRouter.get("/clients", async (req, res) => {
   });
 
   return res.json({ clients, total, page, perPage, pages: Math.ceil(total / perPage) });
+});
+
+// Crear una cuenta de cliente a mano (onboarding manual desde el panel maestro).
+// Genera el slug único, hashea la contraseña y, opcionalmente, acredita días iniciales
+// y fija el límite de líneas. No inicia sesión: el cliente entra con su email+contraseña.
+const createClientSchema = z.object({
+  email: z.string().email("Email inválido"),
+  password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres"),
+  name: z.string().min(1).max(120).optional(),
+  phone: z.string().max(30).optional(),
+  days: z.number().int().min(0).max(3650).optional(),   // crédito de días inicial
+  maxLines: z.number().int().min(0).max(100).optional(), // líneas permitidas del plan
+});
+adminRouter.post("/clients", async (req, res) => {
+  const parsed = createClientSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
+  const { email, password, name, phone, days, maxLines } = parsed.data;
+  try {
+    const slug = await uniqueSlug(name ?? email.split("@")[0]);
+    const user = await prisma.user.create({
+      data: {
+        email: email.toLowerCase().trim(),
+        slug,
+        name,
+        phone,
+        password: await hashPassword(password),
+        ...(maxLines !== undefined ? { maxLines } : {}),
+        source: "admin", // cómo se dio de alta la cuenta
+      },
+      select: { id: true, email: true, slug: true, name: true },
+    });
+    // Crédito inicial opcional (queda registrado en el ledger).
+    if (days && days > 0) {
+      const credit = await prisma.credit.create({ data: { userId: user.id, days } });
+      await prisma.creditLedger.create({ data: { creditId: credit.id, delta: days, reason: `admin: alta con ${days}d` } });
+    }
+    await adminLog(req.userId!, "create_client", user.id, { email: user.email, days: days ?? 0, maxLines });
+    return res.status(201).json({ ok: true, client: user });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return res.status(409).json({ error: "Ya existe una cuenta con ese email" });
+    }
+    console.error("[admin/clients create] error:", e);
+    return res.status(500).json({ error: "No se pudo crear el cliente" });
+  }
 });
 
 // Detalle de una cuenta.

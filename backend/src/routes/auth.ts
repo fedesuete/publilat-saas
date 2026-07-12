@@ -35,7 +35,7 @@ const loginSchema = z.object({
 });
 
 // Genera un slug único a partir del nombre/email, agregando sufijo si choca.
-async function uniqueSlug(base: string): Promise<string> {
+export async function uniqueSlug(base: string): Promise<string> {
   const root = slugify(base) || "user";
   let candidate = root;
   let n = 1;

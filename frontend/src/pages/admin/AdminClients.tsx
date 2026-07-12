@@ -31,6 +31,12 @@ export default function AdminClients() {
   const [sel, setSel] = useState<Detail | null>(null);
   const [busy, setBusy] = useState(false);
   const [lim, setLim] = useState({ lines: 1, landings: 50 });
+  // Alta manual de cliente desde el panel.
+  const [showCreate, setShowCreate] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createMsg, setCreateMsg] = useState<string | null>(null);
+  const emptyForm = { email: "", password: "", name: "", phone: "", days: "0", maxLines: "1" };
+  const [form, setForm] = useState(emptyForm);
 
   const load = async (p = page, search = q, st = status) => {
     setError(null);
@@ -65,10 +71,66 @@ export default function AdminClients() {
   const onSearch = (e: FormEvent) => { e.preventDefault(); void load(1, q, status); };
   const setFilter = (st: string) => { setStatus(st); void load(1, q, st); };
 
+  const createClient = async (e: FormEvent) => {
+    e.preventDefault();
+    setCreating(true); setError(null); setCreateMsg(null);
+    try {
+      const payload = {
+        email: form.email.trim(),
+        password: form.password,
+        name: form.name.trim() || undefined,
+        phone: form.phone.trim() || undefined,
+        days: Number(form.days) || 0,
+        maxLines: Number(form.maxLines) || 1,
+      };
+      const { data } = await api.post<{ client: { email: string; slug: string } }>("/api/admin/clients", payload);
+      setCreateMsg(`Cliente creado: ${data.client.email} (/${data.client.slug}). Ya puede iniciar sesión con su email y contraseña.`);
+      setForm(emptyForm);
+      await load(1, "", "");
+    } catch (err) { setError(apiError(err)); }
+    finally { setCreating(false); }
+  };
+
   return (
     <div className="p-6">
-      <h1 className="mb-4 text-xl font-bold">Clientes</h1>
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="text-xl font-bold">Clientes</h1>
+        <Button onClick={() => { setShowCreate((v) => !v); setCreateMsg(null); }}>
+          {showCreate ? "Cerrar" : "+ Crear cliente"}
+        </Button>
+      </div>
       {error && <div className="mb-3"><ErrorMsg>{error}</ErrorMsg></div>}
+      {createMsg && <div className="mb-3 rounded-md border border-wa-green/40 bg-wa-green/10 px-3 py-2 text-sm text-wa-green">{createMsg}</div>}
+
+      {showCreate && (
+        <Card className="mb-5 max-w-2xl">
+          <div className="mb-3 text-sm font-semibold text-slate-100">Alta manual de cliente</div>
+          <form onSubmit={createClient} className="grid gap-3 sm:grid-cols-2">
+            <label className="text-xs text-slate-400">Email *
+              <Input type="email" required value={form.email} onChange={(e) => setForm((s) => ({ ...s, email: e.target.value }))} placeholder="cliente@correo.com" className="mt-1" />
+            </label>
+            <label className="text-xs text-slate-400">Contraseña *
+              <Input type="text" required minLength={6} value={form.password} onChange={(e) => setForm((s) => ({ ...s, password: e.target.value }))} placeholder="mínimo 6 caracteres" className="mt-1" />
+            </label>
+            <label className="text-xs text-slate-400">Nombre / negocio
+              <Input value={form.name} onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))} placeholder="Ej: Tienda de Ana" className="mt-1" />
+            </label>
+            <label className="text-xs text-slate-400">WhatsApp (opcional)
+              <Input value={form.phone} onChange={(e) => setForm((s) => ({ ...s, phone: e.target.value }))} placeholder="595971234567" className="mt-1" />
+            </label>
+            <label className="text-xs text-slate-400">Días de regalo al crear
+              <Input type="number" min={0} value={form.days} onChange={(e) => setForm((s) => ({ ...s, days: e.target.value }))} className="mt-1" />
+            </label>
+            <label className="text-xs text-slate-400">Líneas permitidas
+              <Input type="number" min={0} value={form.maxLines} onChange={(e) => setForm((s) => ({ ...s, maxLines: e.target.value }))} className="mt-1" />
+            </label>
+            <div className="sm:col-span-2">
+              <Button type="submit" disabled={creating}>{creating ? "Creando…" : "Crear cliente"}</Button>
+              <span className="ml-3 text-xs text-slate-500">El cliente entra con este email y contraseña. Podés pasarle esos datos.</span>
+            </div>
+          </form>
+        </Card>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <form onSubmit={onSearch} className="flex flex-1 gap-2">
