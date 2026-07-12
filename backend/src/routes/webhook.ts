@@ -183,6 +183,21 @@ webhookRouter.post("/", async (req, res) => {
       for (const item of items) {
         if (!item?.key) continue;
 
+        // Idempotencia ATÓMICA por (instancia, id de mensaje): el motor —sobre todo WAHA
+        // con message.any— puede entregar el MISMO mensaje dos veces casi simultáneas.
+        // Insertar en InboundDedup es una escritura única atómica: solo el primer evento
+        // sigue; el duplicado choca (P2002) y se saltea ANTES de crear contacto/mensaje.
+        // Esto es lo que evitaba los leads/contactos duplicados por la carrera.
+        const dedupKey = item.key.id ? `${instance}:${item.key.id}` : "";
+        if (dedupKey) {
+          try {
+            await prisma.inboundDedup.create({ data: { key: dedupKey } });
+          } catch (e) {
+            if ((e as { code?: string })?.code === "P2002") continue; // evento repetido/concurrente
+            // otro error del dedup: no bloqueamos el mensaje por eso, seguimos procesando.
+          }
+        }
+
         // Mensajes que el dueño manda DESDE EL CELULAR (fromMe): los espejamos en el
         // CRM como salientes, solo para contactos que ya existen en el Inbox (no
         // importamos chats personales). Lo enviado desde el CRM se deduplica por
@@ -254,14 +269,17 @@ webhookRouter.post("/", async (req, res) => {
           if (dup) continue;
         }
 
-        // 1) Match por código incrustado (ref: XXXX). 2) Fallback por teléfono.
+        // 1) Match por código incrustado (ref: XXXX). 2) Fallback por teléfono O waJid.
+        // Incluir el waJid crudo (ej "…@lid") evita duplicar contactos con direcciones de
+        // privacidad, donde el "teléfono" extraído del LID no siempre coincide entre eventos.
         const codeMatch = text.match(/ref:\s*([A-Z0-9]{4,})/i);
         let contact = codeMatch
           ? await prisma.contact.findFirst({ where: { userId, code: codeMatch[1].toUpperCase() } })
           : null;
         if (!contact) {
+          const rawJid = item.key.remoteJid as string | undefined;
           contact = await prisma.contact.findFirst({
-            where: { userId, phone },
+            where: { userId, OR: [{ phone }, ...(rawJid ? [{ waJid: rawJid }] : [])] },
             orderBy: { createdAt: "desc" },
           });
         }

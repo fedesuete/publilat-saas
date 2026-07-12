@@ -99,6 +99,18 @@ model FlowRun {
   @@index([contactId, status])
 }
 
+// Idempotencia de eventos entrantes de WhatsApp: el motor (sobre todo WAHA con
+// message.any) puede entregar el MISMO mensaje dos veces casi simultáneas. Insertar
+// aquí es atómico (key @unique): solo el primer evento procesa; el duplicado choca y
+// se saltea, antes de crear contactos/mensajes. Evita leads duplicados por la carrera.
+model InboundDedup {
+  id        String   @id @default(cuid())
+  key       String   @unique // "<instance>:<waMessageId>"
+  createdAt DateTime @default(now())
+
+  @@index([createdAt]) // para poder podar los viejos
+}
+
 // Notificaciones del usuario (nuevo lead, venta, línea caída, etc.).
 model Notification {
   id        String   @id @default(cuid())

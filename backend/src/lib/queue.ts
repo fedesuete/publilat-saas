@@ -50,6 +50,11 @@ export async function expireLines(): Promise<number> {
     deactivated++;
   }
   if (deactivated) console.log(`[line-expiry] desactivadas ${deactivated} línea(s) sin crédito`);
+  // Poda de la tabla de idempotencia de webhooks: 2 días alcanzan de sobra (los eventos
+  // duplicados llegan en segundos). Mantiene la tabla chica.
+  await prisma.inboundDedup
+    .deleteMany({ where: { createdAt: { lt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) } } })
+    .catch(() => undefined);
   return deactivated;
 }
 
