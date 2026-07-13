@@ -27,6 +27,7 @@ import { supportRouter } from "./routes/support.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { flowsRouter } from "./routes/flows.js";
 import { trackRouter } from "./routes/track.js";
+import { chatRouter, chatPublicRouter } from "./routes/chat.js";
 import { requireAdmin } from "./middleware/requireAdmin.js";
 import { requireAuth } from "./middleware/requireAuth.js";
 import { verifyToken } from "./lib/auth.js";
@@ -138,6 +139,10 @@ app.use("/api/setup", apiLimiter, requireAuth, setupRouter);
 app.use("/api/support", apiLimiter, requireAuth, supportRouter);
 app.use("/api/notifications", apiLimiter, requireAuth, notificationsRouter);
 app.use("/api/flows", apiLimiter, requireAuth, flowsRouter);
+// Chat App (módulo aislado): público (jugador) + operador. El público (branding/register/
+// login) va primero SIN requireAuth; el de operador (invites) va después CON requireAuth.
+app.use("/api/chat", apiLimiter, chatPublicRouter);
+app.use("/api/chat", apiLimiter, requireAuth, chatRouter);
 // Panel maestro: admin-only (requireAuth + requireAdmin).
 app.use("/api/admin", apiLimiter, requireAuth, requireAdmin, adminRouter);
 
