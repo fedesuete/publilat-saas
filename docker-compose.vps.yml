@@ -40,6 +40,18 @@ services:
     ports:
       - "4020:80" # Traefik -> http://IP:4020 (publi.lat / www.publi.lat)
 
+  # PWA del jugador (Chat App) en su propio origen chat.publi.lat -> aísla el service worker.
+  # Estático (nginx), sin estado. VITE_API_URL apunta a la API del panel. NO toca WhatsApp.
+  chat-pwa:
+    build:
+      context: .
+      dockerfile: Dockerfile.chat-pwa
+      args:
+        VITE_API_URL: "https://app.publi.lat"
+    restart: unless-stopped
+    ports:
+      - "4030:80" # Traefik -> http://IP:4030 (chat.publi.lat)
+
   postgres:
     image: postgres:16
     restart: unless-stopped

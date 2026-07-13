@@ -32,6 +32,22 @@ http:
       middlewares:
         - publilat-redirect
 
+    # PWA del jugador (Chat App, chat.publi.lat) -> contenedor chat-pwa en :4030
+    publilat-chat:
+      rule: "Host(`chat.publi.lat`)"
+      service: publilat-chat
+      entryPoints:
+        - https
+      tls:
+        certResolver: letsencrypt
+    publilat-chat-http:
+      rule: "Host(`chat.publi.lat`)"
+      service: publilat-chat
+      entryPoints:
+        - http
+      middlewares:
+        - publilat-redirect
+
   services:
     publilat:
       loadBalancer:
@@ -41,6 +57,10 @@ http:
       loadBalancer:
         servers:
           - url: "http://187.77.33.164:4020"
+    publilat-chat:
+      loadBalancer:
+        servers:
+          - url: "http://187.77.33.164:4030"
 
   middlewares:
     publilat-redirect:

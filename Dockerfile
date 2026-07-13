@@ -5,10 +5,13 @@
 FROM node:20-slim AS build
 RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-# Sólo los manifests primero, para cachear npm ci.
+# Sólo los manifests primero, para cachear npm ci. OJO: hay que copiar el package.json de
+# TODOS los workspaces del root (incluido frontend-pwa) o `npm ci` falla al validar el
+# lockfile. La PWA no se buildea en esta imagen (se sirve aparte), pero su manifest debe estar.
 COPY package.json package-lock.json ./
 COPY backend/package.json backend/package.json
 COPY frontend/package.json frontend/package.json
+COPY frontend-pwa/package.json frontend-pwa/package.json
 RUN npm ci
 # Código y build.
 COPY . .
