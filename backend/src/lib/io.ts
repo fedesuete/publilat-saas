@@ -22,3 +22,16 @@ export function emitToUser(userId: string, event: string, payload: unknown) {
 export function emitChat(room: string, event: string, payload: unknown) {
   io?.of("/chat").to(room).emit(event, payload);
 }
+
+// ¿El jugador tiene alguna conexión viva en el namespace /chat? Si no, el mensaje del
+// operador debe ir por Web Push (Fase 5) en vez de solo por socket.
+export async function playerHasLiveSocket(userId: string, playerId: string): Promise<boolean> {
+  const ns = io?.of("/chat");
+  if (!ns) return false;
+  try {
+    const sockets = await ns.in(`chat:${userId}:player:${playerId}`).fetchSockets();
+    return sockets.length > 0;
+  } catch {
+    return false;
+  }
+}

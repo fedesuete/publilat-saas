@@ -7,6 +7,7 @@ import DashboardPage from "./pages/DashboardPage";
 import LeadsPage from "./pages/LeadsPage";
 import KanbanPage from "./pages/KanbanPage";
 import InboxPage from "./pages/InboxPage";
+import ChatAppPage from "./pages/ChatAppPage";
 import WhatsappPage from "./pages/WhatsappPage";
 import LinksPage from "./pages/LinksPage";
 import LandingsPage from "./pages/LandingsPage";
@@ -47,6 +48,7 @@ export default function App() {
             <Route path="/agenda" element={<AgendaPage />} />
             <Route path="/kanban" element={<KanbanPage />} />
             <Route path="/inbox" element={<InboxPage />} />
+            <Route path="/chat" element={<ChatAppPage />} />
             <Route path="/automatizaciones" element={<AutomationsPage />} />
             <Route path="/whatsapp" element={<WhatsappPage />} />
             <Route path="/billing" element={<BillingPage />} />

@@ -6,9 +6,10 @@ import { z } from "zod";
 import crypto from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
-import { signChatClientToken } from "../middleware/requireChatClient.js";
+import { signChatClientToken, requireChatClient } from "../middleware/requireChatClient.js";
 import { sendCapiEvent } from "../lib/meta-capi.js"; // reuso el CAPI existente, NO reimplemento
 import { resolveUserPixel } from "../lib/pixel.js";
+import { emitChat, playerHasLiveSocket } from "../lib/io.js";
 
 // Router del OPERADOR (se monta bajo requireAuth): gestión de links de invitación.
 export const chatRouter = Router();
@@ -78,6 +79,117 @@ chatRouter.delete("/invites/:id", async (req, res) => {
   if (!invite) return res.status(404).json({ error: "No encontrado" });
   await prisma.inviteCode.delete({ where: { id: invite.id } });
   return res.json({ ok: true });
+});
+
+// GET /api/chat/conversations — lista de chats del operador (su cuenta).
+chatRouter.get("/conversations", async (req, res) => {
+  const convs = await prisma.chatConversation.findMany({
+    where: { userId: req.userId! },
+    orderBy: [{ lastMessageAt: "desc" }, { createdAt: "desc" }],
+    take: 200,
+    select: {
+      id: true, status: true, unreadOperator: true, lastMessagePreview: true, lastMessageAt: true, createdAt: true,
+      player: { select: { casinoUsername: true, nombre: true } },
+    },
+  });
+  return res.json({
+    conversations: convs.map((c) => ({
+      id: c.id,
+      player: c.player.nombre || c.player.casinoUsername,
+      username: c.player.casinoUsername,
+      status: c.status,
+      unread: c.unreadOperator,
+      preview: c.lastMessagePreview ?? "",
+      lastAt: (c.lastMessageAt ?? c.createdAt).toISOString(),
+    })),
+  });
+});
+
+// GET /api/chat/conversations/:id/messages — historial (operador). Marca leído.
+chatRouter.get("/conversations/:id/messages", async (req, res) => {
+  const conv = await prisma.chatConversation.findFirst({ where: { id: req.params.id, userId: req.userId! }, select: { id: true } });
+  if (!conv) return res.status(404).json({ error: "Conversación no encontrada" });
+  const messages = await prisma.chatMessage.findMany({
+    where: { conversationId: conv.id },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, senderType: true, body: true, metadata: true, createdAt: true },
+  });
+  await prisma.chatConversation.update({ where: { id: conv.id }, data: { unreadOperator: 0 } });
+  return res.json({ messages });
+});
+
+const opSendSchema = z.object({ conversationId: z.string().min(1), body: z.string().min(1).max(4000) });
+
+// POST /api/chat/messages — el operador responde. CÓDIGO PROPIO del chat: NO pasa por
+// getEngine()/sendText de WhatsApp. Emite por el namespace /chat a la sala del jugador; si
+// el jugador no tiene socket vivo, queda marcado para Web Push (Fase 5).
+chatRouter.post("/messages", async (req, res) => {
+  const parsed = opSendSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const conv = await prisma.chatConversation.findFirst({
+    where: { id: parsed.data.conversationId, userId: req.userId! },
+    select: { id: true, playerId: true },
+  });
+  if (!conv) return res.status(404).json({ error: "Conversación no encontrada" });
+
+  const msg = await prisma.chatMessage.create({
+    data: { userId: req.userId!, conversationId: conv.id, senderType: "operator", senderId: req.userId!, body: parsed.data.body },
+    select: { id: true, senderType: true, body: true, createdAt: true },
+  });
+  await prisma.chatConversation.update({
+    where: { id: conv.id },
+    data: { lastMessageAt: new Date(), lastMessagePreview: parsed.data.body.slice(0, 120), unreadPlayer: { increment: 1 } },
+  });
+
+  const payload = { conversationId: conv.id, message: msg };
+  emitChat(`chat:${req.userId}:player:${conv.playerId}`, "chat:message", payload); // al jugador
+  emitChat(`chat:${req.userId}`, "chat:message", payload);                          // al operador (otras pestañas)
+
+  // Sin socket vivo del jugador -> pendiente de Web Push (Fase 5).
+  if (!(await playerHasLiveSocket(req.userId!, conv.playerId))) {
+    console.log(`[chat] jugador ${conv.playerId} sin socket; mensaje pendiente de Web Push (F5)`);
+    // TODO F5: encolar Web Push a las ChatPushSub del jugador.
+  }
+  return res.status(201).json({ message: msg });
+});
+
+// ============================ JUGADOR (requireChatClient) ============================
+
+// GET /api/chat/me/conversation — su conversación + historial. Marca leído.
+chatPublicRouter.get("/me/conversation", requireChatClient, async (req, res) => {
+  const conv = await prisma.chatConversation.findFirst({ where: { userId: req.accountId!, playerId: req.chatPlayerId! }, select: { id: true } });
+  if (!conv) return res.json({ conversationId: null, messages: [] });
+  const messages = await prisma.chatMessage.findMany({
+    where: { conversationId: conv.id },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, senderType: true, body: true, metadata: true, createdAt: true },
+  });
+  await prisma.chatConversation.update({ where: { id: conv.id }, data: { unreadPlayer: 0 } });
+  return res.json({ conversationId: conv.id, messages });
+});
+
+const playerSendSchema = z.object({ body: z.string().min(1).max(4000) });
+
+// POST /api/chat/me/messages — el jugador manda. Emite al operador por /chat.
+chatPublicRouter.post("/me/messages", requireChatClient, async (req, res) => {
+  const parsed = playerSendSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const conv = await prisma.chatConversation.findFirst({ where: { userId: req.accountId!, playerId: req.chatPlayerId! }, select: { id: true } });
+  if (!conv) return res.status(404).json({ error: "Conversación no encontrada" });
+
+  const msg = await prisma.chatMessage.create({
+    data: { userId: req.accountId!, conversationId: conv.id, senderType: "player", senderId: req.chatPlayerId!, body: parsed.data.body },
+    select: { id: true, senderType: true, body: true, createdAt: true },
+  });
+  await prisma.chatConversation.update({
+    where: { id: conv.id },
+    data: { lastMessageAt: new Date(), lastMessagePreview: parsed.data.body.slice(0, 120), unreadOperator: { increment: 1 } },
+  });
+
+  const payload = { conversationId: conv.id, message: msg };
+  emitChat(`chat:${req.accountId}`, "chat:message", payload);                              // al operador
+  emitChat(`chat:${req.accountId}:player:${req.chatPlayerId}`, "chat:message", payload);   // al jugador (otros dispositivos)
+  return res.status(201).json({ message: msg });
 });
 
 // ============================ PÚBLICO (jugador) ============================
