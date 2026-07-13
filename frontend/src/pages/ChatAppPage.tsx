@@ -20,7 +20,7 @@ function appendUnique(list: Msg[], m: Msg): Msg[] {
 }
 
 export default function ChatAppPage() {
-  const [tab, setTab] = useState<"chats" | "invites">("chats");
+  const [tab, setTab] = useState<"chats" | "invites" | "brand">("chats");
   const [convs, setConvs] = useState<Conv[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -85,6 +85,7 @@ export default function ChatAppPage() {
         <div className="inline-flex rounded-md bg-slate-900 p-1 text-sm">
           <button onClick={() => setTab("chats")} className={`rounded px-3 py-1 font-medium ${tab === "chats" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Conversaciones</button>
           <button onClick={() => setTab("invites")} className={`rounded px-3 py-1 font-medium ${tab === "invites" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Mi Invitación</button>
+          <button onClick={() => setTab("brand")} className={`rounded px-3 py-1 font-medium ${tab === "brand" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Marca</button>
         </div>
       </div>
 
@@ -137,8 +138,10 @@ export default function ChatAppPage() {
             )}
           </div>
         </div>
-      ) : (
+      ) : tab === "invites" ? (
         <InvitesTab />
+      ) : (
+        <BrandingTab />
       )}
     </div>
   );
@@ -205,6 +208,137 @@ function InvitesTab() {
           </Card>
         ))}
         {invites.length === 0 && <p className="text-sm text-slate-500">No tenés links todavía. Creá uno arriba.</p>}
+      </div>
+    </div>
+  );
+}
+
+// Sub-sección "Marca": branding white-label de la PWA del jugador (logo, colores, textos).
+interface Brand {
+  brandName: string | null; logoUrl: string | null; primaryColor: string | null; accentColor: string | null;
+  welcomeText: string | null; welcomeMsgText: string | null; welcomeMsgImage: string | null;
+}
+const EMPTY_BRAND: Brand = { brandName: null, logoUrl: null, primaryColor: null, accentColor: null, welcomeText: null, welcomeMsgText: null, welcomeMsgImage: null };
+
+function BrandingTab() {
+  const [form, setForm] = useState<Brand>(EMPTY_BRAND);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState(false);
+  const [uploading, setUploading] = useState<"logo" | "welcome" | null>(null);
+
+  useEffect(() => {
+    api.get<{ branding: Brand }>("/api/chat/branding")
+      .then(({ data }) => setForm({ ...EMPTY_BRAND, ...data.branding }))
+      .catch((e) => setError(apiError(e)))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const set = (k: keyof Brand, v: string | null) => { setForm((f) => ({ ...f, [k]: v })); setOk(false); };
+
+  // Lee el archivo como data URL y lo sube; el backend devuelve la URL (CDN si hay S3, si no el data URL).
+  const upload = async (file: File, field: "logoUrl" | "welcomeMsgImage", which: "logo" | "welcome") => {
+    if (file.size > 700 * 1024) { setError("La imagen supera 700 KB. Comprimila o usá una más liviana."); return; }
+    setUploading(which); setError(null);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader(); r.onload = () => resolve(String(r.result ?? "")); r.onerror = reject; r.readAsDataURL(file);
+      });
+      const { data } = await api.post<{ url: string }>("/api/chat/branding/logo", { dataUrl });
+      set(field, data.url);
+    } catch (e) { setError(apiError(e)); } finally { setUploading(null); }
+  };
+
+  const save = async () => {
+    setSaving(true); setError(null); setOk(false);
+    try { await api.patch("/api/chat/branding", form); setOk(true); }
+    catch (e) { setError(apiError(e)); } finally { setSaving(false); }
+  };
+
+  if (loading) return <p className="text-sm text-slate-500">Cargando…</p>;
+  const primary = form.primaryColor || "#22c55e";
+
+  return (
+    <div className="grid max-w-5xl gap-6 lg:grid-cols-[1fr_20rem]">
+      {/* Formulario */}
+      <div className="space-y-5">
+        {error && <ErrorMsg>{error}</ErrorMsg>}
+
+        <Card>
+          <div className="mb-3 text-sm font-semibold text-slate-100">Identidad</div>
+          <label className="mb-1 block text-xs text-slate-400">Nombre de la marca</label>
+          <Input value={form.brandName ?? ""} onChange={(e) => set("brandName", e.target.value || null)} placeholder="Ej: La Gran Jugada" className="mb-4" />
+
+          <label className="mb-1 block text-xs text-slate-400">Logo</label>
+          <div className="mb-4 flex items-center gap-3">
+            {form.logoUrl && <img src={form.logoUrl} alt="logo" className="h-12 w-12 rounded-lg object-cover" />}
+            <label className="cursor-pointer rounded-md border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-slate-800">
+              {uploading === "logo" ? "Subiendo…" : form.logoUrl ? "Cambiar logo" : "Subir logo"}
+              <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f, "logoUrl", "logo"); e.target.value = ""; }} />
+            </label>
+            {form.logoUrl && <button onClick={() => set("logoUrl", null)} className="text-xs text-rose-400 hover:underline">Quitar</button>}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1 block text-xs text-slate-400">Color principal</label>
+              <div className="flex items-center gap-2">
+                <input type="color" value={primary} onChange={(e) => set("primaryColor", e.target.value)} className="h-9 w-12 cursor-pointer rounded border border-slate-700 bg-transparent" />
+                <Input value={form.primaryColor ?? ""} onChange={(e) => set("primaryColor", e.target.value || null)} placeholder="#22c55e" className="flex-1" />
+              </div>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-slate-400">Color de acento</label>
+              <div className="flex items-center gap-2">
+                <input type="color" value={form.accentColor || "#16a34a"} onChange={(e) => set("accentColor", e.target.value)} className="h-9 w-12 cursor-pointer rounded border border-slate-700 bg-transparent" />
+                <Input value={form.accentColor ?? ""} onChange={(e) => set("accentColor", e.target.value || null)} placeholder="#16a34a" className="flex-1" />
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <div className="mb-3 text-sm font-semibold text-slate-100">Textos de bienvenida</div>
+          <label className="mb-1 block text-xs text-slate-400">Subtítulo (pantalla de registro)</label>
+          <Input value={form.welcomeText ?? ""} onChange={(e) => set("welcomeText", e.target.value || null)} placeholder="Ej: Registrate y chateá con nosotros" className="mb-4" />
+
+          <label className="mb-1 block text-xs text-slate-400">Primer mensaje automático</label>
+          <textarea value={form.welcomeMsgText ?? ""} onChange={(e) => set("welcomeMsgText", e.target.value || null)}
+            placeholder="Ej: ¡Hola! Gracias por escribirnos. ¿En qué te ayudamos?" rows={3}
+            className="mb-4 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
+
+          <label className="mb-1 block text-xs text-slate-400">Imagen del primer mensaje (opcional)</label>
+          <div className="flex items-center gap-3">
+            {form.welcomeMsgImage && <img src={form.welcomeMsgImage} alt="bienvenida" className="h-12 w-12 rounded-lg object-cover" />}
+            <label className="cursor-pointer rounded-md border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-slate-800">
+              {uploading === "welcome" ? "Subiendo…" : form.welcomeMsgImage ? "Cambiar imagen" : "Subir imagen"}
+              <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f, "welcomeMsgImage", "welcome"); e.target.value = ""; }} />
+            </label>
+            {form.welcomeMsgImage && <button onClick={() => set("welcomeMsgImage", null)} className="text-xs text-rose-400 hover:underline">Quitar</button>}
+          </div>
+        </Card>
+
+        <div className="flex items-center gap-3">
+          <Button onClick={() => void save()} disabled={saving}>{saving ? "Guardando…" : "Guardar cambios"}</Button>
+          {ok && <span className="text-sm text-wa-green">✓ Guardado</span>}
+        </div>
+      </div>
+
+      {/* Vista previa (mock de la PWA del jugador) */}
+      <div className="lg:sticky lg:top-6 lg:self-start">
+        <div className="mb-2 text-xs text-slate-500">Vista previa</div>
+        <div className="mx-auto w-full max-w-[18rem] overflow-hidden rounded-3xl border-4 border-slate-800 bg-slate-950 shadow-xl">
+          <div className="flex flex-col items-center px-6 py-10 text-center">
+            {form.logoUrl ? <img src={form.logoUrl} alt="" className="mb-4 h-20 w-20 rounded-2xl object-cover" /> :
+              <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-2xl text-2xl font-bold text-slate-900" style={{ background: primary }}>{(form.brandName || "C").charAt(0).toUpperCase()}</div>}
+            <div className="text-lg font-bold text-slate-100">{form.brandName || "Tu marca"}</div>
+            {form.welcomeText && <p className="mt-1 text-xs text-slate-400">{form.welcomeText}</p>}
+            <div className="mt-6 w-full rounded-full py-2.5 text-sm font-semibold text-slate-900" style={{ background: primary }}>Empezar a chatear</div>
+          </div>
+        </div>
       </div>
     </div>
   );

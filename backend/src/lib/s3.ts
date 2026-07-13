@@ -64,6 +64,33 @@ export async function uploadHtml(key: string, html: string): Promise<boolean> {
   }
 }
 
+// Sube un buffer binario (ej: logo del branding) a un key EXACTO y devuelve la URL pública
+// (CDN/S3). null si S3 no está configurado o falla — el caller decide el fallback (data URL).
+export async function uploadBuffer(key: string, body: Buffer, contentType: string): Promise<string | null> {
+  if (!s3Enabled()) return null;
+  try {
+    const specifier = "@aws-sdk/client-s3";
+    const mod: any = await import(specifier).catch(() => null);
+    if (!mod) return null;
+    const { S3Client, PutObjectCommand } = mod;
+    const client = new S3Client({ region: REGION, ...(ENDPOINT ? { endpoint: ENDPOINT, forcePathStyle: false } : {}) });
+    await client.send(
+      new PutObjectCommand({
+        Bucket: BUCKET,
+        Key: key,
+        Body: body,
+        ContentType: contentType,
+        CacheControl: "public, max-age=31536000, immutable", // nombre aleatorio -> cache eterno
+        ...(PUBLIC_ACL ? { ACL: "public-read" } : {}),
+      }),
+    );
+    return publicUrl(key);
+  } catch (e) {
+    console.error("[s3] uploadBuffer error:", e instanceof Error ? e.message : String(e));
+    return null;
+  }
+}
+
 // Sube el HTML como <slug>/index.html y devuelve la URL pública (CDN/S3). null si falla.
 export async function publishToS3(slug: string, html: string): Promise<string | null> {
   if (!s3Enabled()) return null;

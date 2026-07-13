@@ -11,6 +11,7 @@ import { sendCapiEvent } from "../lib/meta-capi.js"; // reuso el CAPI existente,
 import { resolveUserPixel } from "../lib/pixel.js";
 import { emitChat, playerHasLiveSocket } from "../lib/io.js";
 import { pushEnabled, publicVapidKey, enqueuePlayerPush, enqueueAccountBroadcast } from "../lib/chat-push.js";
+import { s3Enabled, uploadBuffer } from "../lib/s3.js";
 
 // Router del OPERADOR (se monta bajo requireAuth): gestión de links de invitación.
 export const chatRouter = Router();
@@ -165,6 +166,77 @@ chatRouter.post("/push/broadcast", async (req, res) => {
   if (!pushEnabled()) return res.status(503).json({ error: "Web Push no está configurado (faltan VAPID)" });
   const count = await enqueueAccountBroadcast(req.userId!, { title: parsed.data.title, body: parsed.data.body, url: parsed.data.url ?? "/chat" });
   return res.json({ ok: true, sent: count });
+});
+
+// ============================ BRANDING WHITE-LABEL (operador) ============================
+
+// Solo estos campos del User son "branding" del Chat App. El PATCH NUNCA toca otra cosa
+// (nada de plan, tokenVersion, líneas de WhatsApp, etc.).
+const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "welcomeText", "welcomeMsgText", "welcomeMsgImage"] as const;
+
+// GET /api/chat/branding — branding actual de la cuenta (para poblar el formulario del panel).
+chatRouter.get("/branding", async (req, res) => {
+  const acc = await prisma.user.findUnique({
+    where: { id: req.userId! },
+    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true },
+  });
+  if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
+  return res.json({ accountSlug: acc.slug, branding: acc, s3: s3Enabled() });
+});
+
+const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Color inválido (usá #RRGGBB)");
+const brandingSchema = z.object({
+  brandName: z.string().max(60).nullish(),
+  logoUrl: z.string().url().max(600).nullish(),
+  primaryColor: hexColor.nullish(),
+  accentColor: hexColor.nullish(),
+  welcomeText: z.string().max(300).nullish(),
+  welcomeMsgText: z.string().max(1000).nullish(),
+  welcomeMsgImage: z.string().url().max(600).nullish(),
+});
+
+// PATCH /api/chat/branding — actualiza SOLO los campos de branding del User del token.
+chatRouter.patch("/branding", async (req, res) => {
+  const parsed = brandingSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
+  // Whitelist estricta: sólo BRANDING_FIELDS que vinieron en el body (undefined = no tocar).
+  const data: Record<string, string | null> = {};
+  for (const k of BRANDING_FIELDS) {
+    const v = (parsed.data as Record<string, unknown>)[k];
+    if (v !== undefined) data[k] = (v as string | null);
+  }
+  if (Object.keys(data).length === 0) return res.status(400).json({ error: "Nada para actualizar" });
+  const acc = await prisma.user.update({
+    where: { id: req.userId! },
+    data,
+    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true },
+  });
+  return res.json({ branding: acc });
+});
+
+const logoSchema = z.object({ dataUrl: z.string().regex(/^data:image\/(png|jpeg|jpg|webp|gif);base64,/, "Imagen inválida") });
+const EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg", "image/webp": "webp", "image/gif": "gif" };
+
+// POST /api/chat/branding/logo — sube una imagen (logo o bienvenida) y devuelve su URL.
+// Con S3 configurado: la sube con nombre ALEATORIO (branding/<userId>/<rand>.<ext>) y devuelve
+// la URL del CDN. Sin S3: devuelve el data URL tal cual (el panel lo guarda igual con PATCH).
+chatRouter.post("/branding/logo", async (req, res) => {
+  const parsed = logoSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Enviá una imagen PNG/JPG/WEBP/GIF" });
+  const { dataUrl } = parsed.data;
+  const comma = dataUrl.indexOf(",");
+  const mime = dataUrl.slice(5, dataUrl.indexOf(";"));
+  const buffer = Buffer.from(dataUrl.slice(comma + 1), "base64");
+  // Tope 700 KB: en base64 (~1.37x) queda por debajo del límite global de body de 1 MB.
+  if (buffer.length > 700 * 1024) return res.status(413).json({ error: "La imagen supera 700 KB. Comprimila o usá una más liviana." });
+
+  if (s3Enabled()) {
+    const key = `branding/${req.userId}/${crypto.randomBytes(10).toString("hex")}.${EXT[mime] ?? "png"}`;
+    const url = await uploadBuffer(key, buffer, mime);
+    if (url) return res.json({ url });
+    // S3 dijo estar habilitado pero falló: caemos al data URL para no romper la UX.
+  }
+  return res.json({ url: dataUrl });
 });
 
 // ============================ JUGADOR (requireChatClient) ============================
