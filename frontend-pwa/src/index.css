@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --brand-primary: #25d366;
+  --brand-accent: #128c7e;
+  color-scheme: dark;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  background: #0b141a;
+  color: #e9edef;
+  font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+}

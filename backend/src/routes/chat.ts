@@ -257,9 +257,14 @@ chatPublicRouter.post("/register", async (req, res) => {
     throw e;
   }
 
-  // Recién ahora cerramos el link (single-use). updateMany condicional: si otra request lo
-  // cerró en la carrera, count=0 (aceptado: el jugador ya quedó creado, es un caso de borde).
-  await prisma.inviteCode.updateMany({ where: { id: invite.id, isActive: true }, data: { isActive: false } });
+  // Cerramos el link de forma ATÓMICA (single-use): solo seguimos si NOSOTROS lo cerramos
+  // (count===1). Si otra request se lo llevó en paralelo (count===0), revertimos el player
+  // recién creado y devolvemos 404 — así dos personas con el mismo link no crean dos jugadores.
+  const closed = await prisma.inviteCode.updateMany({ where: { id: invite.id, isActive: true }, data: { isActive: false } });
+  if (closed.count !== 1) {
+    await prisma.chatPlayer.delete({ where: { id: player.id } }).catch(() => undefined);
+    return res.status(404).json({ error: "Este link acaba de usarse. Pedí uno nuevo o iniciá sesión." });
+  }
 
   // Abrir la conversación asignada al operador del link + mensaje de bienvenida de la cuenta.
   const acc = await prisma.user.findUnique({

@@ -46,6 +46,22 @@ const allowedOrigins = (process.env.PANEL_BASE_URL ?? "")
   .filter(Boolean);
 const corsOrigin = allowedOrigins.length ? allowedOrigins : "*";
 
+// Origen(es) de la PWA del Chat App (ej. https://chat.publi.lat). Se permiten SOLO en
+// /api/chat/* (CORS específico abajo) y en el handshake del socket (namespace /chat).
+// Nunca origin:* con credentials.
+const chatPwaOrigins = (process.env.CHAT_PWA_ORIGIN ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+// Para socket.io (cors del engine, global a los namespaces): panel + PWA. El auth por
+// namespace ya separa operador de jugador, así que sumar el origen de la PWA es inocuo.
+const socketCorsOrigin = allowedOrigins.length ? [...allowedOrigins, ...chatPwaOrigins] : "*";
+// CORS HTTP específico para /api/chat/*: panel + PWA (la PWA usa Bearer, no cookie).
+const chatHttpCors = cors({
+  origin: allowedOrigins.length ? [...allowedOrigins, ...chatPwaOrigins] : "*",
+  credentials: true,
+});
+
 const app = express();
 app.set("trust proxy", 1); // detrás de proxy/CDN: req.ip real + rate-limit correcto
 app.use(
@@ -139,10 +155,11 @@ app.use("/api/setup", apiLimiter, requireAuth, setupRouter);
 app.use("/api/support", apiLimiter, requireAuth, supportRouter);
 app.use("/api/notifications", apiLimiter, requireAuth, notificationsRouter);
 app.use("/api/flows", apiLimiter, requireAuth, flowsRouter);
-// Chat App (módulo aislado): público (jugador) + operador. El público (branding/register/
-// login) va primero SIN requireAuth; el de operador (invites) va después CON requireAuth.
-app.use("/api/chat", apiLimiter, chatPublicRouter);
-app.use("/api/chat", apiLimiter, requireAuth, chatRouter);
+// Chat App (módulo aislado): público (jugador) + operador. CORS propio (panel + PWA), SOLO
+// acá. El público (branding/register/login) va primero SIN requireAuth; el de operador
+// (invites) va después CON requireAuth.
+app.use("/api/chat", chatHttpCors, apiLimiter, chatPublicRouter);
+app.use("/api/chat", chatHttpCors, apiLimiter, requireAuth, chatRouter);
 // Panel maestro: admin-only (requireAuth + requireAdmin).
 app.use("/api/admin", apiLimiter, requireAuth, requireAdmin, adminRouter);
 
@@ -168,7 +185,7 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 const server = createServer(app);
-const io = new SocketServer(server, { cors: { origin: corsOrigin, credentials: true } });
+const io = new SocketServer(server, { cors: { origin: socketCorsOrigin, credentials: true } });
 setIo(io);
 
 // Auth del socket: el JWT viene por la cookie httpOnly (mismo origen) o, como fallback,
