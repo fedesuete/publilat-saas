@@ -28,3 +28,25 @@ export async function alertLineDown(line: { id: string; userId: string; label: s
     `La línea ${line.id} ("${name}") de ${owner?.email ?? line.userId} se desconectó y necesita reconexión.`,
   );
 }
+
+// Aviso de SALDO por agotarse: el servicio del cliente se va a apagar en ~N horas y no tiene
+// días para renovar. Campana + email al dueño (con link a recargar) + admin. El dedupe lo
+// hace el caller (por cliente + umbral), así que este helper solo envía.
+export async function alertLowBalance(
+  line: { id: string; userId: string; label: string | null; phone: string },
+  hoursLeft: number,
+): Promise<void> {
+  const name = line.label || line.phone || "tu WhatsApp";
+  const h = Math.max(1, Math.round(hoursLeft));
+  const body = `Se te está por terminar el saldo: tu WhatsApp "${name}" se va a apagar en ~${h} h y tu operación se va a frenar (tu web deja de mandar a WhatsApp). Recargá días para que siga activo sin cortes.`;
+  await notify(line.userId, "system", "⏳ Tu saldo está por agotarse", body);
+  const owner = await prisma.user.findUnique({ where: { id: line.userId }, select: { email: true } });
+  const panel = (process.env.PANEL_BASE_URL ?? "").split(",")[0] || "https://app.publi.lat";
+  if (owner?.email) {
+    void sendMail(owner.email, `⏳ Tu WhatsApp "${name}" se apaga en ~${h} h — recargá saldo`, `${body}\n\nRecargá acá: ${panel}/billing`);
+  }
+  void sendAdminMail(
+    `Saldo por agotarse: "${name}" (${owner?.email ?? line.userId})`,
+    `El cliente ${owner?.email ?? line.userId} se apaga en ~${h} h (línea ${line.id}, "${name}") y no tiene días para renovar.`,
+  );
+}

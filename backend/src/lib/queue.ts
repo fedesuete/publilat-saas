@@ -13,7 +13,7 @@ import { decryptSecret } from "./crypto.js";
 import { notify } from "./notifications.js";
 import { sendAdminMail } from "./mailer.js";
 import { checkWaWebVersion } from "./wa-version.js";
-import { alertLineDown } from "./line-alert.js";
+import { alertLineDown, alertLowBalance } from "./line-alert.js";
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const parsed = new URL(REDIS_URL);
@@ -199,6 +199,42 @@ export async function checkWaVersionJob(): Promise<void> {
   console.warn(`[wa-version] ${detail}`);
 }
 
+// Avisa a los clientes ~10 h y ~3 h ANTES de que se les acabe el saldo, para que recarguen
+// y su servicio no se corte. Solo avisa a quien NO tiene días para renovar (si tiene, la
+// línea se renueva sola). Un aviso por CLIENTE (la línea que vence primero), con dedupe.
+export async function checkLowBalance(): Promise<void> {
+  const now = Date.now();
+  const horizon = new Date(now + 10.5 * 60 * 60 * 1000); // miramos hasta ~10 h adelante
+  const lines = await prisma.waLine.findMany({
+    where: { status: "active", connected: true, expiresAt: { gt: new Date(now), lt: horizon } },
+    select: { id: true, userId: true, label: true, phone: true, expiresAt: true },
+  });
+  // Por cliente, la línea que vence PRIMERO marca cuándo se frena su operación.
+  const soonestByUser = new Map<string, (typeof lines)[number]>();
+  for (const l of lines) {
+    if (!l.expiresAt) continue;
+    const cur = soonestByUser.get(l.userId);
+    if (!cur || (cur.expiresAt && l.expiresAt < cur.expiresAt)) soonestByUser.set(l.userId, l);
+  }
+  for (const [userId, line] of soonestByUser) {
+    // Si tiene días, la línea se renueva sola al vencer: no hace falta avisar.
+    const credit = await prisma.credit.findUnique({ where: { userId }, select: { days: true } });
+    if ((credit?.days ?? 0) >= 1) continue;
+    const hoursLeft = (line.expiresAt!.getTime() - now) / (60 * 60 * 1000);
+    const threshold = hoursLeft <= 3 ? 3 : hoursLeft <= 10 ? 10 : null;
+    if (!threshold) continue;
+    // Dedupe atómico por (cliente, umbral, vencimiento): un aviso por umbral y ciclo.
+    const key = `lowbal:${userId}:${threshold}:${line.expiresAt!.toISOString().slice(0, 13)}`;
+    try {
+      await prisma.inboundDedup.create({ data: { key } });
+    } catch (e) {
+      if ((e as { code?: string })?.code === "P2002") continue; // ya avisado
+      continue;
+    }
+    await alertLowBalance({ id: line.id, userId, label: line.label, phone: line.phone }, hoursLeft);
+  }
+}
+
 // Programa la reanudación de una secuencia tras un delay (para el motor de automatizaciones).
 export function scheduleFlowResume(runId: string, delaySec: number): void {
   if (queue) {
@@ -219,6 +255,7 @@ export async function initQueues(): Promise<void> {
       async (job: Job) => {
         if (job.name === "capi-retry") return retryFailedCapi();
         if (job.name === "line-health") return checkLineHealth();
+        if (job.name === "low-balance") return checkLowBalance();
         if (job.name === "wa-version-check") return checkWaVersionJob();
         if (job.name === "flow-resume") {
           const { resumeFlowRun } = await import("./flow-engine.js");
@@ -234,8 +271,9 @@ export async function initQueues(): Promise<void> {
     await queue.add("expire", {}, { repeat: { every: 60_000 }, jobId: "expire-repeat", removeOnComplete: true, removeOnFail: 50 });
     await queue.add("capi-retry", {}, { repeat: { every: 300_000 }, jobId: "capi-retry-repeat", removeOnComplete: true, removeOnFail: 50 });
     await queue.add("line-health", {}, { repeat: { every: 300_000 }, jobId: "line-health-repeat", removeOnComplete: true, removeOnFail: 50 });
+    await queue.add("low-balance", {}, { repeat: { every: 1_800_000 }, jobId: "low-balance-repeat", removeOnComplete: true, removeOnFail: 50 });
     await queue.add("wa-version-check", {}, { repeat: { every: 43_200_000 }, jobId: "wa-version-check-repeat", removeOnComplete: true, removeOnFail: 50 });
-    console.log("[queue] BullMQ listo (vencimiento 60s + reintento CAPI 5min + salud de línea 5min + versión WA Web 12h)");
+    console.log("[queue] BullMQ listo (vencimiento 60s + CAPI 5min + salud 5min + saldo 30min + versión WA Web 12h)");
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[queue] no se pudo iniciar BullMQ (¿Redis arriba?):", msg);
