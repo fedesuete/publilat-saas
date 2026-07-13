@@ -203,6 +203,48 @@ io.on("connection", (socket) => {
   socket.join(`user:${userId}`); // recibe QR, estado de línea e Inbox de su cuenta
 });
 
+// ---- Namespace AISLADO del Chat App ("/chat") ----------------------------------------
+// Canal jugador↔cajero, separado del namespace default (Inbox de WhatsApp). Acepta token
+// de OPERADOR (cookie/Bearer del panel) o de JUGADOR (Bearer type:"client"). No toca el
+// default ni su auth.
+const chatNs = io.of("/chat");
+chatNs.use((socket, next) => {
+  const fromAuth = socket.handshake.auth?.token as string | undefined;
+  const cookieHeader = socket.handshake.headers.cookie ?? "";
+  const fromCookie = cookieHeader
+    .split(";")
+    .map((c) => c.trim())
+    .find((c) => c.startsWith("publilat_token="))
+    ?.slice("publilat_token=".length);
+  const token = fromAuth || (fromCookie ? decodeURIComponent(fromCookie) : undefined);
+  if (!token) return next(new Error("No autenticado"));
+  try {
+    const payload = verifyToken(token);
+    if (payload.type === "client" && payload.accountId && payload.playerId) {
+      socket.data.chat = { kind: "client", accountId: payload.accountId, playerId: payload.playerId };
+    } else if (payload.userId) {
+      socket.data.chat = { kind: "operator", userId: payload.userId };
+    } else {
+      return next(new Error("Token inválido"));
+    }
+    return next();
+  } catch {
+    return next(new Error("Token inválido"));
+  }
+});
+chatNs.on("connection", (socket) => {
+  const c = socket.data.chat as
+    | { kind: "operator"; userId: string }
+    | { kind: "client"; accountId: string; playerId: string };
+  if (c.kind === "operator") {
+    socket.join(`chat:${c.userId}`);
+    socket.join(`chat:${c.userId}:op:${c.userId}`);
+  } else {
+    socket.join(`chat:${c.accountId}`);
+    socket.join(`chat:${c.accountId}:player:${c.playerId}`);
+  }
+});
+
 // Red de seguridad: un error async no manejado NO debe tumbar el servidor.
 process.on("unhandledRejection", (reason) => console.error("[unhandledRejection]", reason));
 process.on("uncaughtException", (err) => console.error("[uncaughtException]", err));
