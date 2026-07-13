@@ -21,3 +21,10 @@ landing-web/dist
 landing-web/*.tsbuildinfo
 landing-web/vite.config.js
 landing-web/vite.config.d.ts
+
+# chat PWA build artifacts
+frontend-pwa/dist
+frontend-pwa/dev-dist
+frontend-pwa/*.tsbuildinfo
+frontend-pwa/vite.config.js
+frontend-pwa/vite.config.d.ts

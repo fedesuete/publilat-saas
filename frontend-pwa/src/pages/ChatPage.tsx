@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { io, type Socket } from "socket.io-client";
 import { api, apiError, API_BASE, getToken, clearToken, loadBranding } from "../lib/api";
+import { subscribeToPush, pushSupported, pushPermission } from "../lib/push";
 
 interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; createdAt: string }
 
@@ -14,6 +15,8 @@ export default function ChatPage() {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [push, setPush] = useState<NotificationPermission | "unsupported">(pushPermission());
+  const [pushBusy, setPushBusy] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -27,6 +30,16 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  // Si ya dio permiso, re-suscribimos en silencio (refresca el endpoint en el backend).
+  useEffect(() => { if (pushSupported() && Notification.permission === "granted") void subscribeToPush(); }, []);
+
+  const enablePush = async () => {
+    setPushBusy(true);
+    const state = await subscribeToPush();
+    setPush(state === "granted" ? "granted" : state === "denied" ? "denied" : Notification.permission);
+    setPushBusy(false);
+  };
 
   // Socket al namespace /chat con el JWT client como auth (Bearer va aparte en las requests HTTP).
   useEffect(() => {
@@ -56,6 +69,22 @@ export default function ChatPage() {
         {branding?.logoUrl && <img src={branding.logoUrl} alt="" className="h-8 w-8 rounded-lg object-cover" />}
         <div className="font-semibold">{branding?.brandName || "Chat"}</div>
       </header>
+
+      {/* Aviso: activar notificaciones (solo si el navegador las soporta y aún no decidió). */}
+      {push === "default" && (
+        <div className="flex items-center justify-between gap-3 border-b border-slate-800 bg-slate-900/60 px-4 py-2 text-sm">
+          <span className="text-slate-300">🔔 Activá las notificaciones para no perderte respuestas.</span>
+          <button onClick={() => void enablePush()} disabled={pushBusy}
+            className="shrink-0 rounded-full px-3 py-1 text-xs font-semibold text-slate-900 disabled:opacity-50" style={{ background: "var(--brand-primary)" }}>
+            {pushBusy ? "…" : "Activar"}
+          </button>
+        </div>
+      )}
+      {push === "denied" && (
+        <div className="border-b border-slate-800 bg-slate-900/60 px-4 py-2 text-center text-xs text-slate-500">
+          Notificaciones bloqueadas. Podés activarlas desde los ajustes del navegador.
+        </div>
+      )}
 
       <div className="flex-1 space-y-2 overflow-y-auto p-4">
         {messages.map((m) => (

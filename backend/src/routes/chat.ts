@@ -10,6 +10,7 @@ import { signChatClientToken, requireChatClient } from "../middleware/requireCha
 import { sendCapiEvent } from "../lib/meta-capi.js"; // reuso el CAPI existente, NO reimplemento
 import { resolveUserPixel } from "../lib/pixel.js";
 import { emitChat, playerHasLiveSocket } from "../lib/io.js";
+import { pushEnabled, publicVapidKey, enqueuePlayerPush, enqueueAccountBroadcast } from "../lib/chat-push.js";
 
 // Router del OPERADOR (se monta bajo requireAuth): gestión de links de invitación.
 export const chatRouter = Router();
@@ -145,12 +146,25 @@ chatRouter.post("/messages", async (req, res) => {
   emitChat(`chat:${req.userId}:player:${conv.playerId}`, "chat:message", payload); // al jugador
   emitChat(`chat:${req.userId}`, "chat:message", payload);                          // al operador (otras pestañas)
 
-  // Sin socket vivo del jugador -> pendiente de Web Push (Fase 5).
+  // Sin socket vivo del jugador -> Web Push (best-effort, no bloquea la respuesta).
   if (!(await playerHasLiveSocket(req.userId!, conv.playerId))) {
-    console.log(`[chat] jugador ${conv.playerId} sin socket; mensaje pendiente de Web Push (F5)`);
-    // TODO F5: encolar Web Push a las ChatPushSub del jugador.
+    const preview = parsed.data.body.slice(0, 140);
+    void enqueuePlayerPush(req.userId!, conv.playerId, { title: "Nuevo mensaje", body: preview, url: "/chat" })
+      .catch((e) => console.error("[chat] push falló:", e instanceof Error ? e.message : String(e)));
   }
   return res.status(201).json({ message: msg });
+});
+
+const broadcastSchema = z.object({ title: z.string().min(1).max(80), body: z.string().min(1).max(240), url: z.string().max(300).optional() });
+
+// POST /api/chat/push/broadcast — el operador manda una notificación push a todos sus jugadores
+// suscriptos (promo/aviso). Best-effort; devuelve a cuántas suscripciones se encoló.
+chatRouter.post("/push/broadcast", async (req, res) => {
+  const parsed = broadcastSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  if (!pushEnabled()) return res.status(503).json({ error: "Web Push no está configurado (faltan VAPID)" });
+  const count = await enqueueAccountBroadcast(req.userId!, { title: parsed.data.title, body: parsed.data.body, url: parsed.data.url ?? "/chat" });
+  return res.json({ ok: true, sent: count });
 });
 
 // ============================ JUGADOR (requireChatClient) ============================
@@ -190,6 +204,33 @@ chatPublicRouter.post("/me/messages", requireChatClient, async (req, res) => {
   emitChat(`chat:${req.accountId}`, "chat:message", payload);                              // al operador
   emitChat(`chat:${req.accountId}:player:${req.chatPlayerId}`, "chat:message", payload);   // al jugador (otros dispositivos)
   return res.status(201).json({ message: msg });
+});
+
+// ============================ WEB PUSH (jugador) ============================
+
+// GET /api/chat/push/public-key — clave pública VAPID para suscribirse desde la PWA. Pública.
+chatPublicRouter.get("/push/public-key", (_req, res) => {
+  return res.json({ key: pushEnabled() ? publicVapidKey() : null });
+});
+
+const subscribeSchema = z.object({
+  endpoint: z.string().url().max(600),
+  keys: z.object({ p256dh: z.string().min(1).max(200), auth: z.string().min(1).max(100) }),
+  userAgent: z.string().max(300).optional(),
+});
+
+// POST /api/chat/push/subscribe — registra/actualiza la suscripción del jugador (upsert por endpoint).
+chatPublicRouter.post("/push/subscribe", requireChatClient, async (req, res) => {
+  const parsed = subscribeSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  if (!pushEnabled()) return res.status(503).json({ error: "Web Push no está configurado" });
+  const { endpoint, keys, userAgent } = parsed.data;
+  await prisma.chatPushSub.upsert({
+    where: { userId_endpoint: { userId: req.accountId!, endpoint } },
+    create: { userId: req.accountId!, playerId: req.chatPlayerId!, endpoint, p256dh: keys.p256dh, auth: keys.auth, userAgent },
+    update: { playerId: req.chatPlayerId!, p256dh: keys.p256dh, auth: keys.auth, userAgent },
+  });
+  return res.status(201).json({ ok: true });
 });
 
 // ============================ PÚBLICO (jugador) ============================

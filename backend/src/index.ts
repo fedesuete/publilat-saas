@@ -33,6 +33,7 @@ import { requireAuth } from "./middleware/requireAuth.js";
 import { verifyToken } from "./lib/auth.js";
 import { setIo } from "./lib/io.js";
 import { initQueues, closeQueues } from "./lib/queue.js";
+import { initChatPushQueue, closeChatPushQueue } from "./lib/chat-push.js"; // cola aislada del Chat App
 import { validateEnv } from "./lib/env.js";
 import { prisma } from "./lib/prisma.js";
 import { getEngine } from "./lib/wa-engine.js";
@@ -307,6 +308,7 @@ const PORT = Number(process.env.PORT ?? 4000);
 server.listen(PORT, () => {
   console.log(`API en http://localhost:${PORT} (${process.env.NODE_ENV ?? "development"})`);
   void initQueues(); // BullMQ: vencimiento automático de líneas
+  void initChatPushQueue(); // BullMQ: Web Push del Chat App (cola separada, no-op sin VAPID)
   void syncEvolutionWebhooks(); // acks de entrega en instancias pre-existentes
 });
 
@@ -319,6 +321,7 @@ async function shutdown(signal: string) {
   server.close();
   io.close();
   await closeQueues();
+  await closeChatPushQueue();
   await prisma.$disconnect().catch(() => undefined);
   process.exit(0);
 }
