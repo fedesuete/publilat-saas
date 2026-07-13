@@ -74,6 +74,12 @@ app.use(
     crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
   })
 );
+// El preflight OPTIONS de /api/chat/* tiene que resolverse con el CORS de la PWA ANTES que el
+// CORS global del panel. El paquete `cors` contesta el OPTIONS y CORTA la cadena; el global sólo
+// conoce PANEL_BASE_URL, así que sin este mount el preflight desde chat.publi.lat vuelve 204 SIN
+// Access-Control-Allow-Origin y el navegador bloquea TODO POST JSON del jugador (registro/login/
+// mensaje/push). Con GET simple no se notaba (no hay preflight). Debe ir antes del cors() global.
+app.use("/api/chat", chatHttpCors);
 app.use(cors({ origin: corsOrigin, credentials: true }));
 
 // Webhook de Stripe ANTES del json(): necesita el body crudo para validar la firma.
