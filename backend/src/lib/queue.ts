@@ -11,8 +11,9 @@ import { getEngine } from "./wa-engine.js";
 import { getPhoneQuality } from "./wa-cloud.js";
 import { decryptSecret } from "./crypto.js";
 import { notify } from "./notifications.js";
-import { sendMail, sendAdminMail } from "./mailer.js";
+import { sendAdminMail } from "./mailer.js";
 import { checkWaWebVersion } from "./wa-version.js";
+import { alertLineDown } from "./line-alert.js";
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const parsed = new URL(REDIS_URL);
@@ -116,7 +117,11 @@ export async function retryFailedCapi(opts?: { includeDead?: boolean; max?: numb
 // Chequea la salud de cada línea activa: conexión (Baileys) y calidad (Cloud API).
 // Guarda el estado y notifica al dueño si se desconecta o baja la calidad.
 export async function checkLineHealth(): Promise<void> {
-  const lines = await prisma.waLine.findMany({ where: { status: { not: "inactive" } } });
+  // Chequeamos las activas Y las inactivas que siguen CONECTADAS (ej. una línea que se quedó
+  // sin días pero su WhatsApp sigue vinculado): si esa se cae, el dueño igual debe enterarse.
+  const lines = await prisma.waLine.findMany({
+    where: { OR: [{ status: { not: "inactive" } }, { connected: true }] },
+  });
   for (const line of lines) {
     // Número externo: no hay sesión propia que monitorear (el WhatsApp vive en otro sistema).
     if (line.provider === "external") continue;
@@ -149,28 +154,8 @@ export async function checkLineHealth(): Promise<void> {
             connected = (await getEngine().connectionState(inst)) === "open";
           }
           if (!connected) {
-            const name = line.label ?? line.phone;
-            const body = `Tu WhatsApp "${name}" se desconectó. Intentamos reconectar automáticamente; si sigue caída, entrá a WhatsApp y tocá "Conectar / Ver QR".`;
-            // Si la línea FLAPEA (cae y reconecta en loop), cada ciclo es una transición
-            // nueva: el email se manda a lo sumo una vez cada 6 h por línea (el chequeo
-            // va ANTES del notify de abajo, que crea justamente esa notificación).
-            const recent = await prisma.notification.findFirst({
-              where: { userId: line.userId, type: "line_down", body, createdAt: { gte: new Date(Date.now() - 6 * 60 * 60 * 1000) } },
-              select: { id: true },
-            });
-            await notify(line.userId, "line_down", "Línea desconectada", body);
-            // La campana in-app no alcanza si el cliente no está mirando el panel
-            // (joaco estuvo 3 h caído sin enterarse): también va por email, al dueño
-            // y al operador.
-            if (!recent) {
-              const owner = await prisma.user.findUnique({ where: { id: line.userId }, select: { email: true } });
-              if (owner?.email) {
-                void sendMail(owner.email, `⚠️ Tu línea de WhatsApp "${name}" se desconectó`,
-                  `${body}\n\nPanel: ${(process.env.PANEL_BASE_URL ?? "").split(",")[0] || "https://app.publi.lat"}/whatsapp`);
-              }
-              void sendAdminMail(`Línea caída: "${name}" (${owner?.email ?? line.userId})`,
-                `La línea ${line.id} ("${name}") de ${owner?.email ?? line.userId} quedó caída tras el restart automático (estado "${state}").`);
-            }
+            // Campana + email al dueño y admin (dedupe 6 h en el helper compartido).
+            await alertLineDown(line);
           }
         }
       }
