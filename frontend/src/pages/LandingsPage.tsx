@@ -86,6 +86,8 @@ export default function LandingsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [showTpl, setShowTpl] = useState(false);
   const [snapshot, setSnapshot] = useState("");
+  const [reprovisioning, setReprovisioning] = useState(false);
+  const [reproMsg, setReproMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const current = landings.find((l) => l.id === editingId) ?? null;
@@ -151,6 +153,18 @@ export default function LandingsPage() {
     setBusyId(editingId); setError(null);
     try { await api.put(`/api/landings/${editingId}`, { isPrimary: true }); await load(); }
     catch (err) { setError(apiError(err)); } finally { setBusyId(null); }
+  };
+
+  // Genera un dominio nuevo (cuando Meta quema el actual). Es a nivel cuenta: reapunta
+  // TODAS tus landings publicadas al dominio nuevo.
+  const reprovision = async () => {
+    if (!window.confirm("Se va a generar un dominio NUEVO para tus landings y se reapuntan todas las publicadas. La URL para campañas cambia. ¿Continuar?")) return;
+    setReprovisioning(true); setError(null); setReproMsg(null);
+    try {
+      const { data } = await api.post<{ cloudfrontDomain: string }>("/api/landings/reprovision");
+      setReproMsg(`Dominio nuevo listo: ${data.cloudfrontDomain}. Copiá la URL para campañas actualizada y cambiala en tus anuncios. (Tarda unos minutos en propagar.)`);
+      await load();
+    } catch (err) { setError(apiError(err)); } finally { setReprovisioning(false); }
   };
 
   const remove = async () => {
@@ -223,13 +237,22 @@ export default function LandingsPage() {
             </div>
             {current && (
               <>
-                <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">URL para campañas</div>
+                <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  URL para campañas {current.published && campaignUrl.includes("cloudfront.net") && <span className="ml-1 rounded bg-wa-green/15 px-1.5 py-0.5 text-[10px] font-semibold normal-case text-wa-green">dominio propio · aislado</span>}
+                </div>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                   <input readOnly value={campaignUrl} className="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-xs text-slate-300" />
                   <CopyBtn value={campaignUrl} />
                 </div>
+                <p className="mt-1 text-[11px] text-slate-500">Esta es la URL que ponés en tus anuncios. {current.published && campaignUrl.includes("cloudfront.net") ? "Se sirve desde tu propio dominio (no publi.lat): si Meta bloquea la landing, generá uno nuevo abajo sin afectar tu cuenta." : "Publicá la landing para obtener tu dominio propio."}</p>
+                {reproMsg && <div className="mt-2 rounded-md border border-wa-green/40 bg-wa-green/10 px-3 py-2 text-xs text-wa-green">{reproMsg}</div>}
                 <div className="mt-3 flex flex-wrap gap-2">
                   {!current.isPrimary && <Button variant="ghost" onClick={() => void makePrimary()}><Star className="h-4 w-4" /> Marcar principal</Button>}
+                  {current.published && campaignUrl.includes("cloudfront.net") && (
+                    <Button variant="ghost" disabled={reprovisioning} onClick={() => void reprovision()}>
+                      {reprovisioning ? "Generando…" : "🔄 Reprovisionar dominio"}
+                    </Button>
+                  )}
                   <Button variant="danger" onClick={() => void remove()}><Trash2 className="h-4 w-4" /> Borrar</Button>
                 </div>
               </>

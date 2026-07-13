@@ -5,7 +5,8 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { resolveUserPixel } from "../lib/pixel.js";
 import { renderTrackedLanding, type LandingConfig } from "../lib/landing-template.js";
-import { publishToS3 } from "../lib/s3.js";
+import { publishToS3, uploadHtml, s3Enabled } from "../lib/s3.js";
+import { ensureClientCdn, reprovisionClientDomain, invalidate } from "../lib/cloudfront.js";
 import { slugify } from "../lib/auth.js";
 import { getAvailableDays } from "../lib/access.js";
 
@@ -156,14 +157,44 @@ landingsRouter.post("/:id/publish", async (req, res) => {
     });
   }
 
-  const s3Url = await publishToS3(landing.slug, landing.html);
-  const publishedUrl = s3Url ?? `${process.env.APP_BASE_URL ?? ""}/p/${landing.slug}`;
+  // Modelo ScaleOS: cada cliente tiene su distribución CloudFront (dominio descartable).
+  // La landing se sube a {s3Prefix}/{slug}/index.html y se sirve por el dominio del cliente,
+  // NO por publi.lat (aísla el quemado de Meta y saca el XSS del origen del panel).
+  let publishedUrl: string;
+  let host: string;
+  const cdn = await ensureClientCdn(req.userId!); // null si AWS no está configurado
+  if (cdn) {
+    const ok = await uploadHtml(`${cdn.s3Prefix}/${landing.slug}/index.html`, landing.html);
+    if (!ok) return res.status(502).json({ error: "No se pudo subir la landing al almacenamiento" });
+    await invalidate(cdn.cloudfrontDistId, [`/${landing.slug}/*`]);
+    publishedUrl = `https://${cdn.cloudfrontDomain}/${landing.slug}/index.html`;
+    host = "cloudfront";
+  } else if (s3Enabled()) {
+    // S3 sin CloudFront (config parcial): fallback al patrón viejo por si acaso.
+    const s3Url = await publishToS3(landing.slug, landing.html);
+    publishedUrl = s3Url ?? `${process.env.APP_BASE_URL ?? ""}/p/${landing.slug}`;
+    host = s3Url ? "s3" : "local";
+  } else {
+    // Sin AWS: se sirve desde el panel (solo para preview/desarrollo, NO para anuncios).
+    publishedUrl = `${process.env.APP_BASE_URL ?? ""}/p/${landing.slug}`;
+    host = "local";
+  }
+
   const updated = await prisma.landing.update({
     where: { id: landing.id },
-    data: { published: true, publishedUrl },
+    data: { published: true, publishedUrl, publishedAt: new Date() },
     select: { id: true, slug: true, published: true, publishedUrl: true },
   });
-  return res.json({ landing: updated, host: s3Url ? "s3" : "local" });
+  return res.json({ landing: updated, host });
+});
+
+// POST /api/landings/reprovision — genera un dominio CloudFront NUEVO para el cliente
+// (cuando Meta quema el actual) y reapunta sus landings publicadas. Es a nivel cliente.
+landingsRouter.post("/reprovision", async (req, res) => {
+  if (!s3Enabled()) return res.status(400).json({ error: "Las landings en CDN no están habilitadas en este servidor." });
+  const cdn = await reprovisionClientDomain(req.userId!);
+  if (!cdn) return res.status(502).json({ error: "No se pudo generar el dominio nuevo. Reintentá en un momento." });
+  return res.json({ ok: true, cloudfrontDomain: cdn.cloudfrontDomain });
 });
 
 // DELETE /api/landings/:id

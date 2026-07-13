@@ -34,6 +34,12 @@ model User {
   maxLines      Int       @default(1)        // líneas de WhatsApp permitidas
   maxLandings   Int       @default(50)       // landings permitidas
   tokenVersion  Int       @default(0)        // revocación de sesiones: al subir, invalida los JWT viejos
+  // --- Landings aisladas en S3+CloudFront (anti-quemado, modelo ScaleOS) ---
+  // Cada cliente tiene su PROPIA distribución CloudFront (dominio descartable): si Meta
+  // quema una landing, cae solo ese dominio, no publi.lat ni los otros clientes.
+  s3Prefix        String?   // carpeta del cliente en el bucket (default = slug)
+  cloudfrontDomain String?  // dominio de la distribución del cliente (ej d50ti8s.cloudfront.net)
+  cloudfrontDistId String?  // id de la distribución (para invalidar / reprovisionar)
   createdAt DateTime @default(now())
 
   lines       WaLine[]
@@ -297,7 +303,8 @@ model Landing {
   config     Json?                       // campos del editor (headline, msg, etc.) para re-editar
   isPrimary  Boolean  @default(false)
   published  Boolean  @default(false)
-  publishedUrl String?
+  publishedUrl String?          // URL de campaña (CloudFront del cliente) o local /p/:slug
+  publishedAt  DateTime?
   createdAt  DateTime @default(now())
   user       User     @relation(fields: [userId], references: [id])
 }

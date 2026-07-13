@@ -38,6 +38,32 @@ function publicUrl(key: string): string {
   return `https://${BUCKET}.s3.${REGION}.amazonaws.com/${key}`;
 }
 
+// Sube HTML a un key EXACTO del bucket (ej "joaco/promo/index.html"). Devuelve true/false.
+// Lo usa el modelo por-cliente (CloudFront): el key lleva el prefijo del cliente.
+export async function uploadHtml(key: string, html: string): Promise<boolean> {
+  if (!s3Enabled()) return false;
+  try {
+    const specifier = "@aws-sdk/client-s3";
+    const mod: any = await import(specifier).catch(() => null);
+    if (!mod) return false;
+    const { S3Client, PutObjectCommand } = mod;
+    const client = new S3Client({ region: REGION, ...(ENDPOINT ? { endpoint: ENDPOINT, forcePathStyle: false } : {}) });
+    await client.send(
+      new PutObjectCommand({
+        Bucket: BUCKET,
+        Key: key,
+        Body: html,
+        ContentType: "text/html; charset=utf-8",
+        CacheControl: "public, max-age=300",
+      }),
+    );
+    return true;
+  } catch (e) {
+    console.error("[s3] uploadHtml error:", e instanceof Error ? e.message : String(e));
+    return false;
+  }
+}
+
 // Sube el HTML como <slug>/index.html y devuelve la URL pública (CDN/S3). null si falla.
 export async function publishToS3(slug: string, html: string): Promise<string | null> {
   if (!s3Enabled()) return null;
