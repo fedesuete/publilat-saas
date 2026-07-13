@@ -210,8 +210,15 @@ process.on("uncaughtException", (err) => console.error("[uncaughtException]", er
 // Re-aplica la configuración del webhook a las instancias Evolution existentes.
 // Necesario al agregar eventos nuevos (ej. MESSAGES_UPDATE): las instancias creadas
 // antes quedaron suscriptas a la lista vieja y no mandarían los acks de entrega.
+// OJO: SOLO para Evolution. En WAHA el webhook ya persiste en la config de la sesión, y
+// re-aplicarlo hace un PUT que REINICIA la sesión — en un deploy eso puede tumbar líneas
+// conectadas (incidente Ganamos 2026-07-13). Con WAHA no se re-sincroniza.
 async function syncEvolutionWebhooks() {
   try {
+    if (getEngine().name !== "evolution") {
+      console.log("[wa] motor no-Evolution: el webhook persiste en la sesión, no se re-sincroniza (evita reiniciar líneas)");
+      return;
+    }
     const lines = await prisma.waLine.findMany({
       where: { provider: "baileys", sessionId: { not: null } },
       select: { sessionId: true },
