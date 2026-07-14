@@ -180,7 +180,39 @@ chatRouter.post("/push/broadcast", async (req, res) => {
   } else {
     sent = await enqueueAccountBroadcast(req.userId!, payload);
   }
+  // Registrar el aviso para las métricas (a quién, cuántos recibieron).
+  await prisma.chatBroadcast.create({
+    data: { userId: req.userId!, title: parsed.data.title, body: parsed.data.body, image: parsed.data.image ?? null, target: parsed.data.playerId ?? "all", sentCount: sent },
+  });
   return res.json({ ok: true, sent });
+});
+
+// GET /api/chat/push/stats — métricas de notificaciones: total de jugadores, cuántos tienen el
+// push activo, y la lista (quién lo activó y quién no).
+chatRouter.get("/push/stats", async (req, res) => {
+  const userId = req.userId!;
+  const [players, subs] = await Promise.all([
+    prisma.chatPlayer.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, select: { id: true, casinoUsername: true, nombre: true, createdAt: true } }),
+    prisma.chatPushSub.findMany({ where: { userId }, select: { playerId: true } }),
+  ]);
+  const pushSet = new Set(subs.map((s) => s.playerId).filter(Boolean) as string[]);
+  const list = players.map((p) => ({ id: p.id, username: p.casinoUsername, name: p.nombre, hasPush: pushSet.has(p.id), createdAt: p.createdAt }));
+  return res.json({ totalPlayers: players.length, playersWithPush: list.filter((p) => p.hasPush).length, players: list });
+});
+
+// GET /api/chat/broadcasts — últimos 10 avisos enviados (con a quién y cuántos recibieron).
+chatRouter.get("/broadcasts", async (req, res) => {
+  const rows = await prisma.chatBroadcast.findMany({ where: { userId: req.userId! }, orderBy: { createdAt: "desc" }, take: 10 });
+  const ids = rows.filter((r) => r.target !== "all").map((r) => r.target);
+  const players = ids.length ? await prisma.chatPlayer.findMany({ where: { id: { in: ids } }, select: { id: true, casinoUsername: true } }) : [];
+  const nameById = new Map(players.map((p) => [p.id, p.casinoUsername]));
+  return res.json({
+    broadcasts: rows.map((r) => ({
+      id: r.id, title: r.title, body: r.body, image: r.image,
+      target: r.target === "all" ? "Todos" : (nameById.get(r.target) ?? "Jugador"),
+      sent: r.sentCount, createdAt: r.createdAt,
+    })),
+  });
 });
 
 // ============================ BRANDING WHITE-LABEL (operador) ============================

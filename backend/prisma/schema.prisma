@@ -79,6 +79,7 @@ model User {
   inviteCodes       InviteCode[]
   chatPushSubs      ChatPushSub[]
   brandingAssets    BrandingAsset[]
+  chatBroadcasts    ChatBroadcast[]
 }
 
 // Automatización / secuencia (tipo ManyChat) para WhatsApp.
@@ -452,6 +453,21 @@ model ChatPushSub {
 
   @@unique([userId, endpoint])
   @@index([userId])
+}
+
+// Historial de avisos push enviados por el operador (para medir: cuántos, a quién, cuántos recibieron).
+model ChatBroadcast {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  image     String?
+  target    String   // "all" o el playerId al que se envió
+  sentCount Int      @default(0) // a cuántas suscripciones se encoló
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 // Imágenes de branding del Chat App (logo, imagen de bienvenida) servidas por el PROPIO

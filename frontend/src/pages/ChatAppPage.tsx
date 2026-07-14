@@ -5,6 +5,7 @@ import { io, type Socket } from "socket.io-client";
 import { QRCodeCanvas } from "qrcode.react";
 import { api, apiError } from "../lib/api";
 import { API_BASE } from "../lib/config";
+import { fmtDate } from "../lib/format";
 import { Button, Input, Card, ErrorMsg } from "../components/ui";
 
 const CHAT_PWA_URL = (import.meta.env.VITE_CHAT_PWA_URL as string | undefined) ?? "https://chat.publi.lat";
@@ -398,8 +399,26 @@ async function uploadImage(file: File): Promise<string> {
   return data.url;
 }
 
+interface PushStats {
+  totalPlayers: number;
+  playersWithPush: number;
+  players: { id: string; username: string; name: string | null; hasPush: boolean; createdAt: string }[];
+}
+interface Broadcast { id: string; title: string; body: string; image: string | null; target: string; sent: number; createdAt: string }
+
+function StatCard({ label, value }: { label: string; value: string | number }) {
+  return (
+    <Card>
+      <div className="text-2xl font-bold text-slate-100">{value}</div>
+      <div className="text-xs text-slate-400">{label}</div>
+    </Card>
+  );
+}
+
 function AvisosTab() {
   const [convs, setConvs] = useState<Conv[]>([]);
+  const [stats, setStats] = useState<PushStats | null>(null);
+  const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const [pTitle, setPTitle] = useState("");
@@ -415,9 +434,15 @@ function AvisosTab() {
   const [popupOk, setPopupOk] = useState(false);
   const [upPopup, setUpPopup] = useState(false);
 
+  const loadMetrics = () => {
+    void api.get<PushStats>("/api/chat/push/stats").then(({ data }) => setStats(data)).catch(() => undefined);
+    void api.get<{ broadcasts: Broadcast[] }>("/api/chat/broadcasts").then(({ data }) => setBroadcasts(data.broadcasts)).catch(() => undefined);
+  };
+
   useEffect(() => {
     void api.get<{ conversations: Conv[] }>("/api/chat/conversations").then(({ data }) => setConvs(data.conversations)).catch(() => undefined);
     void api.get<{ popup: PopupForm | null }>("/api/chat/popup").then(({ data }) => { if (data.popup) setPopup({ ...EMPTY_POPUP, ...data.popup }); }).catch(() => undefined);
+    loadMetrics();
   }, []);
 
   const pick = async (file: File, onUrl: (u: string) => void, setBusy: (b: boolean) => void) => {
@@ -436,6 +461,7 @@ function AvisosTab() {
       const { data } = await api.post<{ sent: number }>("/api/chat/push/broadcast", body);
       setSentMsg(`Enviada a ${data.sent} dispositivo(s).`);
       setPTitle(""); setPBody(""); setPImage(null);
+      loadMetrics();
     } catch (e) { setError(apiError(e)); } finally { setSending(false); }
   };
 
@@ -524,6 +550,61 @@ function AvisosTab() {
           {popupOk && <span className="text-sm text-wa-green">✓ Guardado</span>}
         </div>
       </Card>
+
+      {/* Métricas */}
+      {stats && (
+        <div className="space-y-4 lg:col-span-2">
+          <div className="grid grid-cols-3 gap-3">
+            <StatCard label="Jugadores (clientes)" value={stats.totalPlayers} />
+            <StatCard label="Con notificaciones activas" value={stats.playersWithPush} />
+            <StatCard label="% activación" value={stats.totalPlayers ? `${Math.round((100 * stats.playersWithPush) / stats.totalPlayers)}%` : "—"} />
+          </div>
+
+          <Card>
+            <div className="mb-2 text-sm font-semibold text-slate-100">Últimos avisos enviados</div>
+            {broadcasts.length === 0 ? (
+              <p className="text-xs text-slate-500">Todavía no enviaste avisos.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="text-slate-500">
+                    <tr><th className="py-1 pr-3 font-medium">Fecha</th><th className="pr-3 font-medium">Título</th><th className="pr-3 font-medium">Para</th><th className="text-right font-medium">Recibieron</th></tr>
+                  </thead>
+                  <tbody>
+                    {broadcasts.map((b) => (
+                      <tr key={b.id} className="border-t border-slate-800">
+                        <td className="py-1.5 pr-3 text-slate-400">{fmtDate(b.createdAt)}</td>
+                        <td className="pr-3 text-slate-200">{b.title}</td>
+                        <td className="pr-3 text-slate-400">{b.target}</td>
+                        <td className="text-right font-semibold text-slate-100">{b.sent}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+
+          <Card>
+            <div className="mb-2 text-sm font-semibold text-slate-100">Jugadores — quién activó las notificaciones</div>
+            {stats.players.length === 0 ? (
+              <p className="text-xs text-slate-500">Todavía no tenés jugadores registrados.</p>
+            ) : (
+              <div className="max-h-72 space-y-0.5 overflow-y-auto">
+                {stats.players.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between border-b border-slate-800/60 py-1.5 text-sm">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${p.hasPush ? "bg-wa-green" : "bg-slate-600"}`} />
+                      <span className="truncate text-slate-200">{p.name || p.username}</span>
+                    </span>
+                    <span className={`shrink-0 text-xs ${p.hasPush ? "text-wa-green" : "text-slate-500"}`}>{p.hasPush ? "🔔 activas" : "sin notificaciones"}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
