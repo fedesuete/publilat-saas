@@ -2,7 +2,7 @@
 // SEGUNDO socket al namespace "/chat" SOLO en esta página; no toca el socket default.
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { io, type Socket } from "socket.io-client";
-import { QRCodeSVG } from "qrcode.react";
+import { QRCodeCanvas } from "qrcode.react";
 import { api, apiError } from "../lib/api";
 import { API_BASE } from "../lib/config";
 import { Button, Input, Card, ErrorMsg } from "../components/ui";
@@ -195,11 +195,7 @@ function InvitesTab() {
                 <div className={`text-xs font-medium ${inv.isActive ? "text-wa-green" : "text-slate-500"}`}>{inv.isActive ? "● Sin usar" : "○ Ya usado"}</div>
                 <code className="mt-1 block break-all text-[11px] text-slate-400">{linkFor(inv.code)}</code>
               </div>
-              {inv.isActive && (
-                <div className="shrink-0 rounded bg-white p-1.5">
-                  <QRCodeSVG value={linkFor(inv.code)} size={72} />
-                </div>
-              )}
+              {inv.isActive && <InviteQr url={linkFor(inv.code)} code={inv.code} />}
             </div>
             <div className="mt-3 flex gap-2">
               <Button variant="secondary" onClick={() => void copy(inv.code)}>{copied === inv.code ? "¡Copiado!" : "Copiar link"}</Button>
@@ -209,6 +205,35 @@ function InvitesTab() {
         ))}
         {invites.length === 0 && <p className="text-sm text-slate-500">No tenés links todavía. Creá uno arriba.</p>}
       </div>
+    </div>
+  );
+}
+
+// QR del link de invitación + botón para descargarlo como imagen (PNG) y poder mandarlo/imprimir.
+// El canvas se renderiza a 256px (nítido para descargar) pero se muestra chico (72px) por CSS.
+function InviteQr({ url, code }: { url: string; code: string }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const [saved, setSaved] = useState(false);
+  const download = () => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const a = document.createElement("a");
+    a.href = canvas.toDataURL("image/png");
+    a.download = `qr-${code}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
+  return (
+    <div className="flex shrink-0 flex-col items-center gap-1">
+      <div className="rounded bg-white p-1.5">
+        <QRCodeCanvas ref={ref} value={url} size={256} marginSize={2} className="!h-[72px] !w-[72px]" />
+      </div>
+      <button onClick={download} className="text-[11px] text-slate-400 underline hover:text-slate-200">
+        {saved ? "¡Descargado!" : "Descargar QR"}
+      </button>
     </div>
   );
 }
