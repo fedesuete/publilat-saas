@@ -35,3 +35,11 @@ export function isStandalone(): boolean {
   return window.matchMedia("(display-mode: standalone)").matches ||
     (navigator as unknown as { standalone?: boolean }).standalone === true;
 }
+// Navegadores embebidos dentro de otra app (WhatsApp/Instagram/Facebook/etc.): NO tienen la
+// opción "Agregar a inicio", así que la PWA no se puede instalar desde ahí -> hay que abrir en
+// Safari/Chrome. En iOS el navegador de WhatsApp es casi indetectable por UA, por eso el aviso
+// para iOS se muestra igual aunque esto dé false (ver OnboardingPage).
+export function isInAppBrowser(): boolean {
+  const ua = navigator.userAgent || "";
+  return /FBAN|FBAV|FB_IAB|Instagram|Line\/|Twitter|MicroMessenger|; wv\)/i.test(ua);
+}

@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, apiError, setToken, saveBranding, applyBranding, type Branding } from "../lib/api";
-import { onInstallAvailable, promptInstall, isIos, isStandalone } from "../lib/install";
+import { onInstallAvailable, promptInstall, isIos, isStandalone, isInAppBrowser } from "../lib/install";
 
 function cookie(name: string): string {
   const m = document.cookie.match("(^|;)\\s*" + name + "\\s*=\\s*([^;]+)");
@@ -67,20 +67,31 @@ export default function OnboardingPage() {
       <h1 className="text-2xl font-bold">{name}</h1>
       {branding?.welcomeText && <p className="mt-2 text-sm text-slate-400">{branding.welcomeText}</p>}
 
-      {/* Paso 1: instalar (si se puede y no está instalada) */}
+      {/* Paso 1: instalar (opcional). La instalación da ícono, pantalla completa y notificaciones.
+          En iPhone SOLO se puede desde Safari (Agregar a inicio); los navegadores embebidos
+          (WhatsApp/Instagram) no lo permiten -> hay que abrir en Safari/Chrome primero. */}
       {!installed && (
         <div className="mt-6 w-full rounded-xl border border-slate-700 bg-slate-900/60 p-4 text-sm">
-          <div className="mb-2 font-semibold text-slate-100">📲 Instalá la app primero</div>
+          <div className="mb-2 font-semibold text-slate-100">📲 Instalá la app (recomendado)</div>
           {canInstall ? (
             <button onClick={() => void promptInstall()} className="w-full rounded-full py-3 font-semibold text-slate-900" style={{ background: "var(--brand-primary)" }}>
               Instalar app
             </button>
+          ) : isInAppBrowser() ? (
+            <div className="rounded-lg border border-amber-600 bg-amber-900/30 p-3 text-left text-amber-100">
+              Estás en un navegador dentro de otra app. Para instalar y recibir notificaciones,
+              abrí este link en <b>Safari</b> (iPhone) o <b>Chrome</b> (Android): tocá el menú <b>•••</b> arriba
+              → <b>Abrir en Safari</b>.
+            </div>
           ) : isIos() ? (
-            <p className="text-slate-400">En iPhone: tocá <b>Compartir</b> (el cuadradito con la flecha) → <b>Agregar a inicio</b>.</p>
+            <div className="text-left text-slate-400">
+              <p>En iPhone, en <b>Safari</b>: tocá <b>Compartir</b> (el cuadrado con la flecha ↑) → <b>Agregar a inicio</b>.</p>
+              <p className="mt-2 text-xs text-amber-200/80">Si abriste el link desde WhatsApp, primero tocá <b>•••</b> → <b>Abrir en Safari</b> (adentro de WhatsApp no aparece la opción).</p>
+            </div>
           ) : (
             <p className="text-slate-400">Usá el menú del navegador → <b>Instalar app</b> / <b>Agregar a pantalla de inicio</b>.</p>
           )}
-          <p className="mt-2 text-xs text-slate-600">También podés seguir sin instalar.</p>
+          <p className="mt-2 text-xs text-slate-600">No es obligatorio: también podés chatear así, sin instalar.</p>
         </div>
       )}
 
