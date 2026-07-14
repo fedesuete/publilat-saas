@@ -34,6 +34,7 @@ import { verifyToken } from "./lib/auth.js";
 import { setIo } from "./lib/io.js";
 import { initQueues, closeQueues } from "./lib/queue.js";
 import { initChatPushQueue, closeChatPushQueue } from "./lib/chat-push.js"; // cola aislada del Chat App
+import { warnTestEventCodeAtBoot } from "./lib/capi-guard.js"; // alerta si quedó test_event_code en prod
 import { validateEnv } from "./lib/env.js";
 import { prisma } from "./lib/prisma.js";
 import { getEngine } from "./lib/wa-engine.js";
@@ -315,6 +316,7 @@ server.listen(PORT, () => {
   console.log(`API en http://localhost:${PORT} (${process.env.NODE_ENV ?? "development"})`);
   void initQueues(); // BullMQ: vencimiento automático de líneas
   void initChatPushQueue(); // BullMQ: Web Push del Chat App (cola separada, no-op sin VAPID)
+  void warnTestEventCodeAtBoot(); // CAPI: alerta fuerte si quedó META_TEST_EVENT_CODE en prod
   void syncEvolutionWebhooks(); // acks de entrega en instancias pre-existentes
 });
 

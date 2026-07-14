@@ -3,10 +3,11 @@
 //        -> loguea MetaEvent -> redirige a wa.me con el código.
 import { Router, type Request, type Response } from "express";
 import crypto from "node:crypto";
-import { sendCapiEvent } from "../lib/meta-capi.js";
+import { sendCapiEvent, globalPixelAllowed } from "../lib/meta-capi.js";
 import { resolveUserPixel } from "../lib/pixel.js";
 import { prisma } from "../lib/prisma.js";
 import { fireIntegration } from "../lib/integrations.js";
+import { notifyMissingPixel } from "../lib/capi-guard.js";
 
 export const goRouter = Router();
 
@@ -65,11 +66,19 @@ async function fireLead(params: {
       userId: params.userId,
       contactId: params.contactId,
       eventName: "Lead",
-      pixelId: creds?.pixelId ?? process.env.META_PIXEL_ID ?? "",
+      pixelId: creds?.pixelId ?? "",
       payload: {},
       status: "pending",
     },
   });
+
+  // Sin Pixel del cliente (y sin fallback global): NO enviamos al pixel del .env. Marcamos
+  // "no_pixel" y avisamos al cliente que configure su Pixel. Evita la fuga a otra cuenta.
+  if (!creds && !globalPixelAllowed()) {
+    await prisma.metaEvent.update({ where: { id: metaEvent.id }, data: { status: "no_pixel", response: { error: "SIN_PIXEL" } } });
+    void notifyMissingPixel(params.userId);
+    return;
+  }
 
   try {
     const result = await sendCapiEvent({

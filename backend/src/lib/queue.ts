@@ -14,6 +14,7 @@ import { notify } from "./notifications.js";
 import { sendAdminMail } from "./mailer.js";
 import { checkWaWebVersion } from "./wa-version.js";
 import { alertLineDown, alertLowBalance } from "./line-alert.js";
+import { alertCapiFailures } from "./capi-guard.js";
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const parsed = new URL(REDIS_URL);
@@ -82,6 +83,7 @@ export async function retryFailedCapi(opts?: { includeDead?: boolean; max?: numb
     if (!contact) continue;
     const eventName: "Lead" | "Purchase" = ev.eventName === "Purchase" ? "Purchase" : "Lead";
     const creds = await resolveUserPixel(ev.userId, eventName);
+    if (!creds) continue; // sin pixel del cliente no hay a dónde reenviar (no gastamos intentos)
     try {
       const result = await sendCapiEvent({
         eventName,
@@ -111,6 +113,8 @@ export async function retryFailedCapi(opts?: { includeDead?: boolean; max?: numb
     }
   }
   if (ok) console.log(`[capi-retry] reenviados ${ok}/${failed.length} evento(s)`);
+  // Avisa al cliente + admin si hay eventos que agotaron los reintentos (token/pixel roto).
+  await alertCapiFailures().catch(() => undefined);
   return ok;
 }
 

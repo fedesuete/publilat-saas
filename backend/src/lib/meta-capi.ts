@@ -3,10 +3,16 @@
 import axios from "axios";
 import crypto from "node:crypto";
 
-// Defaults globales del .env (fallback). En multi-tenant cada usuario pasa su pixel/token.
+// Defaults globales del .env. OJO multi-tenant: por defecto NO se usan como fallback, porque un
+// cliente sin Pixel propio terminaría enviando sus eventos al pixel del .env (otra cuenta) en
+// silencio. El fallback global sólo se habilita si META_ALLOW_GLOBAL_PIXEL=true (deploy single-tenant).
 const ENV_PIXEL_ID = process.env.META_PIXEL_ID ?? "";
 const ENV_TOKEN = process.env.META_CAPI_TOKEN ?? "";
+const ALLOW_GLOBAL = process.env.META_ALLOW_GLOBAL_PIXEL === "true";
 const ENV_TEST_CODE = process.env.META_TEST_EVENT_CODE || undefined;
+
+// ¿Está permitido el fallback al pixel global del .env? (default: NO, para multi-tenant).
+export const globalPixelAllowed = (): boolean => ALLOW_GLOBAL;
 const SOURCE_URL = process.env.META_EVENT_SOURCE_URL ?? "";
 const GRAPH_VERSION = process.env.META_GRAPH_VERSION ?? "v20.0";
 
@@ -49,12 +55,14 @@ export interface CapiResult {
  * Doc: https://developers.facebook.com/docs/marketing-api/conversions-api
  */
 export async function sendCapiEvent(input: CapiEventInput): Promise<CapiResult> {
-  const pixelId = input.pixelId || ENV_PIXEL_ID;
-  const token = input.capiToken || ENV_TOKEN;
+  // Fallback al pixel del .env SOLO si está explícitamente permitido (single-tenant).
+  const pixelId = input.pixelId || (ALLOW_GLOBAL ? ENV_PIXEL_ID : "");
+  const token = input.capiToken || (ALLOW_GLOBAL ? ENV_TOKEN : "");
   const testCode = input.testEventCode ?? ENV_TEST_CODE;
 
   if (!pixelId || !token) {
-    throw new Error("Falta pixelId/capiToken (ni en el usuario ni en .env)");
+    // Sin pixel del usuario y sin fallback: NO enviamos (evita mandar al pixel de otra cuenta).
+    throw new Error("SIN_PIXEL: el usuario no tiene Pixel de Meta configurado");
   }
 
   const actionSource = input.actionSource ?? "website";

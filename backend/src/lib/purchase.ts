@@ -2,11 +2,12 @@
 // Purchase a Meta por CAPI con el MISMO externalId/fbp/fbc + value (habilita el match).
 // Se usa desde el endpoint /api/leads/:id/purchase Y desde la detección automática de pago.
 import { prisma } from "./prisma.js";
-import { sendCapiEvent } from "./meta-capi.js";
+import { sendCapiEvent, globalPixelAllowed } from "./meta-capi.js";
 import { resolveUserPixel } from "./pixel.js";
 import { fireIntegration } from "./integrations.js";
 import { emitToUser } from "./io.js";
 import { notify } from "./notifications.js";
+import { notifyMissingPixel } from "./capi-guard.js";
 
 export interface MarkPurchaseResult {
   ok: boolean;
@@ -59,7 +60,7 @@ export async function markPurchase(
       userId,
       contactId: contact.id,
       eventName: "Purchase",
-      pixelId: creds?.pixelId ?? process.env.META_PIXEL_ID ?? "",
+      pixelId: creds?.pixelId ?? "",
       payload: {},
       status: "pending",
     },
@@ -71,6 +72,15 @@ export async function markPurchase(
     amount: updated.amount,
     purchasedAt: updated.purchasedAt,
   };
+
+  // Sin Pixel del cliente (y sin fallback global): la venta queda marcada COMPRO igual, pero el
+  // Purchase NO se manda al pixel del .env. Marcamos "no_pixel" y avisamos al cliente. Sin fuga.
+  if (!creds && !globalPixelAllowed()) {
+    await prisma.metaEvent.update({ where: { id: metaEvent.id }, data: { status: "no_pixel", response: { error: "SIN_PIXEL" } } });
+    void notifyMissingPixel(userId);
+    emitToUser(userId, "lead:purchased", { contactId: contact.id, amount: updated.amount });
+    return { ok: false, error: "SIN_PIXEL: configurá tu Pixel de Meta", lead };
+  }
 
   // Si el contacto vino por un anuncio Click-to-WhatsApp, el Purchase va como
   // business_messaging con el ctwa_clid; si no, sigue el flujo web (landing).
