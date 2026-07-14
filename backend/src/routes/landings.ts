@@ -4,7 +4,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { resolveUserPixel } from "../lib/pixel.js";
-import { renderTrackedLanding, type LandingConfig } from "../lib/landing-template.js";
+import { renderTrackedLanding, injectGoTracking, type LandingConfig } from "../lib/landing-template.js";
 import { publishToS3, uploadHtml, s3Enabled } from "../lib/s3.js";
 import { ensureClientCdn, reprovisionClientDomain, invalidate } from "../lib/cloudfront.js";
 import { slugify } from "../lib/auth.js";
@@ -162,16 +162,18 @@ landingsRouter.post("/:id/publish", async (req, res) => {
   // NO por publi.lat (aísla el quemado de Meta y saca el XSS del origen del panel).
   let publishedUrl: string;
   let host: string;
+  // Inyecta el tracking antes de subir (custom HTML): los links a /go pasan eventID + fbclid/fbc/fbp.
+  const outHtml = injectGoTracking(landing.html);
   const cdn = await ensureClientCdn(req.userId!); // null si AWS no está configurado
   if (cdn) {
-    const ok = await uploadHtml(`${cdn.s3Prefix}/${landing.slug}/index.html`, landing.html);
+    const ok = await uploadHtml(`${cdn.s3Prefix}/${landing.slug}/index.html`, outHtml);
     if (!ok) return res.status(502).json({ error: "No se pudo subir la landing al almacenamiento" });
     await invalidate(cdn.cloudfrontDistId, [`/${landing.slug}/*`]);
     publishedUrl = `https://${cdn.cloudfrontDomain}/${landing.slug}/index.html`;
     host = "cloudfront";
   } else if (s3Enabled()) {
     // S3 sin CloudFront (config parcial): fallback al patrón viejo por si acaso.
-    const s3Url = await publishToS3(landing.slug, landing.html);
+    const s3Url = await publishToS3(landing.slug, outHtml);
     publishedUrl = s3Url ?? `${process.env.APP_BASE_URL ?? ""}/p/${landing.slug}`;
     host = s3Url ? "s3" : "local";
   } else {

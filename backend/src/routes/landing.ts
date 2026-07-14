@@ -4,7 +4,7 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma.js";
 import { resolveUserPixel } from "../lib/pixel.js";
-import { renderTrackedLanding } from "../lib/landing-template.js";
+import { renderTrackedLanding, injectGoTracking } from "../lib/landing-template.js";
 
 export const landingRouter = Router();
 
@@ -39,5 +39,6 @@ landingRouter.get("/p/:slug", async (req, res) => {
   const landing = await prisma.landing.findUnique({ where: { slug: req.params.slug } });
   if (!landing) return res.status(404).send("Landing no encontrada");
   res.set("Content-Type", "text/html; charset=utf-8");
-  return res.send(landing.html);
+  // Inyecta el tracking (idempotente): enriquece los links a /go con eventID + fbclid/fbc/fbp.
+  return res.send(injectGoTracking(landing.html));
 });

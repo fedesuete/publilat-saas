@@ -17,6 +17,29 @@ export interface LandingConfig {
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+// Inyecta el tracking en landings de HTML PROPIO (custom): cualquier <a> que apunte a /go se
+// enriquece al hacer clic con eventID + fbp/fbc/fbclid/campaña, y dispara el Lead del navegador
+// con ese MISMO eventID (dedup browser+server). Así el cliente NO tiene que cablearlo a mano
+// (era el bug de Joaco: botón con /go pelado -> se duplicaba y perdía el fbclid). Idempotente.
+const GO_TRACKING_MARK = "pl-go-tracking";
+export function injectGoTracking(html: string): string {
+  if (!html || html.indexOf(GO_TRACKING_MARK) >= 0) return html;
+  const js =
+    "(function(){if(window.__plGo)return;window.__plGo=1;" +
+    "function ck(n){var c=('; '+document.cookie).split('; '+n+'=');return c.length===2?decodeURIComponent(c.pop().split(';').shift()):'';}" +
+    "function eid(){try{return crypto.randomUUID();}catch(e){return 'e'+Date.now()+Math.round(Math.random()*1e9);}}" +
+    "document.addEventListener('click',function(ev){var t=ev.target;var a=(t&&t.closest)?t.closest('a[href]'):null;if(!a)return;" +
+    "var u;try{u=new URL(a.href,location.href);}catch(e){return;}if(u.pathname.indexOf('/go')<0)return;ev.preventDefault();" +
+    "var p=u.searchParams;var id=p.get('eid')||eid();try{if(window.fbq)fbq('track','Lead',{},{eventID:id});}catch(e){}" +
+    "if(!p.get('eid'))p.set('eid',id);var fbp=ck('_fbp');if(fbp&&!p.get('fbp'))p.set('fbp',fbp);" +
+    "var fbc=ck('_fbc');if(fbc&&!p.get('fbc'))p.set('fbc',fbc);var h=new URLSearchParams(location.search);" +
+    "['fbclid','campaign','ad','src'].forEach(function(k){var v=h.get(k);if(v&&!p.get(k))p.set(k,v);});" +
+    "location.href=u.toString();},true);})();";
+  const tag = `<script data-${GO_TRACKING_MARK}>${js}</script>`;
+  const idx = html.toLowerCase().lastIndexOf("</body>");
+  return idx >= 0 ? html.slice(0, idx) + tag + html.slice(idx) : html + tag;
+}
+
 export function renderTrackedLanding(cfg: LandingConfig): string {
   // El JSON va dentro de <script>; escapamos "<" para no cerrar el tag.
   const json = JSON.stringify({
