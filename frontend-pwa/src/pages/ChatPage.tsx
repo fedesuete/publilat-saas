@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { io, type Socket } from "socket.io-client";
 import { api, apiError, API_BASE, getToken, clearToken, loadBranding } from "../lib/api";
 import { subscribeToPush, pushSupported, pushPermission } from "../lib/push";
+import InstallPrompt from "../components/InstallPrompt";
 
 interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; createdAt: string }
 
@@ -69,6 +70,9 @@ export default function ChatPage() {
         {branding?.logoUrl && <img src={branding.logoUrl} alt="" className="h-8 w-8 rounded-lg object-cover" />}
         <div className="font-semibold">{branding?.brandName || "Chat"}</div>
       </header>
+
+      {/* Instalar la app (post-registro, ya con sesión) -> al abrir la app instalada entra directo. */}
+      <InstallPrompt />
 
       {/* Aviso: activar notificaciones (solo si el navegador las soporta y aún no decidió). */}
       {push === "default" && (

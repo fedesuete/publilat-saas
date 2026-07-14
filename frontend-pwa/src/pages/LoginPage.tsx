@@ -5,6 +5,7 @@ import { api, apiError, setToken, loadBranding } from "../lib/api";
 export default function LoginPage() {
   const navigate = useNavigate();
   const saved = loadBranding();
+  const hasAccount = !!saved?.accountSlug;
   const [username, setUsername] = useState("");
   const [accountSlug, setAccountSlug] = useState(saved?.accountSlug ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -30,9 +31,19 @@ export default function LoginPage() {
       {saved?.logoUrl && <img src={saved.logoUrl} alt="" className="mb-4 h-20 w-20 rounded-2xl object-cover" />}
       <h1 className="text-2xl font-bold">{saved?.brandName || "Iniciar sesión"}</h1>
       <p className="mt-2 text-sm text-slate-400">Ingresá con tu usuario.</p>
-      <form onSubmit={login} className="mt-6 w-full space-y-3">
-        {!saved?.accountSlug && (
-          <input value={accountSlug} onChange={(e) => setAccountSlug(e.target.value)} placeholder="Cuenta"
+
+      {/* Sin cuenta recordada (entró directo, sin pasar por el link): guiar al link de invitación,
+          que es la forma normal de entrar la primera vez. Igual dejamos el ingreso manual. */}
+      {!hasAccount && (
+        <div className="mt-5 w-full rounded-xl border border-slate-700 bg-slate-900/60 p-3 text-left text-xs text-slate-400">
+          ¿Primera vez? Abrí el <b className="text-slate-200">link de invitación</b> que te pasaron para
+          registrarte. Si ya tenías cuenta, escribí abajo la cuenta y tu usuario.
+        </div>
+      )}
+
+      <form onSubmit={login} className="mt-5 w-full space-y-3">
+        {!hasAccount && (
+          <input value={accountSlug} onChange={(e) => setAccountSlug(e.target.value)} placeholder="Nombre de la cuenta"
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-center outline-none" />
         )}
         <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Tu usuario"
