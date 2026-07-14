@@ -113,3 +113,38 @@ export async function sendCapiEvent(input: CapiEventInput): Promise<CapiResult> 
   const { access_token: _omit, ...safePayload } = body;
   return { pixelId, payload: safePayload, response: data };
 }
+
+/**
+ * Valida que un pixelId + token de CAPI funcionen contra Meta. Se usa al GUARDAR el pixel en el
+ * panel, para avisarle al cliente en el acto si el token está mal/vencido — en vez de descubrirlo
+ * cuando fallan las ventas. Envía un evento de PRUEBA (con test_event_code) para NO ensuciar los
+ * datos en vivo. Devuelve { ok:true } si Meta confirmó la recepción.
+ */
+export async function validatePixelCreds(pixelId: string, token: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const url = `https://graph.facebook.com/${GRAPH_VERSION}/${pixelId}/events`;
+    const body = {
+      data: [
+        {
+          event_name: "Lead",
+          event_time: Math.floor(Date.now() / 1000),
+          action_source: "website",
+          event_source_url: SOURCE_URL || "https://publi.lat",
+          user_data: { external_id: sha256("publilat-validate") },
+        },
+      ],
+      test_event_code: "PUBLILAT_VALIDATE", // va a Test Events: no cuenta como conversión real
+      access_token: token,
+    };
+    const { data } = await axios.post<{ events_received?: number }>(url, body);
+    if ((data?.events_received ?? 0) >= 1) return { ok: true };
+    return { ok: false, error: "Meta no confirmó la recepción del evento de prueba." };
+  } catch (e) {
+    const err = axios.isAxiosError(e)
+      ? ((e.response?.data as { error?: { message?: string } })?.error?.message ?? e.message)
+      : e instanceof Error
+        ? e.message
+        : String(e);
+    return { ok: false, error: err };
+  }
+}

@@ -4,6 +4,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { encryptSecret, decryptSecret, maskSecret } from "../lib/crypto.js";
+import { validatePixelCreds } from "../lib/meta-capi.js";
 
 export const pixelRouter = Router();
 
@@ -41,6 +42,28 @@ pixelRouter.get("/", async (req, res) => {
   return res.json({ pixels: pixels.map(toPublic) });
 });
 
+// GET /api/pixels/health — semáforo de la atribución del usuario (para el panel):
+// ¿tiene pixel? ¿cuándo fue el último evento enviado OK? ¿cuántos fallaron en 24h?
+pixelRouter.get("/health", async (req, res) => {
+  const userId = req.userId!;
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const [pixelCount, lastSent, sent24h, failed24h, noPixel24h] = await Promise.all([
+    prisma.pixel.count({ where: { userId } }),
+    prisma.metaEvent.findFirst({ where: { userId, status: "sent" }, orderBy: { createdAt: "desc" }, select: { eventName: true, createdAt: true } }),
+    prisma.metaEvent.count({ where: { userId, status: "sent", createdAt: { gte: since } } }),
+    prisma.metaEvent.count({ where: { userId, status: "failed", createdAt: { gte: since } } }),
+    prisma.metaEvent.count({ where: { userId, status: "no_pixel", createdAt: { gte: since } } }),
+  ]);
+  const hasPixel = pixelCount > 0;
+  let status: "ok" | "warning" | "error" | "no_pixel";
+  if (!hasPixel || noPixel24h > 0) status = "no_pixel";
+  else if (failed24h > 0 && sent24h === 0) status = "error";
+  else if (failed24h > 0) status = "warning";
+  else if (!lastSent) status = "warning"; // pixel cargado pero todavía sin eventos
+  else status = "ok";
+  return res.json({ hasPixel, lastSent, sent24h, failed24h, noPixel24h, status });
+});
+
 // POST /api/pixels — crea un pixel (cifra el token).
 pixelRouter.post("/", async (req, res) => {
   const parsed = createSchema.safeParse(req.body);
@@ -48,6 +71,9 @@ pixelRouter.post("/", async (req, res) => {
     return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
   }
   const { pixelId, capiToken, eventType, siteUrl } = parsed.data;
+  // Validar contra Meta ANTES de guardar: si el token/pixel están mal, avisamos en el acto.
+  const v = await validatePixelCreds(pixelId, capiToken);
+  if (!v.ok) return res.status(400).json({ error: `El Pixel o el token no son válidos según Meta: ${v.error}` });
   const pixel = await prisma.pixel.create({
     data: {
       userId: req.userId!,
@@ -74,6 +100,14 @@ pixelRouter.put("/:id", async (req, res) => {
   if (parsed.data.eventType) data.eventType = parsed.data.eventType;
   if (parsed.data.siteUrl !== undefined) data.siteUrl = parsed.data.siteUrl || null;
   if (parsed.data.capiToken) data.capiToken = encryptSecret(parsed.data.capiToken);
+
+  // Si cambió el pixel o el token, revalidar contra Meta (token nuevo o el existente descifrado).
+  if (parsed.data.pixelId || parsed.data.capiToken) {
+    const effPixel = parsed.data.pixelId ?? existing.pixelId;
+    const effToken = parsed.data.capiToken ?? decryptSecret(existing.capiToken);
+    const v = await validatePixelCreds(effPixel, effToken);
+    if (!v.ok) return res.status(400).json({ error: `El Pixel o el token no son válidos según Meta: ${v.error}` });
+  }
 
   const pixel = await prisma.pixel.update({ where: { id: existing.id }, data });
   return res.json({ pixel: toPublic(pixel) });

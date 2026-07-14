@@ -16,8 +16,18 @@ interface FormState {
 
 const EMPTY: FormState = { id: null, pixelId: "", capiToken: "", eventType: "Lead", siteUrl: "" };
 
+interface Health {
+  hasPixel: boolean;
+  lastSent: { eventName: string; createdAt: string } | null;
+  sent24h: number;
+  failed24h: number;
+  noPixel24h: number;
+  status: "ok" | "warning" | "error" | "no_pixel";
+}
+
 export default function PixelPage() {
   const [pixels, setPixels] = useState<Pixel[]>([]);
+  const [health, setHealth] = useState<Health | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -29,8 +39,12 @@ export default function PixelPage() {
     setLoading(true);
     setError(null);
     try {
-      const { data } = await api.get<{ pixels: Pixel[] }>("/api/pixels");
+      const [{ data }, healthRes] = await Promise.all([
+        api.get<{ pixels: Pixel[] }>("/api/pixels"),
+        api.get<Health>("/api/pixels/health").catch(() => null),
+      ]);
       setPixels(data.pixels);
+      if (healthRes) setHealth(healthRes.data);
     } catch (err) {
       setError(apiError(err));
     } finally {
@@ -99,6 +113,8 @@ export default function PixelPage() {
         datos para enviar los eventos <span className="text-slate-200">Lead</span> y{" "}
         <span className="text-slate-200">Purchase</span> a <em>tu</em> cuenta de Meta.
       </p>
+
+      {health && <HealthBanner health={health} />}
 
       {error && (
         <div className="mb-4">
@@ -180,8 +196,9 @@ export default function PixelPage() {
           ) : pixels.length === 0 ? (
             <Card>
               <p className="text-sm text-slate-400">
-                Todavía no cargaste ningún pixel. Mientras tanto, el sistema usa el pixel global por
-                defecto. Cargá el tuyo para atribuir a tu cuenta de Meta.
+                Todavía no cargaste ningún pixel. <b className="text-slate-200">Hasta que cargues el
+                tuyo, tus leads y ventas NO se envían a Meta</b> (no se atribuyen a ninguna cuenta).
+                Cargá tu Pixel y token para activar la atribución.
               </p>
             </Card>
           ) : (
@@ -209,6 +226,43 @@ export default function PixelPage() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Semáforo de la atribución: verde (andando), ámbar (revisar), rojo (roto / sin pixel).
+function HealthBanner({ health }: { health: Health }) {
+  const map = {
+    ok: {
+      cls: "border-wa-green/40 bg-wa-green/10 text-wa-green",
+      title: "✓ Atribución activa — tus eventos llegan a Meta",
+      detail: health.lastSent
+        ? `Último enviado OK: ${health.lastSent.eventName} · ${fmtDate(health.lastSent.createdAt)}. En 24 h: ${health.sent24h} enviados${health.failed24h ? `, ${health.failed24h} con reintento` : ""}.`
+        : "",
+    },
+    warning: {
+      cls: "border-amber-500/40 bg-amber-500/10 text-amber-300",
+      title: "⚠️ Revisá tu atribución",
+      detail: health.failed24h
+        ? `${health.failed24h} evento(s) con problemas en 24 h. Si sigue, editá tu pixel con un token nuevo.`
+        : "Pixel cargado, pero todavía no se envió ningún evento a Meta.",
+    },
+    error: {
+      cls: "border-rose-500/40 bg-rose-500/10 text-rose-300",
+      title: "🔴 Tus eventos están fallando",
+      detail: `Ninguno se envió en 24 h y ${health.failed24h} fallaron. Tu token puede estar vencido o inválido: editá el pixel con un token nuevo.`,
+    },
+    no_pixel: {
+      cls: "border-rose-500/40 bg-rose-500/10 text-rose-300",
+      title: "🔴 Sin pixel configurado — no se envía nada a Meta",
+      detail: "Tus leads y ventas NO se están atribuyendo. Cargá tu Pixel y token abajo para activar la atribución.",
+    },
+  } as const;
+  const s = map[health.status];
+  return (
+    <div className={`mb-4 rounded-lg border p-3 ${s.cls}`}>
+      <div className="text-sm font-semibold">{s.title}</div>
+      {s.detail && <div className="mt-0.5 text-xs opacity-90">{s.detail}</div>}
     </div>
   );
 }
