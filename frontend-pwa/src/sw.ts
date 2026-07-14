@@ -1,12 +1,13 @@
 /// <reference lib="webworker" />
 // Service worker de la PWA del Chat. injectManifest: vite-plugin-pwa inyecta la lista de
 // precache en self.__WB_MANIFEST. Maneja el shell + Web Push (Fase 5).
-import { precacheAndRoute } from "workbox-precaching";
+import { precacheAndRoute, cleanupOutdatedCaches } from "workbox-precaching";
 
 declare const self: ServiceWorkerGlobalScope;
 
 // Precache del shell (inyectado por vite-plugin-pwa en build).
 precacheAndRoute(self.__WB_MANIFEST || []);
+cleanupOutdatedCaches(); // borra precaches de versiones anteriores
 
 self.addEventListener("install", () => {
   void self.skipWaiting();

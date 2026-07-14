@@ -10,9 +10,21 @@ const saved = loadBranding();
 if (saved) applyBranding(saved);
 
 // Registrar el service worker (para push + shell). injectRegister:false en vite.config.
+// Auto-actualización: cuando el SW nuevo toma control (skipWaiting + claim en sw.ts), recargamos
+// UNA vez para cargar la versión nueva al instante — así la app instalada no queda pegada a una
+// versión vieja cacheada. Solo recarga si ya había un SW previo (no en la primera visita).
 if ("serviceWorker" in navigator) {
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (reloading || !hadController) return;
+    reloading = true;
+    window.location.reload();
+  });
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    navigator.serviceWorker.register("/sw.js")
+      .then((reg) => { void reg.update(); }) // fuerza chequeo de update al abrir
+      .catch(() => undefined);
   });
 }
 
