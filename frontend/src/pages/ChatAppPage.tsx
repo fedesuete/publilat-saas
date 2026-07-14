@@ -79,7 +79,7 @@ export default function ChatAppPage() {
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold">Chat</h1>
+          <h1 className="text-xl font-bold">Chat App</h1>
           <p className="text-sm text-slate-400">Canal directo con tus jugadores (app instalable). Separado del WhatsApp.</p>
         </div>
         <div className="inline-flex rounded-md bg-slate-900 p-1 text-sm">

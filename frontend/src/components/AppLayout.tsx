@@ -106,7 +106,7 @@ const NAV: Array<{ to: string; label: string; icon: LucideIcon }> = [
   { to: "/agenda", label: "Agenda", icon: CalendarDays },
   { to: "/kanban", label: "Kanban", icon: KanbanSquare },
   { to: "/inbox", label: "Inbox", icon: Inbox },
-  { to: "/chat", label: "Chat", icon: MessagesSquare },
+  { to: "/chat", label: "Chat App", icon: MessagesSquare },
   { to: "/automatizaciones", label: "Automatizaciones", icon: Workflow },
   { to: "/whatsapp", label: "WhatsApp", icon: MessageCircle },
   { to: "/billing", label: "Créditos", icon: Coins },
