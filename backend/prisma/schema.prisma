@@ -68,6 +68,7 @@ model User {
   chatMessages      ChatMessage[]
   inviteCodes       InviteCode[]
   chatPushSubs      ChatPushSub[]
+  brandingAssets    BrandingAsset[]
 }
 
 // Automatización / secuencia (tipo ManyChat) para WhatsApp.
@@ -440,6 +441,20 @@ model ChatPushSub {
   player    ChatPlayer? @relation(fields: [playerId], references: [id], onDelete: SetNull)
 
   @@unique([userId, endpoint])
+  @@index([userId])
+}
+
+// Imágenes de branding del Chat App (logo, imagen de bienvenida) servidas por el PROPIO
+// backend con URL corta y estable. Evita depender de un CDN público: el bucket S3 es privado
+// y sin CloudFront la URL directa no carga. Para un logo por cuenta, bytea alcanza de sobra.
+model BrandingAsset {
+  id          String   @id @default(cuid())
+  userId      String
+  contentType String   // image/png | image/jpeg | image/webp | image/gif
+  data        Bytes
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId])
 }
 

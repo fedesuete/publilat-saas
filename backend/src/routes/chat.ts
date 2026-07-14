@@ -11,7 +11,7 @@ import { sendCapiEvent } from "../lib/meta-capi.js"; // reuso el CAPI existente,
 import { resolveUserPixel } from "../lib/pixel.js";
 import { emitChat, playerHasLiveSocket } from "../lib/io.js";
 import { pushEnabled, publicVapidKey, enqueuePlayerPush, enqueueAccountBroadcast } from "../lib/chat-push.js";
-import { s3Enabled, uploadBuffer } from "../lib/s3.js";
+import { s3Enabled } from "../lib/s3.js";
 
 // Router del OPERADOR (se monta bajo requireAuth): gestión de links de invitación.
 export const chatRouter = Router();
@@ -215,11 +215,11 @@ chatRouter.patch("/branding", async (req, res) => {
 });
 
 const logoSchema = z.object({ dataUrl: z.string().regex(/^data:image\/(png|jpeg|jpg|webp|gif);base64,/, "Imagen inválida") });
-const EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg", "image/webp": "webp", "image/gif": "gif" };
 
-// POST /api/chat/branding/logo — sube una imagen (logo o bienvenida) y devuelve su URL.
-// Con S3 configurado: la sube con nombre ALEATORIO (branding/<userId>/<rand>.<ext>) y devuelve
-// la URL del CDN. Sin S3: devuelve el data URL tal cual (el panel lo guarda igual con PATCH).
+// POST /api/chat/branding/logo — sube una imagen (logo o bienvenida) y devuelve una URL corta
+// y estable servida por el propio backend (/api/chat/branding/asset/:id). NO usa S3: el bucket
+// es privado y sin CloudFront la URL directa no carga. Una URL corta también entra en el max(600)
+// del PATCH y no infla el body (a diferencia de guardar el data URL entero).
 chatRouter.post("/branding/logo", async (req, res) => {
   const parsed = logoSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Enviá una imagen PNG/JPG/WEBP/GIF" });
@@ -230,13 +230,12 @@ chatRouter.post("/branding/logo", async (req, res) => {
   // Tope 700 KB: en base64 (~1.37x) queda por debajo del límite global de body de 1 MB.
   if (buffer.length > 700 * 1024) return res.status(413).json({ error: "La imagen supera 700 KB. Comprimila o usá una más liviana." });
 
-  if (s3Enabled()) {
-    const key = `branding/${req.userId}/${crypto.randomBytes(10).toString("hex")}.${EXT[mime] ?? "png"}`;
-    const url = await uploadBuffer(key, buffer, mime);
-    if (url) return res.json({ url });
-    // S3 dijo estar habilitado pero falló: caemos al data URL para no romper la UX.
-  }
-  return res.json({ url: dataUrl });
+  const asset = await prisma.brandingAsset.create({
+    data: { userId: req.userId!, contentType: mime, data: buffer },
+    select: { id: true },
+  });
+  const base = (process.env.APP_BASE_URL ?? "http://localhost:4000").replace(/\/$/, "");
+  return res.json({ url: `${base}/api/chat/branding/asset/${asset.id}` });
 });
 
 // ============================ JUGADOR (requireChatClient) ============================
@@ -306,6 +305,19 @@ chatPublicRouter.post("/push/subscribe", requireChatClient, async (req, res) => 
 });
 
 // ============================ PÚBLICO (jugador) ============================
+
+// GET /api/chat/branding/asset/:id — sirve una imagen de branding (logo / bienvenida). PÚBLICA:
+// la cargan los <img> del panel y de la PWA. Cache largo (el id es aleatorio e inmutable).
+chatPublicRouter.get("/branding/asset/:id", async (req, res) => {
+  const asset = await prisma.brandingAsset.findUnique({
+    where: { id: req.params.id },
+    select: { contentType: true, data: true },
+  });
+  if (!asset) return res.status(404).json({ error: "No encontrado" });
+  res.setHeader("Content-Type", asset.contentType);
+  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  return res.send(Buffer.from(asset.data));
+});
 
 // GET /api/chat/branding/:code — marca de la cuenta para pintar la PWA. Devuelve el branding
 // aunque el link ya se haya usado (para mostrar la marca); `codeActive` dice si aún se puede registrar.
