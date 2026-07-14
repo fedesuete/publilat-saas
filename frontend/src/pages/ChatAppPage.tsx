@@ -9,7 +9,7 @@ import { Button, Input, Card, ErrorMsg } from "../components/ui";
 
 const CHAT_PWA_URL = (import.meta.env.VITE_CHAT_PWA_URL as string | undefined) ?? "https://chat.publi.lat";
 
-interface Conv { id: string; player: string; username: string; status: string; unread: number; preview: string; lastAt: string }
+interface Conv { id: string; playerId: string; player: string; username: string; status: string; unread: number; preview: string; lastAt: string }
 interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; metadata?: Record<string, unknown>; createdAt: string }
 interface Invite { id: string; code: string; label: string | null; isActive: boolean; createdAt: string }
 
@@ -20,7 +20,7 @@ function appendUnique(list: Msg[], m: Msg): Msg[] {
 }
 
 export default function ChatAppPage() {
-  const [tab, setTab] = useState<"chats" | "invites" | "brand">("chats");
+  const [tab, setTab] = useState<"chats" | "invites" | "brand" | "avisos">("chats");
   const [convs, setConvs] = useState<Conv[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -86,6 +86,7 @@ export default function ChatAppPage() {
           <button onClick={() => setTab("chats")} className={`rounded px-3 py-1 font-medium ${tab === "chats" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Conversaciones</button>
           <button onClick={() => setTab("invites")} className={`rounded px-3 py-1 font-medium ${tab === "invites" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Mi Invitación</button>
           <button onClick={() => setTab("brand")} className={`rounded px-3 py-1 font-medium ${tab === "brand" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Marca</button>
+          <button onClick={() => setTab("avisos")} className={`rounded px-3 py-1 font-medium ${tab === "avisos" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Avisos</button>
         </div>
       </div>
 
@@ -140,8 +141,10 @@ export default function ChatAppPage() {
         </div>
       ) : tab === "invites" ? (
         <InvitesTab />
-      ) : (
+      ) : tab === "brand" ? (
         <BrandingTab />
+      ) : (
+        <AvisosTab />
       )}
     </div>
   );
@@ -365,6 +368,134 @@ function BrandingTab() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Sub-sección "Avisos": notificaciones push (a todos o a un jugador) + popup con imagen al entrar.
+interface PopupForm { popupActive: boolean; popupImageUrl: string | null; popupTitle: string | null; popupText: string | null; popupLink: string | null }
+const EMPTY_POPUP: PopupForm = { popupActive: false, popupImageUrl: null, popupTitle: null, popupText: null, popupLink: null };
+
+// Lee un archivo de imagen y lo sube (reusa /branding/logo, que devuelve una URL corta servida por el backend).
+async function uploadImage(file: File): Promise<string> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const r = new FileReader(); r.onload = () => resolve(String(r.result ?? "")); r.onerror = reject; r.readAsDataURL(file);
+  });
+  const { data } = await api.post<{ url: string }>("/api/chat/branding/logo", { dataUrl });
+  return data.url;
+}
+
+function AvisosTab() {
+  const [convs, setConvs] = useState<Conv[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const [pTitle, setPTitle] = useState("");
+  const [pBody, setPBody] = useState("");
+  const [pImage, setPImage] = useState<string | null>(null);
+  const [target, setTarget] = useState("all");
+  const [sending, setSending] = useState(false);
+  const [sentMsg, setSentMsg] = useState<string | null>(null);
+  const [upPush, setUpPush] = useState(false);
+
+  const [popup, setPopup] = useState<PopupForm>(EMPTY_POPUP);
+  const [savingPopup, setSavingPopup] = useState(false);
+  const [popupOk, setPopupOk] = useState(false);
+  const [upPopup, setUpPopup] = useState(false);
+
+  useEffect(() => {
+    void api.get<{ conversations: Conv[] }>("/api/chat/conversations").then(({ data }) => setConvs(data.conversations)).catch(() => undefined);
+    void api.get<{ popup: PopupForm | null }>("/api/chat/popup").then(({ data }) => { if (data.popup) setPopup({ ...EMPTY_POPUP, ...data.popup }); }).catch(() => undefined);
+  }, []);
+
+  const pick = async (file: File, onUrl: (u: string) => void, setBusy: (b: boolean) => void) => {
+    if (file.size > 700 * 1024) { setError("La imagen supera 700 KB. Comprimila o usá una más liviana."); return; }
+    setBusy(true); setError(null);
+    try { onUrl(await uploadImage(file)); } catch (e) { setError(apiError(e)); } finally { setBusy(false); }
+  };
+
+  const sendPush = async () => {
+    if (!pTitle.trim() || !pBody.trim()) return;
+    setSending(true); setError(null); setSentMsg(null);
+    try {
+      const body: Record<string, unknown> = { title: pTitle.trim(), body: pBody.trim() };
+      if (pImage) body.image = pImage;
+      if (target !== "all") body.playerId = target;
+      const { data } = await api.post<{ sent: number }>("/api/chat/push/broadcast", body);
+      setSentMsg(`Enviada a ${data.sent} dispositivo(s).`);
+      setPTitle(""); setPBody(""); setPImage(null);
+    } catch (e) { setError(apiError(e)); } finally { setSending(false); }
+  };
+
+  const setP = (patch: Partial<PopupForm>) => { setPopup((p) => ({ ...p, ...patch })); setPopupOk(false); };
+  const savePopup = async () => {
+    setSavingPopup(true); setError(null); setPopupOk(false);
+    try { await api.patch("/api/chat/popup", popup); setPopupOk(true); }
+    catch (e) { setError(apiError(e)); } finally { setSavingPopup(false); }
+  };
+
+  return (
+    <div className="grid max-w-5xl gap-6 lg:grid-cols-2">
+      {error && <div className="lg:col-span-2"><ErrorMsg>{error}</ErrorMsg></div>}
+
+      {/* Notificación push */}
+      <Card>
+        <div className="mb-1 text-sm font-semibold text-slate-100">🔔 Enviar notificación</div>
+        <p className="mb-3 text-xs text-slate-500">Le llega al celular de tus jugadores (aun con la app cerrada, si activaron las notificaciones).</p>
+        <label className="mb-1 block text-xs text-slate-400">Para</label>
+        <select value={target} onChange={(e) => setTarget(e.target.value)} className="mb-3 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green">
+          <option value="all">Todos mis jugadores</option>
+          {convs.map((c) => <option key={c.playerId} value={c.playerId}>{c.player} ({c.username})</option>)}
+        </select>
+        <label className="mb-1 block text-xs text-slate-400">Título</label>
+        <Input value={pTitle} onChange={(e) => setPTitle(e.target.value)} placeholder="Ej: ¡Promo de hoy!" maxLength={80} className="mb-3" />
+        <label className="mb-1 block text-xs text-slate-400">Mensaje</label>
+        <textarea value={pBody} onChange={(e) => setPBody(e.target.value)} placeholder="Escribí el aviso…" rows={3} maxLength={240}
+          className="mb-3 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
+        <label className="mb-1 block text-xs text-slate-400">Imagen (opcional)</label>
+        <div className="mb-3 flex items-center gap-3">
+          {pImage && <img src={pImage} alt="" className="h-12 w-12 rounded object-cover" />}
+          <label className="cursor-pointer rounded-md border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-slate-800">
+            {upPush ? "Subiendo…" : pImage ? "Cambiar" : "Subir imagen"}
+            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void pick(f, setPImage, setUpPush); e.target.value = ""; }} />
+          </label>
+          {pImage && <button onClick={() => setPImage(null)} className="text-xs text-rose-400 hover:underline">Quitar</button>}
+        </div>
+        <div className="flex items-center gap-3">
+          <Button onClick={() => void sendPush()} disabled={sending || !pTitle.trim() || !pBody.trim()}>{sending ? "Enviando…" : "Enviar notificación"}</Button>
+          {sentMsg && <span className="text-sm text-wa-green">{sentMsg}</span>}
+        </div>
+      </Card>
+
+      {/* Popup al entrar */}
+      <Card>
+        <div className="mb-1 flex items-center justify-between">
+          <div className="text-sm font-semibold text-slate-100">🖼️ Popup al entrar</div>
+          <label className="flex items-center gap-2 text-xs text-slate-300">
+            <input type="checkbox" checked={popup.popupActive} onChange={(e) => setP({ popupActive: e.target.checked })} /> Activo
+          </label>
+        </div>
+        <p className="mb-3 text-xs text-slate-500">Aparece una vez cuando el jugador abre la app (se vuelve a mostrar cada vez que lo cambiás). Ideal para una promo con imagen.</p>
+        <label className="mb-1 block text-xs text-slate-400">Imagen</label>
+        <div className="mb-3 flex items-center gap-3">
+          {popup.popupImageUrl && <img src={popup.popupImageUrl} alt="" className="h-16 w-16 rounded object-cover" />}
+          <label className="cursor-pointer rounded-md border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-slate-800">
+            {upPopup ? "Subiendo…" : popup.popupImageUrl ? "Cambiar" : "Subir imagen"}
+            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void pick(f, (u) => setP({ popupImageUrl: u }), setUpPopup); e.target.value = ""; }} />
+          </label>
+          {popup.popupImageUrl && <button onClick={() => setP({ popupImageUrl: null })} className="text-xs text-rose-400 hover:underline">Quitar</button>}
+        </div>
+        <label className="mb-1 block text-xs text-slate-400">Título (opcional)</label>
+        <Input value={popup.popupTitle ?? ""} onChange={(e) => setP({ popupTitle: e.target.value || null })} placeholder="Ej: ¡Bienvenido!" maxLength={80} className="mb-3" />
+        <label className="mb-1 block text-xs text-slate-400">Texto (opcional)</label>
+        <textarea value={popup.popupText ?? ""} onChange={(e) => setP({ popupText: e.target.value || null })} rows={2} maxLength={500}
+          className="mb-3 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
+        <label className="mb-1 block text-xs text-slate-400">Link del botón (opcional)</label>
+        <Input value={popup.popupLink ?? ""} onChange={(e) => setP({ popupLink: e.target.value || null })} placeholder="https://..." className="mb-3" />
+        <div className="flex items-center gap-3">
+          <Button onClick={() => void savePopup()} disabled={savingPopup}>{savingPopup ? "Guardando…" : "Guardar popup"}</Button>
+          {popupOk && <span className="text-sm text-wa-green">✓ Guardado</span>}
+        </div>
+      </Card>
     </div>
   );
 }

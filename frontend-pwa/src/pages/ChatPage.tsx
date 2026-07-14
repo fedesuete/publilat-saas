@@ -5,6 +5,8 @@ import { subscribeToPush, pushSupported, pushPermission } from "../lib/push";
 import InstallPrompt from "../components/InstallPrompt";
 
 interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; createdAt: string }
+interface Popup { title?: string | null; text?: string | null; image?: string | null; link?: string | null; version: string }
+const POPUP_SEEN_KEY = "publilat_popup_seen";
 
 function appendUnique(list: Msg[], m: Msg): Msg[] {
   return list.some((x) => x.id === m.id) ? list : [...list, m];
@@ -18,6 +20,7 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [push, setPush] = useState<NotificationPermission | "unsupported">(pushPermission());
   const [pushBusy, setPushBusy] = useState(false);
+  const [popup, setPopup] = useState<Popup | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -29,6 +32,21 @@ export default function ChatPage() {
         setError(apiError(e));
       });
   }, []);
+
+  // Popup/promo al entrar: se muestra si está activo y su versión no fue vista todavía.
+  useEffect(() => {
+    api.get<{ popup: Popup | null }>("/api/chat/me/popup")
+      .then(({ data }) => {
+        const p = data.popup;
+        if (p?.version && localStorage.getItem(POPUP_SEEN_KEY) !== p.version) setPopup(p);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const closePopup = () => {
+    if (popup?.version) localStorage.setItem(POPUP_SEEN_KEY, popup.version);
+    setPopup(null);
+  };
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
@@ -70,6 +88,26 @@ export default function ChatPage() {
         {branding?.logoUrl && <img src={branding.logoUrl} alt="" className="h-8 w-8 rounded-lg object-cover" />}
         <div className="font-semibold">{branding?.brandName || "Chat"}</div>
       </header>
+
+      {/* Popup/promo al entrar (imagen + texto + link), configurable por el operador. */}
+      {popup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={closePopup}>
+          <div className="w-full max-w-sm overflow-hidden rounded-2xl border border-slate-700 bg-slate-900" onClick={(e) => e.stopPropagation()}>
+            {popup.image && <img src={popup.image} alt="" className="max-h-[45vh] w-full object-cover" />}
+            <div className="p-4 text-center">
+              {popup.title && <div className="text-lg font-bold text-slate-100">{popup.title}</div>}
+              {popup.text && <p className="mt-1 text-sm text-slate-300">{popup.text}</p>}
+              {popup.link ? (
+                <a href={popup.link} target="_blank" rel="noreferrer" onClick={closePopup}
+                  className="mt-4 block w-full rounded-full py-2.5 font-semibold text-slate-900" style={{ background: "var(--brand-primary)" }}>Ver más</a>
+              ) : (
+                <button onClick={closePopup} className="mt-4 w-full rounded-full py-2.5 font-semibold text-slate-900" style={{ background: "var(--brand-primary)" }}>Entendido</button>
+              )}
+              <button onClick={closePopup} className="mt-2 text-xs text-slate-500 underline">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Instalar la app (post-registro, ya con sesión) -> al abrir la app instalada entra directo. */}
       <InstallPrompt />

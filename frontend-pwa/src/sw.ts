@@ -16,19 +16,20 @@ self.addEventListener("activate", (e) => {
   e.waitUntil(self.clients.claim());
 });
 
-// Web Push: el backend manda { title, body, url }.
+// Web Push: el backend manda { title, body, url, image }.
 self.addEventListener("push", (event: PushEvent) => {
-  let data: { title?: string; body?: string; url?: string } = {};
+  let data: { title?: string; body?: string; url?: string; image?: string } = {};
   try {
     data = event.data ? event.data.json() : {};
   } catch {
     data = { body: event.data?.text() };
   }
   const title = data.title || "Nuevo mensaje";
-  const options: NotificationOptions = {
+  const options: NotificationOptions & { image?: string } = {
     body: data.body || "",
     icon: "/icon-192.png",
     badge: "/icon-192.png",
+    ...(data.image ? { image: data.image } : {}), // imagen grande (Android); ignorada donde no aplica
     data: { url: data.url || "/chat" },
   };
   event.waitUntil(self.registration.showNotification(title, options));

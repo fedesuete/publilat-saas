@@ -90,13 +90,14 @@ chatRouter.get("/conversations", async (req, res) => {
     orderBy: [{ lastMessageAt: "desc" }, { createdAt: "desc" }],
     take: 200,
     select: {
-      id: true, status: true, unreadOperator: true, lastMessagePreview: true, lastMessageAt: true, createdAt: true,
+      id: true, playerId: true, status: true, unreadOperator: true, lastMessagePreview: true, lastMessageAt: true, createdAt: true,
       player: { select: { casinoUsername: true, nombre: true } },
     },
   });
   return res.json({
     conversations: convs.map((c) => ({
       id: c.id,
+      playerId: c.playerId,
       player: c.player.nombre || c.player.casinoUsername,
       username: c.player.casinoUsername,
       status: c.status,
@@ -156,16 +157,30 @@ chatRouter.post("/messages", async (req, res) => {
   return res.status(201).json({ message: msg });
 });
 
-const broadcastSchema = z.object({ title: z.string().min(1).max(80), body: z.string().min(1).max(240), url: z.string().max(300).optional() });
+const broadcastSchema = z.object({
+  title: z.string().min(1).max(80),
+  body: z.string().min(1).max(240),
+  url: z.string().max(300).optional(),
+  image: z.string().url().max(600).optional(),     // imagen grande de la notificación (opcional)
+  playerId: z.string().min(1).optional(),          // si viene: aviso individual; si no: a TODOS
+});
 
-// POST /api/chat/push/broadcast — el operador manda una notificación push a todos sus jugadores
-// suscriptos (promo/aviso). Best-effort; devuelve a cuántas suscripciones se encoló.
+// POST /api/chat/push/broadcast — el operador manda una notificación push. Con playerId va a UN
+// jugador; sin playerId va a TODOS sus jugadores suscriptos. Devuelve a cuántas se encoló.
 chatRouter.post("/push/broadcast", async (req, res) => {
   const parsed = broadcastSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
   if (!pushEnabled()) return res.status(503).json({ error: "Web Push no está configurado (faltan VAPID)" });
-  const count = await enqueueAccountBroadcast(req.userId!, { title: parsed.data.title, body: parsed.data.body, url: parsed.data.url ?? "/chat" });
-  return res.json({ ok: true, sent: count });
+  const payload = { title: parsed.data.title, body: parsed.data.body, url: parsed.data.url ?? "/chat", image: parsed.data.image };
+  let sent: number;
+  if (parsed.data.playerId) {
+    const player = await prisma.chatPlayer.findFirst({ where: { id: parsed.data.playerId, userId: req.userId! }, select: { id: true } });
+    if (!player) return res.status(404).json({ error: "Jugador no encontrado" });
+    sent = await enqueuePlayerPush(req.userId!, player.id, payload);
+  } else {
+    sent = await enqueueAccountBroadcast(req.userId!, payload);
+  }
+  return res.json({ ok: true, sent });
 });
 
 // ============================ BRANDING WHITE-LABEL (operador) ============================
@@ -238,6 +253,37 @@ chatRouter.post("/branding/logo", async (req, res) => {
   return res.json({ url: `${base}/api/chat/branding/asset/${asset.id}` });
 });
 
+const POPUP_FIELDS = ["popupActive", "popupImageUrl", "popupTitle", "popupText", "popupLink"] as const;
+const popupSelect = { popupActive: true, popupImageUrl: true, popupTitle: true, popupText: true, popupLink: true, popupUpdatedAt: true };
+
+// GET /api/chat/popup — el popup/promo que ve el jugador al entrar (para el editor del panel).
+chatRouter.get("/popup", async (req, res) => {
+  const popup = await prisma.user.findUnique({ where: { id: req.userId! }, select: popupSelect });
+  return res.json({ popup });
+});
+
+const popupSchema = z.object({
+  popupActive: z.boolean().optional(),
+  popupImageUrl: z.string().url().max(600).nullish(),
+  popupTitle: z.string().max(80).nullish(),
+  popupText: z.string().max(500).nullish(),
+  popupLink: z.string().url().max(600).nullish(),
+});
+
+// PATCH /api/chat/popup — edita el popup. popupUpdatedAt se toca SIEMPRE: versiona el aviso para
+// que el jugador lo vuelva a ver una vez (el cliente deduplica por esa fecha).
+chatRouter.patch("/popup", async (req, res) => {
+  const parsed = popupSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
+  const data: Record<string, unknown> = { popupUpdatedAt: new Date() };
+  for (const k of POPUP_FIELDS) {
+    const v = (parsed.data as Record<string, unknown>)[k];
+    if (v !== undefined) data[k] = v;
+  }
+  const popup = await prisma.user.update({ where: { id: req.userId! }, data, select: popupSelect });
+  return res.json({ popup });
+});
+
 // ============================ JUGADOR (requireChatClient) ============================
 
 // GET /api/chat/me/conversation — su conversación + historial. Marca leído.
@@ -275,6 +321,25 @@ chatPublicRouter.post("/me/messages", requireChatClient, async (req, res) => {
   emitChat(`chat:${req.accountId}`, "chat:message", payload);                              // al operador
   emitChat(`chat:${req.accountId}:player:${req.chatPlayerId}`, "chat:message", payload);   // al jugador (otros dispositivos)
   return res.status(201).json({ message: msg });
+});
+
+// GET /api/chat/me/popup — el popup/promo activo de la cuenta (o null). `version` = popupUpdatedAt,
+// para que la PWA lo muestre una sola vez por versión.
+chatPublicRouter.get("/me/popup", requireChatClient, async (req, res) => {
+  const u = await prisma.user.findUnique({
+    where: { id: req.accountId! },
+    select: { popupActive: true, popupImageUrl: true, popupTitle: true, popupText: true, popupLink: true, popupUpdatedAt: true },
+  });
+  if (!u?.popupActive || (!u.popupImageUrl && !u.popupText)) return res.json({ popup: null });
+  return res.json({
+    popup: {
+      title: u.popupTitle,
+      text: u.popupText,
+      image: u.popupImageUrl,
+      link: u.popupLink,
+      version: u.popupUpdatedAt?.toISOString() ?? "",
+    },
+  });
 });
 
 // ============================ WEB PUSH (jugador) ============================

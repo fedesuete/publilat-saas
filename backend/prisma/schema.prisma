@@ -48,6 +48,14 @@ model User {
   welcomeText     String?   // texto de bienvenida en la PWA
   welcomeMsgText  String?   // primer mensaje automático de la conversación
   welcomeMsgImage String?
+  // Popup/promo que ve el jugador al entrar a la PWA (imagen + texto + link). popupUpdatedAt
+  // versiona el aviso: el jugador lo ve de nuevo cada vez que cambia (dedupe en el cliente).
+  popupActive     Boolean   @default(false)
+  popupImageUrl   String?
+  popupTitle      String?
+  popupText       String?
+  popupLink       String?
+  popupUpdatedAt  DateTime?
   createdAt DateTime @default(now())
 
   lines       WaLine[]

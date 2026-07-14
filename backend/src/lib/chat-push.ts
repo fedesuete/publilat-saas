@@ -27,7 +27,7 @@ const QUEUE = "chat-push"; // cola NUEVA, no toca las de WhatsApp
 let queue: Queue | null = null;
 let worker: Worker | null = null;
 
-export interface PushPayload { title: string; body: string; url?: string }
+export interface PushPayload { title: string; body: string; url?: string; image?: string }
 
 // Envía a UNA suscripción; si el navegador la reporta expirada (404/410), la borra.
 async function sendToSub(subId: string, payload: PushPayload): Promise<void> {
@@ -48,11 +48,13 @@ async function sendToSub(subId: string, payload: PushPayload): Promise<void> {
   }
 }
 
-// Encola push a todas las suscripciones de un JUGADOR (mensaje del operador sin socket vivo).
-export async function enqueuePlayerPush(userId: string, playerId: string, payload: PushPayload): Promise<void> {
-  if (!pushEnabled()) return;
+// Encola push a todas las suscripciones de un JUGADOR (mensaje del operador sin socket vivo, o
+// aviso individual). Devuelve a cuántas suscripciones se encoló.
+export async function enqueuePlayerPush(userId: string, playerId: string, payload: PushPayload): Promise<number> {
+  if (!pushEnabled()) return 0;
   const subs = await prisma.chatPushSub.findMany({ where: { userId, playerId }, select: { id: true } });
   await Promise.all(subs.map((s) => enqueue(s.id, payload)));
+  return subs.length;
 }
 
 // Encola push a TODAS las suscripciones de una CUENTA (broadcast/promos del operador).
