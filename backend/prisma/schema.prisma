@@ -55,6 +55,8 @@ model User {
   popupTitle      String?
   popupText       String?
   popupLink       String?
+  popupFrom       DateTime? // ventana opcional: no se muestra antes de esta fecha/hora
+  popupUntil      DateTime? // ni después de esta
   popupUpdatedAt  DateTime?
   createdAt DateTime @default(now())
 

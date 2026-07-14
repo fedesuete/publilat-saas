@@ -373,8 +373,21 @@ function BrandingTab() {
 }
 
 // Sub-sección "Avisos": notificaciones push (a todos o a un jugador) + popup con imagen al entrar.
-interface PopupForm { popupActive: boolean; popupImageUrl: string | null; popupTitle: string | null; popupText: string | null; popupLink: string | null }
-const EMPTY_POPUP: PopupForm = { popupActive: false, popupImageUrl: null, popupTitle: null, popupText: null, popupLink: null };
+interface PopupForm {
+  popupActive: boolean; popupImageUrl: string | null; popupTitle: string | null; popupText: string | null; popupLink: string | null;
+  popupFrom: string | null; popupUntil: string | null; // ISO (UTC); ventana de programación opcional
+}
+const EMPTY_POPUP: PopupForm = { popupActive: false, popupImageUrl: null, popupTitle: null, popupText: null, popupLink: null, popupFrom: null, popupUntil: null };
+
+// Conversión entre ISO (UTC, lo que guarda el backend) y el valor del <input datetime-local> (hora LOCAL).
+function isoToLocal(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+function localToIso(local: string): string | null {
+  return local ? new Date(local).toISOString() : null;
+}
 
 // Lee un archivo de imagen y lo sube (reusa /branding/logo, que devuelve una URL corta servida por el backend).
 async function uploadImage(file: File): Promise<string> {
@@ -491,6 +504,21 @@ function AvisosTab() {
           className="mb-3 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
         <label className="mb-1 block text-xs text-slate-400">Link del botón (opcional)</label>
         <Input value={popup.popupLink ?? ""} onChange={(e) => setP({ popupLink: e.target.value || null })} placeholder="https://..." className="mb-3" />
+
+        <div className="mb-3 grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1 block text-xs text-slate-400">Mostrar desde (opcional)</label>
+            <input type="datetime-local" value={isoToLocal(popup.popupFrom)} onChange={(e) => setP({ popupFrom: localToIso(e.target.value) })}
+              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-slate-400">Hasta (opcional)</label>
+            <input type="datetime-local" value={isoToLocal(popup.popupUntil)} onChange={(e) => setP({ popupUntil: localToIso(e.target.value) })}
+              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
+          </div>
+        </div>
+        <p className="mb-3 text-[11px] text-slate-600">Si dejás las fechas vacías, el popup se muestra siempre (mientras esté activo). Con fechas, solo aparece dentro de esa ventana.</p>
+
         <div className="flex items-center gap-3">
           <Button onClick={() => void savePopup()} disabled={savingPopup}>{savingPopup ? "Guardando…" : "Guardar popup"}</Button>
           {popupOk && <span className="text-sm text-wa-green">✓ Guardado</span>}

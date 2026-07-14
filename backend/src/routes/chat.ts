@@ -254,7 +254,7 @@ chatRouter.post("/branding/logo", async (req, res) => {
 });
 
 const POPUP_FIELDS = ["popupActive", "popupImageUrl", "popupTitle", "popupText", "popupLink"] as const;
-const popupSelect = { popupActive: true, popupImageUrl: true, popupTitle: true, popupText: true, popupLink: true, popupUpdatedAt: true };
+const popupSelect = { popupActive: true, popupImageUrl: true, popupTitle: true, popupText: true, popupLink: true, popupFrom: true, popupUntil: true, popupUpdatedAt: true };
 
 // GET /api/chat/popup — el popup/promo que ve el jugador al entrar (para el editor del panel).
 chatRouter.get("/popup", async (req, res) => {
@@ -268,6 +268,8 @@ const popupSchema = z.object({
   popupTitle: z.string().max(80).nullish(),
   popupText: z.string().max(500).nullish(),
   popupLink: z.string().url().max(600).nullish(),
+  popupFrom: z.string().datetime({ offset: true }).nullish(),  // ISO; ventana opcional
+  popupUntil: z.string().datetime({ offset: true }).nullish(),
 });
 
 // PATCH /api/chat/popup — edita el popup. popupUpdatedAt se toca SIEMPRE: versiona el aviso para
@@ -280,6 +282,8 @@ chatRouter.patch("/popup", async (req, res) => {
     const v = (parsed.data as Record<string, unknown>)[k];
     if (v !== undefined) data[k] = v;
   }
+  if (parsed.data.popupFrom !== undefined) data.popupFrom = parsed.data.popupFrom ? new Date(parsed.data.popupFrom) : null;
+  if (parsed.data.popupUntil !== undefined) data.popupUntil = parsed.data.popupUntil ? new Date(parsed.data.popupUntil) : null;
   const popup = await prisma.user.update({ where: { id: req.userId! }, data, select: popupSelect });
   return res.json({ popup });
 });
@@ -328,9 +332,13 @@ chatPublicRouter.post("/me/messages", requireChatClient, async (req, res) => {
 chatPublicRouter.get("/me/popup", requireChatClient, async (req, res) => {
   const u = await prisma.user.findUnique({
     where: { id: req.accountId! },
-    select: { popupActive: true, popupImageUrl: true, popupTitle: true, popupText: true, popupLink: true, popupUpdatedAt: true },
+    select: { popupActive: true, popupImageUrl: true, popupTitle: true, popupText: true, popupLink: true, popupFrom: true, popupUntil: true, popupUpdatedAt: true },
   });
   if (!u?.popupActive || (!u.popupImageUrl && !u.popupText)) return res.json({ popup: null });
+  // Ventana de programación: fuera del rango [from, until] no se muestra.
+  const now = new Date();
+  if (u.popupFrom && now < u.popupFrom) return res.json({ popup: null });
+  if (u.popupUntil && now > u.popupUntil) return res.json({ popup: null });
   return res.json({
     popup: {
       title: u.popupTitle,
