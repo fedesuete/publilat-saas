@@ -63,6 +63,34 @@ cd /opt/publilat && docker compose -f docker-compose.vps.yml exec -T app \
 Esperado: todas en `WORKING`. Las sesiones persisten en el volumen `waha_sessions` (no se pierden
 en un reinicio). Si alguna queda en `SCAN_QR_CODE`, hay que re-escanear esa línea desde el panel.
 
+## No entran mensajes al Inbox (líneas en WORKING pero no llegan)
+Síntoma: los clientes escriben y **no aparece nada en el Inbox**, aunque las líneas figuran
+`WORKING`. Casi siempre es **WAHA que crashea al parsear el mensaje entrante** (bug de su motor
+WEBJS cuando WhatsApp cambia el formato y la imagen quedó vieja).
+
+Diagnóstico (SSH o consola):
+```
+cd /opt/publilat
+# 1) ¿WAHA crashea al recibir? (buscá este error tras un mensaje de prueba)
+docker compose -f docker-compose.vps.yml logs waha --since 3m | grep -iE "parseMessageId|includes.*undefined"
+# 2) ¿Se guardan mensajes? (si el max es viejo, están frenados)
+docker compose -f docker-compose.vps.yml exec -T postgres psql -U postgres -d publilat \
+  -c "SELECT max(\"createdAt\") FROM \"Message\" WHERE direction='in';"
+```
+Si aparece `parseMessageIdSerialized ... reading 'includes' of undefined` → **actualizá WAHA**:
+```
+# poné temporalmente image: devlikeapro/waha:latest en docker-compose.vps.yml, o:
+docker pull devlikeapro/waha:latest
+docker compose -f docker-compose.vps.yml up -d waha
+# esperá ~75s a que reconecten las sesiones (persisten, NO hace falta re-escanear)
+```
+Después **fijá el nuevo digest** en `docker-compose.vps.yml` (línea de la imagen `waha`) para no
+volver a `latest`. Verificá: mandá un WhatsApp de prueba a una línea y mirá que aparezca en
+`Message` (direction='in') y que NO reaparezca el error.
+
+> Prevención: WAHA WEBJS corre un Chromium por línea y se rompe cuando WhatsApp cambia su protocolo.
+> Conviene actualizarlo cada tanto (mismo comando) de forma proactiva, en horario de bajo tráfico.
+
 ## Redeploy (tras un cambio de código)
 ```
 cd /opt/publilat && git pull && docker compose -f docker-compose.vps.yml up -d --build app
