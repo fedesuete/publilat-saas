@@ -69,6 +69,55 @@ function CopyBtn({ value, label = "Copiar" }: { value: string; label?: string })
 interface FormState { name: string; title: string; headline: string; subtitle: string; buttonText: string; msg: string; autoRedirect: boolean }
 const EMPTY_FORM: FormState = { name: "", title: "", headline: "", subtitle: "", buttonText: "", msg: "", autoRedirect: false };
 
+// Revisión automática del HTML propio: detecta los 2 errores típicos (botón directo a WhatsApp sin
+// seguimiento, y falta del Pixel). No bloquea; guía. El seguimiento se inyecta solo al publicar.
+function analyzeLanding(html: string) {
+  const h = html.toLowerCase();
+  return {
+    hasPixel: /fbq\s*\(\s*['"]init['"]/.test(h) || h.includes("fbevents.js"),
+    hasGoLink: h.includes("/go?"),
+    hasWaDirect: h.includes("wa.me") || h.includes("api.whatsapp.com") || h.includes("whatsapp://"),
+  };
+}
+
+function LandingReview({ html, goLink }: { html: string; goLink: string }) {
+  const a = analyzeLanding(html);
+  type Row = { s: "ok" | "warn" | "err"; t: string };
+  const rows: Row[] = [];
+  if (a.hasGoLink) rows.push({ s: "ok", t: "El botón usa tu link de seguimiento (/go): la atribución va a funcionar y no se duplica." });
+  else if (a.hasWaDirect) rows.push({ s: "err", t: "Tu botón va DIRECTO a WhatsApp. Así se pierde la atribución (Meta no sabe quién compró). Reemplazá el link del botón por tu link de seguimiento de abajo." });
+  else rows.push({ s: "warn", t: "No encontramos un botón que lleve a WhatsApp con seguimiento. Poné tu link de seguimiento de abajo en el botón principal." });
+  rows.push(a.hasPixel
+    ? { s: "ok", t: "Detectamos el código del Pixel de Meta en la página." }
+    : { s: "warn", t: "No encontramos el código del Pixel de Meta. Agregalo (o partí de una plantilla, que ya lo trae)." });
+
+  const icon = { ok: "✅", warn: "⚠️", err: "🔴" };
+  const color = { ok: "text-wa-green", warn: "text-amber-300", err: "text-rose-300" };
+  return (
+    <Card className="mt-4">
+      <div className="mb-2 text-sm font-semibold text-slate-100">Revisión de tu landing</div>
+      <ul className="space-y-1.5 text-sm">
+        {rows.map((r, i) => (
+          <li key={i} className={`flex gap-2 ${color[r.s]}`}><span>{icon[r.s]}</span><span className="text-slate-300">{r.t}</span></li>
+        ))}
+      </ul>
+      <div className="mt-3 rounded-md border border-slate-700 bg-slate-900/50 p-3">
+        <div className="mb-1 text-xs font-semibold text-slate-300">Tu link de seguimiento (pegalo en el botón que va a WhatsApp)</div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input readOnly value={goLink} className="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-xs text-slate-300" />
+          <CopyBtn value={goLink} label="Copiar link" />
+        </div>
+        <p className="mt-2 text-[11px] text-slate-500">Ej. en tu botón: <span className="font-mono text-slate-400">&lt;a href="{goLink}"&gt;Ir a WhatsApp&lt;/a&gt;</span></p>
+      </div>
+      <div className="mt-3 text-[11px] text-slate-500">
+        <b className="text-slate-400">Cómo armar tu landing (3 reglas):</b> 1) El botón principal tiene que llevar a WhatsApp con tu link de
+        seguimiento de arriba (NO directo a wa.me). 2) Incluí tu Pixel de Meta (o usá una plantilla). 3) Publicá desde el panel: el sistema
+        le inyecta el seguimiento solo y evita que se dupliquen los leads.
+      </div>
+    </Card>
+  );
+}
+
 export default function LandingsPage() {
   const { user } = useAuth();
   const slug = user?.slug ?? "";
@@ -293,6 +342,10 @@ export default function LandingsPage() {
               <iframe title="preview" srcDoc={previewHtml} sandbox="allow-scripts" className="h-[28rem] w-full rounded-b-lg bg-white" />
             </Card>
           </div>
+
+          {mode === "html" && html.trim() && (
+            <LandingReview html={html} goLink={`${API_BASE}/go?u=${slug}&msg=${encodeURIComponent(form.msg || "Hola, quiero info")}`} />
+          )}
         </>
       )}
 
