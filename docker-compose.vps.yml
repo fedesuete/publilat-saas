@@ -31,6 +31,26 @@ services:
       WAHA_WEBHOOK_URL: http://app:4000/api/wa/webhook?token=${EVOLUTION_WEBHOOK_TOKEN}
     ports:
       - "4010:4000" # Traefik -> http://IP:4010
+    # Si el app queda colgado (no responde /health), autoheal lo reinicia solo (label abajo).
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    labels:
+      autoheal: "true"
+
+  # Vigila los contenedores con label autoheal=true y reinicia los que queden "unhealthy".
+  # Solo toca los NUESTROS (label), no las apps del socio (n8n/prospeccion).
+  autoheal:
+    image: willfarrell/autoheal:latest
+    restart: unless-stopped
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+      AUTOHEAL_INTERVAL: "30"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
   landing:
     build:
