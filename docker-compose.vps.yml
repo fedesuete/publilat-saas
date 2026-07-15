@@ -144,7 +144,7 @@ services:
     # WhatsApp cambia su protocolo -> hay que ACTUALIZAR a mano cuando pase (ver RUNBOOK.md):
     #   docker compose -f docker-compose.vps.yml pull  (con :latest temporal)  y luego up -d waha
     #   -> anotar el digest nuevo acá. Síntoma: mensajes entrantes no llegan + parseMessageIdSerialized.
-    image: devlikeapro/waha@sha256:dc134637dfa0bd65202010a65e4ff8176101791699176c75bb37d5aa9daf487c
+    image: ${WAHA_IMAGE:-devlikeapro/waha@sha256:dc134637dfa0bd65202010a65e4ff8176101791699176c75bb37d5aa9daf487c}
     restart: unless-stopped
     environment:
       - WAHA_API_KEY=${WAHA_API_KEY}
