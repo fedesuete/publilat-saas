@@ -39,6 +39,7 @@ landingRouter.get("/p/:slug", async (req, res) => {
   const landing = await prisma.landing.findUnique({ where: { slug: req.params.slug } });
   if (!landing) return res.status(404).send("Landing no encontrada");
   res.set("Content-Type", "text/html; charset=utf-8");
-  // Inyecta el tracking (idempotente): enriquece los links a /go con eventID + fbclid/fbc/fbp.
-  return res.send(injectGoTracking(landing.html));
+  // Inyecta el tracking (idempotente): enriquece los links a /go con eventID + fbclid/fbc/fbp,
+  // y fuerza el origen del /go al backend (APP_BASE_URL).
+  return res.send(injectGoTracking(landing.html, process.env.APP_BASE_URL ?? ""));
 });

@@ -22,10 +22,14 @@ const esc = (s: string) =>
 // con ese MISMO eventID (dedup browser+server). Así el cliente NO tiene que cablearlo a mano
 // (era el bug de Joaco: botón con /go pelado -> se duplicaba y perdía el fbclid). Idempotente.
 const GO_TRACKING_MARK = "pl-go-tracking";
-export function injectGoTracking(html: string): string {
+export function injectGoTracking(html: string, goBase = ""): string {
   if (!html || html.indexOf(GO_TRACKING_MARK) >= 0) return html;
+  // goBase = URL del BACKEND (ej https://app.publi.lat). Se fuerza como origen del /go, porque la
+  // landing se sirve desde OTRO dominio (CloudFront) que NO tiene /go -> daba AccessDenied si el
+  // botón usaba un /go relativo (bug de Samuel, 2026-07-15).
+  const GB = JSON.stringify((goBase || "").replace(/\/$/, ""));
   const js =
-    "(function(){if(window.__plGo)return;window.__plGo=1;" +
+    "(function(){if(window.__plGo)return;window.__plGo=1;var GB=" + GB + ";" +
     "function ck(n){var c=('; '+document.cookie).split('; '+n+'=');return c.length===2?decodeURIComponent(c.pop().split(';').shift()):'';}" +
     "function eid(){try{return crypto.randomUUID();}catch(e){return 'e'+Date.now()+Math.round(Math.random()*1e9);}}" +
     "document.addEventListener('click',function(ev){var t=ev.target;var a=(t&&t.closest)?t.closest('a[href]'):null;if(!a)return;" +
@@ -34,7 +38,7 @@ export function injectGoTracking(html: string): string {
     "if(!p.get('eid'))p.set('eid',id);var fbp=ck('_fbp');if(fbp&&!p.get('fbp'))p.set('fbp',fbp);" +
     "var fbc=ck('_fbc');if(fbc&&!p.get('fbc'))p.set('fbc',fbc);var h=new URLSearchParams(location.search);" +
     "['fbclid','campaign','ad','src'].forEach(function(k){var v=h.get(k);if(v&&!p.get(k))p.set(k,v);});" +
-    "location.href=u.toString();},true);})();";
+    "var origin=GB||u.origin;location.href=origin+'/go?'+p.toString();},true);})();";
   const tag = `<script data-${GO_TRACKING_MARK}>${js}</script>`;
   const idx = html.toLowerCase().lastIndexOf("</body>");
   return idx >= 0 ? html.slice(0, idx) + tag + html.slice(idx) : html + tag;

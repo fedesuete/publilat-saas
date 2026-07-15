@@ -162,8 +162,9 @@ landingsRouter.post("/:id/publish", async (req, res) => {
   // NO por publi.lat (aísla el quemado de Meta y saca el XSS del origen del panel).
   let publishedUrl: string;
   let host: string;
-  // Inyecta el tracking antes de subir (custom HTML): los links a /go pasan eventID + fbclid/fbc/fbp.
-  const outHtml = injectGoTracking(landing.html);
+  // Inyecta el tracking antes de subir (custom HTML): los links a /go pasan eventID + fbclid/fbc/fbp,
+  // y se fuerza el origen del /go al backend (la landing vive en CloudFront, que no tiene /go).
+  const outHtml = injectGoTracking(landing.html, process.env.APP_BASE_URL ?? "");
   const cdn = await ensureClientCdn(req.userId!); // null si AWS no está configurado
   if (cdn) {
     const ok = await uploadHtml(`${cdn.s3Prefix}/${landing.slug}/index.html`, outHtml);
