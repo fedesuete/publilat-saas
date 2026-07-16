@@ -28,14 +28,34 @@ Meta nunca se entera y la venta no matchea.
 
 ## 🎯 El Pixel (opcional pero recomendado)
 
-Si armás la landing con **HTML propio**, poné en el `<head>` **solo el código base del Píxel de Meta**
-(el `init` + `PageView`) con **tu Pixel ID**.
+Hay **dos capas** de Pixel y conviene entenderlas:
+
+1. **Pixel de "Mi Pixel"** (server-side / CAPI): es el que cargás en el panel. **Es el que dispara el
+   Lead y el Purchase y hace el match con Meta.** Con esto solo, tu atribución **ya funciona**.
+2. **Pixel del navegador** (código en el `<head>` de la landing): es **opcional** y suma un poco de
+   calidad de match. Al cargar, deja la cookie **`_fbp`**, que Publi.lat manda junto con el Lead. También
+   dispara el `PageView`.
+
+Si querés la capa 2, poné en el `<head>` **solo el código base del Píxel** (`init` + `PageView`) con **tu
+Pixel ID** — la "Revisión de tu landing" del editor te lo da listo, con tu ID y un botón de copiar.
 
 ⚠️ **No agregues un `fbq('track','Lead')` a mano.** Del evento Lead se encarga Publi.lat cuando tocan el
-botón. Si lo ponés doble, **duplicás**.
+botón (el `/go`). Si lo ponés doble, **duplicás**.
+
+> El `fbp` mejora el match del **Lead**, pero el salto grande de calidad llega con los **Purchase** (que
+> mandan el teléfono) y con **volumen** de eventos. Con pocos clics el puntaje de Meta no significa mucho.
 
 > Si en vez de HTML propio usás el editor **"por campos"** de Publi.lat, el pixel y el botón se arman
 > solos — no tenés que tocar nada. Esta guía es para cuando querés un diseño custom.
+
+## ♻️ Actualizar una landing que ya tiene anuncios corriendo (no se rompe nada)
+
+Podés editar y **re-publicar** una landing **con los anuncios activos, sin miedo**:
+- La **URL NO cambia** al re-publicar (tu dominio CloudFront es el mismo). Solo cambia si tocás
+  "Reprovisionar dominio", que es otra cosa.
+- Tus anuncios apuntan a esa URL → **siguen andando igual**, ahora con el contenido nuevo.
+- Ejemplo típico: sumar el pixel del navegador (arriba) a una landing en vivo → editás, pegás el código,
+  **Publicar**, y listo. El diseño y el botón quedan idénticos; solo se agrega el pixel (invisible).
 
 ---
 

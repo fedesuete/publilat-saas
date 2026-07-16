@@ -258,6 +258,9 @@ Devolvé solo el código HTML completo, listo para copiar y pegar.`;
           <div className="rounded-lg border border-slate-700 bg-slate-950/50 p-3 text-xs text-slate-400">
             <b className="text-slate-200">🌐 Tu landing va en tu propio dominio</b> (no en publi.lat): al publicar se sirve desde un dominio descartable de Amazon CloudFront, tuyo y aislado. Si alguna vez Meta lo marca, usás <b className="text-slate-200">"Reprovisionar dominio"</b> y saltás a uno nuevo limpio sin perder nada.
           </div>
+          <div className="rounded-lg border border-slate-700 bg-slate-950/50 p-3 text-xs text-slate-400">
+            <b className="text-slate-200">♻️ Editar con anuncios corriendo no rompe nada.</b> Al re-publicar, tu <b className="text-slate-200">URL sigue igual</b> (no cambia el dominio) → tus anuncios siguen andando, ahora con el contenido nuevo. Ideal para, por ejemplo, sumarle el pixel del navegador a una landing en vivo: editás, pegás, <b className="text-slate-200">Publicar</b>, y el diseño queda idéntico.
+          </div>
         </div>
       )}
     </Card>
