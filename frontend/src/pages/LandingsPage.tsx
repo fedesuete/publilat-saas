@@ -4,6 +4,17 @@ import { api, apiError } from "../lib/api";
 import { API_BASE } from "../lib/config";
 import { useAuth } from "../lib/auth";
 import { Button, Input, Card, ErrorMsg } from "../components/ui";
+import OnboardingTour, { type TourStep } from "../components/OnboardingTour";
+
+// Recorrido guiado de la sección Landings (spotlight, igual que el del registro).
+const LANDINGS_TOUR: TourStep[] = [
+  { targetId: "lp-guide", title: "1. La guía 🎓", body: "Acá tenés las reglas y un prompt listo para pedirle el HTML a ChatGPT sin errores. Desplegalo cuando quieras." },
+  { targetId: "lp-tabs", title: "2. Tus landings", body: "Creá una nueva ('Nueva landing') o elegí una que ya tengas. Podés armarla por campos o pegando tu propio HTML." },
+  { targetId: "lp-editor", title: "3. Editá y previsualizá", body: "'Campos' = rápido por partes. 'HTML' = pegás tu diseño propio. La vista previa de la derecha se actualiza en vivo." },
+  { targetId: "lp-review", title: "4. Revisión automática", body: "Un semáforo te avisa si el botón usa el seguimiento (/go), si falta el pixel, etc. Corregí lo que salga en rojo." },
+  { targetId: "lp-campaign", title: "5. URL para campañas", body: "Esta es la URL que ponés en tu anuncio de Meta. Aparece al publicar (es tu dominio propio de CloudFront, aislado)." },
+  { targetId: "lp-publish", title: "6. Publicá", body: "Tocá Publicar para activar tu landing y generar tu dominio propio. Después copiás la URL de arriba y va al anuncio." },
+];
 
 // ---- Plantillas (diseños ORIGINALES y NEUTROS, listos para editar). El CTA apunta al
 // redirector /go con el slug del usuario para mantener la atribución. Sin número ni pixel reales.
@@ -377,6 +388,26 @@ export default function LandingsPage() {
   const campaignUrl = current ? (current.publishedUrl ?? landingUrl(current.slug)) : "";
   const editing = editingId !== null || html !== "" || form.name !== "";
 
+  // Recorrido guiado: se abre solo la primera vez (como el registro) y con el botón "Guía".
+  // Si no hay una landing abierta, abre una para que se vean el editor/revisión/publicar.
+  const [tour, setTour] = useState(false);
+  const tourStarted = useRef(false);
+  const startTour = () => {
+    if (!editing) {
+      if (landings.length > 0) void startEdit(landings[0]);
+      else startCreate();
+    }
+    window.setTimeout(() => setTour(true), 280);
+  };
+  useEffect(() => {
+    if (loading || tourStarted.current) return;
+    tourStarted.current = true;
+    if (localStorage.getItem("pl_landings_tour") === "done") return;
+    localStorage.setItem("pl_landings_tour", "done");
+    startTour();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+
   return (
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between">
@@ -384,15 +415,18 @@ export default function LandingsPage() {
           <h1 className="text-xl font-bold">Landings</h1>
           <p className="text-sm text-slate-400">Páginas rastreadas que disparan el Lead y llevan a WhatsApp.</p>
         </div>
-        <Button variant="secondary" onClick={() => void load()}>Actualizar</Button>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" onClick={startTour}><GraduationCap className="h-4 w-4" /> Guía</Button>
+          <Button variant="secondary" onClick={() => void load()}>Actualizar</Button>
+        </div>
       </div>
 
       {error && <div className="mb-4"><ErrorMsg>{error}</ErrorMsg></div>}
 
-      <LandingGuide slug={slug} goBase={API_BASE} />
+      <div id="lp-guide"><LandingGuide slug={slug} goBase={API_BASE} /></div>
 
       {/* Pestañas de landings */}
-      <div className="mb-5 flex flex-wrap items-center gap-2">
+      <div id="lp-tabs" className="mb-5 flex flex-wrap items-center gap-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Landings:</span>
         {landings.map((l) => (
           <button key={l.id} onClick={() => void startEdit(l)}
@@ -427,14 +461,16 @@ export default function LandingsPage() {
                 <input ref={fileRef} type="file" accept=".html,text/html" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onUploadHtml(f); e.target.value = ""; }} />
                 {current && <Button variant="secondary" onClick={() => window.open(campaignUrl, "_blank")}><ExternalLink className="h-4 w-4" /> Ver mi sitio</Button>}
                 <Button onClick={() => void save()} disabled={saving || !dirty}>{saving ? "Guardando…" : dirty ? "Guardar cambios" : "Sin cambios"}</Button>
-                <Button variant="primary" disabled={busyId === editingId || !editingId} onClick={() => void publish()}>
-                  {busyId === editingId ? "…" : current?.published ? "Actualizar sitio" : "Publicar"}
-                </Button>
+                <span id="lp-publish" className="inline-flex">
+                  <Button variant="primary" disabled={busyId === editingId || !editingId} onClick={() => void publish()}>
+                    {busyId === editingId ? "…" : current?.published ? "Actualizar sitio" : "Publicar"}
+                  </Button>
+                </span>
               </div>
             </div>
             {current && (
               <>
-                <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <div id="lp-campaign" className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
                   URL para campañas
                   {current.published
                     ? (campaignUrl.includes("cloudfront.net") && <span className="ml-1 rounded bg-wa-green/15 px-1.5 py-0.5 text-[10px] font-semibold normal-case text-wa-green">dominio propio · aislado</span>)
@@ -466,7 +502,7 @@ export default function LandingsPage() {
           </Card>
 
           {/* Editor + vista previa en vivo */}
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div id="lp-editor" className="grid gap-4 lg:grid-cols-2">
             <Card className="flex flex-col p-0">
               <div className="flex items-center gap-2 border-b border-slate-800 px-3 py-2">
                 <div className="inline-flex rounded-md bg-slate-900 p-1 text-xs">
@@ -501,7 +537,7 @@ export default function LandingsPage() {
           </div>
 
           {mode === "html" && html.trim() && (
-            <LandingReview html={html} slug={slug} pixelId={pixelId} goLink={`${API_BASE}/go?u=${slug}&msg=${encodeURIComponent(form.msg || "Hola, quiero info")}`} />
+            <div id="lp-review"><LandingReview html={html} slug={slug} pixelId={pixelId} goLink={`${API_BASE}/go?u=${slug}&msg=${encodeURIComponent(form.msg || "Hola, quiero info")}`} /></div>
           )}
         </>
       )}
@@ -538,6 +574,8 @@ export default function LandingsPage() {
           </div>
         </div>
       )}
+
+      {tour && <OnboardingTour steps={LANDINGS_TOUR} onClose={() => setTour(false)} />}
     </div>
   );
 }
