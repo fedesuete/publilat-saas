@@ -69,30 +69,74 @@ function CopyBtn({ value, label = "Copiar" }: { value: string; label?: string })
 interface FormState { name: string; title: string; headline: string; subtitle: string; buttonText: string; msg: string; autoRedirect: boolean }
 const EMPTY_FORM: FormState = { name: "", title: "", headline: "", subtitle: "", buttonText: "", msg: "", autoRedirect: false };
 
-// Revisión automática del HTML propio: detecta los 2 errores típicos (botón directo a WhatsApp sin
-// seguimiento, y falta del Pixel). No bloquea; guía. El seguimiento se inyecta solo al publicar.
+// Revisión automática del HTML propio: detecta los errores típicos y guía (no bloquea).
+// Distingue el Pixel del NAVEGADOR (código en el HTML) del Pixel SERVER-SIDE/CAPI (cargado en
+// "Mi Pixel"). El seguimiento se inyecta solo al publicar.
 function analyzeLanding(html: string) {
   const h = html.toLowerCase();
+  const goMatch = html.match(/\/go\?[^"'\s<>]*\bu=([a-z0-9_-]+)/i);
   return {
     hasPixel: /fbq\s*\(\s*['"]init['"]/.test(h) || h.includes("fbevents.js"),
     hasGoLink: h.includes("/go?"),
     hasWaDirect: h.includes("wa.me") || h.includes("api.whatsapp.com") || h.includes("whatsapp://"),
+    manualLead: /fbq\s*\(\s*['"]track['"]\s*,\s*['"]lead['"]/i.test(html),
+    hardcodedNumber: /wa\.me\/\+?\d{5,}/i.test(h) || /[?&]phone=\+?\d{5,}/i.test(h),
+    goSlug: goMatch ? goMatch[1] : null,
   };
 }
 
-function LandingReview({ html, goLink }: { html: string; goLink: string }) {
+// Código base del Pixel de Meta (init + PageView) con el ID del cliente ya puesto.
+// SIN evento Lead: de eso se encarga el botón /go (evita duplicar).
+function metaPixelSnippet(pixelId: string): string {
+  const id = pixelId || "TU_PIXEL_ID";
+  return `<!-- Meta Pixel -->
+<script>
+!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script',
+'https://connect.facebook.net/en_US/fbevents.js');
+fbq('init','${id}');fbq('track','PageView');
+</script>
+<noscript><img height="1" width="1" style="display:none"
+src="https://www.facebook.com/tr?id=${id}&ev=PageView&noscript=1"/></noscript>
+<!-- End Meta Pixel -->`;
+}
+
+function LandingReview({ html, goLink, slug, pixelId }: { html: string; goLink: string; slug: string; pixelId: string }) {
   const a = analyzeLanding(html);
   type Row = { s: "ok" | "warn" | "err"; t: string };
   const rows: Row[] = [];
-  if (a.hasGoLink) rows.push({ s: "ok", t: "El botón usa tu link de seguimiento (/go): la atribución va a funcionar y no se duplica." });
-  else if (a.hasWaDirect) rows.push({ s: "err", t: "Tu botón va DIRECTO a WhatsApp. Así se pierde la atribución (Meta no sabe quién compró). Reemplazá el link del botón por tu link de seguimiento de abajo." });
-  else rows.push({ s: "warn", t: "No encontramos un botón que lleve a WhatsApp con seguimiento. Poné tu link de seguimiento de abajo en el botón principal." });
-  rows.push(a.hasPixel
-    ? { s: "ok", t: "Detectamos el código del Pixel de Meta en la página." }
-    : { s: "warn", t: "No encontramos el código del Pixel de Meta. Agregalo (o partí de una plantilla, que ya lo trae)." });
+
+  // 1) Botón con seguimiento
+  if (a.hasGoLink && a.goSlug && slug && a.goSlug.toLowerCase() !== slug.toLowerCase())
+    rows.push({ s: "warn", t: `El botón usa /go pero con otro usuario (u=${a.goSlug}). Tiene que ser u=${slug}, si no los leads le entran a otra cuenta.` });
+  else if (a.hasGoLink)
+    rows.push({ s: "ok", t: "El botón usa tu link de seguimiento (/go): la atribución va a funcionar y no se duplica." });
+  else if (a.hasWaDirect)
+    rows.push({ s: "err", t: "Tu botón va DIRECTO a WhatsApp. Así se pierde la atribución (Meta no sabe quién compró). Reemplazalo por tu link de seguimiento de abajo." });
+  else
+    rows.push({ s: "warn", t: "No encontramos un botón que lleve a WhatsApp con seguimiento. Poné tu link de seguimiento de abajo en el botón principal." });
+
+  // 2) Número de teléfono hardcodeado
+  if (a.hardcodedNumber)
+    rows.push({ s: "err", t: "Hay un número de teléfono escrito en un link de WhatsApp. Eso saltea el seguimiento y no rota tus líneas. Sacá el número y usá el link /go." });
+
+  // 3) Pixel del navegador vs. Pixel de "Mi Pixel" (server-side / CAPI)
+  if (a.hasPixel)
+    rows.push({ s: "ok", t: "Detectamos el Pixel de Meta en la página (el PageView del navegador está cubierto)." });
+  else if (pixelId)
+    rows.push({ s: "ok", t: "Tu Pixel ya está cargado en 'Mi Pixel', así que el Lead server-side (CAPI) YA se dispara. El código de abajo es OPCIONAL: suma el pixel del navegador (PageView + deduplicación)." });
+  else
+    rows.push({ s: "warn", t: "No tenés Pixel configurado. Andá a 'Mi Pixel' y cargá tu Pixel ID + token para que salgan tus eventos a Meta." });
+
+  // 4) Lead manual (duplica)
+  if (a.manualLead)
+    rows.push({ s: "warn", t: "Encontramos un evento Lead puesto a mano (fbq 'track' 'Lead'). El botón /go YA dispara el Lead — dejar los dos DUPLICA. Sacalo y dejá solo el PageView." });
 
   const icon = { ok: "✅", warn: "⚠️", err: "🔴" };
   const color = { ok: "text-wa-green", warn: "text-amber-300", err: "text-rose-300" };
+
   return (
     <Card className="mt-4">
       <div className="mb-2 text-sm font-semibold text-slate-100">Revisión de tu landing</div>
@@ -101,6 +145,8 @@ function LandingReview({ html, goLink }: { html: string; goLink: string }) {
           <li key={i} className={`flex gap-2 ${color[r.s]}`}><span>{icon[r.s]}</span><span className="text-slate-300">{r.t}</span></li>
         ))}
       </ul>
+
+      {/* Link de seguimiento */}
       <div className="mt-3 rounded-md border border-slate-700 bg-slate-900/50 p-3">
         <div className="mb-1 text-xs font-semibold text-slate-300">Tu link de seguimiento (pegalo en el botón que va a WhatsApp)</div>
         <div className="flex flex-wrap items-center gap-2">
@@ -109,10 +155,25 @@ function LandingReview({ html, goLink }: { html: string; goLink: string }) {
         </div>
         <p className="mt-2 text-[11px] text-slate-500">Ej. en tu botón: <span className="font-mono text-slate-400">&lt;a href="{goLink}"&gt;Ir a WhatsApp&lt;/a&gt;</span></p>
       </div>
+
+      {/* Código del Pixel del navegador (si falta en el HTML) */}
+      {!a.hasPixel && (
+        <div className="mt-3 rounded-md border border-slate-700 bg-slate-900/50 p-3">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <div className="text-xs font-semibold text-slate-300">Pixel del navegador {pixelId ? "(opcional)" : ""} — pegalo en el &lt;head&gt;</div>
+            <CopyBtn value={metaPixelSnippet(pixelId)} label="Copiar código" />
+          </div>
+          <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-slate-950 p-2 font-mono text-[10px] leading-relaxed text-slate-400">{metaPixelSnippet(pixelId)}</pre>
+          <p className="mt-1 text-[11px] text-slate-500">
+            {pixelId
+              ? <>Ya viene con tu Pixel ID (<span className="font-mono text-slate-400">{pixelId}</span>). No le agregues un evento Lead: de eso se encarga el botón /go.</>
+              : <>Primero cargá tu Pixel en <b className="text-slate-300">Mi Pixel</b>; después este código sale con tu ID.</>}
+          </p>
+        </div>
+      )}
+
       <div className="mt-3 text-[11px] text-slate-500">
-        <b className="text-slate-400">Cómo armar tu landing (3 reglas):</b> 1) El botón principal tiene que llevar a WhatsApp con tu link de
-        seguimiento de arriba (NO directo a wa.me). 2) Incluí tu Pixel de Meta (o usá una plantilla). 3) Publicá desde el panel: el sistema
-        le inyecta el seguimiento solo y evita que se dupliquen los leads.
+        <b className="text-slate-400">Clave:</b> el <b className="text-slate-300">Lead y el Purchase salen por tu Pixel de "Mi Pixel"</b> (server-side, CAPI) — eso es lo que hace el match con Meta. El Pixel del navegador es un extra para el PageView y la deduplicación.
       </div>
     </Card>
   );
@@ -191,6 +252,17 @@ export default function LandingsPage() {
   const { user } = useAuth();
   const slug = user?.slug ?? "";
   const tpls = useMemo(() => templates(slug), [slug]);
+  // Pixel del cliente (de "Mi Pixel") para la revisión: distinguir server-side vs navegador
+  // y ofrecer el código base con su ID ya puesto.
+  const [pixelId, setPixelId] = useState("");
+  useEffect(() => {
+    api.get<{ pixels: Array<{ pixelId: string; eventType: string }> }>("/api/pixels")
+      .then(({ data }) => {
+        const p = data.pixels.find((x) => x.eventType === "Lead") ?? data.pixels[0];
+        setPixelId(p?.pixelId ?? "");
+      })
+      .catch(() => { /* sin pixel: la revisión lo avisa */ });
+  }, []);
 
   const [landings, setLandings] = useState<Landing[]>([]);
   const [loading, setLoading] = useState(true);
@@ -415,7 +487,7 @@ export default function LandingsPage() {
           </div>
 
           {mode === "html" && html.trim() && (
-            <LandingReview html={html} goLink={`${API_BASE}/go?u=${slug}&msg=${encodeURIComponent(form.msg || "Hola, quiero info")}`} />
+            <LandingReview html={html} slug={slug} pixelId={pixelId} goLink={`${API_BASE}/go?u=${slug}&msg=${encodeURIComponent(form.msg || "Hola, quiero info")}`} />
           )}
         </>
       )}
