@@ -149,15 +149,27 @@ cloudWebhookRouter.post("/", async (req, res) => {
             }
           }
 
-          // 2) Media entrante (imagen/documento) -> base64 para el Inbox y la detección.
+          // 2) Media entrante (imagen/documento/audio/video/sticker) -> base64 para el Inbox y la
+          // detección. Antes solo bajaba imagen/documento; audio (nota de voz), video y sticker
+          // caían en "[mensaje no soportado]".
           let mediaType: string | null = null;
           let mediaData: string | null = null;
-          const mediaId: string | undefined = msg.image?.id ?? msg.document?.id;
+          const mediaId: string | undefined =
+            msg.image?.id ?? msg.audio?.id ?? msg.video?.id ?? msg.document?.id ?? msg.sticker?.id;
           if (mediaId) {
             const m = await getCloudMediaBase64(line, mediaId);
             if (m?.base64) {
               mediaData = m.base64;
-              mediaType = m.mimetype ?? (msg.image ? "image/jpeg" : "application/octet-stream");
+              const fallback = msg.image
+                ? "image/jpeg"
+                : msg.audio
+                  ? "audio/ogg"
+                  : msg.video
+                    ? "video/mp4"
+                    : msg.sticker
+                      ? "image/webp"
+                      : "application/octet-stream";
+              mediaType = m.mimetype ?? fallback;
             }
           }
 
