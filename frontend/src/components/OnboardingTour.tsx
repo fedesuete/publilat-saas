@@ -55,25 +55,31 @@ export default function OnboardingTour({ steps, onClose }: { steps: TourStep[]; 
     ? { top: rect.top - pad, left: rect.left - pad, width: rect.width + pad * 2, height: rect.height + pad * 2 }
     : null;
 
-  // Posición de la tarjeta: preferimos a la DERECHA del objetivo; si no entra, a la izquierda;
-  // si tampoco, debajo. Clampeada al viewport. `side` define de qué lado va el señalador.
+  // Posición de la tarjeta: la ponemos en la zona con lugar SIN tapar el objetivo — derecha,
+  // izquierda, debajo o arriba (la que tenga espacio). Si el objetivo es enorme y no entra en
+  // ningún lado (ej. el editor), la fijamos ARRIBA centrada, con fondo opaco para que se lea.
   const vw = typeof window !== "undefined" ? window.innerWidth : 1024;
   const vh = typeof window !== "undefined" ? window.innerHeight : 768;
-  let cardLeft = vw / 2 - CARD_W / 2;
-  let cardTop = vh / 2 - 90;
-  let side: "left" | "right" | "top" = "left";
+  const EST_H = 210; // alto estimado de la tarjeta (para elegir zona y clampear)
+  const NEED_W = CARD_W + GAP * 2;
+  const NEED_H = EST_H + GAP * 2;
+  const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(v, max));
+  let cardLeft = clamp(vw / 2 - CARD_W / 2, GAP, vw - CARD_W - GAP);
+  let cardTop = GAP;
+  let side: "left" | "right" | "top" | "bottom" | "none" = "none";
   if (rect) {
-    if (rect.right + GAP + CARD_W <= vw) {
-      cardLeft = rect.right + GAP; side = "left"; // señalador apunta a la izquierda (hacia el target)
-      cardTop = rect.top;
-    } else if (rect.left - GAP - CARD_W >= 0) {
-      cardLeft = rect.left - GAP - CARD_W; side = "right";
-      cardTop = rect.top;
-    } else {
-      cardLeft = Math.min(Math.max(GAP, rect.left), vw - CARD_W - GAP); side = "top";
-      cardTop = rect.bottom + GAP;
+    if (vw - rect.right >= NEED_W) {            // lugar a la DERECHA del objetivo
+      side = "left"; cardLeft = rect.right + GAP; cardTop = rect.top;
+    } else if (rect.left >= NEED_W) {           // a la IZQUIERDA
+      side = "right"; cardLeft = rect.left - GAP - CARD_W; cardTop = rect.top;
+    } else if (vh - rect.bottom >= NEED_H) {    // DEBAJO
+      side = "top"; cardLeft = clamp(rect.left, GAP, vw - CARD_W - GAP); cardTop = rect.bottom + GAP;
+    } else if (rect.top >= NEED_H) {            // ARRIBA
+      side = "bottom"; cardLeft = clamp(rect.left, GAP, vw - CARD_W - GAP); cardTop = rect.top - GAP - EST_H;
+    } else {                                    // objetivo enorme: fija arriba-centro
+      side = "none"; cardLeft = clamp(vw / 2 - CARD_W / 2, GAP, vw - CARD_W - GAP); cardTop = GAP;
     }
-    cardTop = Math.min(Math.max(GAP, cardTop), vh - 200);
+    cardTop = clamp(cardTop, GAP, vh - NEED_H);
   }
 
   return createPortal(
@@ -99,15 +105,17 @@ export default function OnboardingTour({ steps, onClose }: { steps: TourStep[]; 
         />
       )}
 
-      {/* Tarjeta explicativa. */}
+      {/* Tarjeta explicativa. Fondo más claro que el editor (slate-800) + anillo verde para que
+          resalte aunque quede sobre contenido oscuro. */}
       <div
-        className="fixed w-[300px] rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-2xl"
+        className="fixed w-[300px] rounded-xl border border-slate-600 bg-slate-800 p-4 shadow-2xl ring-1 ring-wa-green/30"
         style={{ top: cardTop, left: cardLeft }}
       >
         {/* Señalador (flechita) hacia el objetivo. */}
-        {side === "left" && <div className="absolute -left-2 top-6 h-4 w-4 rotate-45 border-b border-l border-slate-700 bg-slate-900" />}
-        {side === "right" && <div className="absolute -right-2 top-6 h-4 w-4 rotate-45 border-t border-r border-slate-700 bg-slate-900" />}
-        {side === "top" && <div className="absolute -top-2 left-6 h-4 w-4 rotate-45 border-t border-l border-slate-700 bg-slate-900" />}
+        {side === "left" && <div className="absolute -left-2 top-6 h-4 w-4 rotate-45 border-b border-l border-slate-600 bg-slate-800" />}
+        {side === "right" && <div className="absolute -right-2 top-6 h-4 w-4 rotate-45 border-t border-r border-slate-600 bg-slate-800" />}
+        {side === "top" && <div className="absolute -top-2 left-6 h-4 w-4 rotate-45 border-t border-l border-slate-600 bg-slate-800" />}
+        {side === "bottom" && <div className="absolute -bottom-2 left-6 h-4 w-4 rotate-45 border-b border-r border-slate-600 bg-slate-800" />}
 
         <div className="mb-1 text-xs font-semibold text-wa-green">Paso {i + 1} de {steps.length}</div>
         <div className="mb-1 text-base font-bold text-white">{step.title}</div>
