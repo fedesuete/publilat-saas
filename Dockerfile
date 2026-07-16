@@ -22,8 +22,9 @@ RUN npx prisma generate --schema backend/prisma/schema.prisma \
  && npm run build --workspace backend
 
 # 2) Runtime: Node slim con node_modules + dist + prisma + panel buildeado.
+# ffmpeg: convierte las notas de voz del navegador (WebM/OPUS) a OGG/OPUS para la Cloud API.
 FROM node:20-slim AS runtime
-RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ffmpeg && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
 import { getEngine } from "../lib/wa-engine.js";
-import { sendCloudText, isOutsideWindowError, graphErrorMessage, listTemplates, sendCloudTemplate } from "../lib/wa-cloud.js";
+import { sendCloudText, sendCloudAudio, isOutsideWindowError, graphErrorMessage, listTemplates, sendCloudTemplate } from "../lib/wa-cloud.js";
 import { decryptSecret } from "../lib/crypto.js";
 import { checkWarmupGate } from "../lib/warmup.js";
 
@@ -255,24 +255,27 @@ inboxRouter.post("/:contactId/audio", async (req, res) => {
 
   const line = await prisma.waLine.findFirst({ where: { id: contact.lineId, userId: req.userId! } });
   if (!line) return res.status(400).json({ error: "La línea no está disponible" });
-  if (line.provider === "cloud") {
-    return res.status(400).json({ error: "El envío de audios todavía no está disponible en líneas Cloud API." });
-  }
-  if (!line.sessionId) return res.status(400).json({ error: "La línea no está disponible" });
-
-  // Rampa de calentamiento (líneas Baileys nuevas): cupo de envíos por 24 h.
-  const gate = await checkWarmupGate(line);
-  if (!gate.ok) return res.status(429).json({ error: gate.reason, code: "WARMUP_LIMIT" });
 
   const mimeMatch = parsed.data.audio.match(/^data:([^;]+);base64,/);
   const mime = mimeMatch?.[1] ?? "audio/ogg";
   const base64 = parsed.data.audio.replace(/^data:[^;]+;base64,/, "");
   const destination = contact.waJid ?? contact.phone;
   if (!destination) return res.status(400).json({ error: "El contacto aún no tiene teléfono" });
+
   let waMessageId: string | undefined;
   try {
-    const sent = await getEngine().sendWhatsAppAudio(line.sessionId, destination, base64);
-    waMessageId = sent?.key?.id ?? undefined;
+    if (line.provider === "cloud") {
+      // Cloud API: convierte a OGG/OPUS, sube el media y manda type=audio.
+      const sent = await sendCloudAudio(line, (contact.phone ?? destination).replace(/\D/g, ""), base64, mime);
+      waMessageId = sent?.messages?.[0]?.id ?? undefined;
+    } else {
+      if (!line.sessionId) return res.status(400).json({ error: "La línea no está disponible" });
+      // Rampa de calentamiento (líneas Baileys nuevas): cupo de envíos por 24 h.
+      const gate = await checkWarmupGate(line);
+      if (!gate.ok) return res.status(429).json({ error: gate.reason, code: "WARMUP_LIMIT" });
+      const sent = await getEngine().sendWhatsAppAudio(line.sessionId, destination, base64);
+      waMessageId = sent?.key?.id ?? undefined;
+    }
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     return res.status(502).json({ error: "No se pudo enviar el audio", detail: message });

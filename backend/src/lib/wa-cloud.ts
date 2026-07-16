@@ -2,6 +2,8 @@
 // Se usa en anuncios Click-to-WhatsApp (CTWA): recibe el referral con ctwa_clid y
 // permite responder por la Graph API. El token va POR LÍNEA (cifrado en reposo).
 import axios from "axios";
+import { spawn } from "node:child_process";
+import FormData from "form-data";
 import { decryptSecret } from "./crypto.js";
 
 export const GRAPH_VERSION =
@@ -29,6 +31,55 @@ export async function sendCloudText(line: CloudLine, to: string, text: string) {
   const { data } = await axios.post(
     `${GRAPH}/${line.wabaPhoneNumberId}/messages`,
     { messaging_product: "whatsapp", to, type: "text", text: { body: text } },
+    { headers: { Authorization: `Bearer ${token(line)}`, "Content-Type": "application/json" }, timeout: 15000 },
+  );
+  return data;
+}
+
+// Convierte un audio a OGG/OPUS (lo ÚNICO que acepta la Cloud API para notas de voz; el
+// navegador —Chrome— graba WebM/OPUS). Usa ffmpeg por stdin/stdout. Las notas de voz son
+// chicas, así que no hay riesgo de deadlock del pipe.
+function toOggOpus(input: Buffer): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const ff = spawn("ffmpeg", ["-hide_banner", "-loglevel", "error", "-i", "pipe:0", "-vn", "-c:a", "libopus", "-b:a", "32k", "-f", "ogg", "pipe:1"]);
+    const out: Buffer[] = [];
+    const err: Buffer[] = [];
+    ff.stdout.on("data", (d) => out.push(d));
+    ff.stderr.on("data", (d) => err.push(d));
+    ff.on("error", (e) => reject(new Error("ffmpeg no disponible: " + e.message)));
+    ff.on("close", (code) =>
+      code === 0 ? resolve(Buffer.concat(out)) : reject(new Error("ffmpeg falló: " + Buffer.concat(err).toString().slice(-300))));
+    ff.stdin.on("error", () => { /* EPIPE si ffmpeg cierra antes; lo maneja el evento close */ });
+    ff.stdin.end(input);
+  });
+}
+
+// Sube un binario al endpoint de media de la Cloud API y devuelve el media id.
+async function uploadCloudMedia(line: CloudLine, buffer: Buffer, mime: string, filename: string): Promise<string> {
+  if (!line.wabaPhoneNumberId) throw new Error("La línea Cloud no tiene Phone Number ID");
+  const form = new FormData();
+  form.append("messaging_product", "whatsapp");
+  form.append("file", buffer, { filename, contentType: mime });
+  form.append("type", mime);
+  const { data } = await axios.post(`${GRAPH}/${line.wabaPhoneNumberId}/media`, form, {
+    headers: { Authorization: `Bearer ${token(line)}`, ...form.getHeaders() },
+    maxContentLength: MAX_MEDIA_BYTES,
+    maxBodyLength: MAX_MEDIA_BYTES,
+    timeout: 30000,
+  });
+  if (!data?.id) throw new Error("Meta no devolvió media id");
+  return data.id as string;
+}
+
+// Envía una nota de voz por la Cloud API: convierte a OGG/OPUS, sube el media y manda type=audio.
+export async function sendCloudAudio(line: CloudLine, to: string, base64: string, mime: string) {
+  if (!line.wabaPhoneNumberId) throw new Error("La línea Cloud no tiene Phone Number ID");
+  const input = Buffer.from(base64, "base64");
+  const ogg = mime.startsWith("audio/ogg") ? input : await toOggOpus(input);
+  const mediaId = await uploadCloudMedia(line, ogg, "audio/ogg", "voz.ogg");
+  const { data } = await axios.post(
+    `${GRAPH}/${line.wabaPhoneNumberId}/messages`,
+    { messaging_product: "whatsapp", to, type: "audio", audio: { id: mediaId } },
     { headers: { Authorization: `Bearer ${token(line)}`, "Content-Type": "application/json" }, timeout: 15000 },
   );
   return data;
