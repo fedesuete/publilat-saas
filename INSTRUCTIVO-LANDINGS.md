@@ -75,6 +75,33 @@ Devolvé solo el código HTML completo, listo para copiar y pegar.
 
 ---
 
+## 🌐 Dónde vive tu landing (importante: NO en publi.lat)
+
+Cuando publicás, tu landing **NO se sirve desde publi.lat**. Cada cliente tiene su **propio dominio
+descartable de Amazon CloudFront** (ej: `d3nra60r1pe7xw.cloudfront.net`). Tu página se sube a S3 y se
+sirve por ESE dominio, tuyo y aislado.
+
+**¿Por qué así?** (modelo ScaleOS)
+- Si Meta llegara a **marcar/quemar** una landing, cae **solo ese dominio** — no publi.lat ni las
+  landings de otros clientes.
+- Saca el contenido del cliente del origen del panel (más seguro).
+
+**Si Meta te quema el dominio:** en el editor de Landings tenés **"Reprovisionar dominio"** → te genera
+un **dominio nuevo y limpio** apuntando a la misma landing, y reapunta tus URLs publicadas
+automáticamente. Copiás la URL nueva y la ponés en el anuncio nuevo.
+
+> El **único** componente que vive en `app.publi.lat` es el redirector `/go` (el motor que dispara el
+> Lead). La **página** siempre va por tu dominio CloudFront descartable.
+
+### Para el admin: cómo se prende (ya está prendido)
+El modelo se activa solo con las credenciales AWS cargadas en el `.env` del servidor
+(`AWS_S3_BUCKET`, `AWS_REGION`, `AWS_ACCOUNT_ID`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`). El
+bucket es **privado** y CloudFront lo lee por **OAC**. En el primer `Publicar` de cada cliente, el
+sistema crea su distribución (`ensureClientCdn`) — tarda ~5-15 min en desplegar la primera vez.
+No hace falta `CLOUDFRONT_DOMAIN` (esa variable es para un CDN compartido; acá cada cliente tiene el suyo).
+
+---
+
 ## ✅ Checklist final (antes de publicar)
 
 - [ ] El botón va a `https://app.publi.lat/go?u=TU_SLUG&...` (no a wa.me, no a un número).

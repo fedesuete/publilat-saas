@@ -177,6 +177,10 @@ Devolvé solo el código HTML completo, listo para copiar y pegar.`;
             <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-2.5 text-xs text-slate-300"><b className="text-red-300">✗ Lead a mano (fbq)</b><br />Duplica el Lead</div>
           </div>
           <p className="text-xs text-slate-500">Después de pegar el HTML, mirá el <b className="text-slate-300">semáforo de revisión</b> del editor y acordate de <b className="text-slate-300">re-publicar</b> si cambiás algo.</p>
+
+          <div className="rounded-lg border border-slate-700 bg-slate-950/50 p-3 text-xs text-slate-400">
+            <b className="text-slate-200">🌐 Tu landing va en tu propio dominio</b> (no en publi.lat): al publicar se sirve desde un dominio descartable de Amazon CloudFront, tuyo y aislado. Si alguna vez Meta lo marca, usás <b className="text-slate-200">"Reprovisionar dominio"</b> y saltás a uno nuevo limpio sin perder nada.
+          </div>
         </div>
       )}
     </Card>
