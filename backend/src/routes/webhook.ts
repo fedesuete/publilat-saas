@@ -272,6 +272,21 @@ webhookRouter.post("/", async (req, res) => {
         const text = extractText(item.message);
         const waMessageId = item.key.id as string | undefined;
 
+        // Nada que mostrar: sin texto y sin adjunto descargable (imagen/audio/documento).
+        // Son eventos de protocolo/e2e/stickers que WhatsApp entrega con body vacío. Si uno
+        // llega ANTES del mensaje con "(ref: …)", el contacto de /go todavía no tiene
+        // phone/waJid y no hay code para matchear -> nacía un contacto FANTASMA que se
+        // quedaba con la conversación pero SIN la atribución (fbclid), y el Purchase no
+        // matcheaba. La rama fromMe ya los saltea; acá hacíamos lo mismo. (Leads duplicados,
+        // verificado en prod 2026-07-16: ~cada clic atribuido se partía en dos contactos.)
+        const hasMedia = !!(
+          item?.message?.imageMessage ??
+          item?.message?.audioMessage ??
+          item?.message?.documentMessage ??
+          item?.message?.documentWithCaptionMessage?.message?.documentMessage
+        );
+        if (!text && !hasMedia) continue;
+
         // Idempotencia: si ya procesamos este mensaje (mismo waMessageId), lo salteamos.
         if (waMessageId) {
           const dup = await prisma.message.findFirst({ where: { waMessageId }, select: { id: true } });
