@@ -132,6 +132,7 @@ export async function checkLineHealth(): Promise<void> {
     try {
       let connected = line.connected;
       let quality = line.qualityRating;
+      let phone = line.phone;
       if (line.provider === "cloud") {
         if (line.wabaPhoneNumberId && line.accessToken) {
           const q = await getPhoneQuality(line.wabaPhoneNumberId, decryptSecret(line.accessToken));
@@ -162,8 +163,18 @@ export async function checkLineHealth(): Promise<void> {
             await alertLineDown(line);
           }
         }
+        // Auto-reparación del número: si quedó conectada pero SIN teléfono (pasa cuando el owner
+        // no llegó en el connection.update al reconectar), se lo re-pedimos al motor. Sin número el
+        // /go NO usa la línea y la landing muestra "WhatsApp no disponible".
+        if (connected && !phone) {
+          const owner = await getEngine().fetchOwnerNumber(inst).catch(() => "");
+          if (owner) {
+            phone = owner;
+            console.log(`[line-health] línea ${line.id}: recuperé el número (${owner}) que había quedado vacío`);
+          }
+        }
       }
-      await prisma.waLine.update({ where: { id: line.id }, data: { connected, qualityRating: quality ?? null, lastCheckedAt: new Date() } });
+      await prisma.waLine.update({ where: { id: line.id }, data: { connected, qualityRating: quality ?? null, phone, lastCheckedAt: new Date() } });
       emitToUser(line.userId, "wa:health", { lineId: line.id, connected, qualityRating: quality ?? null });
     } catch (e) {
       console.error("[line-health] error en línea", line.id, e instanceof Error ? e.message : String(e));
