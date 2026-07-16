@@ -21,6 +21,17 @@ function buildFbc(fbclid?: string, existing?: string) {
   return `fb.1.${Date.now()}.${fbclid}`;
 }
 
+// Respuesta cuando el negocio no tiene línea de WhatsApp activa (no mandamos a un número ajeno).
+function sendNoLine(res: Response) {
+  res.set("Content-Type", "text/html; charset=utf-8");
+  return res.status(200).send(
+    `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
+    `<div style="font-family:system-ui;background:#0b141a;color:#e9edef;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px">` +
+    `<div><h1 style="font-size:22px;margin:0 0 8px">WhatsApp no disponible</h1>` +
+    `<p style="color:#8696a0;max-width:360px">Este negocio todavía no tiene una línea de WhatsApp configurada. Probá de nuevo más tarde.</p></div></div>`
+  );
+}
+
 // Elige la línea de WhatsApp a usar, repartiendo los clics entre las líneas elegibles
 // (rotación LRU: la menos usada primero). Elegible = conectada, status active y con
 // TIEMPO PAGADO vigente (expiresAt futuro). Sin línea paga activa no enviamos el clic a
@@ -131,6 +142,25 @@ goRouter.get("/go", async (req: Request, res: Response) => {
     const user = await prisma.user.findUnique({ where: { slug: u } });
     if (!user) return res.status(404).send("Usuario no encontrado");
 
+    // Dedup por fbclid: Facebook genera un fbclid ÚNICO por clic, así que si ya existe un contacto
+    // con este mismo fbclid hace poco, es EL MISMO clic pegando a /go de nuevo (doble-toque, volver
+    // atrás y re-tocar). Reusamos ese lead y redirigimos, sin crear otro contacto ni disparar otro Lead.
+    if (fbclid) {
+      const dup = await prisma.contact.findFirst({
+        where: { userId: user.id, fbclid, createdAt: { gt: new Date(Date.now() - 6 * 60 * 60 * 1000) } },
+        orderBy: { createdAt: "desc" },
+        select: { code: true, line: { select: { phone: true, connected: true, status: true, expiresAt: true } } },
+      });
+      if (dup) {
+        const now = new Date();
+        const same = dup.line && dup.line.connected && dup.line.status === "active" && dup.line.expiresAt && dup.line.expiresAt > now ? dup.line.phone : "";
+        const phone = same || (await pickLine(user.id)).phone; // misma línea si sigue vigente, si no rota
+        if (!phone) return sendNoLine(res);
+        const text = encodeURIComponent(`${msg} (ref: ${dup.code})`);
+        return res.redirect(302, `https://wa.me/${phone}?text=${text}`);
+      }
+    }
+
     // Preferimos lo que mande la landing (cross-domain); si no, las cookies del backend.
     const fbp = fbpQuery ?? (req.cookies?._fbp as string | undefined);
     const fbc = fbcQuery ?? buildFbc(fbclid, req.cookies?._fbc as string | undefined);
@@ -188,15 +218,7 @@ goRouter.get("/go", async (req: Request, res: Response) => {
 
     // Sin línea de WhatsApp configurada: NO mandamos a un número ajeno. El lead ya quedó
     // registrado y el evento disparado; mostramos un aviso simple.
-    if (!linePhone) {
-      res.set("Content-Type", "text/html; charset=utf-8");
-      return res.status(200).send(
-        `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
-        `<div style="font-family:system-ui;background:#0b141a;color:#e9edef;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px">` +
-        `<div><h1 style="font-size:22px;margin:0 0 8px">WhatsApp no disponible</h1>` +
-        `<p style="color:#8696a0;max-width:360px">Este negocio todavía no tiene una línea de WhatsApp configurada. Probá de nuevo más tarde.</p></div></div>`
-      );
-    }
+    if (!linePhone) return sendNoLine(res);
 
     // Mensaje con el código incrustado para re-identificar al contacto.
     const text = encodeURIComponent(`${msg} (ref: ${code})`);
