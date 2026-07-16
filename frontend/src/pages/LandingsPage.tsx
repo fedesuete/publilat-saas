@@ -134,6 +134,7 @@ function LandingReview({ html, goLink, slug, pixelId }: { html: string; goLink: 
   if (a.manualLead)
     rows.push({ s: "warn", t: "Encontramos un evento Lead puesto a mano (fbq 'track' 'Lead'). El botón /go YA dispara el Lead — dejar los dos DUPLICA. Sacalo y dejá solo el PageView." });
 
+  const buttonOk = a.hasGoLink && !(a.goSlug && slug && a.goSlug.toLowerCase() !== slug.toLowerCase());
   const icon = { ok: "✅", warn: "⚠️", err: "🔴" };
   const color = { ok: "text-wa-green", warn: "text-amber-300", err: "text-rose-300" };
 
@@ -148,7 +149,11 @@ function LandingReview({ html, goLink, slug, pixelId }: { html: string; goLink: 
 
       {/* Link de seguimiento */}
       <div className="mt-3 rounded-md border border-slate-700 bg-slate-900/50 p-3">
-        <div className="mb-1 text-xs font-semibold text-slate-300">Tu link de seguimiento (pegalo en el botón que va a WhatsApp)</div>
+        <div className="mb-1 text-xs font-semibold text-slate-300">
+          {buttonOk
+            ? "Tu link de seguimiento — ✓ ya está en tu botón (copialo solo si agregás otro botón)"
+            : "Tu link de seguimiento (pegalo en el botón que va a WhatsApp)"}
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <input readOnly value={goLink} className="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-xs text-slate-300" />
           <CopyBtn value={goLink} label="Copiar link" />
@@ -430,13 +435,22 @@ export default function LandingsPage() {
             {current && (
               <>
                 <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  URL para campañas {current.published && campaignUrl.includes("cloudfront.net") && <span className="ml-1 rounded bg-wa-green/15 px-1.5 py-0.5 text-[10px] font-semibold normal-case text-wa-green">dominio propio · aislado</span>}
+                  URL para campañas
+                  {current.published
+                    ? (campaignUrl.includes("cloudfront.net") && <span className="ml-1 rounded bg-wa-green/15 px-1.5 py-0.5 text-[10px] font-semibold normal-case text-wa-green">dominio propio · aislado</span>)
+                    : <span className="ml-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold normal-case text-amber-300">borrador — sin publicar</span>}
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                   <input readOnly value={campaignUrl} className="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-xs text-slate-300" />
                   <CopyBtn value={campaignUrl} />
                 </div>
-                <p className="mt-1 text-[11px] text-slate-500">Esta es la URL que ponés en tus anuncios. {current.published && campaignUrl.includes("cloudfront.net") ? "Se sirve desde tu propio dominio (no publi.lat): si Meta bloquea la landing, generá uno nuevo abajo sin afectar tu cuenta." : "Publicá la landing para obtener tu dominio propio."}</p>
+                {current.published ? (
+                  <p className="mt-1 text-[11px] text-slate-500">Esta es la URL que ponés en tus anuncios. {campaignUrl.includes("cloudfront.net") ? "Se sirve desde tu propio dominio (no publi.lat): si Meta bloquea la landing, generá uno nuevo abajo sin afectar tu cuenta." : "Se sirve desde Amazon."}</p>
+                ) : (
+                  <div className="mt-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-200">
+                    ⚠️ Todavía es un <b>borrador</b>. Tocá <b>Publicar</b> (arriba a la derecha) para generar tu <b>URL real con tu dominio propio</b> de CloudFront — esa es la que va en el anuncio. <b>No uses ésta todavía.</b> La primera vez tarda unos minutos en activarse.
+                  </div>
+                )}
                 {reproMsg && <div className="mt-2 rounded-md border border-wa-green/40 bg-wa-green/10 px-3 py-2 text-xs text-wa-green">{reproMsg}</div>}
                 <div className="mt-3 flex flex-wrap gap-2">
                   {!current.isPrimary && <Button variant="ghost" onClick={() => void makePrimary()}><Star className="h-4 w-4" /> Marcar principal</Button>}
