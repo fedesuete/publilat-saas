@@ -30,10 +30,14 @@ export default function LoginPage() {
           name: name || undefined,
           phone: phone || undefined,
         });
+        // Recién creada la cuenta: marcamos para disparar el recorrido guiado y
+        // aterrizamos en "Empezá acá".
+        localStorage.setItem("pl_start_tour", "1");
+        navigate("/empezar");
       } else {
         await login(email, password);
+        navigate("/dashboard");
       }
-      navigate("/dashboard");
     } catch (err) {
       setError(apiError(err));
     } finally {

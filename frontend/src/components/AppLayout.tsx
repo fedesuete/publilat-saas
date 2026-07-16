@@ -23,10 +23,13 @@ import {
   Shield,
   Menu,
   X,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { Button } from "./ui";
+import SupportBubble from "./SupportBubble";
+import OnboardingTour, { type TourStep } from "./OnboardingTour";
 
 // Sonidos de notificación (Web Audio, sin archivos externos).
 let audioCtx: AudioContext | null = null;
@@ -102,7 +105,9 @@ function looksLikeReceipt(mediaUrl: string | null | undefined): boolean {
   return mediaUrl.startsWith("data:image") || mediaUrl.startsWith("data:application/pdf");
 }
 
-const NAV: Array<{ to: string; label: string; icon: LucideIcon }> = [
+const NAV: Array<{ to: string; label: string; icon: LucideIcon; id?: string; end?: boolean }> = [
+  { to: "/empezar", label: "Empezá acá", icon: Zap, id: "nav-empezar" },
+  { to: "/tutoriales", label: "Tutoriales", icon: GraduationCap, id: "nav-tutoriales" },
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/leads", label: "Leads", icon: Users },
   { to: "/agenda", label: "Agenda", icon: CalendarDays },
@@ -117,8 +122,14 @@ const NAV: Array<{ to: string; label: string; icon: LucideIcon }> = [
   { to: "/landings", label: "Landings", icon: LayoutTemplate },
   { to: "/integraciones", label: "Integraciones", icon: Plug },
   { to: "/configuracion", label: "Configuración", icon: Settings },
-  { to: "/tutoriales", label: "Tutoriales", icon: GraduationCap },
   { to: "/soporte", label: "Soporte", icon: LifeBuoy },
+];
+
+// Pasos del recorrido guiado de bienvenida (se dispara al crear la cuenta).
+const TOUR_STEPS: TourStep[] = [
+  { targetId: "nav-empezar", title: "Empezá acá 🚀", body: "Tu punto de partida. Acá tenés los pasos para dejar tu cuenta lista y vendiendo. Volvé cuando quieras." },
+  { targetId: "nav-tutoriales", title: "Tutoriales 🎓", body: "Videos y guías paso a paso de cada sección. Si te trabás en algo, mirá acá primero." },
+  { targetId: "support-bubble", title: "Soporte por WhatsApp 💬", body: "¿Tenés una duda? Tocá este globo y nos escribís directo por WhatsApp. Te ayudamos al toque." },
 ];
 
 export default function AppLayout() {
@@ -129,6 +140,22 @@ export default function AppLayout() {
   const unreadTimer = useRef<number | undefined>(undefined);
   // Menú lateral en MÓVIL: cajón deslizable (en desktop es fijo, siempre visible).
   const [menuOpen, setMenuOpen] = useState(false);
+  // Recorrido guiado de bienvenida (se dispara al crear la cuenta o desde "Empezá acá").
+  const [tour, setTour] = useState(false);
+
+  useEffect(() => {
+    const start = () => { setMenuOpen(true); setTour(true); };
+    // Recién registrado: LoginPage dejó la marca. Pequeño delay para que monte el layout.
+    let t: number | undefined;
+    if (localStorage.getItem("pl_start_tour") === "1") {
+      localStorage.removeItem("pl_start_tour");
+      t = window.setTimeout(start, 500);
+    }
+    window.addEventListener("pl:start-tour", start); // botón manual "Ver el recorrido"
+    return () => { window.removeEventListener("pl:start-tour", start); if (t) clearTimeout(t); };
+  }, []);
+
+  const closeTour = () => { setTour(false); setMenuOpen(false); };
 
   const handleLogout = () => {
     logout();
@@ -207,6 +234,7 @@ export default function AppLayout() {
             <NavLink
               key={item.to}
               to={item.to}
+              id={item.id}
               onClick={() => setMenuOpen(false)}
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition ${
@@ -271,6 +299,12 @@ export default function AppLayout() {
           <Outlet />
         </main>
       </div>
+
+      {/* Globo de soporte por WhatsApp (siempre visible, salvo en el Inbox). */}
+      <SupportBubble />
+
+      {/* Recorrido guiado de bienvenida. */}
+      {tour && <OnboardingTour steps={TOUR_STEPS} onClose={closeTour} />}
     </div>
   );
 }

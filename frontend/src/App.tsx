@@ -17,6 +17,7 @@ import PixelPage from "./pages/PixelPage";
 import AgendaPage from "./pages/AgendaPage";
 import SetupPage from "./pages/SetupPage";
 import TutorialesPage from "./pages/TutorialesPage";
+import EmpezarPage from "./pages/EmpezarPage";
 import SupportPage from "./pages/SupportPage";
 import AutomationsPage from "./pages/AutomationsPage";
 import ProtectedAdminRoute from "./components/ProtectedAdminRoute";
@@ -44,6 +45,7 @@ export default function App() {
               </ProtectedRoute>
             }
           >
+            <Route path="/empezar" element={<EmpezarPage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/leads" element={<LeadsPage />} />
             <Route path="/agenda" element={<AgendaPage />} />
