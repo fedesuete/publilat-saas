@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Users, Phone, LayoutTemplate, DollarSign, Gift, LifeBuoy, Download, ArrowLeft, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, Users, Phone, LayoutTemplate, DollarSign, Gift, LifeBuoy, Download, GraduationCap, ArrowLeft, type LucideIcon } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { Button } from "./ui";
 
@@ -10,6 +10,7 @@ const NAV: Array<{ to: string; label: string; icon: LucideIcon; end?: boolean }>
   { to: "/admin/landings", label: "Landings", icon: LayoutTemplate },
   { to: "/admin/ingresos", label: "Ingresos", icon: DollarSign },
   { to: "/admin/demos", label: "Demos", icon: Gift },
+  { to: "/admin/tutoriales", label: "Tutoriales", icon: GraduationCap },
   { to: "/admin/soporte", label: "Soporte", icon: LifeBuoy },
   { to: "/admin/exportar", label: "Exportar", icon: Download },
 ];

@@ -498,3 +498,19 @@ model MetaEvent {
   createdAt  DateTime @default(now())
   user       User     @relation(fields: [userId], references: [id])
 }
+
+// Tutoriales en video del panel (gestionados por el super-admin, visibles para TODOS los
+// clientes en /tutoriales). El video NO se aloja acá: se guarda la URL (YouTube/Vimeo/mp4) y
+// el front arma el embed. Global (sin userId): un solo set de tutoriales para toda la plataforma.
+model Tutorial {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  videoUrl    String   // link de YouTube/Vimeo o un .mp4 directo
+  order       Int      @default(0) // orden de aparición (menor primero)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([active, order])
+}

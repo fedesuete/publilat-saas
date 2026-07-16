@@ -1,6 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Card } from "../components/ui";
+import { api } from "../lib/api";
+import VideoEmbed from "../components/VideoEmbed";
+
+interface VideoTutorial { id: string; title: string; description: string | null; videoUrl: string; }
 
 interface Guide { title: string; to?: string; steps: string[]; }
 
@@ -95,10 +99,37 @@ function GuideCard({ g }: { g: Guide }) {
 }
 
 export default function TutorialesPage() {
+  const [videos, setVideos] = useState<VideoTutorial[]>([]);
+
+  useEffect(() => {
+    api.get<{ tutorials: VideoTutorial[] }>("/api/tutorials")
+      .then(({ data }) => setVideos(data.tutorials))
+      .catch(() => { /* sin videos: se muestran igual las guías de texto */ });
+  }, []);
+
   return (
     <div className="p-6">
       <h1 className="mb-1 text-xl font-bold">Tutoriales</h1>
       <p className="mb-5 text-sm text-slate-400">Guía rápida para dejar tu atribución WhatsApp → Meta funcionando.</p>
+
+      {videos.length > 0 && (
+        <div className="mb-8">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Videos</h2>
+          <div className="grid gap-5 sm:grid-cols-2">
+            {videos.map((v) => (
+              <Card key={v.id} className="p-0 overflow-hidden">
+                <VideoEmbed url={v.videoUrl} />
+                <div className="p-4">
+                  <div className="text-sm font-semibold text-slate-100">{v.title}</div>
+                  {v.description && <p className="mt-1 whitespace-pre-line text-sm text-slate-400">{v.description}</p>}
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Guía paso a paso</h2>
       <div className="max-w-2xl space-y-2">
         {GUIDES.map((g) => <GuideCard key={g.title} g={g} />)}
       </div>

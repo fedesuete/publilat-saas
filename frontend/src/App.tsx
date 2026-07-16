@@ -27,6 +27,7 @@ import AdminLines from "./pages/admin/AdminLines";
 import AdminLandings from "./pages/admin/AdminLandings";
 import AdminRevenue from "./pages/admin/AdminRevenue";
 import AdminDemos from "./pages/admin/AdminDemos";
+import AdminTutorials from "./pages/admin/AdminTutorials";
 import AdminSupport from "./pages/admin/AdminSupport";
 import AdminExport from "./pages/admin/AdminExport";
 
@@ -74,6 +75,7 @@ export default function App() {
             <Route path="/admin/landings" element={<AdminLandings />} />
             <Route path="/admin/ingresos" element={<AdminRevenue />} />
             <Route path="/admin/demos" element={<AdminDemos />} />
+            <Route path="/admin/tutoriales" element={<AdminTutorials />} />
             <Route path="/admin/soporte" element={<AdminSupport />} />
             <Route path="/admin/exportar" element={<AdminExport />} />
           </Route>
