@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { Card, Button } from "../components/ui";
-import { Target, MessageCircle, Coins, Link2, KanbanSquare, GraduationCap, PlayCircle, LifeBuoy } from "lucide-react";
+import { Target, MessageCircle, Coins, LayoutTemplate, KanbanSquare, GraduationCap, PlayCircle, LifeBuoy } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 const SUPPORT = "https://wa.me/595975112248?text=" + encodeURIComponent("Hola, necesito ayuda con Publi.lat 🙌");
@@ -9,7 +9,7 @@ const STEPS: Array<{ n: number; icon: LucideIcon; title: string; desc: string; t
   { n: 1, icon: Target, title: "Cargá tu Pixel de Meta", desc: "Pegá tu Pixel ID y el token de la API de Conversiones. Sin esto, Meta no recibe tus ventas.", to: "/pixel", cta: "Ir a Mi Pixel" },
   { n: 2, icon: MessageCircle, title: "Conectá WhatsApp", desc: "Creá una línea y escaneá el QR desde tu celular. Cuando quede en verde, está lista.", to: "/whatsapp", cta: "Ir a WhatsApp" },
   { n: 3, icon: Coins, title: "Cargá días y activá la línea", desc: "1 día = 24 h de línea activa en rotación. Comprá o sumá días y activá tu línea.", to: "/billing", cta: "Ir a Créditos" },
-  { n: 4, icon: Link2, title: "Creá tu link o landing", desc: "Copiá tu link rastreado (/go) o tu landing y pegalo en los anuncios de Meta.", to: "/links", cta: "Ir a Links" },
+  { n: 4, icon: LayoutTemplate, title: "Creá tu landing", desc: "Armá tu página rastreada (o partí de una plantilla) y pegá su link en el anuncio de Meta. Dispara el Lead y lleva a WhatsApp.", to: "/landings", cta: "Ir a Landings" },
   { n: 5, icon: KanbanSquare, title: "Gestioná leads y marcá ventas", desc: "Respondé en el Inbox, movés el lead por etapas y al cerrar marcás la compra con el monto.", to: "/kanban", cta: "Ir al CRM" },
 ];
 
