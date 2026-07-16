@@ -21,6 +21,8 @@ import {
   GraduationCap,
   LifeBuoy,
   Shield,
+  Menu,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
@@ -125,6 +127,8 @@ export default function AppLayout() {
   // Total de mensajes sin leer (para el globito del menú Inbox).
   const [unread, setUnread] = useState(0);
   const unreadTimer = useRef<number | undefined>(undefined);
+  // Menú lateral en MÓVIL: cajón deslizable (en desktop es fijo, siempre visible).
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -177,18 +181,33 @@ export default function AppLayout() {
     // Layout fijo al viewport: la ventana NUNCA scrollea; cada columna (menú, lista de
     // chats, mensajes) scrollea por su cuenta. Así el chat ocupa la pantalla justa.
     <div className="flex h-screen overflow-hidden">
-      <aside className="flex w-56 shrink-0 flex-col border-r border-slate-800 bg-slate-950/60">
+      {/* Fondo oscuro detrás del cajón (sólo móvil, con el menú abierto). */}
+      {menuOpen && (
+        <div onClick={() => setMenuOpen(false)} className="fixed inset-0 z-30 bg-black/50 lg:hidden" aria-hidden="true" />
+      )}
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 flex w-64 shrink-0 flex-col border-r border-slate-800 bg-slate-950 transition-transform duration-200 lg:static lg:z-auto lg:w-56 lg:translate-x-0 lg:bg-slate-950/60 ${
+          menuOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
         <div className="flex items-center justify-between px-5 py-5">
           <span className="text-lg font-bold">
             Publi<span className="text-wa-green">.lat</span>
           </span>
-          <NotificationBell />
+          <div className="flex items-center gap-1">
+            <NotificationBell />
+            {/* Cerrar el cajón (sólo móvil). */}
+            <button onClick={() => setMenuOpen(false)} className="rounded p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white lg:hidden" aria-label="Cerrar menú">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
         <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3">
           {NAV.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
+              onClick={() => setMenuOpen(false)}
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition ${
                   isActive
@@ -209,6 +228,7 @@ export default function AppLayout() {
           {user?.role === "ADMIN" && (
             <NavLink
               to="/admin"
+              onClick={() => setMenuOpen(false)}
               className="mt-1 flex items-center gap-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-300 transition hover:bg-amber-500/20"
             >
               <Shield className="h-4 w-4 shrink-0" />
@@ -229,9 +249,28 @@ export default function AppLayout() {
           </div>
         </div>
       </aside>
-      <main className="flex-1 overflow-auto">
-        <Outlet />
-      </main>
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Barra superior sólo en MÓVIL: botón de menú + marca + campana. */}
+        <header className="flex items-center gap-3 border-b border-slate-800 px-4 py-3 lg:hidden">
+          <button onClick={() => setMenuOpen(true)} className="rounded p-1.5 text-slate-300 hover:bg-slate-800 hover:text-white" aria-label="Abrir menú">
+            <Menu className="h-6 w-6" />
+          </button>
+          <span className="text-lg font-bold">
+            Publi<span className="text-wa-green">.lat</span>
+          </span>
+          <div className="ml-auto flex items-center gap-1">
+            {unread > 0 && (
+              <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-wa-green px-1.5 text-[11px] font-bold text-slate-900">
+                {unread > 99 ? "99+" : unread}
+              </span>
+            )}
+            <NotificationBell />
+          </div>
+        </header>
+        <main className="min-h-0 flex-1 overflow-auto">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }

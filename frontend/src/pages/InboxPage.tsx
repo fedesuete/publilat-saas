@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { PanelLeftClose, PanelLeftOpen, Smile, Mic, Square, MessageSquareText, Trash2, Send, X } from "lucide-react";
+import { ArrowLeft, PanelLeftClose, PanelLeftOpen, Smile, Mic, Square, MessageSquareText, Trash2, Send, X } from "lucide-react";
 import { api, apiError } from "../lib/api";
 import { getSocket, type InboxMessagePayload, type InboxMessageStatusPayload } from "../lib/socket";
 import type { Msg, Stage } from "../lib/types";
@@ -192,15 +192,15 @@ export default function InboxPage() {
     // h-full: llena el <main> del layout (que ya mide el viewport exacto) — sin h-screen,
     // que sumado al alto del menú hacía scrollear la ventana y dejaba margen abajo.
     <div className="flex h-full">
-      {/* ---- Lista de conversaciones (plegable) ---- */}
-      {listOpen && (
-        <div className="flex w-80 shrink-0 flex-col border-r border-slate-800">
+      {/* ---- Lista de conversaciones. En MÓVIL ocupa toda la pantalla y se oculta al abrir un chat;
+           en DESKTOP es plegable (listOpen) y va al costado. ---- */}
+      <div className={`w-full shrink-0 flex-col border-r border-slate-800 lg:w-80 ${selected ? "hidden" : "flex"} ${listOpen ? "lg:flex" : "lg:hidden"}`}>
           <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
             <div>
               <h1 className="font-bold">WhatsApp Inbox</h1>
               <div className="text-xs text-slate-500">{convs.length} conversaciones</div>
             </div>
-            <button onClick={() => setListOpen(false)} title="Ocultar lista" className="rounded p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white">
+            <button onClick={() => setListOpen(false)} title="Ocultar lista" className="hidden rounded p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white lg:inline-flex">
               <PanelLeftClose className="h-5 w-5" />
             </button>
           </div>
@@ -226,11 +226,10 @@ export default function InboxPage() {
               </button>
             ))}
           </div>
-        </div>
-      )}
+      </div>
 
-      {/* ---- Chat ---- */}
-      <div className="flex flex-1 flex-col">
+      {/* ---- Chat. En MÓVIL: pantalla completa, visible sólo con una conversación abierta. ---- */}
+      <div className={`flex-1 flex-col ${selected ? "flex" : "hidden lg:flex"}`}>
         {!selected ? (
           <div className="flex flex-1 items-center justify-center text-slate-500">
             {!listOpen && (
@@ -243,8 +242,13 @@ export default function InboxPage() {
         ) : (
           <>
             <div className="flex items-center gap-3 border-b border-slate-800 px-4 py-3">
+              {/* Móvil: volver a la lista de conversaciones */}
+              <button onClick={() => setSelected(null)} title="Volver" className="rounded p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white lg:hidden">
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+              {/* Desktop: mostrar la lista si está plegada */}
               {!listOpen && (
-                <button onClick={() => setListOpen(true)} title="Mostrar lista" className="rounded p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white">
+                <button onClick={() => setListOpen(true)} title="Mostrar lista" className="hidden rounded p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white lg:inline-flex">
                   <PanelLeftOpen className="h-5 w-5" />
                 </button>
               )}
