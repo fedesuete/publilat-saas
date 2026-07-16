@@ -3,6 +3,9 @@
 // permite responder por la Graph API. El token va POR LÍNEA (cifrado en reposo).
 import axios from "axios";
 import { spawn } from "node:child_process";
+import { writeFile, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import FormData from "form-data";
 import { decryptSecret } from "./crypto.js";
 
@@ -36,22 +39,29 @@ export async function sendCloudText(line: CloudLine, to: string, text: string) {
   return data;
 }
 
-// Convierte un audio a OGG/OPUS (lo ÚNICO que acepta la Cloud API para notas de voz; el
-// navegador —Chrome— graba WebM/OPUS). Usa ffmpeg por stdin/stdout. Las notas de voz son
-// chicas, así que no hay riesgo de deadlock del pipe.
-function toOggOpus(input: Buffer): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const ff = spawn("ffmpeg", ["-hide_banner", "-loglevel", "error", "-i", "pipe:0", "-vn", "-c:a", "libopus", "-b:a", "32k", "-f", "ogg", "pipe:1"]);
-    const out: Buffer[] = [];
-    const err: Buffer[] = [];
-    ff.stdout.on("data", (d) => out.push(d));
-    ff.stderr.on("data", (d) => err.push(d));
-    ff.on("error", (e) => reject(new Error("ffmpeg no disponible: " + e.message)));
-    ff.on("close", (code) =>
-      code === 0 ? resolve(Buffer.concat(out)) : reject(new Error("ffmpeg falló: " + Buffer.concat(err).toString().slice(-300))));
-    ff.stdin.on("error", () => { /* EPIPE si ffmpeg cierra antes; lo maneja el evento close */ });
-    ff.stdin.end(input);
-  });
+// Convierte cualquier audio del navegador (WebM/OPUS de Chrome, OGG/OPUS de Firefox) a un
+// OGG/OPUS LIMPIO y compatible con la Cloud API. La entrada se escribe a un archivo temporal
+// porque WebM/Matroska necesita "saltar" (seek) para demuxear — un pipe no lo permite y sale
+// vacío. La salida va por pipe (streamable). Re-encodeamos SIEMPRE (aunque venga como ogg)
+// para regenerar el header de duración que MediaRecorder deja incompleto (por eso WhatsApp lo
+// mostraba en 0:00 y no lo entregaba).
+async function toOggOpus(input: Buffer): Promise<Buffer> {
+  const tmp = join(tmpdir(), `pl-voz-${process.pid}-${Date.now()}-${Math.round(Math.random() * 1e9)}.bin`);
+  await writeFile(tmp, input);
+  try {
+    return await new Promise<Buffer>((resolve, reject) => {
+      const ff = spawn("ffmpeg", ["-hide_banner", "-loglevel", "error", "-i", tmp, "-vn", "-c:a", "libopus", "-b:a", "32k", "-f", "ogg", "pipe:1"]);
+      const out: Buffer[] = [];
+      const err: Buffer[] = [];
+      ff.stdout.on("data", (d) => out.push(d));
+      ff.stderr.on("data", (d) => err.push(d));
+      ff.on("error", (e) => reject(new Error("ffmpeg no disponible: " + e.message)));
+      ff.on("close", (code) =>
+        code === 0 && out.length ? resolve(Buffer.concat(out)) : reject(new Error("ffmpeg falló: " + Buffer.concat(err).toString().slice(-300))));
+    });
+  } finally {
+    await unlink(tmp).catch(() => { /* limpieza best-effort */ });
+  }
 }
 
 // Sube un binario al endpoint de media de la Cloud API y devuelve el media id.
@@ -71,11 +81,11 @@ async function uploadCloudMedia(line: CloudLine, buffer: Buffer, mime: string, f
   return data.id as string;
 }
 
-// Envía una nota de voz por la Cloud API: convierte a OGG/OPUS, sube el media y manda type=audio.
-export async function sendCloudAudio(line: CloudLine, to: string, base64: string, mime: string) {
+// Envía una nota de voz por la Cloud API: normaliza a OGG/OPUS con ffmpeg, sube el media y
+// manda type=audio.
+export async function sendCloudAudio(line: CloudLine, to: string, base64: string) {
   if (!line.wabaPhoneNumberId) throw new Error("La línea Cloud no tiene Phone Number ID");
-  const input = Buffer.from(base64, "base64");
-  const ogg = mime.startsWith("audio/ogg") ? input : await toOggOpus(input);
+  const ogg = await toOggOpus(Buffer.from(base64, "base64"));
   const mediaId = await uploadCloudMedia(line, ogg, "audio/ogg", "voz.ogg");
   const { data } = await axios.post(
     `${GRAPH}/${line.wabaPhoneNumberId}/messages`,

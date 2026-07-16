@@ -266,7 +266,7 @@ inboxRouter.post("/:contactId/audio", async (req, res) => {
   try {
     if (line.provider === "cloud") {
       // Cloud API: convierte a OGG/OPUS, sube el media y manda type=audio.
-      const sent = await sendCloudAudio(line, (contact.phone ?? destination).replace(/\D/g, ""), base64, mime);
+      const sent = await sendCloudAudio(line, (contact.phone ?? destination).replace(/\D/g, ""), base64);
       waMessageId = sent?.messages?.[0]?.id ?? undefined;
     } else {
       if (!line.sessionId) return res.status(400).json({ error: "La línea no está disponible" });
