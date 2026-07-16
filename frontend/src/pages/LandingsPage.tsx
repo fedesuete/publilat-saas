@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Star, Plus, LayoutTemplate, Upload, ExternalLink, Trash2, Copy, Check, X } from "lucide-react";
+import { Star, Plus, LayoutTemplate, Upload, ExternalLink, Trash2, Copy, Check, X, GraduationCap } from "lucide-react";
 import { api, apiError } from "../lib/api";
 import { API_BASE } from "../lib/config";
 import { useAuth } from "../lib/auth";
@@ -114,6 +114,71 @@ function LandingReview({ html, goLink }: { html: string; goLink: string }) {
         seguimiento de arriba (NO directo a wa.me). 2) Incluí tu Pixel de Meta (o usá una plantilla). 3) Publicá desde el panel: el sistema
         le inyecta el seguimiento solo y evita que se dupliquen los leads.
       </div>
+    </Card>
+  );
+}
+
+// Instructivo colapsable: cómo armar una landing sin errores + prompt listo para ChatGPT
+// (con el slug del cliente ya puesto en el /go). Evita los errores típicos: wa.me directo,
+// número hardcodeado, Lead a mano.
+function LandingGuide({ slug, goBase }: { slug: string; goBase: string }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const goLink = `${goBase}/go?u=${slug || "TU_SLUG"}&msg=Hola%2C%20quiero%20info`;
+  const prompt = `Actuá como diseñador web. Necesito una landing page en UN SOLO archivo HTML (con CSS y JS inline, sin librerías ni recursos externos), responsive y en español, para mi negocio: [DESCRIBÍ TU NEGOCIO EN UNA LÍNEA].
+
+Objetivo: que la persona toque un botón grande y vaya a WhatsApp.
+
+REGLAS OBLIGATORIAS (no las cambies):
+1) El botón principal (y cualquier botón de "hablar por WhatsApp") debe apuntar EXACTAMENTE a:
+   ${goLink}
+   - NO uses links de wa.me ni pongas ningún número de teléfono en el código.
+   - El texto después de msg= podés cambiarlo, pero tiene que ir URL-encoded (espacio = %20).
+2) En el <head> incluí SOLO el código base del Píxel de Meta (init + PageView) con tu Pixel ID.
+   NO agregues fbq('track','Lead') ni ningún otro evento: de eso se encarga el sistema.
+3) El botón de WhatsApp tiene que ser grande, verde y lo más visible de la página. Textos cortos y concretos.
+4) Todo en un solo archivo, sin fuentes/imágenes por link. Estilos y colores inline.
+
+Devolvé solo el código HTML completo, listo para copiar y pegar.`;
+
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(prompt); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* clipboard no disponible */ }
+  };
+
+  return (
+    <Card className="mb-5">
+      <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center justify-between text-left">
+        <span className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+          <GraduationCap className="h-4 w-4 text-wa-green" /> ¿Cómo armo mi landing? (sin errores)
+        </span>
+        <span className="text-lg text-slate-500">{open ? "−" : "+"}</span>
+      </button>
+      {open && (
+        <div className="mt-4 space-y-4 text-sm">
+          <div className="rounded-lg border border-wa-green/30 bg-wa-green/5 p-3">
+            <div className="font-semibold text-wa-green">🥇 Regla de oro</div>
+            <p className="mt-1 text-slate-300">El botón SIEMPRE va a <code className="rounded bg-slate-800 px-1 text-wa-green">{goBase}/go?u={slug || "TU_SLUG"}</code> — nunca a <b>wa.me</b> ni con un número escrito. Así se dispara el Lead, se guarda la atribución y no se duplica.</p>
+          </div>
+
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="font-semibold text-slate-200">Prompt para pedirle el HTML a ChatGPT</span>
+              <button onClick={copy} className="flex items-center gap-1.5 rounded-md border border-slate-600 px-2.5 py-1 text-xs text-slate-300 hover:bg-slate-800">
+                {copied ? <><Check className="h-3.5 w-3.5 text-wa-green" /> Copiado</> : <><Copy className="h-3.5 w-3.5" /> Copiar prompt</>}
+              </button>
+            </div>
+            <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-700 bg-slate-950 p-3 text-xs text-slate-300">{prompt}</pre>
+            <p className="mt-1 text-xs text-slate-500">Ya viene con tu usuario (<b className="text-slate-300">{slug || "—"}</b>). Pegalo en ChatGPT, completá tu negocio y tu Pixel ID.</p>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-3">
+            <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-2.5 text-xs text-slate-300"><b className="text-red-300">✗ wa.me directo</b><br />No trackea + duplica</div>
+            <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-2.5 text-xs text-slate-300"><b className="text-red-300">✗ número en el código</b><br />No trackea + no rota</div>
+            <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-2.5 text-xs text-slate-300"><b className="text-red-300">✗ Lead a mano (fbq)</b><br />Duplica el Lead</div>
+          </div>
+          <p className="text-xs text-slate-500">Después de pegar el HTML, mirá el <b className="text-slate-300">semáforo de revisión</b> del editor y acordate de <b className="text-slate-300">re-publicar</b> si cambiás algo.</p>
+        </div>
+      )}
     </Card>
   );
 }
@@ -242,6 +307,8 @@ export default function LandingsPage() {
       </div>
 
       {error && <div className="mb-4"><ErrorMsg>{error}</ErrorMsg></div>}
+
+      <LandingGuide slug={slug} goBase={API_BASE} />
 
       {/* Pestañas de landings */}
       <div className="mb-5 flex flex-wrap items-center gap-2">

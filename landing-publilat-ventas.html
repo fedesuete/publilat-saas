@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Publi.lat: vende mas por WhatsApp con tus anuncios de Meta. Que Meta optimice por compradores reales. Proba 3 dias gratis.">
+<title>Publi.lat — Vendé más por WhatsApp con tus anuncios de Meta</title>
+<style>
+  :root{
+    --bg:#0a1411; --bg-2:#081210; --surface:#0f1c18; --surface-2:#13241f;
+    --ink:#e8f1ec; --muted:#93a89f; --faint:#5f7269;
+    --green:#25D366; --green-2:#4ee38a; --gold:#e6b555;
+    --line:rgba(120,180,150,.14); --line-2:rgba(120,180,150,.24);
+    --mono:ui-monospace,"Cascadia Code","SFMono-Regular",Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --wrap:1080px;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  body{
+    margin:0;background:
+      radial-gradient(1000px 560px at 50% -6%,rgba(37,211,102,.14),transparent 62%),
+      radial-gradient(760px 420px at 88% 8%,rgba(230,181,85,.06),transparent 55%),
+      var(--bg);
+    color:var(--ink);font-family:var(--sans);line-height:1.6;
+    -webkit-font-smoothing:antialiased;overflow-x:hidden;
+  }
+  .wrap{max-width:var(--wrap);margin:0 auto;padding:0 24px}
+  a{color:inherit;text-decoration:none}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--green-2)}
+  h1,h2,h3{text-wrap:balance;margin:0;font-weight:800;letter-spacing:-.02em;line-height:1.06}
+
+  /* ---- Nav ---- */
+  header.nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(10px);
+    background:rgba(10,20,17,.72);border-bottom:1px solid var(--line)}
+  .nav .wrap{display:flex;align-items:center;justify-content:space-between;height:60px}
+  .brand{font-weight:800;font-size:19px;letter-spacing:-.02em}
+  .brand span{color:var(--green)}
+  .nav-cta{font-family:var(--mono);font-size:13px;color:var(--ink);border:1px solid var(--line-2);
+    padding:8px 16px;border-radius:999px;transition:.2s}
+  .nav-cta:hover{border-color:var(--green);color:var(--green-2)}
+
+  /* ---- WhatsApp button (the star) ---- */
+  .btn-wa{display:inline-flex;align-items:center;gap:12px;font-weight:800;
+    background:var(--green);color:#04140b;border:0;border-radius:999px;cursor:pointer;
+    transition:transform .15s ease,box-shadow .25s ease}
+  .btn-wa svg{width:26px;height:26px;flex:0 0 auto}
+  .btn-wa:hover{transform:translateY(-2px)}
+  .btn-hero{font-size:21px;padding:22px 46px;position:relative;z-index:1;
+    box-shadow:0 14px 44px -10px rgba(37,211,102,.65)}
+  .btn-hero:hover{box-shadow:0 20px 56px -10px rgba(37,211,102,.8)}
+  /* halo pulsante detrás del botón para llevar el ojo */
+  .btn-shell{position:relative;display:inline-flex;justify-content:center}
+  .btn-shell::before{content:"";position:absolute;inset:-6px;border-radius:999px;
+    background:var(--green);opacity:.35;filter:blur(2px);z-index:0;animation:halo 2.4s ease-in-out infinite}
+  @keyframes halo{0%,100%{transform:scale(1);opacity:.28} 50%{transform:scale(1.09);opacity:.5}}
+  @media (prefers-reduced-motion:reduce){.btn-shell::before{animation:none}}
+
+  /* ---- HERO ---- */
+  .hero{min-height:calc(100vh - 60px);display:flex;align-items:center;text-align:center;padding:40px 0}
+  .hero-in{max-width:760px;margin:0 auto}
+  .offer-pill{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:13px;
+    letter-spacing:.04em;color:var(--gold);background:rgba(230,181,85,.1);
+    border:1px solid rgba(230,181,85,.32);padding:8px 16px;border-radius:999px;margin-bottom:26px}
+  .offer-pill b{color:var(--gold)}
+  .hero h1{font-size:clamp(40px,7vw,68px)}
+  .hero h1 em{font-style:normal;color:var(--green-2)}
+  .hero .lead{font-size:clamp(18px,2.4vw,21px);color:var(--muted);margin:22px auto 40px;max-width:34ch}
+  .hero .lead em{font-style:normal;color:var(--ink);font-weight:600}
+  .cta-fine{font-family:var(--mono);font-size:13px;color:var(--faint);margin-top:20px}
+  /* mini-flow one line */
+  .miniflow{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:12px;
+    margin-top:52px;font-size:14px;color:var(--muted)}
+  .miniflow span{display:inline-flex;align-items:center;gap:7px;background:var(--surface);
+    border:1px solid var(--line);border-radius:999px;padding:8px 15px;white-space:nowrap}
+  .miniflow span.gold{color:var(--gold);border-color:rgba(230,181,85,.3)}
+  .miniflow i{color:var(--green);opacity:.6;font-style:normal}
+
+  /* ---- generic section ---- */
+  section.blk{padding:70px 0}
+  .sec-head{max-width:620px;margin:0 auto 42px;text-align:center}
+  .sec-head h2{font-size:clamp(27px,3.6vw,38px)}
+  .sec-head p{color:var(--muted);font-size:16.5px;margin:12px 0 0}
+
+  /* ---- diferencia (compacto, una fila) ---- */
+  .diff{border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,var(--surface),transparent)}
+  .diff-row{display:grid;grid-template-columns:1fr auto 1fr;gap:22px;align-items:center;max-width:840px;margin:0 auto}
+  .diff-col{border:1px solid var(--line);border-radius:16px;padding:22px;background:var(--bg-2)}
+  .diff-col.good{border-color:rgba(37,211,102,.35);background:linear-gradient(180deg,rgba(37,211,102,.06),var(--bg-2))}
+  .diff-col .k{font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:9px}
+  .diff-col.bad .k{color:#c77}
+  .diff-col.good .k{color:var(--green-2)}
+  .diff-col b{font-size:17px}
+  .diff-col p{color:var(--muted);margin:6px 0 0;font-size:14px}
+  .diff-vs{font-family:var(--mono);font-size:12px;color:var(--faint)}
+
+  /* ---- steps (compacto) ---- */
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;counter-reset:s;max-width:920px;margin:0 auto}
+  .step{border:1px solid var(--line);border-radius:16px;padding:22px;background:var(--surface)}
+  .step .n{counter-increment:s;font-family:var(--mono);font-size:13px;color:var(--green);
+    border:1px solid var(--line-2);width:32px;height:32px;border-radius:9px;display:grid;place-items:center;margin-bottom:14px}
+  .step .n::before{content:"0" counter(s)}
+  .step h3{font-size:16px;margin-bottom:6px}
+  .step p{color:var(--muted);font-size:14px;margin:0}
+  .step .em{color:var(--green-2);font-weight:600}
+  .step .em.gold{color:var(--gold)}
+
+  /* ---- features (compacto) ---- */
+  .feat{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;max-width:960px;margin:0 auto}
+  .card{border:1px solid var(--line);border-radius:14px;padding:20px;background:var(--surface);transition:.2s}
+  .card:hover{border-color:var(--line-2);transform:translateY(-3px)}
+  .card .ic{font-size:24px;margin-bottom:12px}
+  .card h3{font-size:15.5px;margin-bottom:6px}
+  .card p{color:var(--muted);font-size:13.5px;margin:0}
+  .card.spotlight{border-color:rgba(230,181,85,.42);background:linear-gradient(160deg,rgba(230,181,85,.1),var(--surface))}
+  .card.spotlight .badge{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--gold);border:1px solid rgba(230,181,85,.4);border-radius:5px;padding:2px 7px}
+
+  /* ---- final CTA ---- */
+  .final{text-align:center;padding:92px 0}
+  .final .card-cta{max-width:680px;margin:0 auto;background:linear-gradient(180deg,var(--surface-2),var(--bg-2));
+    border:1px solid var(--line-2);border-radius:26px;padding:56px 32px;position:relative;overflow:hidden}
+  .final .card-cta::before{content:"";position:absolute;inset:0;
+    background:radial-gradient(520px 240px at 50% 0%,rgba(37,211,102,.16),transparent 70%)}
+  .final .offer-pill{margin-bottom:22px}
+  .final h2{position:relative;font-size:clamp(29px,4.4vw,44px)}
+  .final p{position:relative;color:var(--muted);font-size:17px;margin:14px auto 34px;max-width:40ch}
+  .final .cta-fine{margin-top:20px}
+
+  /* footer */
+  footer{border-top:1px solid var(--line);padding:28px 0;color:var(--faint);font-size:13px}
+  footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+  footer .brand{font-size:16px}
+
+  /* reveal */
+  .rv{opacity:0;transform:translateY(16px);transition:opacity .6s ease,transform .6s ease}
+  .rv.in{opacity:1;transform:none}
+  @media (prefers-reduced-motion:reduce){.rv{opacity:1;transform:none;transition:none}}
+
+  @media (max-width:860px){
+    .feat{grid-template-columns:1fr 1fr}
+    .steps{grid-template-columns:1fr}
+    .diff-row{grid-template-columns:1fr;gap:14px}
+    .diff-vs{display:none}
+  }
+  @media (max-width:520px){
+    .feat{grid-template-columns:1fr}
+    .btn-hero{font-size:19px;padding:20px 34px;width:100%;justify-content:center}
+    .nav-cta{display:none}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ NAV ============ -->
+<header class="nav">
+  <div class="wrap">
+    <div class="brand">Publi<span>.lat</span></div>
+    <a class="nav-cta" href="#probar">Probar gratis →</a>
+  </div>
+</header>
+
+<!-- ============ HERO ============ -->
+<section class="hero">
+  <div class="wrap hero-in">
+    <div class="offer-pill">🎁 <span><b>3 días gratis</b> · sin tarjeta</span></div>
+    <h1>Vendé más por WhatsApp con tus anuncios de <em>Meta</em>.</h1>
+    <p class="lead">Que Meta deje de optimizar por mensajes y te traiga <em>compradores de verdad</em>.</p>
+    <div class="btn-shell">
+      <a class="btn-wa btn-hero" href="https://app.publi.lat/go?u=federico&msg=Hola%2C%20quiero%20probar%20Publi.lat%203%20d%C3%ADas%20gratis%20%F0%9F%9A%80">
+        <svg viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M16 5.3C10.1 5.3 5.3 10.1 5.3 16c0 1.9.5 3.7 1.4 5.3L5.3 26.7l5.5-1.4c1.5.8 3.3 1.3 5.2 1.3 5.9 0 10.7-4.8 10.7-10.7S21.9 5.3 16 5.3zm0 19.2c-1.6 0-3.1-.4-4.5-1.2l-.3-.2-3.2.9.9-3.2-.2-.3a8.8 8.8 0 0 1-1.4-4.7c0-4.9 4-8.9 8.9-8.9s8.9 4 8.9 8.9-4 8.9-8.9 8.9zm4.9-6.6c-.3-.1-1.6-.8-1.8-.9-.2-.1-.4-.1-.6.1s-.7.9-.8 1-.3.2-.6.1c-.3-.1-1.1-.4-2.1-1.3-.8-.7-1.3-1.6-1.5-1.8s0-.4.1-.5l.4-.5c.1-.2.2-.3.3-.4s0-.3 0-.5c-.1-.1-.6-1.4-.8-2-.2-.5-.4-.4-.6-.5h-.5c-.2 0-.5.1-.7.3s-.9.9-.9 2.2.9 2.6 1.1 2.8c.1.2 1.8 2.9 4.5 4 .6.3 1.1.4 1.5.6.6.2 1.2.2 1.7.1.5-.1 1.6-.6 1.8-1.3.2-.6.2-1.2.2-1.3s-.2-.2-.5-.3z"/></svg>
+        Escribinos y probá gratis
+      </a>
+    </div>
+    <div class="cta-fine">Te respondemos al toque · Te guiamos en la conexión</div>
+
+    <div class="miniflow">
+      <span>📣 Anuncio</span><i>→</i><span>💬 WhatsApp</span><i>→</i><span>💰 Venta</span><i>↻</i><span class="gold">vuelve a Meta</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ DIFERENCIA (compacta) ============ -->
+<section class="blk diff">
+  <div class="wrap">
+    <div class="diff-row">
+      <div class="diff-col bad rv">
+        <div class="k">Sin Publi.lat</div>
+        <b>Pagás por mensajes</b>
+        <p>Meta te trae curiosos que escriben y no compran.</p>
+      </div>
+      <div class="diff-vs">VS</div>
+      <div class="diff-col good rv">
+        <div class="k">Con Publi.lat</div>
+        <b>Pagás por compradores</b>
+        <p>Le devolvemos la venta a Meta y aprende a traerte gente que paga.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CÓMO FUNCIONA (3 pasos) ============ -->
+<section class="blk">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <span class="eyebrow">Cómo funciona</span>
+      <h2>Tres pasos y listo.</h2>
+    </div>
+    <div class="steps">
+      <div class="step rv"><div class="n"></div><h3>Ponés el link en tu anuncio</h3><p>Al tocar, se dispara el <span class="em">Lead</span> y la persona va a tu WhatsApp.</p></div>
+      <div class="step rv"><div class="n"></div><h3>Atendés y vendés</h3><p>El chat entra a tu Inbox y el lead a tu CRM, con toda su atribución.</p></div>
+      <div class="step rv"><div class="n"></div><h3>Marcás la venta</h3><p>Se envía el <span class="em gold">Purchase</span> a Meta con el monto. ROAS real.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FEATURES (compacto) ============ -->
+<section class="blk diff">
+  <div class="wrap">
+    <div class="feat">
+      <div class="card rv"><div class="ic">🎯</div><h3>Atribución CAPI</h3><p>Lead y Purchase a tu píxel, con el match del clic.</p></div>
+      <div class="card rv"><div class="ic">💬</div><h3>Inbox + CRM</h3><p>Tus chats y leads por etapa, con el monto de cada venta.</p></div>
+      <div class="card rv"><div class="ic">📊</div><h3>ROAS real</h3><p>Ves qué campaña deja plata, no solo mensajes.</p></div>
+      <div class="card spotlight rv"><span class="badge">También</span><div class="ic" style="margin-top:10px">📱</div><h3>Tu propia app</h3><p>Con tu marca y tu logo. Un canal directo con tus clientes.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CTA FINAL ============ -->
+<section class="final" id="probar">
+  <div class="wrap">
+    <div class="card-cta rv">
+      <div class="offer-pill">🎁 <span><b>3 días gratis</b> · sin tarjeta</span></div>
+      <h2>Probalo con tus propios anuncios.</h2>
+      <p>Si no te sirve, no pagás nada.</p>
+      <div class="btn-shell">
+        <a class="btn-wa btn-hero" href="https://app.publi.lat/go?u=federico&msg=Hola%2C%20quiero%20probar%20Publi.lat%203%20d%C3%ADas%20gratis%20%F0%9F%9A%80">
+          <svg viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M16 5.3C10.1 5.3 5.3 10.1 5.3 16c0 1.9.5 3.7 1.4 5.3L5.3 26.7l5.5-1.4c1.5.8 3.3 1.3 5.2 1.3 5.9 0 10.7-4.8 10.7-10.7S21.9 5.3 16 5.3zm0 19.2c-1.6 0-3.1-.4-4.5-1.2l-.3-.2-3.2.9.9-3.2-.2-.3a8.8 8.8 0 0 1-1.4-4.7c0-4.9 4-8.9 8.9-8.9s8.9 4 8.9 8.9-4 8.9-8.9 8.9zm4.9-6.6c-.3-.1-1.6-.8-1.8-.9-.2-.1-.4-.1-.6.1s-.7.9-.8 1-.3.2-.6.1c-.3-.1-1.1-.4-2.1-1.3-.8-.7-1.3-1.6-1.5-1.8s0-.4.1-.5l.4-.5c.1-.2.2-.3.3-.4s0-.3 0-.5c-.1-.1-.6-1.4-.8-2-.2-.5-.4-.4-.6-.5h-.5c-.2 0-.5.1-.7.3s-.9.9-.9 2.2.9 2.6 1.1 2.8c.1.2 1.8 2.9 4.5 4 .6.3 1.1.4 1.5.6.6.2 1.2.2 1.7.1.5-.1 1.6-.6 1.8-1.3.2-.6.2-1.2.2-1.3s-.2-.2-.5-.3z"/></svg>
+          Escribinos y probá gratis
+        </a>
+      </div>
+      <div class="cta-fine">Te respondemos al toque</div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="brand">Publi<span style="color:var(--green)">.lat</span></div>
+    <div>Atribución WhatsApp → Meta Ads · CRM · ROAS real</div>
+  </div>
+</footer>
+
+<script>
+  (function(){
+    var els=document.querySelectorAll('.rv');
+    if(!('IntersectionObserver' in window)){els.forEach(function(e){e.classList.add('in')});return;}
+    var io=new IntersectionObserver(function(entries){
+      entries.forEach(function(en){ if(en.isIntersecting){en.target.classList.add('in');io.unobserve(en.target);} });
+    },{threshold:.14});
+    els.forEach(function(e){io.observe(e)});
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,97 @@
+# 📄 Cómo armar tu landing (y pedírsela a ChatGPT sin errores)
+
+Guía para vos y para tus clientes. Si seguís esto, la landing **mide bien** (Lead + venta atribuidos)
+y no pasan los errores típicos.
+
+---
+
+## 🥇 La regla de oro: el botón
+
+**El botón de "hablar por WhatsApp" SIEMPRE apunta a `/go` con tu usuario. Nunca a un número.**
+
+✅ **Bien:**
+```
+https://app.publi.lat/go?u=TU_SLUG&msg=Hola%2C%20quiero%20info
+```
+- `TU_SLUG` = tu usuario de Publi.lat (lo ves abajo a la izquierda del panel: `slug: ...`).
+- `msg=` = el texto que se pre-carga en WhatsApp (tiene que ir *URL-encoded*: espacio = `%20`, coma = `%2C`).
+
+❌ **Mal (NO hacer):**
+- `https://wa.me/595...` → **no dispara el Lead, no guarda el fbclid y duplica contactos.** (Es lo que le pasó a Joaco.)
+- Poner el número de teléfono en el código → **no trackea y no rota entre tus líneas.**
+
+**¿Por qué?** El `/go` es el corazón de Publi.lat: dispara el evento **Lead**, guarda de qué anuncio vino
+la persona (fbclid), elige tu línea de WhatsApp activa y recién ahí la manda al chat. Si saltás el `/go`,
+Meta nunca se entera y la venta no matchea.
+
+---
+
+## 🎯 El Pixel (opcional pero recomendado)
+
+Si armás la landing con **HTML propio**, poné en el `<head>` **solo el código base del Píxel de Meta**
+(el `init` + `PageView`) con **tu Pixel ID**.
+
+⚠️ **No agregues un `fbq('track','Lead')` a mano.** Del evento Lead se encarga Publi.lat cuando tocan el
+botón. Si lo ponés doble, **duplicás**.
+
+> Si en vez de HTML propio usás el editor **"por campos"** de Publi.lat, el pixel y el botón se arman
+> solos — no tenés que tocar nada. Esta guía es para cuando querés un diseño custom.
+
+---
+
+## 🤖 Prompt para pedirle la landing a ChatGPT
+
+Copiá esto, reemplazá lo que está en MAYÚSCULAS y pegalo en ChatGPT:
+
+```
+Actuá como diseñador web. Necesito una landing page en UN SOLO archivo HTML (con CSS y JS inline,
+sin librerías ni recursos externos), responsive y en español, para mi negocio: TU_NEGOCIO.
+
+Objetivo: que la persona toque un botón grande y vaya a WhatsApp.
+
+REGLAS OBLIGATORIAS (no las cambies):
+1) El botón principal (y cualquier botón de "hablar por WhatsApp") debe apuntar EXACTAMENTE a:
+   https://app.publi.lat/go?u=TU_SLUG&msg=Hola%2C%20quiero%20info
+   - NO uses links de wa.me ni pongas ningún número de teléfono en el código.
+   - El texto después de msg= podés cambiarlo, pero tiene que ir URL-encoded (espacio = %20).
+2) En el <head> incluí SOLO el código base del Píxel de Meta (init + PageView) con este ID: TU_PIXEL_ID.
+   NO agregues fbq('track','Lead') ni ningún otro evento: de eso se encarga el sistema.
+3) El botón de WhatsApp tiene que ser grande, verde y lo más visible de la página.
+   Textos cortos y concretos, para que la persona toque el botón rápido.
+4) Todo en un solo archivo, sin fuentes/imágenes por link. Estilos y colores inline.
+
+Devolvé solo el código HTML completo, listo para copiar y pegar.
+```
+
+---
+
+## 🚀 Cómo publicarla
+
+1. Panel → **Landings** → **Nueva** → pestaña **HTML propio**.
+2. Pegás el código → **Guardar**.
+3. Mirá el **semáforo de revisión** del editor: te avisa si el botón está bien o mal.
+4. **Publicar** → copiás la URL publicada → esa va en el anuncio de Meta.
+5. **Si cambiás algo, RE-PUBLICÁ.** Si no, sigue online la versión vieja.
+
+---
+
+## ✅ Checklist final (antes de publicar)
+
+- [ ] El botón va a `https://app.publi.lat/go?u=TU_SLUG&...` (no a wa.me, no a un número).
+- [ ] No hay ningún número de teléfono escrito en el código.
+- [ ] El Pixel base está con tu ID (y NO hay un `fbq('track','Lead')` de más).
+- [ ] Probaste el botón: te lleva a WhatsApp y el lead aparece en tu CRM.
+- [ ] Re-publicaste después del último cambio.
+
+---
+
+## ❌ Los 3 errores que NO pueden pasar
+
+| Error | Qué provoca |
+|---|---|
+| Botón a `wa.me` directo | No dispara el Lead, pierde el fbclid, **duplica contactos** (caso Joaco) |
+| Número de teléfono en el código | No trackea y no rota entre tus líneas |
+| `fbq('track','Lead')` a mano + el botón | **Duplica** el Lead |
+
+Con el botón por `/go` y el pixel base bien puesto, tu atribución cierra el círculo:
+**anuncio → WhatsApp → venta → vuelve a Meta.**
