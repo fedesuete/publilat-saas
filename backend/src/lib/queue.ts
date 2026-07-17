@@ -171,9 +171,10 @@ export async function checkLineHealth(): Promise<void> {
             await alertLineDown(line);
           }
         }
-        // Caída SILENCIOSA: la sesión reporta "conectada" pero no entrega mensajes. Si la línea
-        // recibió clics pero CERO entrantes en la ventana, la reiniciamos (destraba la sesión o la
-        // manda a re-escanear QR) y avisamos. Dedupe: solo si no se avisó esta línea en las últimas 6 h.
+        // Caída SILENCIOSA: la sesión reporta "conectada" pero no entrega mensajes (WAHA a veces
+        // "miente" sobre su salud). Señal: la línea recibió clics pero CERO entrantes en la ventana.
+        // Solo AVISAMOS (no reiniciamos, para no cortar una línea sana ante un falso positivo: 6
+        // personas que clickean y todavía no escriben). Dedupe: solo si no se avisó en las últimas 6 h.
         if (connected && line.status === "active") {
           const since = new Date(Date.now() - SILENT_WINDOW_H * 60 * 60 * 1000);
           const [clics, inbound] = await Promise.all([
@@ -186,8 +187,7 @@ export async function checkLineHealth(): Promise<void> {
               select: { id: true },
             });
             if (!recentAlert) {
-              console.warn(`[line-health] línea ${line.id}: caída SILENCIOSA (${clics} clics, 0 mensajes en ${SILENT_WINDOW_H}h) -> restart + alerta`);
-              await getEngine().restartInstance(inst).catch(() => undefined);
+              console.warn(`[line-health] línea ${line.id}: posible caída SILENCIOSA (${clics} clics, 0 mensajes en ${SILENT_WINDOW_H}h) -> alerta`);
               await alertLineDown(line);
             }
           }
