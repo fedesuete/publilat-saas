@@ -21,10 +21,25 @@ const LANDINGS_TOUR: TourStep[] = [
 type TplCat = "simple" | "full";
 interface Tpl { name: string; desc: string; category: TplCat; html: string }
 
-function templates(slug: string): Tpl[] {
+function templates(slug: string, pixelId: string): Tpl[] {
   const go = (msg: string) => `${API_BASE}/go?u=${slug}&msg=${encodeURIComponent(msg)}`;
+  // Pixel del navegador (con el pixel del cliente ya puesto). Sin esto, Meta avisa "el pixel envió
+  // menos del 25% que la API de conversiones". Si el cliente no tiene pixel cargado, no se pone (la
+  // revisión le avisa que lo configure en Mi Pixel).
+  const pixelHead = pixelId
+    ? `<script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','${pixelId}');fbq('track','PageView');</script><noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=${pixelId}&ev=PageView&noscript=1"/></noscript>`
+    : "";
+  // Script de redirección que CONSERVA la atribución: copia fbclid/campaign/ad/src + cookies
+  // _fbp/_fbc de la URL al /go (en el botón y en el auto-redirect). No corre en el editor (iframe).
+  const redirectScript = (msg: string) =>
+    `<script>(function(){var b=${JSON.stringify(go(msg))};var h=new URLSearchParams(location.search);` +
+    `["fbclid","campaign","ad","src"].forEach(function(k){var v=h.get(k);if(v)b+="&"+k+"="+encodeURIComponent(v);});` +
+    `function ck(n){var p=('; '+document.cookie).split('; '+n+'=');return p.length===2?decodeURIComponent(p.pop().split(';').shift()):'';}` +
+    `var fbp=ck('_fbp');if(fbp)b+="&fbp="+encodeURIComponent(fbp);var fbc=ck('_fbc');if(fbc)b+="&fbc="+encodeURIComponent(fbc);` +
+    `var btn=document.querySelector('a.btn');if(btn)btn.href=b;` +
+    `if(window.self===window.top)setTimeout(function(){location.href=b},1600);})();</script>`;
   const page = (title: string, css: string, body: string) =>
-    `<!doctype html><html lang="es"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${title}</title><style>*{box-sizing:border-box}body{margin:0;font-family:system-ui,'Segoe UI',Roboto,Arial,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}a.btn:active{transform:scale(.99)}${css}</style></head><body>${body}</body></html>`;
+    `<!doctype html><html lang="es"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${title}</title>${pixelHead}<style>*{box-sizing:border-box}body{margin:0;font-family:system-ui,'Segoe UI',Roboto,Arial,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}a.btn:active{transform:scale(.99)}${css}</style></head><body>${body}</body></html>`;
   const base = (title: string, body: string) =>
     page(title, `body{background:#0b141a;color:#e9edef}.c{max-width:440px;width:100%;text-align:center;padding:44px 28px;background:#111b21;border:1px solid #222d34;border-radius:16px}h1{font-size:26px;margin:0 0 10px}p{color:#8696a0;margin:0 0 28px;line-height:1.55}a.btn{display:block;text-decoration:none;border-radius:999px;padding:16px;font-size:17px;font-weight:700;background:#25d366;color:#03301a}`, `<div class="c">${body}</div>`);
 
@@ -38,7 +53,7 @@ function templates(slug: string): Tpl[] {
 
     { name: "Redirección WhatsApp", category: "full", desc: "Pantalla de carga animada que redirige directo a WhatsApp.",
       html: page("Conectando…", `body{background:#0b141a;color:#e9edef;text-align:center}.c{max-width:420px}.s{width:54px;height:54px;border:5px solid #1f2c33;border-top-color:#25d366;border-radius:50%;margin:0 auto 22px;animation:r 1s linear infinite}@keyframes r{to{transform:rotate(360deg)}}h1{font-size:22px;margin:0 0 6px}p{color:#8696a0;margin:0 0 22px}a.btn{display:inline-block;text-decoration:none;border-radius:999px;padding:13px 26px;font-weight:700;background:#25d366;color:#03301a}`,
-        `<div class="c"><div class="s"></div><h1>Te estamos conectando</h1><p>Si no se abre solo, tocá el botón.</p><a class="btn" href="${go("Hola, vengo de la web")}">Abrir WhatsApp</a></div><script>setTimeout(function(){location.href=${JSON.stringify(go("Hola, vengo de la web"))}},1500)</script>`) },
+        `<div class="c"><div class="s"></div><h1>Te estamos conectando</h1><p>Si no se abre solo, tocá el botón.</p><a class="btn" href="${go("Hola, vengo de la web")}">Abrir WhatsApp</a></div>${redirectScript("Hola, vengo de la web")}`) },
     { name: "Bienvenida", category: "full", desc: "Alto impacto, dorado elegante. Beneficio de bienvenida.",
       html: page("Beneficio de bienvenida", `body{background:radial-gradient(circle at 50% 0%,#1a1407,#0a0a0a);color:#fff}.c{max-width:460px;width:100%;text-align:center;background:linear-gradient(180deg,#171206,#0d0b04);border:1px solid #b8860b55;border-radius:20px;padding:44px 26px;box-shadow:0 24px 60px -24px #000}.k{display:inline-block;padding:6px 14px;border:1px solid #d4af3766;border-radius:999px;color:#e9c766;font-size:12px;letter-spacing:1px;text-transform:uppercase}h1{font-size:30px;margin:16px 0 8px;line-height:1.2}.g{background:linear-gradient(90deg,#f5d271,#d4af37,#b8860b);-webkit-background-clip:text;background-clip:text;color:transparent}p{color:#c9bfa3;margin:0 0 26px;line-height:1.55}a.btn{display:block;text-decoration:none;border-radius:999px;padding:17px;font-size:18px;font-weight:800;color:#1a1407;background:linear-gradient(90deg,#f5d271,#d4af37);box-shadow:0 12px 34px -10px #d4af37aa}`,
         `<div class="c"><span class="k">Beneficio de bienvenida</span><h1>Llevate tu <span class="g">beneficio</span> de bienvenida</h1><p>Sumate hoy y accedé a tu beneficio. Te atendemos al instante por WhatsApp.</p><a class="btn" href="${go("Hola! Quiero mi beneficio de bienvenida 🎁")}">Quiero mi beneficio</a></div>`) },
@@ -270,9 +285,8 @@ Devolvé solo el código HTML completo, listo para copiar y pegar.`;
 export default function LandingsPage() {
   const { user } = useAuth();
   const slug = user?.slug ?? "";
-  const tpls = useMemo(() => templates(slug), [slug]);
-  // Pixel del cliente (de "Mi Pixel") para la revisión: distinguir server-side vs navegador
-  // y ofrecer el código base con su ID ya puesto.
+  // Pixel del cliente (de "Mi Pixel"): para la revisión y para BAKEAR el pixel del navegador en
+  // las plantillas (si no, Meta avisa "el pixel envió menos del 25% que la API de conversiones").
   const [pixelId, setPixelId] = useState("");
   useEffect(() => {
     api.get<{ pixels: Array<{ pixelId: string; eventType: string }> }>("/api/pixels")
@@ -282,6 +296,7 @@ export default function LandingsPage() {
       })
       .catch(() => { /* sin pixel: la revisión lo avisa */ });
   }, []);
+  const tpls = useMemo(() => templates(slug, pixelId), [slug, pixelId]);
 
   const [landings, setLandings] = useState<Landing[]>([]);
   const [loading, setLoading] = useState(true);
