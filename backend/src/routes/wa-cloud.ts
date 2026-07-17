@@ -32,18 +32,42 @@ function validMetaSignature(req: import("express").Request): boolean {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-// Extrae el texto de un mensaje de la Cloud API (varios tipos).
+// Extrae un texto MOSTRABLE de un mensaje de la Cloud API. Cubre texto, captions, botones e
+// interactivos; y para los tipos que no traen texto propio (ubicación, contacto, reacción, o
+// un tipo nuevo/no soportado) devuelve una etiqueta legible, en vez de dejar el mensaje vacío
+// (que en el Inbox se veía como "[mensaje no soportado]").
 function extractText(msg: Record<string, any>): string {
-  return (
+  const direct =
     msg?.text?.body ??
     msg?.image?.caption ??
     msg?.document?.caption ??
     msg?.video?.caption ??
+    msg?.audio?.caption ??
     msg?.button?.text ??
     msg?.interactive?.button_reply?.title ??
     msg?.interactive?.list_reply?.title ??
-    ""
-  );
+    msg?.interactive?.nfm_reply?.body ??
+    "";
+  if (direct) return direct;
+
+  if (msg?.location) {
+    const l = msg.location;
+    const label = l?.name || l?.address || (l?.latitude != null ? `${l.latitude}, ${l.longitude}` : "");
+    return `📍 Ubicación${label ? `: ${label}` : ""}`;
+  }
+  if (Array.isArray(msg?.contacts) && msg.contacts.length) {
+    const c = msg.contacts[0];
+    const name = c?.name?.formatted_name ?? "";
+    const phone = c?.phones?.[0]?.phone ?? "";
+    return `👤 Contacto${name ? `: ${name}` : ""}${phone ? ` ${phone}` : ""}`;
+  }
+  if (msg?.reaction) return `${msg.reaction.emoji ?? "❤️"} reaccionó a un mensaje`;
+  if (msg?.order) return "🛒 Pedido recibido";
+  if (msg?.system?.body) return msg.system.body;
+  // Media (imagen/audio/video/doc/sticker): se muestran por su rama de descarga, sin texto redundante.
+  if (msg?.image || msg?.audio || msg?.video || msg?.document || msg?.sticker) return "";
+  // Tipo desconocido / no soportado por WhatsApp: mostramos el tipo para no perder el mensaje.
+  return msg?.type ? `[${msg.type === "unsupported" ? "mensaje no soportado por WhatsApp" : msg.type}]` : "";
 }
 
 // GET — verificación del webhook (Meta manda hub.challenge + verify token).
