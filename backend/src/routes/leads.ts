@@ -8,22 +8,38 @@ import { markPurchase } from "../lib/purchase.js";
 
 export const leadsRouter = Router();
 
-// GET /api/leads?q=&filter=todos|conversiones|leads — lista (sin teléfono).
+// GET /api/leads?q=&filter=todos|conversiones|leads&real=1 — lista (sin teléfono).
+// real=1 -> SÓLO clientes reales: los que escribieron al menos una vez (mensaje entrante)
+// o que ya progresaron de etapa. Deja afuera los clic-que-nunca-respondieron y los bots
+// viejos (creados antes del filtro de /go). Las vistas Leads y Agenda lo usan por defecto.
 leadsRouter.get("/", async (req, res) => {
   const userId = req.userId!;
   const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
   const filter = String(req.query.filter ?? "todos");
+  const onlyReal = req.query.real === "1" || req.query.real === "true";
 
   const where: Prisma.ContactWhereInput = { userId };
+  const and: Prisma.ContactWhereInput[] = [];
   if (filter === "conversiones") where.stage = "COMPRO";
   else if (filter === "leads") where.stage = { not: "COMPRO" };
   if (q) {
-    where.OR = [
-      { name: { contains: q, mode: "insensitive" } },
-      { phone: { contains: q } },
-      { code: { contains: q, mode: "insensitive" } },
-    ];
+    and.push({
+      OR: [
+        { name: { contains: q, mode: "insensitive" } },
+        { phone: { contains: q } },
+        { code: { contains: q, mode: "insensitive" } },
+      ],
+    });
   }
+  if (onlyReal) {
+    and.push({
+      OR: [
+        { messages: { some: { direction: "in" } } }, // escribió al menos una vez
+        { stage: { not: "NUEVO" } }, // ya lo contactaron / compró
+      ],
+    });
+  }
+  if (and.length) where.AND = and;
 
   const leads = await prisma.contact.findMany({
     where,

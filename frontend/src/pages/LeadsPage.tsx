@@ -10,12 +10,14 @@ export default function LeadsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [purchaseFor, setPurchaseFor] = useState<Lead | null>(null);
+  const [onlyReal, setOnlyReal] = useState(true); // por defecto: solo clientes que escribieron
 
-  const load = async () => {
+  const load = async (r = onlyReal) => {
     setLoading(true);
     setError(null);
     try {
-      const { data } = await api.get<{ leads: Lead[] }>("/api/leads");
+      const qs = r ? "?real=1" : "";
+      const { data } = await api.get<{ leads: Lead[] }>(`/api/leads${qs}`);
       setLeads(data.leads);
     } catch (err) {
       setError(apiError(err));
@@ -25,17 +27,19 @@ export default function LeadsPage() {
   };
 
   useEffect(() => {
-    void load();
+    void load(onlyReal);
     // Refrescamos cuando se detecta un pago o se marca una compra (tiempo real).
+    // El efecto depende de onlyReal para que el refresh use el filtro vigente.
     const socket = getSocket();
-    const refresh = () => void load();
+    const refresh = () => void load(onlyReal);
     socket.on("payment:detected", refresh);
     socket.on("lead:purchased", refresh);
     return () => {
       socket.off("payment:detected", refresh);
       socket.off("lead:purchased", refresh);
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onlyReal]);
 
   const onPurchased = (lead: Lead) => {
     setLeads((prev) => prev.map((l) => (l.id === lead.id ? lead : l)));
@@ -44,11 +48,17 @@ export default function LeadsPage() {
 
   return (
     <div className="p-6">
-      <div className="mb-5 flex items-center justify-between">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-bold">Leads</h1>
-        <Button variant="secondary" onClick={() => void load()}>
-          Actualizar
-        </Button>
+        <div className="flex items-center gap-3">
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-300">
+            <input type="checkbox" checked={onlyReal} onChange={(e) => setOnlyReal(e.target.checked)} className="accent-wa-green" />
+            Solo clientes reales
+          </label>
+          <Button variant="secondary" onClick={() => void load(onlyReal)}>
+            Actualizar
+          </Button>
+        </div>
       </div>
 
       {error && <ErrorMsg>{error}</ErrorMsg>}

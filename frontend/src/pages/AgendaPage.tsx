@@ -26,18 +26,20 @@ export default function AgendaPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("todos");
+  const [onlyReal, setOnlyReal] = useState(true); // por defecto: solo clientes que escribieron
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [detail, setDetail] = useState<LeadDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const load = async (search = q, f = filter) => {
+  const load = async (search = q, f = filter, r = onlyReal) => {
     setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams({ filter: f });
       if (search.trim()) params.set("q", search.trim());
+      if (r) params.set("real", "1");
       const { data } = await api.get<{ leads: Lead[] }>(`/api/leads?${params.toString()}`);
       setLeads(data.leads);
     } catch (err) {
@@ -47,7 +49,7 @@ export default function AgendaPage() {
     }
   };
 
-  useEffect(() => { void load(q, filter); /* eslint-disable-next-line */ }, [filter]);
+  useEffect(() => { void load(q, filter, onlyReal); /* eslint-disable-next-line */ }, [filter, onlyReal]);
 
   const onSearch = (e: FormEvent) => { e.preventDefault(); void load(q, filter); };
 
@@ -78,7 +80,7 @@ export default function AgendaPage() {
   return (
     <div className="p-6">
       <h1 className="mb-1 text-xl font-bold">Agenda</h1>
-      <p className="mb-4 text-sm text-slate-400">Todos tus contactos con su atribución. El teléfono se muestra al abrir la ficha.</p>
+      <p className="mb-4 text-sm text-slate-400">Tus clientes reales (los que te escribieron) con su atribución. El teléfono se muestra al abrir la ficha.</p>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="inline-flex rounded-md bg-slate-900 p-1 text-sm">
@@ -92,6 +94,10 @@ export default function AgendaPage() {
             </button>
           ))}
         </div>
+        <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-300">
+          <input type="checkbox" checked={onlyReal} onChange={(e) => setOnlyReal(e.target.checked)} className="accent-wa-green" />
+          Solo clientes reales
+        </label>
         <form onSubmit={onSearch} className="flex flex-1 gap-2">
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre, teléfono o código…" />
           <Button type="submit" variant="secondary">Buscar</Button>
