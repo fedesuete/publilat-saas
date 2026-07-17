@@ -27,7 +27,7 @@ const PROVIDER_LABEL: Record<Provider, string> = {
   mercadopago: "MercadoPago",
   stripe: "Tarjeta (Stripe)",
   usdt: "USDT (cripto)",
-  pagopar: "Pagopar (PY)",
+  pagopar: "Pago con tarjeta",
 };
 
 const ALL_PROVIDERS: Provider[] = ["mercadopago", "stripe", "usdt", "pagopar"];
@@ -232,10 +232,10 @@ export default function BillingPage() {
 
           {showPagopar && (
             <Card className="md:col-span-2">
-              <div className="mb-1 text-sm font-semibold">Pagar con Pagopar</div>
+              <div className="mb-1 text-sm font-semibold">Pago con tarjeta</div>
               <p className="mb-3 text-xs text-slate-400">
                 Tarjetas de crédito/débito (locales e internacionales), billeteras (Tigo Money, Personal Pay, Zimple…),
-                QR y PIX. Pagopar pide los datos del comprador para generar el pedido.
+                QR y PIX. Se piden los datos del comprador para generar el pedido.
               </p>
               <div className="flex flex-wrap items-end gap-2">
                 <div>
@@ -273,7 +273,7 @@ export default function BillingPage() {
                 </Button>
               </div>
               <p className="mt-2 text-xs text-slate-500">
-                El pago se procesa en guaraníes (PYG) en el checkout seguro de Pagopar; los días se acreditan
+                El pago se procesa en guaraníes (PYG) en un checkout seguro (Pagopar); los días se acreditan
                 automáticamente al confirmarse.
               </p>
             </Card>
