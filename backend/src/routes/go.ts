@@ -16,16 +16,20 @@ const shortCode = () => crypto.randomBytes(4).toString("hex").toUpperCase();
 
 // ¿El que golpea /go es un bot/previewer y NO una persona? Los previsualizadores de links
 // (Meta, WhatsApp, buscadores) y los scripts golpean /go sin ser clientes reales: inflaban
-// la sección Leads con contactos fantasma y mandaban Leads falsos a Meta. Heurística segura:
-// TODOS los navegadores reales mandan "Mozilla/<n>"; los bots de preview y los scripts NO.
-// Los navegadores in-app de Facebook/Instagram/WhatsApp (el flujo real del anuncio) sí lo
-// mandan, así que NO se filtran. Lista explícita para los bots que igual mandan "Mozilla".
-const BOT_UA =
-  /facebookexternalhit|meta-externalagent|bytespider|googlebot|bingbot|applebot|yandex(bot)?|duckduckbot|baiduspider|ahrefsbot|semrushbot|mj12bot|dotbot|petalbot|slackbot|telegrambot|twitterbot|discordbot|linkedinbot|redditbot|pinterest|embedly|whatsapp\/|crawler|spider|scrapy|headless|phantomjs|puppeteer|python-requests|curl\/|wget\/|go-http-client|okhttp|axios\/|monitoring|uptimerobot|pingdom/i;
+// la sección Leads con contactos fantasma y mandaban Leads falsos a Meta.
+// Heurística segura, en dos pasos para NO filtrar personas:
+//  1) TODOS los navegadores reales mandan "Mozilla/<n>"; los previewers de mensajería
+//     (WhatsApp/Telegram/etc.) y los scripts (curl/python) NO -> esos se filtran.
+//  2) Los pocos bots que igual falsean "Mozilla" (Googlebot, facebookexternalhit con
+//     "compatible;", etc.) se filtran por lista explícita.
+// Importante: el navegador IN-APP de WhatsApp/Instagram/Facebook (el flujo real del anuncio)
+// SÍ manda "Mozilla" y NO está en la lista dura -> pasa como persona real.
+const HARD_BOTS =
+  /facebookexternalhit|meta-externalagent|bytespider|googlebot|bingbot|applebot|yandex|duckduckbot|baiduspider|ahrefsbot|semrushbot|mj12bot|dotbot|petalbot|slackbot|telegrambot|twitterbot|discordbot|linkedinbot|redditbot|pinterest|embedly|crawler|spider|scrapy|headless|phantomjs|puppeteer|python-requests|curl\/|wget\/|go-http-client|okhttp|axios\/|monitoring|uptimerobot|pingdom/i;
 function isBotRequest(userAgent?: string): boolean {
   if (!userAgent) return true; // sin User-Agent = script/bot casi seguro
-  if (BOT_UA.test(userAgent)) return true;
   if (!/mozilla\/\d/i.test(userAgent)) return true; // sin "Mozilla/N" no es un navegador real
+  if (HARD_BOTS.test(userAgent)) return true; // bot que igual falsea "Mozilla"
   return false;
 }
 
