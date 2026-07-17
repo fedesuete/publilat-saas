@@ -45,6 +45,9 @@ function windowMetrics(contacts: ContactRow[], since: Date) {
     revenue, // centavos
     conversion: clicks ? sales / clicks : 0,
     clickToChat: clicks ? chats / clicks : 0,
+    // % de cierre: de los que REALMENTE escribieron, cuántos compraron (mucho más útil que
+    // ventas/clics, que se diluye con bots y curiosos que no llegan a chatear).
+    closeRate: chats ? sales / chats : 0,
   };
 }
 

@@ -1,7 +1,7 @@
 import { useEffect, useState, type DragEvent, type FormEvent } from "react";
 import { api, apiError } from "../lib/api";
 import type { Lead, Stage } from "../lib/types";
-import { fmtAmount, fmtDate, contactName } from "../lib/format";
+import { fmtAmount, fmtDate } from "../lib/format";
 import { Button, Input, ErrorMsg } from "../components/ui";
 
 const COLUMNS: Stage[] = ["NUEVO", "CONTACTADO", "INTERESADO", "COMPRO", "PERDIDO"];
@@ -13,10 +13,6 @@ const HEADER_STYLES: Record<Stage, string> = {
   COMPRO: "border-wa-green",
   PERDIDO: "border-rose-800",
 };
-
-function leadTitle(lead: Lead): string {
-  return contactName(lead);
-}
 
 export default function KanbanPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -144,8 +140,13 @@ export default function KanbanPage() {
                           }`}
                         >
                           <div className="font-medium text-slate-100">
-                            {leadTitle(lead)}
+                            {lead.name?.trim() || lead.phone || "Sin nombre"}
                           </div>
+                          {lead.name?.trim() && lead.phone && (
+                            <div className="font-mono text-xs text-slate-400">
+                              {lead.phone}
+                            </div>
+                          )}
                           {(lead.source || lead.campaignId) && (
                             <div className="mt-0.5 truncate text-xs text-slate-400">
                               {[lead.source, lead.campaignId]

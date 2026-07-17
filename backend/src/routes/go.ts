@@ -14,6 +14,33 @@ export const goRouter = Router();
 // Código corto para incrustar en el mensaje de WhatsApp (re-identifica al contacto).
 const shortCode = () => crypto.randomBytes(4).toString("hex").toUpperCase();
 
+// ¿El que golpea /go es un bot/previewer y NO una persona? Los previsualizadores de links
+// (Meta, WhatsApp, buscadores) y los scripts golpean /go sin ser clientes reales: inflaban
+// la sección Leads con contactos fantasma y mandaban Leads falsos a Meta. Heurística segura:
+// TODOS los navegadores reales mandan "Mozilla/<n>"; los bots de preview y los scripts NO.
+// Los navegadores in-app de Facebook/Instagram/WhatsApp (el flujo real del anuncio) sí lo
+// mandan, así que NO se filtran. Lista explícita para los bots que igual mandan "Mozilla".
+const BOT_UA =
+  /facebookexternalhit|meta-externalagent|bytespider|googlebot|bingbot|applebot|yandex(bot)?|duckduckbot|baiduspider|ahrefsbot|semrushbot|mj12bot|dotbot|petalbot|slackbot|telegrambot|twitterbot|discordbot|linkedinbot|redditbot|pinterest|embedly|whatsapp\/|crawler|spider|scrapy|headless|phantomjs|puppeteer|python-requests|curl\/|wget\/|go-http-client|okhttp|axios\/|monitoring|uptimerobot|pingdom/i;
+function isBotRequest(userAgent?: string): boolean {
+  if (!userAgent) return true; // sin User-Agent = script/bot casi seguro
+  if (BOT_UA.test(userAgent)) return true;
+  if (!/mozilla\/\d/i.test(userAgent)) return true; // sin "Mozilla/N" no es un navegador real
+  return false;
+}
+
+// Redirección liviana a WhatsApp SIN crear contacto ni disparar Lead (para bots o para
+// una persona mal clasificada: igual la mandamos a WhatsApp, sólo sin registrar el lead).
+async function redirectNoTrack(userId: string, msg: string, res: Response) {
+  const now = new Date();
+  const line = await prisma.waLine.findFirst({
+    where: { userId, connected: true, status: "active", NOT: { phone: "" }, expiresAt: { gt: now } },
+    select: { phone: true },
+  });
+  if (!line?.phone) return sendNoLine(res);
+  return res.redirect(302, `https://wa.me/${line.phone}?text=${encodeURIComponent(msg)}`);
+}
+
 // Construye la cookie _fbc a partir del fbclid si no vino ya como cookie.
 function buildFbc(fbclid?: string, existing?: string) {
   if (existing) return existing;
@@ -141,6 +168,12 @@ goRouter.get("/go", async (req: Request, res: Response) => {
 
     const user = await prisma.user.findUnique({ where: { slug: u } });
     if (!user) return res.status(404).send("Usuario no encontrado");
+
+    // Filtro de bots/previewers: si no es una persona real, NO creamos contacto ni disparamos
+    // Lead (evita fantasmas en Leads y eventos falsos a Meta). Igual lo mandamos a WhatsApp.
+    if (isBotRequest(req.get("user-agent") ?? undefined)) {
+      return redirectNoTrack(user.id, `${msg} (ref: ${shortCode()})`, res);
+    }
 
     // Dedup por fbclid: Facebook genera un fbclid ÚNICO por clic, así que si ya existe un contacto
     // con este mismo fbclid hace poco, es EL MISMO clic pegando a /go de nuevo (doble-toque, volver

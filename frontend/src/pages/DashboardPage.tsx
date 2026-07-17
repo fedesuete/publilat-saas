@@ -11,7 +11,7 @@ interface Totals {
 interface GroupRow { key: string; leads: number; contactados: number; compras: number; revenue: number; }
 interface WindowMetrics {
   clicks: number; chats: number; sales: number; revenue: number;
-  conversion: number; clickToChat: number;
+  conversion: number; clickToChat: number; closeRate: number;
 }
 interface Overview {
   totals: Totals;
@@ -137,11 +137,19 @@ function LineChart({ data }: { data: Array<{ date: string; leads: number }> }) {
   );
 }
 
+type Period = "today" | "week" | "month";
+const PERIODS: Array<{ key: Period; label: string }> = [
+  { key: "today", label: "Hoy" },
+  { key: "week", label: "7 días" },
+  { key: "month", label: "30 días" },
+];
+
 export default function DashboardPage() {
   const [data, setData] = useState<Overview | null>(null);
   const [series, setSeries] = useState<Series | null>(null);
   const [heat, setHeat] = useState<Heat | null>(null);
   const [days, setDays] = useState<number | null>(null);
+  const [period, setPeriod] = useState<Period>("month");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -171,12 +179,27 @@ export default function DashboardPage() {
 
   const t = data?.totals;
   const wins = data?.windows;
+  const w = wins?.[period];
 
   return (
     <div className="p-6">
-      <div className="mb-5 flex items-center justify-between">
-        <h1 className="text-xl font-bold">Dashboard</h1>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-bold">Analytics</h1>
         <div className="flex items-center gap-3">
+          {/* Selector de período (Hoy / 7 días / 30 días) */}
+          <div className="inline-flex rounded-lg border border-slate-700 bg-slate-800/60 p-0.5">
+            {PERIODS.map((p) => (
+              <button
+                key={p.key}
+                onClick={() => setPeriod(p.key)}
+                className={`rounded-md px-3 py-1 text-sm font-semibold transition ${
+                  period === p.key ? "bg-wa-green text-slate-900" : "text-slate-300 hover:text-white"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
           {days != null && (
             <span className="inline-flex items-center gap-1.5 rounded-full border border-wa-green/30 bg-wa-green/10 px-3 py-1 text-sm font-semibold text-wa-green">
               {days} {days === 1 ? "día" : "días"}
@@ -190,32 +213,16 @@ export default function DashboardPage() {
 
       {loading ? (
         <p className="text-slate-400">Cargando…</p>
-      ) : !t || !wins ? (
+      ) : !t || !wins || !w ? (
         <Card><p className="text-slate-300">No hay datos para mostrar.</p></Card>
       ) : (
         <div className="space-y-6">
-          {/* Clics: hoy / semana / mes + líneas activas */}
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            <StatCard label="Clics hoy" value={String(wins.today.clicks)} sub="tocaron el anuncio" accent="text-sky-300" />
-            <StatCard label="Clics esta semana" value={String(wins.week.clicks)} accent="text-sky-300" />
-            <StatCard label="Clics este mes" value={String(wins.month.clicks)} accent="text-sky-300" />
+          {/* 4 tarjetas limpias según el período elegido (estilo claro: clic ≠ chat ≠ venta) */}
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <StatCard label="Clics en el período" value={String(w.clicks)} sub="personas que tocaron el anuncio" accent="text-sky-300" />
+            <StatCard label="Chats reales" value={String(w.chats)} sub="personas que te escribieron" accent="text-violet-300" />
+            <StatCard label="Ventas en el período" value={String(w.sales)} sub={`${pct(w.closeRate)} de cierre · ${fmtAmount(w.revenue)}`} accent="text-wa-green" />
             <StatCard label="Líneas activas" value={String(data.activeLines)} sub="en rotación ahora" accent="text-amber-300" />
-          </div>
-
-          {/* Chats: hoy / semana / mes + click→chat */}
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            <StatCard label="Chats hoy" value={String(wins.today.chats)} sub="mensajes WA recibidos" accent="text-violet-300" />
-            <StatCard label="Chats esta semana" value={String(wins.week.chats)} accent="text-violet-300" />
-            <StatCard label="Chats este mes" value={String(wins.month.chats)} accent="text-violet-300" />
-            <StatCard label="Click→Chat hoy" value={pct(wins.today.clickToChat)} sub={`${wins.today.chats} chats / ${wins.today.clicks} clics`} accent="text-violet-300" />
-          </div>
-
-          {/* Ventas: hoy / semana / mes + conversión del mes */}
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            <StatCard label="Ventas hoy" value={String(wins.today.sales)} sub={`${pct(wins.today.conversion)} conversión`} accent="text-wa-green" />
-            <StatCard label="Ventas esta semana" value={String(wins.week.sales)} sub={`${pct(wins.week.conversion)} conversión`} accent="text-wa-green" />
-            <StatCard label="Ventas este mes" value={String(wins.month.sales)} sub={fmtAmount(wins.month.revenue)} accent="text-wa-green" />
-            <StatCard label="Conversión del mes" value={pct(wins.month.conversion)} sub={`${wins.month.sales} ventas / ${wins.month.clicks} clics`} accent="text-rose-300" />
           </div>
 
           {/* Gráfico 30 días */}

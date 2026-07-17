@@ -120,6 +120,15 @@ cloudWebhookRouter.post("/", async (req, res) => {
         const owner = await prisma.user.findUnique({ where: { id: userId }, select: { paymentDetection: true } });
         const paymentMode = owner?.paymentDetection ?? "off";
 
+        // Nombre de perfil de WhatsApp: viene en value.contacts[].profile.name (indexado por wa_id).
+        // Así el contacto muestra su nombre en el CRM en vez de "Sin nombre".
+        const profileNames = new Map<string, string>();
+        for (const c of value?.contacts ?? []) {
+          const wa = c?.wa_id ? String(c.wa_id).replace(/\D/g, "") : "";
+          const nm = typeof c?.profile?.name === "string" ? c.profile.name.trim().slice(0, 80) : "";
+          if (wa && nm) profileNames.set(wa, nm);
+        }
+
         // Ignoramos cambios que no sean mensajes (statuses/echoes): solo procesamos value.messages.
         for (const msg of value?.messages ?? []) {
           if (!msg?.from) continue;
@@ -131,6 +140,7 @@ cloudWebhookRouter.post("/", async (req, res) => {
           const phone = String(msg.from).replace(/\D/g, "");
           if (!phone) continue;
           const text = extractText(msg);
+          const pushName = profileNames.get(phone); // nombre de WhatsApp del contacto (si vino)
           const referral = msg.referral; // presente sólo en el 1er msg de un anuncio CTWA
 
           // 1) Resolver contacto por teléfono (o crearlo).
@@ -146,6 +156,7 @@ cloudWebhookRouter.post("/", async (req, res) => {
                 userId,
                 externalId: crypto.randomUUID(),
                 phone,
+                ...(pushName ? { name: pushName } : {}),
                 waJid: String(msg.from),
                 lineId: line.id,
                 source: referral?.ctwa_clid ? "ctwa" : "wa",
@@ -161,6 +172,7 @@ cloudWebhookRouter.post("/", async (req, res) => {
             const patch: Record<string, unknown> = {};
             if (!contact.waJid) patch.waJid = String(msg.from);
             if (!contact.lineId) patch.lineId = line.id;
+            if (pushName && !contact.name) patch.name = pushName; // completa el nombre si faltaba
             if (referral?.ctwa_clid && !contact.ctwaClid) {
               patch.ctwaClid = referral.ctwa_clid;
               patch.campaignId = referral.source_id ?? contact.campaignId;
