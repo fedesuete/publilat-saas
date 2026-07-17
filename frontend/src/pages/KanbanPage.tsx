@@ -20,12 +20,13 @@ export default function KanbanPage() {
   const [error, setError] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [purchaseFor, setPurchaseFor] = useState<string | null>(null);
+  const [onlyReal, setOnlyReal] = useState(true); // por defecto: solo clientes que escribieron
 
-  const load = async () => {
+  const load = async (r = onlyReal) => {
     setLoading(true);
     setError(null);
     try {
-      const { data } = await api.get<{ leads: Lead[] }>("/api/leads");
+      const { data } = await api.get<{ leads: Lead[] }>(`/api/leads${r ? "?real=1" : ""}`);
       setLeads(data.leads);
     } catch (err) {
       setError(apiError(err));
@@ -35,8 +36,9 @@ export default function KanbanPage() {
   };
 
   useEffect(() => {
-    void load();
-  }, []);
+    void load(onlyReal);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onlyReal]);
 
   const moveStage = async (lead: Lead, target: Stage) => {
     if (lead.stage === target) return;
@@ -81,11 +83,17 @@ export default function KanbanPage() {
 
   return (
     <div className="flex h-full flex-col p-6">
-      <div className="mb-5 flex items-center justify-between">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-bold">Kanban</h1>
-        <Button variant="secondary" onClick={() => void load()}>
-          Actualizar
-        </Button>
+        <div className="flex items-center gap-3">
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-300">
+            <input type="checkbox" checked={onlyReal} onChange={(e) => setOnlyReal(e.target.checked)} className="accent-wa-green" />
+            Solo clientes reales
+          </label>
+          <Button variant="secondary" onClick={() => void load(onlyReal)}>
+            Actualizar
+          </Button>
+        </div>
       </div>
 
       {error && (
