@@ -5,7 +5,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import {
   type Provider,
-  priceFor,
+  priceFor, promoFor, promoPriceFor,
   mpEnabled, createPreference, getMpPayment, mpWebhookSecretSet, verifyMpWebhook,
   stripeEnabled, createStripeSession, constructStripeEvent,
   usdtEnabled, createUsdtInvoice, verifyUsdtSignature,
@@ -99,6 +99,8 @@ billingRouter.post("/credit/add", async (req, res) => {
 const checkoutSchema = z.object({
   days: z.number().int().positive().max(3650),
   provider: z.enum(["mercadopago", "stripe", "usdt", "pagopar"]),
+  // Promo opcional (bundle a precio fijo). Hoy: "2meses" = 60 días con descuento, solo por tarjeta.
+  promo: z.enum(["2meses"]).optional(),
   // Pagopar exige los datos del comprador para crear el pedido (CI/RUC sin puntos).
   buyer: z
     .object({
@@ -114,8 +116,19 @@ const checkoutSchema = z.object({
 billingRouter.post("/checkout", async (req, res) => {
   const parsed = checkoutSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
-  const { days, provider, buyer } = parsed.data;
-  const { amount, currency } = priceFor(provider, days);
+  const { provider, buyer } = parsed.data;
+
+  // Promo: precio fijo con descuento. Hoy solo se cobra por tarjeta (Pagopar).
+  const promo = parsed.data.promo ? promoFor(parsed.data.promo) : null;
+  if (parsed.data.promo && !promo) return res.status(400).json({ error: "Promo inválida." });
+  if (promo && provider !== "pagopar") {
+    return res.status(400).json({ error: "La promo se paga con tarjeta." });
+  }
+
+  const days = promo ? promo.days : parsed.data.days;
+  const { amount, currency } = promo
+    ? (promoPriceFor(provider, promo) ?? priceFor(provider, days))
+    : priceFor(provider, days);
 
   const enabled =
     provider === "mercadopago" ? mpEnabled()
@@ -157,6 +170,7 @@ billingRouter.post("/checkout", async (req, res) => {
               paymentId: payment.id,
               days,
               buyer: { nombre: buyer!.nombre, documento: buyer!.documento, telefono: buyer!.telefono, email: user?.email ?? "" },
+              ...(promo ? { amountOverride: promo.pyg, descripcionOverride: `Publi.lat — ${promo.label} (${promo.days} días de línea activa)` } : {}),
             });
           })()
       : await createUsdtInvoice({ paymentId: payment.id, days });

@@ -33,6 +33,27 @@ export function priceFor(provider: Provider, days: number): { amount: number; cu
   return { amount: days * usdPerDay(days), currency: "USD" }; // stripe + usdt
 }
 
+// ---- Promos (bundles a precio fijo, independientes del precio por día del selector) ----
+// "2meses": 60 días a mitad de precio (1 USD/día = 60 USD ≈ 450.000 PYG). Todo por env.
+const PROMO_2M_DAYS = Number(process.env.PROMO_2M_DAYS ?? 60);
+const PROMO_2M_USD = Number(process.env.PROMO_2M_USD ?? 60);
+const PROMO_2M_PYG = Number(process.env.PROMO_2M_PYG ?? 450000);
+
+export type PromoKey = "2meses";
+export interface PromoInfo { key: PromoKey; days: number; usd: number; pyg: number; label: string }
+
+export function promoFor(key: string): PromoInfo | null {
+  if (key === "2meses") return { key: "2meses", days: PROMO_2M_DAYS, usd: PROMO_2M_USD, pyg: PROMO_2M_PYG, label: "Promo 2 meses" };
+  return null;
+}
+
+// Precio de una promo para un proveedor. Pagopar en PYG; stripe/usdt en USD.
+export function promoPriceFor(provider: Provider, promo: PromoInfo): { amount: number; currency: string } | null {
+  if (provider === "pagopar") return { amount: Math.max(1000, Math.round(promo.pyg)), currency: "PYG" };
+  if (provider === "stripe" || provider === "usdt") return { amount: promo.usd, currency: "USD" };
+  return null; // mercadopago no soportado para promos
+}
+
 // ---- MercadoPago ----------------------------------------------------------
 const MP_TOKEN = process.env.MP_ACCESS_TOKEN ?? "";
 export const mpEnabled = () => Boolean(MP_TOKEN);
@@ -258,9 +279,14 @@ export async function createPagoparOrder(args: {
   paymentId: string;
   days: number;
   buyer: PagoparBuyer;
+  amountOverride?: number; // monto en PYG (promo); si no viene, se calcula por priceFor
+  descripcionOverride?: string;
 }): Promise<{ id: string; url: string }> {
-  const { amount } = priceFor("pagopar", args.days);
-  const descripcion = `Publi.lat — ${args.days} día(s) de línea activa`;
+  const amount =
+    args.amountOverride != null
+      ? Math.max(1000, Math.round(args.amountOverride))
+      : priceFor("pagopar", args.days).amount;
+  const descripcion = args.descripcionOverride ?? `Publi.lat — ${args.days} día(s) de línea activa`;
   const payload = {
     token: pagoparToken(args.paymentId, pagoparAmountString(amount)),
     public_key: PAGOPAR_PUBLIC_KEY,

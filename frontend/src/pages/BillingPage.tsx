@@ -46,6 +46,7 @@ export default function BillingPage() {
 
   // Pagopar exige nombre y CI/RUC del comprador para crear el pedido.
   const [showPagopar, setShowPagopar] = useState(false);
+  const [promoMode, setPromoMode] = useState(false); // el form de tarjeta está en modo promo 2 meses
   const [ppNombre, setPpNombre] = useState("");
   const [ppDocumento, setPpDocumento] = useState("");
   const [ppTelefono, setPpTelefono] = useState("");
@@ -90,9 +91,13 @@ export default function BillingPage() {
     return () => { cancelled = true; };
   }, [buyDays]);
 
-  const buy = async (provider: Provider, buyer?: { nombre: string; documento: string; telefono?: string }) => {
-    const n = parseInt(buyDays, 10);
-    if (!Number.isInteger(n) || n <= 0) {
+  const buy = async (
+    provider: Provider,
+    buyer?: { nombre: string; documento: string; telefono?: string },
+    promo?: "2meses",
+  ) => {
+    const n = promo ? 60 : parseInt(buyDays, 10); // la promo son 60 días fijos
+    if (!promo && (!Number.isInteger(n) || n <= 0)) {
       setError("Ingresá una cantidad de días válida (entero mayor a 0).");
       return;
     }
@@ -112,7 +117,7 @@ export default function BillingPage() {
         | { stub: true; provider: Provider; amount: number; currency: string; message: string }
         | { stub: false; provider: Provider; url: string; paymentId: string }
         | { direct: true; provider: "usdt"; address: string; network: string; amountUsdt: number; paymentId: string }
-      >("/api/billing/checkout", { days: n, provider, ...(buyer ? { buyer } : {}) });
+      >("/api/billing/checkout", { days: n, provider, ...(promo ? { promo } : {}), ...(buyer ? { buyer } : {}) });
       if ("direct" in data && data.direct) {
         setUsdtPay({ address: data.address, amountUsdt: data.amountUsdt, paymentId: data.paymentId });
       } else if ("stub" in data && data.stub) {
@@ -120,7 +125,7 @@ export default function BillingPage() {
       } else if ("url" in data) {
         window.open(data.url, "_blank");
         setCheckoutMsg(`Te abrimos el checkout de ${PROVIDER_LABEL[provider]} en otra pestaña.`);
-        if (provider === "pagopar") setShowPagopar(false);
+        if (provider === "pagopar") { setShowPagopar(false); setPromoMode(false); }
       }
     } catch (err) {
       setError(apiError(err));
@@ -204,12 +209,17 @@ export default function BillingPage() {
                   {ALL_PROVIDERS
                     .filter((p) => methods[p])
                     .map((p) => {
+                      // El precio se muestra en USD (para tarjeta/Pagopar se usa el equivalente
+                      // en dólares; el cobro real se hace en guaraníes en el checkout).
+                      const usd = prices?.usdt?.amount;
                       const price = prices?.[p];
+                      const label =
+                        p === "pagopar"
+                          ? `${PROVIDER_LABEL[p]}${usd != null ? ` · ${usd} USD` : ""}`
+                          : `${PROVIDER_LABEL[p]}${price ? ` · ${price.amount.toLocaleString("es-AR")} ${price.currency}` : ""}`;
                       return (
                         <Button key={p} type="button" disabled={buying !== null} onClick={() => void buy(p)}>
-                          {buying === p
-                            ? "…"
-                            : `${PROVIDER_LABEL[p]}${price ? ` · ${price.amount.toLocaleString("es-AR")} ${price.currency}` : ""}`}
+                          {buying === p ? "…" : label}
                         </Button>
                       );
                     })}
@@ -217,6 +227,25 @@ export default function BillingPage() {
                 <p className="mt-2 text-xs text-slate-500">
                   Elegí el medio de pago; los días se acreditan al confirmarse el pago.
                 </p>
+
+                {/* Promo 2 meses: 60 días a mitad de precio, con tarjeta (Pagopar). */}
+                {methods.pagopar && (
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-wa-green/30 bg-wa-green/5 p-3">
+                    <div>
+                      <div className="text-sm font-semibold text-wa-green">🎁 Promo 2 meses</div>
+                      <div className="text-xs text-slate-400">
+                        60 días de línea activa por <b className="text-slate-200">60 USD</b> — la mitad (1 USD/día). Se paga con tarjeta.
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      disabled={buying !== null}
+                      onClick={() => { setPromoMode(true); setShowPagopar(true); setCheckoutMsg(null); }}
+                    >
+                      Aprovechar promo · 60 USD
+                    </Button>
+                  </div>
+                )}
               </>
             ) : (
               <p className="text-sm text-slate-400">
@@ -232,8 +261,11 @@ export default function BillingPage() {
 
           {showPagopar && (
             <Card className="md:col-span-2">
-              <div className="mb-1 text-sm font-semibold">Pago con tarjeta</div>
+              <div className="mb-1 text-sm font-semibold">
+                {promoMode ? "🎁 Promo 2 meses — 60 USD (60 días)" : "Pago con tarjeta"}
+              </div>
               <p className="mb-3 text-xs text-slate-400">
+                {promoMode && "Se acreditan 60 días de línea activa. "}
                 Tarjetas de crédito/débito (locales e internacionales), billeteras (Tigo Money, Personal Pay, Zimple…),
                 QR y PIX. Se piden los datos del comprador para generar el pedido.
               </p>
@@ -259,22 +291,27 @@ export default function BillingPage() {
                   type="button"
                   disabled={buying !== null || ppNombre.trim().length < 3 || !/^\d{5,24}$/.test(ppDocumento)}
                   onClick={() =>
-                    void buy("pagopar", {
-                      nombre: ppNombre.trim(),
-                      documento: ppDocumento,
-                      ...(ppTelefono.trim() ? { telefono: ppTelefono.trim() } : {}),
-                    })
+                    void buy(
+                      "pagopar",
+                      {
+                        nombre: ppNombre.trim(),
+                        documento: ppDocumento,
+                        ...(ppTelefono.trim() ? { telefono: ppTelefono.trim() } : {}),
+                      },
+                      promoMode ? "2meses" : undefined,
+                    )
                   }
                 >
                   {buying === "pagopar" ? "…" : "Continuar al pago"}
                 </Button>
-                <Button type="button" variant="secondary" onClick={() => setShowPagopar(false)}>
+                <Button type="button" variant="secondary" onClick={() => { setShowPagopar(false); setPromoMode(false); }}>
                   Cancelar
                 </Button>
               </div>
               <p className="mt-2 text-xs text-slate-500">
-                El pago se procesa en guaraníes (PYG) en un checkout seguro (Pagopar); los días se acreditan
-                automáticamente al confirmarse.
+                {promoMode
+                  ? "La promo se cobra en guaraníes (≈ 450.000 PYG, equivale a 60 USD) en un checkout seguro (Pagopar); los 60 días se acreditan al confirmarse."
+                  : "El pago se procesa en guaraníes (PYG) en un checkout seguro (Pagopar); los días se acreditan automáticamente al confirmarse."}
               </p>
             </Card>
           )}
