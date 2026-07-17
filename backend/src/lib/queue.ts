@@ -118,6 +118,14 @@ export async function retryFailedCapi(opts?: { includeDead?: boolean; max?: numb
   return ok;
 }
 
+// Detección de caída SILENCIOSA: WAHA/Baileys a veces reportan la sesión como "conectada"
+// (connectionState=open) pero dejan de ENTREGAR los mensajes entrantes. connectionState no lo
+// ve, así que una línea muerta puede pasar horas sin alertar (le pasó a redblack: 18 h). Señal
+// inequívoca: la línea recibió clics (gente redirigida a WhatsApp) pero CERO mensajes entrantes
+// en la ventana. Umbrales por env para poder ajustar sin tocar código.
+const SILENT_WINDOW_H = Number(process.env.SILENT_FAIL_WINDOW_HOURS ?? 3); // ventana a mirar
+const SILENT_MIN_CLICKS = Number(process.env.SILENT_FAIL_MIN_CLICKS ?? 6); // clics mínimos para concluir
+
 // Chequea la salud de cada línea activa: conexión (Baileys) y calidad (Cloud API).
 // Guarda el estado y notifica al dueño si se desconecta o baja la calidad.
 export async function checkLineHealth(): Promise<void> {
@@ -161,6 +169,27 @@ export async function checkLineHealth(): Promise<void> {
           if (!connected) {
             // Campana + email al dueño y admin (dedupe 6 h en el helper compartido).
             await alertLineDown(line);
+          }
+        }
+        // Caída SILENCIOSA: la sesión reporta "conectada" pero no entrega mensajes. Si la línea
+        // recibió clics pero CERO entrantes en la ventana, la reiniciamos (destraba la sesión o la
+        // manda a re-escanear QR) y avisamos. Dedupe: solo si no se avisó esta línea en las últimas 6 h.
+        if (connected && line.status === "active") {
+          const since = new Date(Date.now() - SILENT_WINDOW_H * 60 * 60 * 1000);
+          const [clics, inbound] = await Promise.all([
+            prisma.contact.count({ where: { lineId: line.id, createdAt: { gte: since } } }),
+            prisma.message.count({ where: { lineId: line.id, direction: "in", createdAt: { gte: since } } }),
+          ]);
+          if (clics >= SILENT_MIN_CLICKS && inbound === 0) {
+            const recentAlert = await prisma.notification.findFirst({
+              where: { userId: line.userId, type: "line_down", createdAt: { gte: new Date(Date.now() - 6 * 60 * 60 * 1000) } },
+              select: { id: true },
+            });
+            if (!recentAlert) {
+              console.warn(`[line-health] línea ${line.id}: caída SILENCIOSA (${clics} clics, 0 mensajes en ${SILENT_WINDOW_H}h) -> restart + alerta`);
+              await getEngine().restartInstance(inst).catch(() => undefined);
+              await alertLineDown(line);
+            }
           }
         }
         // Auto-reparación del número: si quedó conectada pero SIN teléfono (pasa cuando el owner
