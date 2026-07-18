@@ -64,6 +64,7 @@ export interface Msg {
 export interface LeadDetail extends Lead {
   phone: string | null;
   line: { phone: string; label: string | null } | null;
+  comprobantes?: Array<{ id: string; url: string; createdAt: string }>;
 }
 
 export interface Pixel {

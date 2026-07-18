@@ -75,6 +75,21 @@ leadsRouter.get("/:id", async (req, res) => {
     include: { line: { select: { phone: true, label: true } } },
   });
   if (!c) return res.status(404).json({ error: "Lead no encontrado" });
+
+  // Comprobantes: imágenes que mandó el cliente por WhatsApp (típicamente la transferencia).
+  // Se muestran en el drawer del CRM para verificar el pago. Las más recientes primero.
+  const imgs = await prisma.message.findMany({
+    where: { contactId: c.id, direction: "in", mediaType: { contains: "image" }, mediaData: { not: null } },
+    orderBy: { createdAt: "desc" },
+    take: 4,
+    select: { id: true, mediaType: true, mediaData: true, createdAt: true },
+  });
+  const comprobantes = imgs.map((m) => ({
+    id: m.id,
+    url: `data:${m.mediaType};base64,${m.mediaData}`,
+    createdAt: m.createdAt,
+  }));
+
   return res.json({
     lead: {
       id: c.id,
@@ -91,8 +106,11 @@ leadsRouter.get("/:id", async (req, res) => {
       landingUrl: c.landingUrl,
       amount: c.amount,
       purchasedAt: c.purchasedAt,
+      paymentDetected: c.paymentDetected,
+      paymentDetectedAmount: c.paymentDetectedAmount,
       createdAt: c.createdAt,
       line: c.line ? { phone: c.line.phone, label: c.line.label } : null,
+      comprobantes,
     },
   });
 });
