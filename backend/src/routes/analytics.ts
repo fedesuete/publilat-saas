@@ -97,11 +97,27 @@ analyticsRouter.get("/overview", async (req, res) => {
     where: { userId, connected: true, status: "active", OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
   });
 
+  // Chat App (PWA jugador↔cajero): "descargas" = jugadores que instalaron y activaron notificaciones
+  // (tienen una suscripción Web Push). players = jugadores registrados; open = conversaciones abiertas.
+  const [chatPlayers, chatPushPlayers, chatOpenConvs, chatNewMonth] = await Promise.all([
+    prisma.chatPlayer.count({ where: { userId } }),
+    prisma.chatPushSub.findMany({ where: { userId, playerId: { not: null } }, distinct: ["playerId"], select: { playerId: true } }),
+    prisma.chatConversation.count({ where: { userId, status: "open" } }),
+    prisma.chatPlayer.count({ where: { userId, createdAt: { gte: startMonth } } }),
+  ]);
+  const chatApp = {
+    players: chatPlayers,
+    installs: chatPushPlayers.length, // instalaron la app + activaron notificaciones
+    openConversations: chatOpenConvs,
+    newPlayersMonth: chatNewMonth,
+  };
+
   const sortByRevenue = (a: Bucket, b: Bucket) => b.revenue - a.revenue || b.leads - a.leads;
   return res.json({
     totals,
     windows,
     activeLines,
+    chatApp,
     byCampaign: [...byCampaign.values()].sort(sortByRevenue),
     bySource: [...bySource.values()].sort(sortByRevenue),
   });

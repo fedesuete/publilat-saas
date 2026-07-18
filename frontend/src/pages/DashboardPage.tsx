@@ -13,10 +13,12 @@ interface WindowMetrics {
   clicks: number; chats: number; sales: number; revenue: number;
   conversion: number; clickToChat: number; closeRate: number;
 }
+interface ChatApp { players: number; installs: number; openConversations: number; newPlayersMonth: number }
 interface Overview {
   totals: Totals;
   windows: { today: WindowMetrics; week: WindowMetrics; month: WindowMetrics };
   activeLines: number;
+  chatApp?: ChatApp;
   byCampaign: GroupRow[];
   bySource: GroupRow[];
 }
@@ -224,6 +226,19 @@ export default function DashboardPage() {
             <StatCard label="Ventas en el período" value={String(w.sales)} sub={`${pct(w.closeRate)} de cierre · ${fmtAmount(w.revenue)}`} accent="text-wa-green" />
             <StatCard label="Líneas activas" value={String(data.activeLines)} sub="en rotación ahora" accent="text-amber-300" />
           </div>
+
+          {/* Chat App: descargas/instalaciones de tu aplicación (PWA jugador↔cajero) */}
+          {data.chatApp && data.chatApp.players > 0 && (
+            <div>
+              <h2 className="mb-2 text-sm font-semibold text-slate-200">📱 Chat App — tu aplicación</h2>
+              <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                <StatCard label="Instalaron la app" value={String(data.chatApp.installs)} sub="descargaron + activaron notif." accent="text-emerald-300" />
+                <StatCard label="Jugadores" value={String(data.chatApp.players)} sub={`${data.chatApp.newPlayersMonth} nuevos (30 días)`} accent="text-sky-300" />
+                <StatCard label="% activación" value={pct(data.chatApp.players ? data.chatApp.installs / data.chatApp.players : 0)} sub="instalaron / total" accent="text-violet-300" />
+                <StatCard label="Conversaciones abiertas" value={String(data.chatApp.openConversations)} sub="chats en curso" accent="text-amber-300" />
+              </div>
+            </div>
+          )}
 
           {/* Gráfico 30 días */}
           <Card>
