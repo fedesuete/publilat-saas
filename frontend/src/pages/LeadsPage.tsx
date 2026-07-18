@@ -78,6 +78,7 @@ export default function LeadsPage() {
           <table className="min-w-full text-sm">
             <thead className="bg-slate-800/80 text-left text-slate-300">
               <tr>
+                <th className="px-3 py-2">Cliente</th>
                 <th className="px-3 py-2">Creado</th>
                 <th className="px-3 py-2">Etapa</th>
                 <th className="px-3 py-2">Campaña</th>
@@ -91,6 +92,12 @@ export default function LeadsPage() {
             <tbody>
               {leads.map((lead) => (
                 <tr key={lead.id} className="border-t border-slate-800">
+                  <td className="px-3 py-2">
+                    <div className="font-medium text-slate-100">{lead.name?.trim() || lead.phone || "Sin nombre"}</div>
+                    {lead.name?.trim() && lead.phone && (
+                      <div className="font-mono text-xs text-slate-400">{lead.phone}</div>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-slate-400">{fmtDate(lead.createdAt)}</td>
                   <td className="px-3 py-2">
                     <StageBadge stage={lead.stage} />
