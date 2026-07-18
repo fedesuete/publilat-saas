@@ -1,7 +1,7 @@
 // Chat App (módulo AISLADO jugador↔cajero). Rutas /api/chat/*. NO comparte tablas con el
 // Inbox de WhatsApp ni pasa por getEngine(). El operador es el User de la cuenta (requireAuth);
 // el jugador entra passwordless por un link de invitación (JWT client).
-import { Router } from "express";
+import { Router, type Request, type Response, type NextFunction } from "express";
 import { z } from "zod";
 import crypto from "node:crypto";
 import { Prisma } from "@prisma/client";
@@ -20,6 +20,32 @@ export const chatPublicRouter = Router();
 
 // Código de invitación: 8 chars base64url (crypto), único.
 const newCode = () => crypto.randomBytes(6).toString("base64url"); // 6 bytes -> 8 chars
+
+// ¿La cuenta tiene al menos una línea de WhatsApp con un DÍA PAGADO VIGENTE (expiresAt futuro)?
+// El Chat App se vende junto con el servicio de líneas. Gateamos por el día pagado y NO por
+// status/connected a propósito: el `status` sigue a la conexión (webhook.ts pone active/inactive
+// según connected), así que una desconexión momentánea de WhatsApp NO debe apagar el Chat App de
+// alguien que pagó. Cuando el día vence, line-expiry deja expiresAt en el pasado -> se corta solo.
+async function hasActiveWaLine(userId: string): Promise<boolean> {
+  const n = await prisma.waLine.count({ where: { userId, expiresAt: { gt: new Date() } } });
+  return n > 0;
+}
+
+// Gate para las acciones SALIENTES del Chat App (responder, notificar, popup): requieren una línea
+// de WhatsApp activa. Sin ella respondemos 403 con un mensaje claro para que el panel lo muestre.
+// El branding, los invites y la lectura NO se gatean (el operador puede seguir viendo/configurando).
+async function requireActiveLine(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (await hasActiveWaLine(req.userId!)) return next();
+  res.status(403).json({
+    error: "Necesitás una línea de WhatsApp activa (con días) para responder, notificar o mostrar popups en el Chat App. Recargá días y activá una línea.",
+    code: "line_required",
+  });
+}
+
+// GET /api/chat/status — el panel consulta si puede operar (hay línea de WhatsApp activa).
+chatRouter.get("/status", async (req, res) => {
+  res.json({ activeLine: await hasActiveWaLine(req.userId!) });
+});
 
 // Dispara el Lead por CAPI al registrarse un jugador que vino de un anuncio (fbclid).
 // Reusa sendCapiEvent (lib/meta-capi.ts) — NO toca go.ts ni reimplementa la CAPI. Best-effort.
@@ -126,7 +152,7 @@ const opSendSchema = z.object({ conversationId: z.string().min(1), body: z.strin
 // POST /api/chat/messages — el operador responde. CÓDIGO PROPIO del chat: NO pasa por
 // getEngine()/sendText de WhatsApp. Emite por el namespace /chat a la sala del jugador; si
 // el jugador no tiene socket vivo, queda marcado para Web Push (Fase 5).
-chatRouter.post("/messages", async (req, res) => {
+chatRouter.post("/messages", requireActiveLine, async (req, res) => {
   const parsed = opSendSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
   const conv = await prisma.chatConversation.findFirst({
@@ -167,7 +193,7 @@ const broadcastSchema = z.object({
 
 // POST /api/chat/push/broadcast — el operador manda una notificación push. Con playerId va a UN
 // jugador; sin playerId va a TODOS sus jugadores suscriptos. Devuelve a cuántas se encoló.
-chatRouter.post("/push/broadcast", async (req, res) => {
+chatRouter.post("/push/broadcast", requireActiveLine, async (req, res) => {
   const parsed = broadcastSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
   if (!pushEnabled()) return res.status(503).json({ error: "Web Push no está configurado (faltan VAPID)" });
@@ -306,7 +332,7 @@ const popupSchema = z.object({
 
 // PATCH /api/chat/popup — edita el popup. popupUpdatedAt se toca SIEMPRE: versiona el aviso para
 // que el jugador lo vuelva a ver una vez (el cliente deduplica por esa fecha).
-chatRouter.patch("/popup", async (req, res) => {
+chatRouter.patch("/popup", requireActiveLine, async (req, res) => {
   const parsed = popupSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
   const data: Record<string, unknown> = { popupUpdatedAt: new Date() };
@@ -362,6 +388,8 @@ chatPublicRouter.post("/me/messages", requireChatClient, async (req, res) => {
 // GET /api/chat/me/popup — el popup/promo activo de la cuenta (o null). `version` = popupUpdatedAt,
 // para que la PWA lo muestre una sola vez por versión.
 chatPublicRouter.get("/me/popup", requireChatClient, async (req, res) => {
+  // Sin línea de WhatsApp activa, la cuenta no muestra popup (mismo gate que las acciones del operador).
+  if (!(await hasActiveWaLine(req.accountId!))) return res.json({ popup: null });
   const u = await prisma.user.findUnique({
     where: { id: req.accountId! },
     select: { popupActive: true, popupImageUrl: true, popupTitle: true, popupText: true, popupLink: true, popupFrom: true, popupUntil: true, popupUpdatedAt: true },

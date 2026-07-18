@@ -28,6 +28,7 @@ export default function ChatAppPage() {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [activeLine, setActiveLine] = useState(true); // ¿hay línea WA activa para operar el Chat App?
   const selectedRef = useRef<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   selectedRef.current = selected;
@@ -45,7 +46,11 @@ export default function ChatAppPage() {
     } catch (e) { setError(apiError(e)); }
   };
 
-  useEffect(() => { void loadConvs(); }, []);
+  useEffect(() => {
+    void loadConvs();
+    // Estado de línea: si no hay línea WA activa, el Chat App queda en solo-lectura.
+    api.get<{ activeLine: boolean }>("/api/chat/status").then(({ data }) => setActiveLine(data.activeLine)).catch(() => undefined);
+  }, []);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   // SEGUNDO socket, al namespace /chat, SOLO en esta sección. Cookie del operador (withCredentials).
@@ -90,6 +95,14 @@ export default function ChatAppPage() {
           <button onClick={() => setTab("avisos")} className={`rounded px-3 py-1 font-medium ${tab === "avisos" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Avisos</button>
         </div>
       </div>
+
+      {!activeLine && (
+        <div className="mb-3 rounded-lg border border-amber-600/50 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          ⚠️ <b>Chat App en solo-lectura.</b> No tenés una línea de WhatsApp activa, así que no podés
+          responder, enviar avisos ni mostrar el popup. Recargá días y activá una línea en{" "}
+          <a href="/whatsapp" className="underline">WhatsApp</a> para reactivarlo.
+        </div>
+      )}
 
       {error && <div className="mb-3"><ErrorMsg>{error}</ErrorMsg></div>}
 
