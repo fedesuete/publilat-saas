@@ -39,6 +39,9 @@ export default function AdminClients() {
   // Credenciales del último cliente creado (para copiar y mandarle por WhatsApp).
   const [createdCreds, setCreatedCreds] = useState<{ email: string; password: string; days: number; name: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  // Credenciales del cliente seleccionado tras cambiar/generar su contraseña (para copiar y enviar).
+  const [detailCreds, setDetailCreds] = useState<{ email: string; password: string; name: string } | null>(null);
+  const [detailCopied, setDetailCopied] = useState(false);
 
   const panelUrl = window.location.origin;
   const credsMessage = (c: { email: string; password: string; days: number; name: string }) =>
@@ -78,8 +81,38 @@ export default function AdminClients() {
 
   const openDetail = async (id: string) => {
     setError(null);
+    setDetailCreds(null); setDetailCopied(false); // no arrastrar credenciales del cliente anterior
     try { const { data } = await api.get<Detail>(`/api/admin/clients/${id}`); setSel(data); setLim({ lines: data.user.maxLines, landings: data.user.maxLandings }); }
     catch (e) { setError(apiError(e)); }
+  };
+
+  // Resetea (o fija) la contraseña del cliente y la deja disponible para copiar. La actual deja de
+  // funcionar; el hash no se puede leer, por eso "copiar credenciales" implica generar una nueva.
+  const resetPassword = async (id: string): Promise<{ email: string; password: string; name: string } | null> => {
+    try {
+      const { data } = await api.post<{ email: string; password: string; name: string | null }>(`/api/admin/clients/${id}/password`, {});
+      const creds = { email: data.email, password: data.password, name: data.name ?? "" };
+      setDetailCreds(creds); setDetailCopied(false);
+      return creds;
+    } catch (e) { setError(apiError(e)); return null; }
+  };
+
+  const changePassword = async (id: string) => {
+    if (!window.confirm("¿Cambiar la contraseña de este cliente? La contraseña actual dejará de funcionar.")) return;
+    setBusy(true); await resetPassword(id); setBusy(false);
+  };
+
+  const copyDetailCreds = async (id: string) => {
+    let creds = detailCreds;
+    if (!creds) {
+      if (!window.confirm("Para copiar las credenciales hay que generar una contraseña nueva (la actual no se puede leer). ¿Continuar?")) return;
+      setBusy(true); creds = await resetPassword(id); setBusy(false);
+    }
+    if (!creds) return;
+    try {
+      await navigator.clipboard.writeText(credsMessage({ email: creds.email, password: creds.password, days: 0, name: creds.name }));
+      setDetailCopied(true); setTimeout(() => setDetailCopied(false), 2500);
+    } catch { /* si el navegador bloquea el clipboard, el texto igual se ve para copiar a mano */ }
   };
 
   const act = async (fn: () => Promise<unknown>) => {
@@ -238,6 +271,26 @@ export default function AdminClients() {
                   {sel.user.suspended ? "Reactivar" : "Suspender"}
                 </Button>
               </div>
+
+              {/* Credenciales: cambiar contraseña + copiar para mandarle al cliente (como la demo). */}
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button variant="secondary" disabled={busy} onClick={() => void changePassword(sel.user.id)}>🔑 Cambiar contraseña</Button>
+                <Button
+                  variant="secondary"
+                  disabled={busy}
+                  title="Genera credenciales y las copia para mandárselas al cliente"
+                  onClick={() => void copyDetailCreds(sel.user.id)}
+                >
+                  {detailCopied ? "¡Copiado! ✓" : "📋 Copiar credenciales"}
+                </Button>
+              </div>
+              {detailCreds && (
+                <div className="mt-2 rounded-md border border-wa-green/40 bg-slate-900/60 p-3">
+                  <div className="mb-1 text-xs font-semibold text-wa-green">🔑 Nueva contraseña — pasásela al cliente</div>
+                  <pre className="whitespace-pre-wrap rounded bg-slate-900 p-2 text-xs text-slate-200">{credsMessage({ email: detailCreds.email, password: detailCreds.password, days: 0, name: detailCreds.name })}</pre>
+                  <div className="mt-1 text-[11px] text-amber-300">⚠️ La contraseña anterior dejó de funcionar.</div>
+                </div>
+              )}
 
               <div className="mt-4 rounded bg-slate-900/60 p-3">
                 <div className="mb-2 text-xs font-semibold uppercase text-slate-400">Límites del plan</div>

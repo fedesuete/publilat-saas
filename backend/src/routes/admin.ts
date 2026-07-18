@@ -3,6 +3,7 @@
 // No expone secretos (CAPI token, access token) ni el contenido de Inbox de los clientes.
 import { Router } from "express";
 import { z } from "zod";
+import crypto from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
@@ -13,6 +14,15 @@ import { uniqueSlug } from "./auth.js";
 export const adminRouter = Router();
 
 // ---- helpers ----
+// Genera una contraseña legible (sin caracteres ambiguos 0/O/1/l/I) para pasarle al cliente.
+function genPassword(len = 10): string {
+  const chars = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = crypto.randomBytes(len);
+  let out = "";
+  for (let i = 0; i < len; i++) out += chars[bytes[i] % chars.length];
+  return out;
+}
+
 async function adminLog(adminId: string, action: string, targetUserId?: string, meta?: unknown) {
   await prisma.adminLog
     .create({ data: { adminId, action, targetUserId, meta: (meta ?? undefined) as object } })
@@ -266,6 +276,23 @@ adminRouter.post("/clients/:id/credits", async (req, res) => {
   });
   await adminLog(req.userId!, "credits", userId, { days, note });
   return res.json({ ok: true, days: updated.days });
+});
+
+// Cambiar / resetear la contraseña de un cliente. Devuelve la nueva EN TEXTO PLANO una vez para
+// que el admin se la pase (las contraseñas se guardan hasheadas, no se pueden recuperar). Si no
+// mandan `password`, se genera una aleatoria. No se permite sobre otro ADMIN.
+const passwordSchema = z.object({ password: z.string().min(6).max(100).optional() });
+adminRouter.post("/clients/:id/password", async (req, res) => {
+  const parsed = passwordSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "La contraseña debe tener al menos 6 caracteres." });
+  const userId = req.params.id;
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, name: true, role: true } });
+  if (!user) return res.status(404).json({ error: "Cliente no encontrado" });
+  if (user.role === "ADMIN") return res.status(403).json({ error: "No se puede cambiar la contraseña de un administrador desde acá." });
+  const password = parsed.data.password ?? genPassword();
+  await prisma.user.update({ where: { id: userId }, data: { password: await hashPassword(password) } });
+  await adminLog(req.userId!, "reset_password", userId, { email: user.email });
+  return res.json({ email: user.email, name: user.name, password });
 });
 
 // Editar límites del plan (líneas / landings) por cliente.
