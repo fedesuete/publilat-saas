@@ -160,7 +160,10 @@ cloudWebhookRouter.post("/", async (req, res) => {
                 waJid: String(msg.from),
                 lineId: line.id,
                 source: referral?.ctwa_clid ? "ctwa" : "wa",
-                stage: "NUEVO",
+                // Este contacto se crea PORQUE escribió: entra directo a "Contactado" (no "Nuevo").
+                // "Nuevo" queda reservado para los clics de /go que todavía no escribieron. Así el
+                // embudo y "chats reales" cuentan a todos los que escribieron, aunque sea 1 sola vez.
+                stage: "CONTACTADO",
                 ...(referral?.ctwa_clid
                   ? { ctwaClid: referral.ctwa_clid, campaignId: referral.source_id ?? undefined, adId: referral.source_id ?? undefined }
                   : {}),
