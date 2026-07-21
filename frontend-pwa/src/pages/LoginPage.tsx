@@ -20,7 +20,10 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const hasAccount = !!accountSlug; // vino por landing (?a=) o ya tenía cuenta recordada
+  // Solo ocultamos el campo "cuenta" cuando vino por el link de la landing (?a=), que es
+  // autoritativo. Si abrís la app directa (o hay una cuenta vieja guardada), el campo se ve para
+  // poder escribir/corregir la cuenta (antes una cuenta stale lo escondía y dejaba sin salida).
+  const lockAccount = !!urlSlug;
 
   // Vino por la landing: traemos branding + estado (activo/no) de esa cuenta.
   useEffect(() => {
@@ -68,11 +71,12 @@ export default function LoginPage() {
       )}
 
       <form onSubmit={submit} className="mt-5 w-full space-y-3">
-        {!hasAccount && (
+        {!lockAccount && (
           <input
             value={accountSlug}
             onChange={(e) => setAccountSlug(e.target.value)}
             placeholder="Nombre de la cuenta"
+            autoCapitalize="none"
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-center outline-none"
           />
         )}
