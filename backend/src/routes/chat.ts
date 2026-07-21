@@ -7,6 +7,7 @@ import crypto from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { signChatClientToken, requireChatClient } from "../middleware/requireChatClient.js";
+import { hashPassword, verifyPassword } from "../lib/auth.js";
 import { sendCapiEvent } from "../lib/meta-capi.js"; // reuso el CAPI existente, NO reimplemento
 import { resolveUserPixel } from "../lib/pixel.js";
 import { emitChat, playerHasLiveSocket } from "../lib/io.js";
@@ -45,6 +46,47 @@ async function requireActiveLine(req: Request, res: Response, next: NextFunction
 // GET /api/chat/status — el panel consulta si puede operar (hay línea de WhatsApp activa).
 chatRouter.get("/status", async (req, res) => {
   res.json({ activeLine: await hasActiveWaLine(req.userId!) });
+});
+
+// Clave por defecto de un acceso nuevo (el operador se la pasa al cliente; el cliente entra con eso).
+const DEFAULT_CHAT_PASSWORD = "Hola123";
+const accessSchema = z.object({
+  username: z.string().trim().min(2).max(40),
+  password: z.string().min(4).max(60).optional(),
+});
+
+// POST /api/chat/access — el operador crea (o resetea) un ACCESO con usuario + clave para un
+// cliente. Devuelve las credenciales (clave en texto) para pasárselas. Si el usuario ya existe,
+// le re-setea la clave (sirve de "resetear acceso"). Clave por defecto: "Hola123".
+chatRouter.post("/access", async (req, res) => {
+  const parsed = accessSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
+  const username = parsed.data.username.trim();
+  const password = parsed.data.password ?? DEFAULT_CHAT_PASSWORD;
+  const hash = await hashPassword(password);
+  const acc = await prisma.user.findUnique({ where: { id: req.userId! }, select: { slug: true, welcomeMsgText: true, welcomeMsgImage: true } });
+
+  const existing = await prisma.chatPlayer.findUnique({
+    where: { userId_casinoUsername: { userId: req.userId!, casinoUsername: username } },
+    select: { id: true },
+  });
+
+  if (existing) {
+    await prisma.chatPlayer.update({ where: { id: existing.id }, data: { password: hash } });
+  } else {
+    const player = await prisma.chatPlayer.create({
+      data: { userId: req.userId!, casinoUsername: username, password: hash, estatus: "active" },
+      select: { id: true },
+    });
+    // Abrimos su conversación + mensaje de bienvenida (igual que el registro por invitación).
+    const conv = await prisma.chatConversation.create({ data: { userId: req.userId!, playerId: player.id, status: "open" }, select: { id: true } });
+    const welcomeBody = acc?.welcomeMsgText?.trim();
+    if (welcomeBody || acc?.welcomeMsgImage) {
+      await prisma.chatMessage.create({ data: { userId: req.userId!, conversationId: conv.id, senderType: "system", body: welcomeBody ?? null, metadata: acc?.welcomeMsgImage ? { image: acc.welcomeMsgImage } : {} } });
+      await prisma.chatConversation.update({ where: { id: conv.id }, data: { lastMessageAt: new Date(), lastMessagePreview: welcomeBody ?? "📷 Imagen", unreadPlayer: 1 } });
+    }
+  }
+  return res.json({ accountSlug: acc?.slug ?? "", username, password, reset: !!existing });
 });
 
 // Dispara el Lead por CAPI al registrarse un jugador que vino de un anuncio (fbclid).
@@ -560,22 +602,34 @@ chatPublicRouter.post("/register", async (req, res) => {
 const loginSchema = z.object({
   accountSlug: z.string().min(1).max(60),
   username: z.string().min(2).max(40),
+  password: z.string().max(60).optional(),
 });
 
-// POST /api/chat/login — reingreso passwordless (resuelve la cuenta por User.slug).
+// POST /api/chat/login — ingreso del jugador por cuenta + usuario (+ clave). Si el jugador tiene
+// clave seteada (accesos nuevos), hay que verificarla; los viejos passwordless entran sin clave.
+// GATEADO por días: sin línea de WhatsApp vigente, el chat no funciona.
 chatPublicRouter.post("/login", async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
-  const acc = await prisma.user.findUnique({ where: { slug: parsed.data.accountSlug }, select: { id: true } });
+  const acc = await prisma.user.findUnique({ where: { slug: parsed.data.accountSlug.trim() }, select: { id: true } });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   const player = await prisma.chatPlayer.findUnique({
     where: { userId_casinoUsername: { userId: acc.id, casinoUsername: parsed.data.username.trim() } },
-    select: { id: true, casinoUsername: true },
+    select: { id: true, casinoUsername: true, password: true },
   });
-  if (!player) return res.status(404).json({ error: "No encontramos ese usuario. Registrate con tu link de invitación." });
+  if (!player) return res.status(404).json({ error: "No encontramos ese usuario. Pedile el acceso a quien te invitó." });
+  // Clave: si el acceso tiene clave, se verifica; si no (jugador viejo), entra sin clave.
+  if (player.password) {
+    const ok = parsed.data.password ? await verifyPassword(parsed.data.password, player.password) : false;
+    if (!ok) return res.status(401).json({ error: "Usuario o clave incorrectos." });
+  }
+  // Candado de días: sin día de WhatsApp vigente el chat está apagado.
+  if (!(await hasActiveWaLine(acc.id))) {
+    return res.status(403).json({ error: "El chat no está disponible en este momento. Probá más tarde.", code: "line_required" });
+  }
   const conv = await prisma.chatConversation.findFirst({ where: { userId: acc.id, playerId: player.id }, select: { id: true } });
   const token = signChatClientToken(acc.id, player.id);
-  return res.json({ token, player, conversationId: conv?.id ?? null });
+  return res.json({ token, player: { id: player.id, casinoUsername: player.casinoUsername }, conversationId: conv?.id ?? null });
 });
 
 // GET /api/chat/public/:slug — branding + estado de una cuenta por su slug (público, para la

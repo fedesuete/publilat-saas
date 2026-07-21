@@ -14,6 +14,7 @@ export default function LoginPage() {
   const saved = loadBranding();
 
   const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [accountSlug, setAccountSlug] = useState(urlSlug || saved?.accountSlug || "");
   const [brand, setBrand] = useState<Branding | null>(saved ?? null);
   const [inactive, setInactive] = useState(false);
@@ -46,7 +47,11 @@ export default function LoginPage() {
     setBusy(true);
     setError(null);
     try {
-      const { data } = await api.post("/api/chat/start", { accountSlug: accountSlug.trim(), username: username.trim() });
+      const { data } = await api.post("/api/chat/login", {
+        accountSlug: accountSlug.trim(),
+        username: username.trim(),
+        ...(password ? { password } : {}),
+      });
       setToken(data.token);
       navigate("/chat", { replace: true });
     } catch (e) {
@@ -62,7 +67,7 @@ export default function LoginPage() {
     <div className="mx-auto flex min-h-full max-w-md flex-col items-center justify-center p-6 text-center">
       {brand?.logoUrl && <img src={brand.logoUrl} alt="" className="mb-4 h-20 w-20 rounded-2xl object-cover" />}
       <h1 className="text-2xl font-bold">{name}</h1>
-      <p className="mt-2 text-sm text-slate-400">Poné tu usuario y entrá al chat.</p>
+      <p className="mt-2 text-sm text-slate-400">Entrá con tu usuario y clave.</p>
 
       {inactive && (
         <div className="mt-5 w-full rounded-xl border border-amber-700/50 bg-amber-500/10 p-3 text-sm text-amber-200">
@@ -84,6 +89,14 @@ export default function LoginPage() {
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           placeholder="Tu usuario"
+          autoCapitalize="none"
+          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-center outline-none"
+        />
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Tu clave"
           className="w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-center outline-none"
         />
         {error && <div className="text-sm text-rose-400">{error}</div>}

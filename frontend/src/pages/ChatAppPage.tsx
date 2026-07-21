@@ -171,6 +171,42 @@ function InvitesTab() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  // Crear ACCESO (usuario + clave) — el flujo principal: se lo pasás al cliente y entra a la app.
+  const [accUser, setAccUser] = useState("");
+  const [accBusy, setAccBusy] = useState(false);
+  const [creds, setCreds] = useState<{ accountSlug: string; username: string; password: string; reset: boolean } | null>(null);
+  const [accCopied, setAccCopied] = useState(false);
+
+  const credsMsg = (c: { accountSlug: string; username: string; password: string }) =>
+    [
+      `¡Descargá nuestra app y entrá al chat! 💬`,
+      ``,
+      `🔗 Abrí: ${CHAT_PWA_URL}/login?a=${c.accountSlug}`,
+      `🏷️ Cuenta: ${c.accountSlug}`,
+      `👤 Usuario: ${c.username}`,
+      `🔑 Clave: ${c.password}`,
+      ``,
+      `(Instalá la app desde ese link y entrá con tu usuario y clave.)`,
+    ].join("\n");
+
+  const createAccess = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!accUser.trim()) return;
+    setAccBusy(true); setError(null); setCreds(null); setAccCopied(false);
+    try {
+      const { data } = await api.post<{ accountSlug: string; username: string; password: string; reset: boolean }>(
+        "/api/chat/access",
+        { username: accUser.trim() },
+      );
+      setCreds(data);
+      setAccUser("");
+      await load();
+    } catch (e) { setError(apiError(e)); } finally { setAccBusy(false); }
+  };
+  const copyCreds = async () => {
+    if (!creds) return;
+    try { await navigator.clipboard.writeText(credsMsg(creds)); setAccCopied(true); setTimeout(() => setAccCopied(false), 2500); } catch { /* noop */ }
+  };
 
   const load = async () => {
     try { const { data } = await api.get<{ invites: Invite[] }>("/api/chat/invites"); setInvites(data.invites); }
@@ -194,6 +230,29 @@ function InvitesTab() {
   return (
     <div className="max-w-3xl">
       {error && <div className="mb-3"><ErrorMsg>{error}</ErrorMsg></div>}
+
+      {/* Crear ACCESO con usuario + clave (flujo principal): se lo pasás al cliente y entra a la app. */}
+      <Card className="mb-5 border-wa-green/40">
+        <div className="mb-1 text-sm font-semibold text-wa-green">🔑 Crear acceso (usuario + clave)</div>
+        <p className="mb-3 text-xs text-slate-500">
+          Poné un usuario y te da la clave (por defecto <b className="text-slate-300">Hola123</b>). Pasale esos datos al cliente:
+          descarga la app y entra con usuario + clave. Si el usuario ya existe, le resetea la clave.
+        </p>
+        <form onSubmit={createAccess} className="flex items-center gap-2">
+          <Input value={accUser} onChange={(e) => setAccUser(e.target.value)} placeholder="Usuario del cliente (ej: juan10)" className="flex-1" />
+          <Button type="submit" disabled={accBusy}>{accBusy ? "…" : "Crear acceso"}</Button>
+        </form>
+        {creds && (
+          <div className="mt-3 rounded-md border border-wa-green/40 bg-slate-900/60 p-3">
+            <div className="mb-1 text-xs font-semibold text-wa-green">
+              {creds.reset ? "🔁 Clave reseteada — pasale estos datos" : "✅ Acceso creado — pasale estos datos"}
+            </div>
+            <pre className="whitespace-pre-wrap rounded bg-slate-900 p-2 text-xs text-slate-200">{credsMsg(creds)}</pre>
+            <Button className="mt-2" onClick={() => void copyCreds()}>{accCopied ? "¡Copiado! ✓" : "📋 Copiar credenciales"}</Button>
+          </div>
+        )}
+      </Card>
+
       <Card className="mb-5">
         <div className="mb-2 text-sm font-semibold text-slate-100">Nuevo link de invitación</div>
         <p className="mb-3 text-xs text-slate-500">Cada link sirve para registrar a UN jugador. Compartilo (link o QR); cuando se registra, se cierra solo.</p>

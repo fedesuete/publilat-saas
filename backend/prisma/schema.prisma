@@ -375,6 +375,7 @@ model ChatPlayer {
   userId          String   // cuenta dueña
   nombre          String?
   casinoUsername  String   // usuario del jugador en el casino
+  password        String?  // hash bcrypt (null = jugador viejo passwordless; login sin clave)
   invitedByUserId String?  // operador que lo invitó (User.id)
   inviteCodeId    String?
   estatus         String   @default("active")
