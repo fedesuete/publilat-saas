@@ -265,6 +265,7 @@ export default function AdminClients() {
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button disabled={busy} onClick={() => addDays(sel.user.id, 1)}>+1 día</Button>
                 <Button variant="secondary" disabled={busy} onClick={() => addDays(sel.user.id, 7)}>+7</Button>
+                <Button variant="secondary" disabled={busy} onClick={() => addDays(sel.user.id, 30)}>+30 (mes)</Button>
                 <Button variant="ghost" disabled={busy} onClick={() => addDays(sel.user.id, -1)}>-1</Button>
                 <Button variant="secondary" disabled={busy} onClick={() => giveDemo(sel.user.id)}>Demo 5d</Button>
                 <Button variant={sel.user.suspended ? "secondary" : "danger"} disabled={busy} onClick={() => toggleSuspend(sel.user.id, !sel.user.suspended)}>
