@@ -6,6 +6,8 @@ import { useAuth } from "../lib/auth";
 import { Button, Input, Card, ErrorMsg } from "../components/ui";
 import OnboardingTour, { type TourStep } from "../components/OnboardingTour";
 
+const CHAT_PWA_URL = (import.meta.env.VITE_CHAT_PWA_URL as string | undefined) ?? "https://chat.publi.lat";
+
 // Recorrido guiado de la sección Landings (spotlight, igual que el del registro).
 const LANDINGS_TOUR: TourStep[] = [
   { targetId: "lp-guide", title: "1. La guía 🎓", body: "Acá tenés las reglas y un prompt listo para pedirle el HTML a ChatGPT sin errores. Desplegalo cuando quieras." },
@@ -23,6 +25,8 @@ interface Tpl { name: string; desc: string; category: TplCat; html: string }
 
 function templates(slug: string, pixelId: string): Tpl[] {
   const go = (msg: string) => `${API_BASE}/go?u=${slug}&msg=${encodeURIComponent(msg)}`;
+  // Entrada abierta al Chat App de esta cuenta (registración directa por usuario, gateada por días).
+  const chatUrl = `${CHAT_PWA_URL}/login?a=${encodeURIComponent(slug)}`;
   // Pixel del navegador (con el pixel del cliente ya puesto). Sin esto, Meta avisa "el pixel envió
   // menos del 25% que la API de conversiones". Si el cliente no tiene pixel cargado, no se pone (la
   // revisión le avisa que lo configure en Mi Pixel).
@@ -50,6 +54,8 @@ function templates(slug: string, pixelId: string): Tpl[] {
       html: base("Promo", `<h1>🔥 Promo por tiempo limitado</h1><p>Escribinos y reservá tu descuento ahora.</p><a class="btn" href="${go("Hola, quiero la promo")}">Quiero la promo</a>`) },
     { name: "Servicios", category: "simple", desc: "Captación de consultas / asesoramiento.",
       html: base("Servicios", `<h1>¿Necesitás ayuda?</h1><p>Contanos qué buscás y te asesoramos sin cargo.</p><a class="btn" href="${go("Hola, necesito asesoramiento")}">Pedir asesoramiento</a>`) },
+    { name: "Chat directo (app)", category: "simple", desc: "Tu chat propio con tu marca, como refuerzo de WhatsApp. Se apaga si te quedás sin días.",
+      html: base("Chateá con nosotros", `<h1>💬 Chateá con nosotros</h1><p>Abrí nuestro chat directo y te atendemos al instante, sin salir de la web.</p><a class="btn" href="${chatUrl}">Abrir chat</a>`) },
 
     { name: "Redirección WhatsApp", category: "full", desc: "Pantalla de carga animada que redirige directo a WhatsApp.",
       html: page("Conectando…", `body{background:#0b141a;color:#e9edef;text-align:center}.c{max-width:420px}.s{width:54px;height:54px;border:5px solid #1f2c33;border-top-color:#25d366;border-radius:50%;margin:0 auto 22px;animation:r 1s linear infinite}@keyframes r{to{transform:rotate(360deg)}}h1{font-size:22px;margin:0 0 6px}p{color:#8696a0;margin:0 0 22px}a.btn{display:inline-block;text-decoration:none;border-radius:999px;padding:13px 26px;font-weight:700;background:#25d366;color:#03301a}`,

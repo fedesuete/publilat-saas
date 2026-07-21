@@ -577,3 +577,86 @@ chatPublicRouter.post("/login", async (req, res) => {
   const token = signChatClientToken(acc.id, player.id);
   return res.json({ token, player, conversationId: conv?.id ?? null });
 });
+
+// GET /api/chat/public/:slug — branding + estado de una cuenta por su slug (público, para la
+// entrada abierta desde una landing). `active=false` = la cuenta no tiene día de WhatsApp vigente
+// -> el chat está apagado (no funciona hasta que recargue días).
+chatPublicRouter.get("/public/:slug", async (req, res) => {
+  const acc = await prisma.user.findUnique({
+    where: { slug: req.params.slug },
+    select: { id: true, slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true },
+  });
+  if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
+  return res.json({
+    accountSlug: acc.slug,
+    active: await hasActiveWaLine(acc.id),
+    branding: {
+      brandName: acc.brandName, logoUrl: acc.logoUrl,
+      primaryColor: acc.primaryColor, accentColor: acc.accentColor, welcomeText: acc.welcomeText,
+    },
+  });
+});
+
+const startSchema = z.object({
+  accountSlug: z.string().min(1).max(60),
+  username: z.string().min(2).max(40),
+  fbclid: z.string().max(400).optional(),
+  fbp: z.string().max(200).optional(),
+  fbc: z.string().max(200).optional(),
+});
+
+// POST /api/chat/start — entrada ABIERTA por cuenta (sin link de invitación): registra al jugador
+// si es nuevo, o retoma su chat si ya existe (mismo criterio que /login). GATEADO por días: si la
+// cuenta no tiene una línea de WhatsApp con día vigente, el chat NO funciona (403). Es lo que usa
+// la landing pública que el cliente le pasa a sus clientes como refuerzo.
+chatPublicRouter.post("/start", async (req, res) => {
+  const parsed = startSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
+  const { accountSlug, username, fbclid, fbp, fbc } = parsed.data;
+
+  const acc = await prisma.user.findUnique({
+    where: { slug: accountSlug },
+    select: { id: true, welcomeMsgText: true, welcomeMsgImage: true },
+  });
+  if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
+  // Candado de días: sin día de WhatsApp vigente el chat está apagado.
+  if (!(await hasActiveWaLine(acc.id))) {
+    return res.status(403).json({ error: "El chat no está disponible en este momento. Probá más tarde.", code: "line_required" });
+  }
+
+  // Entra si ya existe (retoma), o se registra si es nuevo.
+  let player = await prisma.chatPlayer.findUnique({
+    where: { userId_casinoUsername: { userId: acc.id, casinoUsername: username.trim() } },
+    select: { id: true, casinoUsername: true },
+  });
+  let conversationId: string | null = null;
+
+  if (player) {
+    const conv = await prisma.chatConversation.findFirst({ where: { userId: acc.id, playerId: player.id }, select: { id: true } });
+    conversationId = conv?.id ?? null;
+  } else {
+    player = await prisma.chatPlayer.create({
+      data: { userId: acc.id, casinoUsername: username.trim(), estatus: "active" },
+      select: { id: true, casinoUsername: true },
+    });
+    const conv = await prisma.chatConversation.create({
+      data: { userId: acc.id, playerId: player.id, status: "open" },
+      select: { id: true },
+    });
+    conversationId = conv.id;
+    const welcomeBody = acc.welcomeMsgText?.trim();
+    if (welcomeBody || acc.welcomeMsgImage) {
+      await prisma.chatMessage.create({
+        data: { userId: acc.id, conversationId: conv.id, senderType: "system", body: welcomeBody ?? null, metadata: acc.welcomeMsgImage ? { image: acc.welcomeMsgImage } : {} },
+      });
+      await prisma.chatConversation.update({
+        where: { id: conv.id },
+        data: { lastMessageAt: new Date(), lastMessagePreview: welcomeBody ?? "📷 Imagen", unreadPlayer: 1 },
+      });
+    }
+    if (fbclid || fbc) void fireChatLead(acc.id, player.id, { fbclid, fbp, fbc });
+  }
+
+  const token = signChatClientToken(acc.id, player.id);
+  return res.status(player ? 200 : 201).json({ token, player, conversationId });
+});
