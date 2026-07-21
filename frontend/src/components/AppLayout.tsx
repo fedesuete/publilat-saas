@@ -30,6 +30,7 @@ import { useAuth } from "../lib/auth";
 import { Button } from "./ui";
 import SupportBubble from "./SupportBubble";
 import OnboardingTour, { type TourStep } from "./OnboardingTour";
+import InstallPWA from "./InstallPWA";
 
 // Sonidos de notificación (Web Audio, sin archivos externos).
 let audioCtx: AudioContext | null = null;
@@ -264,6 +265,7 @@ export default function AppLayout() {
             </NavLink>
           )}
         </nav>
+        <InstallPWA />
         <div className="border-t border-slate-800 p-4 text-xs text-slate-400">
           <div className="truncate font-medium text-slate-200">{user?.email}</div>
           <div className="mb-3 truncate">slug: {user?.slug}</div>
