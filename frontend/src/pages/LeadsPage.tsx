@@ -176,7 +176,9 @@ function PurchaseModal({
   onClose: () => void;
   onDone: (lead: Lead) => void;
 }) {
-  const [amount, setAmount] = useState(prefillAmount ? String(prefillAmount) : "");
+  // Arranca VACÍO a propósito: el monto que leyó la IA (prefillAmount) se equivoca seguido
+  // (ej. 3.000.000 en vez de 3.000), así que NO lo pre-cargamos; queda como sugerencia tocable.
+  const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState("ARS");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -209,15 +211,24 @@ function PurchaseModal({
         <h2 className="mb-4 text-lg font-semibold">Marcar compra</h2>
         <form onSubmit={submit} className="space-y-3">
           <div>
-            <label className="mb-1 block text-xs text-slate-400">Monto</label>
+            <label className="mb-1 block text-xs text-slate-400">Monto real de la carga</label>
             <Input
               type="number"
               step="0.01"
-              placeholder="1500.50"
+              placeholder="Poné el monto REAL"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               autoFocus
             />
+            {prefillAmount != null && (
+              <button
+                type="button"
+                onClick={() => setAmount(String(prefillAmount))}
+                className="mt-1.5 rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-200 hover:bg-amber-500/20"
+              >
+                💰 La IA leyó {prefillAmount.toLocaleString("es-AR")} — tocá si es correcto (puede equivocarse)
+              </button>
+            )}
           </div>
           <div>
             <label className="mb-1 block text-xs text-slate-400">Moneda</label>

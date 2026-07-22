@@ -229,9 +229,10 @@ function LeadDrawer({
         if (!active) return;
         setDetail(data.lead);
         setStageSel(initialStage ?? data.lead.stage);
-        // Pre-cargar monto: el de la compra si ya compró, o el que la IA leyó del comprobante.
+        // Solo pre-cargamos el monto si YA compró (para verlo). El monto que leyó la IA NO se
+        // pre-carga (se equivoca seguido, ej. leyó 3.000.000 en vez de 3.000): queda como
+        // sugerencia tocable para que el operador ponga SIEMPRE el valor real a conciencia.
         if (data.lead.amount != null) setAmount(String(data.lead.amount / 100));
-        else if (data.lead.paymentDetectedAmount != null) setAmount(String(data.lead.paymentDetectedAmount / 100));
       })
       .catch((e) => active && setError(apiError(e)))
       .finally(() => active && setLoading(false));
@@ -326,11 +327,18 @@ function LeadDrawer({
                   ) : (
                     <>
                       <div className="flex gap-2">
-                        <Input type="number" step="0.01" placeholder="19000" value={amount} onChange={(e) => setAmount(e.target.value)} className="flex-1" />
+                        <Input type="number" step="0.01" placeholder="Poné el monto REAL de la carga" value={amount} onChange={(e) => setAmount(e.target.value)} className="flex-1" autoFocus />
                         <Input type="text" maxLength={3} value={currency} onChange={(e) => setCurrency(e.target.value)} className="w-20" />
                       </div>
+                      <p className="mt-1.5 text-[11px] text-slate-500">Escribí el monto que cargó de verdad el cliente.</p>
                       {detail.paymentDetected && detail.paymentDetectedAmount != null && (
-                        <p className="mt-1.5 text-[11px] text-amber-300">💰 La IA leyó un pago de {fmtAmount(detail.paymentDetectedAmount)} en el comprobante.</p>
+                        <button
+                          type="button"
+                          onClick={() => setAmount(String((detail.paymentDetectedAmount ?? 0) / 100))}
+                          className="mt-1.5 rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-200 hover:bg-amber-500/20"
+                        >
+                          💰 La IA leyó {fmtAmount(detail.paymentDetectedAmount)} — tocá si es correcto (puede equivocarse)
+                        </button>
                       )}
                     </>
                   )}
