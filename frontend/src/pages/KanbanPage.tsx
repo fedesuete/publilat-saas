@@ -267,6 +267,24 @@ function LeadDrawer({
     }
   };
 
+  // Editar el monto de una compra YA marcada (re-envía el Purchase corregido; conserva la fecha).
+  const saveAmountEdit = async () => {
+    const value = Number(amount);
+    if (!value || value <= 0) { setError("Ingresá el monto de la compra."); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      const { data } = await api.post<{ ok: boolean; lead: Lead }>(`/api/leads/${leadId}/purchase`, {
+        amount: value, currency: currency.toUpperCase(),
+      });
+      onSaved(data.lead);
+    } catch (e) {
+      setError(apiError(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
       <div
@@ -320,10 +338,18 @@ function LeadDrawer({
                 <div>
                   <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Monto de compra</div>
                   {isCompro ? (
-                    <div className="rounded-lg border border-wa-green/40 bg-wa-green/10 px-3 py-2 text-lg font-bold text-wa-green">
-                      {fmtAmount(detail.amount)}
-                      {detail.purchasedAt && <span className="ml-2 text-sm font-normal text-slate-400">{fmtDate(detail.purchasedAt)}</span>}
-                    </div>
+                    <>
+                      <div className="flex gap-2">
+                        <Input type="number" step="0.01" placeholder="Monto" value={amount} onChange={(e) => setAmount(e.target.value)} className="flex-1" />
+                        <Input type="text" maxLength={3} value={currency} onChange={(e) => setCurrency(e.target.value)} className="w-20" />
+                      </div>
+                      <p className="mt-1.5 text-[11px] text-slate-500">
+                        {detail.purchasedAt ? `Comprada el ${fmtDate(detail.purchasedAt)}. ` : ""}Podés corregir el monto y guardar.
+                      </p>
+                      <Button className="mt-2" disabled={saving} onClick={() => void saveAmountEdit()}>
+                        {saving ? "Guardando…" : "💾 Guardar monto"}
+                      </Button>
+                    </>
                   ) : (
                     <>
                       <div className="flex gap-2">

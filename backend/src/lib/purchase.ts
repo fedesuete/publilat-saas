@@ -30,18 +30,21 @@ export async function markPurchase(
   const contact = await prisma.contact.findFirst({ where: { id: contactId, userId } });
   if (!contact) return null;
 
-  // Marca la venta y limpia la bandera de pago detectado (ya quedó confirmado).
+  // ¿Ya estaba marcada como compra? Entonces esto es una EDICIÓN del monto: conservamos la fecha
+  // original y no re-notificamos "nueva venta" (evita ruido al corregir un monto mal cargado).
+  const isEdit = contact.stage === "COMPRO";
+
   const updated = await prisma.contact.update({
     where: { id: contact.id },
     data: {
       stage: "COMPRO",
       amount: Math.round(amount * 100),
-      purchasedAt: new Date(),
+      purchasedAt: contact.purchasedAt ?? new Date(), // conserva la fecha original al editar
       paymentDetected: false,
     },
   });
 
-  void notify(userId, "purchase", "¡Nueva venta! 🎉", `Se registró una compra de ${amount} ${currency}.`);
+  if (!isEdit) void notify(userId, "purchase", "¡Nueva venta! 🎉", `Se registró una compra de ${amount} ${currency}.`);
 
   // Webhook saliente al CRM externo (si está configurado). Best-effort.
   void fireIntegration(userId, "purchase", {
