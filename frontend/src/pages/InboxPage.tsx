@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowLeft, PanelLeftClose, PanelLeftOpen, Smile, Mic, Square, MessageSquareText, Trash2, Send, X } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent, type ChangeEvent } from "react";
+import { ArrowLeft, PanelLeftClose, PanelLeftOpen, Smile, Mic, Square, MessageSquareText, Music, Upload, Trash2, Send, X } from "lucide-react";
 import { api, apiError } from "../lib/api";
 import { getSocket, type InboxMessagePayload, type InboxMessageStatusPayload } from "../lib/socket";
 import type { Msg, Stage } from "../lib/types";
@@ -18,6 +18,7 @@ interface Conversation {
   unread: number;
 }
 interface QuickReply { id: string; title: string; body: string }
+interface AudioClip { id: string; title: string; contentType: string; createdAt: string }
 interface Tpl { name: string; language: string; category?: string; bodyParams: number }
 
 const shortTime = (iso: string) =>
@@ -36,6 +37,42 @@ function AckTicks({ status }: { status?: Msg["status"] }) {
 
 const EMOJIS = ["😀","😅","😂","🤣","😊","😍","😘","😎","🤩","🥳","👍","🙏","🙌","👏","💪","🔥","✨","🎉","🎁","💯","❤️","💚","💙","✅","❌","⚠️","⏰","📞","📲","💬","🤝","🙋","😉","😜","🤔","😢","😭","😡","🥰","😴","💰","💵","🏦","🛒","📷","🎤","📄"];
 
+// Fila de un audio guardado: nombre + "Escuchar" (carga el blob autenticado bajo demanda) + Enviar + borrar.
+function ClipRow({ clip, disabled, onSend, onDelete }: {
+  clip: AudioClip;
+  disabled: boolean;
+  onSend: (id: string) => void | Promise<void>;
+  onDelete: (id: string) => void | Promise<void>;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const play = async () => {
+    if (url) return;
+    setLoading(true);
+    try {
+      const { data } = await api.get(`/api/inbox/audio-clips/${clip.id}/audio`, { responseType: "blob" });
+      setUrl(URL.createObjectURL(data as Blob));
+    } catch { /* noop */ } finally { setLoading(false); }
+  };
+  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
+  return (
+    <div className="group rounded px-2 py-1.5 hover:bg-slate-800">
+      <div className="flex items-center gap-2">
+        <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-200">{clip.title}</span>
+        <button type="button" disabled={disabled} onClick={() => void onSend(clip.id)} className="rounded bg-wa-green px-2.5 py-1 text-[11px] font-semibold text-slate-900 disabled:opacity-50">Enviar</button>
+        <button type="button" onClick={() => void onDelete(clip.id)} className="text-slate-500 opacity-0 transition group-hover:opacity-100 hover:text-rose-400">
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      {url ? (
+        <audio controls src={url} className="mt-1.5 h-8 w-full" />
+      ) : (
+        <button type="button" onClick={() => void play()} className="mt-1 text-[11px] text-slate-400 hover:text-white">{loading ? "cargando…" : "▶ Escuchar"}</button>
+      )}
+    </div>
+  );
+}
+
 export default function InboxPage() {
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -48,6 +85,8 @@ export default function InboxPage() {
   const [showEmoji, setShowEmoji] = useState(false);
   const [showQuick, setShowQuick] = useState(false);
   const [quick, setQuick] = useState<QuickReply[]>([]);
+  const [showAudios, setShowAudios] = useState(false);
+  const [audioClips, setAudioClips] = useState<AudioClip[]>([]);
   const [recording, setRecording] = useState(false);
   const [needTemplate, setNeedTemplate] = useState(false);
   const [templates, setTemplates] = useState<Tpl[]>([]);
@@ -56,6 +95,8 @@ export default function InboxPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const recTargetRef = useRef<"chat" | "lib">("chat"); // destino de la grabación en curso
+  const fileRef = useRef<HTMLInputElement>(null); // input oculto para subir audios a la biblioteca
   selectedRef.current = selected;
 
   const loadConvs = async () => {
@@ -68,8 +109,12 @@ export default function InboxPage() {
     try { const { data } = await api.get<{ items: QuickReply[] }>("/api/inbox/quick-replies"); setQuick(data.items); }
     catch { /* noop */ }
   };
+  const loadAudioClips = async () => {
+    try { const { data } = await api.get<{ items: AudioClip[] }>("/api/inbox/audio-clips"); setAudioClips(data.items); }
+    catch { /* noop */ }
+  };
 
-  useEffect(() => { void loadConvs(); void loadQuick(); }, []);
+  useEffect(() => { void loadConvs(); void loadQuick(); void loadAudioClips(); }, []);
 
   useEffect(() => {
     const socket = getSocket();
@@ -89,7 +134,7 @@ export default function InboxPage() {
 
   useEffect(() => {
     if (!selected) return;
-    setChatError(null); setMessages([]); setShowEmoji(false); setShowQuick(false); setNeedTemplate(false); setTemplates([]);
+    setChatError(null); setMessages([]); setShowEmoji(false); setShowQuick(false); setShowAudios(false); setNeedTemplate(false); setTemplates([]);
     setConvs((prev) => prev.map((c) => (c.id === selected ? { ...c, unread: 0 } : c)));
     api.get<{ messages: Msg[] }>(`/api/inbox/${selected}/messages`)
       .then(({ data }) => setMessages(data.messages))
@@ -106,7 +151,7 @@ export default function InboxPage() {
     try {
       const { data } = await api.post<{ message: Msg }>(`/api/inbox/${selected}/messages`, { body });
       setMessages((prev) => appendUnique(prev, data.message));
-      setDraft(""); setShowEmoji(false); setShowQuick(false);
+      setDraft(""); setShowEmoji(false); setShowQuick(false); setShowAudios(false);
       void loadConvs();
     } catch (err) {
       setChatError(apiError(err));
@@ -137,9 +182,10 @@ export default function InboxPage() {
     } catch (err) { setChatError(apiError(err)); }
   };
 
-  // --- Grabación de audio ---
-  const startRec = async () => {
+  // --- Grabación de audio (target "chat" = enviar al toque; "lib" = guardar en la biblioteca) ---
+  const startRec = async (target: "chat" | "lib" = "chat") => {
     setChatError(null);
+    recTargetRef.current = target;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mime = MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")
@@ -158,6 +204,7 @@ export default function InboxPage() {
           fr.onloadend = () => resolve(String(fr.result));
           fr.readAsDataURL(blob);
         });
+        if (recTargetRef.current === "lib") { await saveClip(dataUrl); return; }
         if (!selectedRef.current) return;
         try {
           const { data } = await api.post<{ message: Msg }>(`/api/inbox/${selectedRef.current}/audio`, { audio: dataUrl });
@@ -171,6 +218,42 @@ export default function InboxPage() {
     } catch { setChatError("No pude acceder al micrófono. Revisá los permisos del navegador."); }
   };
   const stopRec = () => { recRef.current?.stop(); setRecording(false); };
+
+  // --- Biblioteca de audios ---
+  // Guarda un audio (data URL) en la biblioteca, pidiendo un nombre.
+  const saveClip = async (dataUrl: string, suggested = "") => {
+    const title = window.prompt("Nombre del audio (ej: Bienvenida):", suggested)?.trim();
+    if (!title) return;
+    try { await api.post("/api/inbox/audio-clips", { title, audio: dataUrl }); await loadAudioClips(); }
+    catch (err) { setChatError(apiError(err)); }
+  };
+  const onFilePicked = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // permite volver a elegir el mismo archivo
+    if (!file) return;
+    const dataUrl: string = await new Promise((resolve) => {
+      const fr = new FileReader();
+      fr.onloadend = () => resolve(String(fr.result));
+      fr.readAsDataURL(file);
+    });
+    await saveClip(dataUrl, file.name.replace(/\.[^.]+$/, ""));
+  };
+  const delClip = async (id: string) => {
+    if (!window.confirm("¿Borrar este audio de la biblioteca?")) return;
+    try { await api.delete(`/api/inbox/audio-clips/${id}`); await loadAudioClips(); }
+    catch (err) { setChatError(apiError(err)); }
+  };
+  const sendAudioClip = async (clipId: string) => {
+    if (!selected) return;
+    setChatError(null); setSending(true);
+    try {
+      const { data } = await api.post<{ message: Msg }>(`/api/inbox/${selected}/audio-clip`, { clipId });
+      setMessages((prev) => appendUnique(prev, data.message));
+      setShowAudios(false);
+      void loadConvs();
+    } catch (err) { setChatError(apiError(err)); }
+    finally { setSending(false); }
+  };
 
   // --- Mensajes guardados ---
   const addQuick = async () => {
@@ -373,23 +456,52 @@ export default function InboxPage() {
                   )}
                 </div>
               )}
+              {showAudios && (
+                <div className="absolute bottom-full left-2 mb-2 w-80 rounded-lg border border-slate-700 bg-slate-900 p-2 shadow-xl">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-300">Biblioteca de audios</span>
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => startRec("lib")} disabled={recording} className="flex items-center gap-1 text-xs font-medium text-wa-green hover:underline disabled:opacity-50">
+                        <Mic className="h-3.5 w-3.5" /> Grabar
+                      </button>
+                      <button type="button" onClick={() => fileRef.current?.click()} className="flex items-center gap-1 text-xs font-medium text-wa-green hover:underline">
+                        <Upload className="h-3.5 w-3.5" /> Subir
+                      </button>
+                    </div>
+                  </div>
+                  <p className="mb-2 px-1 text-[10px] leading-tight text-slate-500">Cada envío sale como un audio único (no se detecta como el mismo repetido).</p>
+                  {audioClips.length === 0 ? (
+                    <p className="px-1 py-2 text-xs text-slate-500">Sin audios. Grabá uno o subí un archivo.</p>
+                  ) : (
+                    <div className="max-h-72 space-y-1 overflow-y-auto">
+                      {audioClips.map((a) => (
+                        <ClipRow key={a.id} clip={a} disabled={sending || !selected} onSend={sendAudioClip} onDelete={delClip} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <form onSubmit={send} className="flex items-center gap-1.5 p-3">
-                <button type="button" title="Emojis" onClick={() => { setShowEmoji((v) => !v); setShowQuick(false); }} className={`rounded p-2 ${showEmoji ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
+                <input ref={fileRef} type="file" accept="audio/*" onChange={onFilePicked} className="hidden" />
+                <button type="button" title="Emojis" onClick={() => { setShowEmoji((v) => !v); setShowQuick(false); setShowAudios(false); }} className={`rounded p-2 ${showEmoji ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
                   {showEmoji ? <X className="h-5 w-5" /> : <Smile className="h-5 w-5" />}
                 </button>
-                <button type="button" title="Mensajes guardados" onClick={() => { setShowQuick((v) => !v); setShowEmoji(false); }} className={`rounded p-2 ${showQuick ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
+                <button type="button" title="Mensajes guardados" onClick={() => { setShowQuick((v) => !v); setShowEmoji(false); setShowAudios(false); }} className={`rounded p-2 ${showQuick ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
                   <MessageSquareText className="h-5 w-5" />
+                </button>
+                <button type="button" title="Biblioteca de audios" onClick={() => { setShowAudios((v) => !v); setShowEmoji(false); setShowQuick(false); }} className={`rounded p-2 ${showAudios ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
+                  <Music className="h-5 w-5" />
                 </button>
                 <Input placeholder="Escribí un mensaje… (Enter para enviar)" value={draft} onChange={(e) => setDraft(e.target.value)} className="flex-1" />
                 {recording ? (
-                  <button type="button" title="Detener y enviar" onClick={stopRec} className="flex items-center gap-1 rounded bg-rose-500 px-3 py-2 text-sm font-medium text-white">
+                  <button type="button" title="Detener" onClick={stopRec} className="flex items-center gap-1 rounded bg-rose-500 px-3 py-2 text-sm font-medium text-white">
                     <Square className="h-4 w-4" /> <span className="animate-pulse">grabando…</span>
                   </button>
                 ) : draft.trim() ? (
                   <Button type="submit" disabled={sending}>{sending ? "…" : <Send className="h-4 w-4" />}</Button>
                 ) : (
-                  <button type="button" title="Grabar audio" onClick={startRec} className="rounded p-2 text-slate-400 hover:bg-slate-800 hover:text-white">
+                  <button type="button" title="Grabar audio" onClick={() => startRec()} className="rounded p-2 text-slate-400 hover:bg-slate-800 hover:text-white">
                     <Mic className="h-5 w-5" />
                   </button>
                 )}

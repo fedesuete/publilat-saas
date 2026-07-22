@@ -7,6 +7,7 @@ import { getEngine } from "../lib/wa-engine.js";
 import { sendCloudText, sendCloudAudio, isOutsideWindowError, graphErrorMessage, listTemplates, sendCloudTemplate } from "../lib/wa-cloud.js";
 import { decryptSecret } from "../lib/crypto.js";
 import { checkWarmupGate } from "../lib/warmup.js";
+import { uniquifyAudio } from "../lib/audio-uniquify.js";
 
 export const inboxRouter = Router();
 
@@ -50,6 +51,63 @@ inboxRouter.delete("/quick-replies/:id", async (req, res) => {
   if (!item) return res.status(404).json({ error: "No encontrado" });
   await prisma.quickReply.delete({ where: { id: item.id } });
   return res.json({ ok: true });
+});
+
+// ---- Biblioteca de audios (deben ir antes de las rutas con :contactId) ----
+const AUDIO_MAX_BYTES = 12 * 1024 * 1024; // ~12 MB por audio guardado
+
+inboxRouter.get("/audio-clips", async (req, res) => {
+  const items = await prisma.audioClip.findMany({
+    where: { userId: req.userId! },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, title: true, contentType: true, createdAt: true }, // sin los bytes
+  });
+  return res.json({ items });
+});
+
+const audioClipSchema = z.object({ title: z.string().min(1).max(60), audio: z.string().min(1) });
+inboxRouter.post("/audio-clips", async (req, res) => {
+  const parsed = audioClipSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+
+  // Límite por cliente (maxAudioClips); el admin no tiene tope.
+  const user = await prisma.user.findUnique({ where: { id: req.userId! }, select: { role: true, maxAudioClips: true } });
+  if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+  if (user.role !== "ADMIN") {
+    const count = await prisma.audioClip.count({ where: { userId: req.userId! } });
+    if (count >= user.maxAudioClips) {
+      return res.status(403).json({ error: `Llegaste al máximo de ${user.maxAudioClips} audios. Borrá uno para agregar otro.`, code: "AUDIO_LIMIT" });
+    }
+  }
+
+  const mimeMatch = parsed.data.audio.match(/^data:([^;]+);base64,/);
+  const contentType = mimeMatch?.[1] ?? "audio/ogg";
+  const base64 = parsed.data.audio.replace(/^data:[^;]+;base64,/, "");
+  const data = Buffer.from(base64, "base64");
+  if (!data.length) return res.status(400).json({ error: "El audio está vacío" });
+  if (data.length > AUDIO_MAX_BYTES) return res.status(413).json({ error: "El audio es muy pesado (máx 12 MB)" });
+
+  const item = await prisma.audioClip.create({
+    data: { userId: req.userId!, title: parsed.data.title, contentType, data },
+    select: { id: true, title: true, contentType: true, createdAt: true },
+  });
+  return res.status(201).json({ item });
+});
+
+inboxRouter.delete("/audio-clips/:id", async (req, res) => {
+  const item = await prisma.audioClip.findFirst({ where: { id: req.params.id, userId: req.userId! } });
+  if (!item) return res.status(404).json({ error: "No encontrado" });
+  await prisma.audioClip.delete({ where: { id: item.id } });
+  return res.json({ ok: true });
+});
+
+// Preview: sirve los bytes crudos del audio guardado para que el operador lo escuche antes de mandarlo.
+inboxRouter.get("/audio-clips/:id/audio", async (req, res) => {
+  const item = await prisma.audioClip.findFirst({ where: { id: req.params.id, userId: req.userId! } });
+  if (!item) return res.status(404).json({ error: "No encontrado" });
+  res.setHeader("Content-Type", item.contentType);
+  res.setHeader("Cache-Control", "private, max-age=3600");
+  return res.send(Buffer.from(item.data));
 });
 
 // GET /api/inbox/conversations — lista de chats con preview, línea y no-leídos.
@@ -282,6 +340,72 @@ inboxRouter.post("/:contactId/audio", async (req, res) => {
   }
 
   // Mismo cuidado que en el texto: el eco fromMe de WAHA puede insertar primero.
+  let message;
+  try {
+    message = await prisma.message.create({
+      data: { contactId: contact.id, lineId: line.id, direction: "out", body: "", mediaType: mime, mediaData: base64, waMessageId },
+    });
+  } catch (e) {
+    const dup = waMessageId ? await prisma.message.findUnique({ where: { waMessageId } }) : null;
+    if (!dup) throw e;
+    message = dup;
+  }
+  const mediaUrl = `data:${mime};base64,${base64}`;
+  emitToUser(req.userId!, "inbox:message", {
+    contactId: contact.id,
+    message: { id: message.id, direction: "out", body: "", status: message.status, mediaUrl, createdAt: message.createdAt },
+  });
+  return res.status(201).json({ message: { id: message.id, direction: "out", body: "", status: message.status, mediaUrl, createdAt: message.createdAt } });
+});
+
+const audioClipSendSchema = z.object({ clipId: z.string().min(1) });
+
+// POST /api/inbox/:contactId/audio-clip — envía un audio de la BIBLIOTECA. Cada envío se
+// "uniquifica" (ffmpeg) para que WhatsApp no lo detecte como el mismo archivo repetido.
+inboxRouter.post("/:contactId/audio-clip", async (req, res) => {
+  const parsed = audioClipSendSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const contact = await getOwnedContact(req.userId!, req.params.contactId);
+  if (!contact) return res.status(404).json({ error: "Contacto no encontrado" });
+  if (!contact.lineId) return res.status(400).json({ error: "El contacto no tiene línea asociada" });
+
+  const line = await prisma.waLine.findFirst({ where: { id: contact.lineId, userId: req.userId! } });
+  if (!line) return res.status(400).json({ error: "La línea no está disponible" });
+
+  const clip = await prisma.audioClip.findFirst({ where: { id: parsed.data.clipId, userId: req.userId! } });
+  if (!clip) return res.status(404).json({ error: "Audio no encontrado" });
+
+  const destination = contact.waJid ?? contact.phone;
+  if (!destination) return res.status(400).json({ error: "El contacto aún no tiene teléfono" });
+
+  // Copia única en cada envío: distinto hash/fingerprint (misma nota de voz a oído).
+  let base64: string;
+  try {
+    const unique = await uniquifyAudio(Buffer.from(clip.data));
+    base64 = unique.toString("base64");
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return res.status(500).json({ error: "No se pudo preparar el audio", detail: message });
+  }
+  const mime = "audio/ogg";
+
+  let waMessageId: string | undefined;
+  try {
+    if (line.provider === "cloud") {
+      const sent = await sendCloudAudio(line, (contact.phone ?? destination).replace(/\D/g, ""), base64);
+      waMessageId = sent?.messages?.[0]?.id ?? undefined;
+    } else {
+      if (!line.sessionId) return res.status(400).json({ error: "La línea no está disponible" });
+      const gate = await checkWarmupGate(line);
+      if (!gate.ok) return res.status(429).json({ error: gate.reason, code: "WARMUP_LIMIT" });
+      const sent = await getEngine().sendWhatsAppAudio(line.sessionId, destination, base64);
+      waMessageId = sent?.key?.id ?? undefined;
+    }
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return res.status(502).json({ error: "No se pudo enviar el audio", detail: message });
+  }
+
   let message;
   try {
     message = await prisma.message.create({

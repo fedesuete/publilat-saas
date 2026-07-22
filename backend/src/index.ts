@@ -87,6 +87,10 @@ app.use(cors({ origin: corsOrigin, credentials: true }));
 // Webhook de Stripe ANTES del json(): necesita el body crudo para validar la firma.
 app.post("/api/billing/webhook/stripe", express.raw({ type: "*/*" }), stripeWebhookHandler);
 
+// La subida de audios a la biblioteca va en base64: necesita más que el 1mb global. Va ANTES
+// del json global (que al ver el body ya parseado, se saltea). No necesita rawBody (no es webhook).
+app.use("/api/inbox/audio-clips", express.json({ limit: "20mb" }));
+
 // Guardamos el body crudo (para validar la firma X-Hub-Signature-256 de los webhooks de Meta).
 app.use(
   express.json({

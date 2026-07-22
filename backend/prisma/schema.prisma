@@ -33,6 +33,7 @@ model User {
   // --- Límites de plan (configurables por cliente desde el panel) ---
   maxLines      Int       @default(1)        // líneas de WhatsApp permitidas
   maxLandings   Int       @default(50)       // landings permitidas
+  maxAudioClips Int       @default(2)        // audios en la biblioteca (el admin no tiene tope)
   tokenVersion  Int       @default(0)        // revocación de sesiones: al subir, invalida los JWT viejos
   // --- Landings aisladas en S3+CloudFront (anti-quemado, modelo ScaleOS) ---
   // Cada cliente tiene su PROPIA distribución CloudFront (dominio descartable): si Meta
@@ -70,6 +71,7 @@ model User {
   payments    Payment[]
   supportMessages SupportMessage[]
   quickReplies QuickReply[]
+  audioClips  AudioClip[]
   notifications Notification[]
   flows       Flow[]
   // Chat App (módulo aislado)
@@ -165,6 +167,21 @@ model QuickReply {
   body      String
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Biblioteca de audios reutilizables del Inbox (por usuario). Al enviarse, cada copia se
+// "uniquifica" con ffmpeg (silencio/volumen/metadata al azar) para que no se detecte como el
+// mismo archivo repetido. Límite maxAudioClips por cliente; el admin no tiene tope.
+model AudioClip {
+  id          String   @id @default(cuid())
+  userId      String
+  title       String
+  contentType String   // audio/ogg | audio/webm | audio/mpeg …
+  data        Bytes
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
