@@ -47,16 +47,18 @@ export default function LoginPage() {
     }
   };
 
-  // Solo ocultamos el campo "cuenta" cuando vino por el link de la landing (?a=), que es
-  // autoritativo. Si abrís la app directa (o hay una cuenta vieja guardada), el campo se ve para
-  // poder escribir/corregir la cuenta (antes una cuenta stale lo escondía y dejaba sin salida).
-  const lockAccount = !!urlSlug;
+  // Ocultamos el campo "cuenta" si ya la tenemos (vino por el link ?a= o quedó guardada de una
+  // visita anterior): el cliente solo ve usuario + clave. Solo se muestra si NO hay cuenta, o si
+  // el login falla con "Cuenta no encontrada" (cuenta vieja/inválida) -> ahí se abre para corregir.
+  const [accountLocked, setAccountLocked] = useState(!!urlSlug || !!saved?.accountSlug);
 
-  // Vino por la landing: traemos branding + estado (activo/no) de esa cuenta.
+  // Traemos branding + estado (activo/no) de la cuenta: la del link (?a=) o la guardada de antes.
+  // Así la app instalada (que abre sin ?a=) igual muestra la marca y respeta el candado de días.
   useEffect(() => {
-    if (!urlSlug) return;
+    const slug = urlSlug || saved?.accountSlug || "";
+    if (!slug) return;
     api
-      .get(`/api/chat/public/${encodeURIComponent(urlSlug)}`)
+      .get(`/api/chat/public/${encodeURIComponent(slug)}`)
       .then(({ data }) => {
         applyBranding(data.branding);
         saveBranding(data.accountSlug, data.branding);
@@ -64,7 +66,11 @@ export default function LoginPage() {
         setAccountSlug(data.accountSlug);
         setInactive(!data.active);
       })
-      .catch(() => setError("No encontramos esa cuenta."));
+      .catch(() => {
+        if (urlSlug) setError("No encontramos esa cuenta.");
+        else setAccountLocked(false); // la cuenta guardada ya no existe -> abrí el campo
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlSlug]);
 
   const submit = async (e: FormEvent) => {
@@ -81,7 +87,10 @@ export default function LoginPage() {
       setToken(data.token);
       navigate("/chat", { replace: true });
     } catch (e) {
-      setError(apiError(e));
+      const msg = apiError(e);
+      setError(msg);
+      // Si la cuenta guardada ya no existe, abrimos el campo para poder corregirla.
+      if (msg.toLowerCase().includes("cuenta no encontrada")) setAccountLocked(false);
     } finally {
       setBusy(false);
     }
@@ -123,7 +132,7 @@ export default function LoginPage() {
       )}
 
       <form onSubmit={submit} className="mt-5 w-full space-y-3">
-        {!lockAccount && (
+        {!accountLocked && (
           <input
             value={accountSlug}
             onChange={(e) => setAccountSlug(e.target.value)}
