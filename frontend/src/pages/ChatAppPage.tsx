@@ -510,10 +510,20 @@ function AvisosTab() {
         <div className="mb-1 text-sm font-semibold text-slate-100">🔔 Enviar notificación</div>
         <p className="mb-3 text-xs text-slate-500">Le llega al celular de tus jugadores (aun con la app cerrada, si activaron las notificaciones).</p>
         <label className="mb-1 block text-xs text-slate-400">Para</label>
-        <select value={target} onChange={(e) => setTarget(e.target.value)} className="mb-3 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green">
+        <select value={target} onChange={(e) => setTarget(e.target.value)} className="mb-2 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green">
           <option value="all">Todos mis jugadores</option>
-          {convs.map((c) => <option key={c.playerId} value={c.playerId}>{c.player} ({c.username})</option>)}
+          {convs.map((c) => {
+            const hp = stats?.players.find((p) => p.id === c.playerId)?.hasPush;
+            return <option key={c.playerId} value={c.playerId}>{c.player} ({c.username}){stats ? (hp ? " 🔔" : " — sin notificaciones") : ""}</option>;
+          })}
         </select>
+        {stats && (target === "all" ? (
+          <p className="mb-3 text-xs text-slate-400">🔔 {stats.players.filter((p) => p.hasPush).length} de {stats.players.length} jugadores tienen notificaciones activas (a los demás no les llega).</p>
+        ) : stats.players.find((p) => p.id === target)?.hasPush ? (
+          <p className="mb-3 text-xs text-wa-green">🔔 Notificaciones activas — le va a llegar.</p>
+        ) : (
+          <p className="mb-3 text-xs text-amber-400">⚠️ Este jugador todavía no activó las notificaciones en su celular, así que no le va a llegar. Tiene que abrir la app, entrar al chat y tocar “activar notificaciones”.</p>
+        ))}
         <label className="mb-1 block text-xs text-slate-400">Título</label>
         <Input value={pTitle} onChange={(e) => setPTitle(e.target.value)} placeholder="Ej: ¡Promo de hoy!" maxLength={80} className="mb-3" />
         <label className="mb-1 block text-xs text-slate-400">Mensaje</label>
