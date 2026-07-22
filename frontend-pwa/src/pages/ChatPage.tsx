@@ -4,7 +4,7 @@ import { api, apiError, API_BASE, getToken, clearToken, loadBranding } from "../
 import { subscribeToPush, pushSupported, pushPermission } from "../lib/push";
 import InstallPrompt from "../components/InstallPrompt";
 
-interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; createdAt: string }
+interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; image?: string | null; createdAt: string }
 interface Popup { title?: string | null; text?: string | null; image?: string | null; link?: string | null; version: string }
 const POPUP_SEEN_KEY = "publilat_popup_seen";
 
@@ -134,7 +134,12 @@ export default function ChatPage() {
             <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
               m.senderType === "player" ? "text-slate-900" : m.senderType === "system" ? "bg-slate-800 text-slate-400 text-xs italic" : "bg-slate-700 text-slate-100"
             }`} style={m.senderType === "player" ? { background: "var(--brand-primary)" } : undefined}>
-              {m.body}
+              {m.image && (
+                <a href={m.image} target="_blank" rel="noopener noreferrer">
+                  <img src={m.image} alt="" className="mb-1.5 max-h-72 w-full rounded-md object-cover" />
+                </a>
+              )}
+              {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
             </div>
           </div>
         ))}

@@ -453,6 +453,7 @@ function AvisosTab() {
   const [pTitle, setPTitle] = useState("");
   const [pBody, setPBody] = useState("");
   const [pImage, setPImage] = useState<string | null>(null);
+  const [alsoChat, setAlsoChat] = useState(true); // además del push, dejarlo como mensaje en el chat
   const [target, setTarget] = useState("all");
   const [sending, setSending] = useState(false);
   const [sentMsg, setSentMsg] = useState<string | null>(null);
@@ -484,7 +485,7 @@ function AvisosTab() {
     if (!pTitle.trim() || !pBody.trim()) return;
     setSending(true); setError(null); setSentMsg(null);
     try {
-      const body: Record<string, unknown> = { title: pTitle.trim(), body: pBody.trim() };
+      const body: Record<string, unknown> = { title: pTitle.trim(), body: pBody.trim(), alsoChat };
       if (pImage) body.image = pImage;
       if (target !== "all") body.playerId = target;
       const { data } = await api.post<{ sent: number }>("/api/chat/push/broadcast", body);
@@ -538,6 +539,10 @@ function AvisosTab() {
           </label>
           {pImage && <button onClick={() => setPImage(null)} className="text-xs text-rose-400 hover:underline">Quitar</button>}
         </div>
+        <label className="mb-3 flex cursor-pointer items-start gap-2 text-xs text-slate-300">
+          <input type="checkbox" checked={alsoChat} onChange={(e) => setAlsoChat(e.target.checked)} className="mt-0.5 accent-wa-green" />
+          <span>También mostrarlo <b>como mensaje en el chat</b> (recomendado — así la imagen se ve seguro adentro de la app, aunque el celular no la muestre en la notificación).</span>
+        </label>
         <div className="flex items-center gap-3">
           <Button onClick={() => void sendPush()} disabled={sending || !pTitle.trim() || !pBody.trim()}>{sending ? "Enviando…" : "Enviar notificación"}</Button>
           {sentMsg && <span className="text-sm text-wa-green">{sentMsg}</span>}

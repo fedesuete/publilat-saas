@@ -231,7 +231,38 @@ const broadcastSchema = z.object({
   url: z.string().max(300).optional(),
   image: z.string().url().max(600).optional(),     // imagen grande de la notificación (opcional)
   playerId: z.string().min(1).optional(),          // si viene: aviso individual; si no: a TODOS
+  alsoChat: z.boolean().optional(),                // además del push, dejarlo como mensaje en el chat (default true)
 });
+
+// Deja el aviso como MENSAJE del chat (senderType "operator") en la(s) conversación(es) destino, con
+// la imagen en metadata. Así se ve adentro de la app —donde la imagen SÍ es confiable— aunque el
+// Android no muestre la imagen grande en la notificación. Emite chat:message para verlo en vivo.
+async function postBroadcastToChat(userId: string, playerId: string | undefined, title: string, body: string, image?: string) {
+  const msgBody = `${title}\n${body}`.trim();
+  const metadata = image ? { image } : {};
+
+  let convs: { id: string; playerId: string }[];
+  if (playerId) {
+    const existing = await prisma.chatConversation.findFirst({ where: { userId, playerId }, select: { id: true, playerId: true } });
+    convs = existing ? [existing] : [await prisma.chatConversation.create({ data: { userId, playerId }, select: { id: true, playerId: true } })];
+  } else {
+    convs = await prisma.chatConversation.findMany({ where: { userId }, select: { id: true, playerId: true } });
+  }
+
+  for (const conv of convs) {
+    const msg = await prisma.chatMessage.create({
+      data: { userId, conversationId: conv.id, senderType: "operator", senderId: userId, body: msgBody, metadata },
+      select: { id: true, senderType: true, body: true, metadata: true, createdAt: true },
+    });
+    await prisma.chatConversation.update({
+      where: { id: conv.id },
+      data: { lastMessageAt: new Date(), lastMessagePreview: (image ? "📷 " : "") + body.slice(0, 110), unreadPlayer: { increment: 1 } },
+    });
+    const payload = { conversationId: conv.id, message: { id: msg.id, senderType: msg.senderType, body: msg.body, image: (msg.metadata as { image?: string })?.image ?? null, createdAt: msg.createdAt } };
+    emitChat(`chat:${userId}:player:${conv.playerId}`, "chat:message", payload);
+    emitChat(`chat:${userId}`, "chat:message", payload);
+  }
+}
 
 // POST /api/chat/push/broadcast — el operador manda una notificación push. Con playerId va a UN
 // jugador; sin playerId va a TODOS sus jugadores suscriptos. Devuelve a cuántas se encoló.
@@ -248,6 +279,13 @@ chatRouter.post("/push/broadcast", requireActiveLine, async (req, res) => {
   } else {
     sent = await enqueueAccountBroadcast(req.userId!, payload);
   }
+  // Además del push, dejamos el aviso como MENSAJE en el chat (con la imagen) para que se vea
+  // adentro de la app aunque el Android no muestre la imagen en la notificación. Best-effort.
+  if (parsed.data.alsoChat !== false) {
+    try { await postBroadcastToChat(req.userId!, parsed.data.playerId, parsed.data.title, parsed.data.body, parsed.data.image); }
+    catch (e) { console.error("[chat] postBroadcastToChat falló:", e instanceof Error ? e.message : String(e)); }
+  }
+
   // Registrar el aviso para las métricas (a quién, cuántos recibieron).
   await prisma.chatBroadcast.create({
     data: { userId: req.userId!, title: parsed.data.title, body: parsed.data.body, image: parsed.data.image ?? null, target: parsed.data.playerId ?? "all", sentCount: sent },
@@ -394,12 +432,13 @@ chatRouter.patch("/popup", requireActiveLine, async (req, res) => {
 chatPublicRouter.get("/me/conversation", requireChatClient, async (req, res) => {
   const conv = await prisma.chatConversation.findFirst({ where: { userId: req.accountId!, playerId: req.chatPlayerId! }, select: { id: true } });
   if (!conv) return res.json({ conversationId: null, messages: [] });
-  const messages = await prisma.chatMessage.findMany({
+  const rows = await prisma.chatMessage.findMany({
     where: { conversationId: conv.id },
     orderBy: { createdAt: "asc" },
     select: { id: true, senderType: true, body: true, metadata: true, createdAt: true },
   });
   await prisma.chatConversation.update({ where: { id: conv.id }, data: { unreadPlayer: 0 } });
+  const messages = rows.map((m) => ({ id: m.id, senderType: m.senderType, body: m.body, image: (m.metadata as { image?: string })?.image ?? null, createdAt: m.createdAt }));
   return res.json({ conversationId: conv.id, messages });
 });
 
