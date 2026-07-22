@@ -22,6 +22,31 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Instalar la app: capturamos el prompt nativo (Android/Chrome). Si ya está instalada (abierta
+  // como app / standalone) no mostramos el botón. En iOS no hay prompt -> se muestra el paso a mano.
+  const [deferred, setDeferred] = useState<(Event & { prompt: () => Promise<void>; userChoice: Promise<unknown> }) | null>(null);
+  const [installHelp, setInstallHelp] = useState(false);
+  const standalone =
+    window.matchMedia?.("(display-mode: standalone)").matches ||
+    (navigator as unknown as { standalone?: boolean }).standalone === true;
+  const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+  useEffect(() => {
+    const onPrompt = (e: Event) => { e.preventDefault(); setDeferred(e as never); };
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    return () => window.removeEventListener("beforeinstallprompt", onPrompt);
+  }, []);
+
+  const installApp = async () => {
+    if (deferred) {
+      await deferred.prompt();
+      await Promise.resolve(deferred.userChoice).catch(() => undefined);
+      setDeferred(null);
+    } else {
+      setInstallHelp((v) => !v);
+    }
+  };
+
   // Solo ocultamos el campo "cuenta" cuando vino por el link de la landing (?a=), que es
   // autoritativo. Si abrís la app directa (o hay una cuenta vieja guardada), el campo se ve para
   // poder escribir/corregir la cuenta (antes una cuenta stale lo escondía y dejaba sin salida).
@@ -66,6 +91,27 @@ export default function LoginPage() {
 
   return (
     <div className="mx-auto flex min-h-full max-w-md flex-col items-center justify-center p-6 text-center">
+      {/* Lo primero: instalar la app (salvo que ya esté abierta como app). */}
+      {!standalone && (
+        <div className="mb-7 w-full">
+          <button
+            onClick={() => void installApp()}
+            className="w-full rounded-full py-4 text-base font-bold text-slate-900 shadow-lg"
+            style={{ background: "var(--brand-primary, #25d366)" }}
+          >
+            📲 Instalar la app
+          </button>
+          <p className="mt-2 text-xs text-slate-500">Instalá la app y entrá desde ahí. Después usás tu usuario y clave.</p>
+          {installHelp && (
+            <p className="mt-2 rounded-lg bg-slate-800 px-3 py-2 text-xs text-slate-300">
+              {isIos
+                ? "En iPhone: tocá Compartir (⎋) abajo → “Agregar a inicio”."
+                : "Tocá el menú (⋮) del navegador arriba → “Instalar app” / “Agregar a pantalla de inicio”."}
+            </p>
+          )}
+        </div>
+      )}
+
       {brand?.logoUrl && <img src={brand.logoUrl} alt="" className="mb-4 h-20 w-20 rounded-2xl object-cover" />}
       <h1 className="text-2xl font-bold">{name}</h1>
       <p className="mt-2 text-sm text-slate-400">Entrá con tu usuario y clave.</p>
