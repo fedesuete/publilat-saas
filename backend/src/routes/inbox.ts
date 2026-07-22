@@ -25,13 +25,13 @@ async function resolveContactLine(userId: string, contact: { id: string; lineId:
     const line = await prisma.waLine.findFirst({ where: { id: contact.lineId, userId } });
     if (line) return line;
   }
-  const lastWithLine = await prisma.message.findFirst({
-    where: { contactId: contact.id, lineId: { not: null } },
+  const lastMsg = await prisma.message.findFirst({
+    where: { contactId: contact.id },
     orderBy: { createdAt: "desc" },
     select: { lineId: true },
   });
-  if (lastWithLine?.lineId) {
-    const line = await prisma.waLine.findFirst({ where: { id: lastWithLine.lineId, userId } });
+  if (lastMsg?.lineId) {
+    const line = await prisma.waLine.findFirst({ where: { id: lastMsg.lineId, userId } });
     if (line) {
       await prisma.contact.update({ where: { id: contact.id }, data: { lineId: line.id } }).catch(() => undefined);
       return line;
