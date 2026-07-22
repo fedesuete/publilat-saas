@@ -16,6 +16,35 @@ async function getOwnedContact(userId: string, contactId: string) {
   return prisma.contact.findFirst({ where: { id: contactId, userId } });
 }
 
+// Resuelve la línea para responderle a un contacto. Los contactos con dirección @lid (privacidad)
+// o duplicados a veces quedan con lineId vacío -> antes fallaba "no tiene línea asociada". Ahora:
+//  1) la línea asociada al contacto; si no, 2) la del último mensaje que tenga línea; si no,
+//  3) si el usuario tiene UNA sola línea, esa. Cuando la resuelve por 2)/3), cura contact.lineId.
+async function resolveContactLine(userId: string, contact: { id: string; lineId: string | null }) {
+  if (contact.lineId) {
+    const line = await prisma.waLine.findFirst({ where: { id: contact.lineId, userId } });
+    if (line) return line;
+  }
+  const lastWithLine = await prisma.message.findFirst({
+    where: { contactId: contact.id, lineId: { not: null } },
+    orderBy: { createdAt: "desc" },
+    select: { lineId: true },
+  });
+  if (lastWithLine?.lineId) {
+    const line = await prisma.waLine.findFirst({ where: { id: lastWithLine.lineId, userId } });
+    if (line) {
+      await prisma.contact.update({ where: { id: contact.id }, data: { lineId: line.id } }).catch(() => undefined);
+      return line;
+    }
+  }
+  const lines = await prisma.waLine.findMany({ where: { userId }, take: 2 });
+  if (lines.length === 1) {
+    await prisma.contact.update({ where: { id: contact.id }, data: { lineId: lines[0].id } }).catch(() => undefined);
+    return lines[0];
+  }
+  return null;
+}
+
 // Número mostrable del contacto (incluye direcciones @lid de privacidad).
 function displayNumber(c: { phone: string | null; waJid: string | null; code: string | null }): string {
   if (c.phone) return c.phone;
@@ -188,10 +217,9 @@ inboxRouter.post("/:contactId/messages", async (req, res) => {
   const contact = await getOwnedContact(req.userId!, req.params.contactId);
   if (!contact) return res.status(404).json({ error: "Contacto no encontrado" });
   if (!contact.phone) return res.status(400).json({ error: "El contacto aún no tiene teléfono (no escribió todavía)" });
-  if (!contact.lineId) return res.status(400).json({ error: "El contacto no tiene línea asociada" });
 
-  const line = await prisma.waLine.findFirst({ where: { id: contact.lineId, userId: req.userId! } });
-  if (!line) return res.status(400).json({ error: "La línea no está disponible" });
+  const line = await resolveContactLine(req.userId!, contact);
+  if (!line) return res.status(400).json({ error: "El contacto no tiene una línea para responder. Revisá que tengas una línea de WhatsApp activa." });
 
   // Rampa de calentamiento (líneas Baileys nuevas): cupo de envíos por 24 h.
   const gate = await checkWarmupGate(line);
@@ -309,10 +337,8 @@ inboxRouter.post("/:contactId/audio", async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
   const contact = await getOwnedContact(req.userId!, req.params.contactId);
   if (!contact) return res.status(404).json({ error: "Contacto no encontrado" });
-  if (!contact.lineId) return res.status(400).json({ error: "El contacto no tiene línea asociada" });
-
-  const line = await prisma.waLine.findFirst({ where: { id: contact.lineId, userId: req.userId! } });
-  if (!line) return res.status(400).json({ error: "La línea no está disponible" });
+  const line = await resolveContactLine(req.userId!, contact);
+  if (!line) return res.status(400).json({ error: "El contacto no tiene una línea para responder. Revisá que tengas una línea de WhatsApp activa." });
 
   const mimeMatch = parsed.data.audio.match(/^data:([^;]+);base64,/);
   const mime = mimeMatch?.[1] ?? "audio/ogg";
@@ -367,10 +393,8 @@ inboxRouter.post("/:contactId/audio-clip", async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
   const contact = await getOwnedContact(req.userId!, req.params.contactId);
   if (!contact) return res.status(404).json({ error: "Contacto no encontrado" });
-  if (!contact.lineId) return res.status(400).json({ error: "El contacto no tiene línea asociada" });
-
-  const line = await prisma.waLine.findFirst({ where: { id: contact.lineId, userId: req.userId! } });
-  if (!line) return res.status(400).json({ error: "La línea no está disponible" });
+  const line = await resolveContactLine(req.userId!, contact);
+  if (!line) return res.status(400).json({ error: "El contacto no tiene una línea para responder. Revisá que tengas una línea de WhatsApp activa." });
 
   const clip = await prisma.audioClip.findFirst({ where: { id: parsed.data.clipId, userId: req.userId! } });
   if (!clip) return res.status(404).json({ error: "Audio no encontrado" });
