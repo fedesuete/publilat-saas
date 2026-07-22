@@ -173,20 +173,23 @@ function InvitesTab() {
   const [copied, setCopied] = useState<string | null>(null);
   // Crear ACCESO (usuario + clave) — el flujo principal: se lo pasás al cliente y entra a la app.
   const [accUser, setAccUser] = useState("");
+  const [accPass, setAccPass] = useState("Hola123");
   const [accBusy, setAccBusy] = useState(false);
   const [creds, setCreds] = useState<{ accountSlug: string; username: string; password: string; reset: boolean } | null>(null);
   const [accCopied, setAccCopied] = useState(false);
 
+  // Link que YA trae la cuenta + el usuario cargados: el cliente solo pone la clave.
+  const entryLink = (c: { accountSlug: string; username: string }) =>
+    `${CHAT_PWA_URL}/login?a=${c.accountSlug}&u=${encodeURIComponent(c.username)}`;
   const credsMsg = (c: { accountSlug: string; username: string; password: string }) =>
     [
       `¡Descargá nuestra app y entrá al chat! 💬`,
       ``,
-      `🔗 Abrí: ${CHAT_PWA_URL}/login?a=${c.accountSlug}`,
-      `🏷️ Cuenta: ${c.accountSlug}`,
-      `👤 Usuario: ${c.username}`,
-      `🔑 Clave: ${c.password}`,
-      ``,
-      `(Instalá la app desde ese link y entrá con tu usuario y clave.)`,
+      `1) Abrí este link e instalá la app:`,
+      `   ${entryLink(c)}`,
+      `2) Entrá con:`,
+      `   👤 Usuario: ${c.username}`,
+      `   🔑 Clave: ${c.password}`,
     ].join("\n");
 
   const createAccess = async (e: FormEvent) => {
@@ -196,10 +199,10 @@ function InvitesTab() {
     try {
       const { data } = await api.post<{ accountSlug: string; username: string; password: string; reset: boolean }>(
         "/api/chat/access",
-        { username: accUser.trim() },
+        { username: accUser.trim(), ...(accPass.trim() ? { password: accPass.trim() } : {}) },
       );
       setCreds(data);
-      setAccUser("");
+      setAccUser(""); setAccPass("Hola123");
       await load();
     } catch (e) { setError(apiError(e)); } finally { setAccBusy(false); }
   };
@@ -233,22 +236,23 @@ function InvitesTab() {
 
       {/* Crear ACCESO con usuario + clave (flujo principal): se lo pasás al cliente y entra a la app. */}
       <Card className="mb-5 border-wa-green/40">
-        <div className="mb-1 text-sm font-semibold text-wa-green">🔑 Crear acceso (usuario + clave)</div>
-        <p className="mb-3 text-xs text-slate-500">
-          Poné un usuario y te da la clave (por defecto <b className="text-slate-300">Hola123</b>). Pasale esos datos al cliente:
-          descarga la app y entra con usuario + clave. Si el usuario ya existe, le resetea la clave.
-        </p>
-        <form onSubmit={createAccess} className="flex items-center gap-2">
-          <Input value={accUser} onChange={(e) => setAccUser(e.target.value)} placeholder="Usuario del cliente (ej: juan10)" className="flex-1" />
-          <Button type="submit" disabled={accBusy}>{accBusy ? "…" : "Crear acceso"}</Button>
+        <div className="mb-3 text-sm font-semibold text-wa-green">🔑 Crear acceso para un cliente</div>
+
+        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Paso 1 · Usuario y clave</div>
+        <form onSubmit={createAccess} className="flex flex-wrap items-center gap-2">
+          <Input value={accUser} onChange={(e) => setAccUser(e.target.value)} placeholder="Nombre de usuario (ej: mili)" className="min-w-[150px] flex-1" />
+          <Input value={accPass} onChange={(e) => setAccPass(e.target.value)} placeholder="Clave" className="w-28" />
+          <Button type="button" variant="secondary" onClick={() => setAccPass("Hola123")} title="Usar la clave por defecto">Hola123</Button>
+          <Button type="submit" disabled={accBusy || !accUser.trim()}>{accBusy ? "…" : "Crear acceso"}</Button>
         </form>
+        <p className="mt-1 text-[11px] text-slate-500">Tocá <b className="text-slate-300">Hola123</b> para la clave por defecto, o escribí una propia. Si el usuario ya existe, le resetea la clave.</p>
+
         {creds && (
           <div className="mt-3 rounded-md border border-wa-green/40 bg-slate-900/60 p-3">
-            <div className="mb-1 text-xs font-semibold text-wa-green">
-              {creds.reset ? "🔁 Clave reseteada — pasale estos datos" : "✅ Acceso creado — pasale estos datos"}
-            </div>
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Paso 2 · Mandale esto al cliente</div>
+            <div className="mb-1 text-xs font-semibold text-wa-green">{creds.reset ? "🔁 Clave reseteada" : "✅ Acceso creado"}</div>
             <pre className="whitespace-pre-wrap rounded bg-slate-900 p-2 text-xs text-slate-200">{credsMsg(creds)}</pre>
-            <Button className="mt-2" onClick={() => void copyCreds()}>{accCopied ? "¡Copiado! ✓" : "📋 Copiar credenciales"}</Button>
+            <Button className="mt-2" onClick={() => void copyCreds()}>{accCopied ? "¡Copiado! ✓" : "📋 Copiar y mandar"}</Button>
           </div>
         )}
       </Card>

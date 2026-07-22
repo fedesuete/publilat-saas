@@ -11,9 +11,10 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const urlSlug = (params.get("a") ?? "").trim();
+  const urlUser = (params.get("u") ?? "").trim();
   const saved = loadBranding();
 
-  const [username, setUsername] = useState("");
+  const [username, setUsername] = useState(urlUser);
   const [password, setPassword] = useState("");
   const [accountSlug, setAccountSlug] = useState(urlSlug || saved?.accountSlug || "");
   const [brand, setBrand] = useState<Branding | null>(saved ?? null);
