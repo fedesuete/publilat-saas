@@ -339,14 +339,8 @@ function LeadDrawer({
                   <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Monto de compra</div>
                   {isCompro ? (
                     <>
-                      <div className="flex gap-2">
-                        <div className="flex-1">
-                          <Input type="number" step="0.01" inputMode="decimal" placeholder="Monto" value={amount} onChange={(e) => setAmount(e.target.value)} />
-                        </div>
-                        <div className="w-20 shrink-0">
-                          <Input type="text" maxLength={3} value={currency} onChange={(e) => setCurrency(e.target.value)} />
-                        </div>
-                      </div>
+                      <Input type="number" step="0.01" inputMode="decimal" placeholder="Monto (ej: 3000)" value={amount} onChange={(e) => setAmount(e.target.value)} />
+                      <Input type="text" maxLength={3} placeholder="Moneda (ARS)" value={currency} onChange={(e) => setCurrency(e.target.value)} className="mt-2" />
                       <p className="mt-1.5 text-[11px] text-slate-500">
                         {detail.purchasedAt ? `Comprada el ${fmtDate(detail.purchasedAt)}. ` : ""}Podés corregir el monto y guardar.
                       </p>
@@ -356,14 +350,8 @@ function LeadDrawer({
                     </>
                   ) : (
                     <>
-                      <div className="flex gap-2">
-                        <div className="flex-1">
-                          <Input type="number" step="0.01" inputMode="decimal" placeholder="Poné el monto REAL de la carga" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
-                        </div>
-                        <div className="w-20 shrink-0">
-                          <Input type="text" maxLength={3} value={currency} onChange={(e) => setCurrency(e.target.value)} />
-                        </div>
-                      </div>
+                      <Input type="number" step="0.01" inputMode="decimal" placeholder="Poné el monto REAL (ej: 3000)" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
+                      <Input type="text" maxLength={3} placeholder="Moneda (ARS)" value={currency} onChange={(e) => setCurrency(e.target.value)} className="mt-2" />
                       <p className="mt-1.5 text-[11px] text-slate-500">Escribí el monto que cargó de verdad el cliente.</p>
                       {detail.paymentDetected && detail.paymentDetectedAmount != null && (
                         <button
