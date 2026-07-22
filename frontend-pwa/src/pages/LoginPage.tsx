@@ -47,10 +47,10 @@ export default function LoginPage() {
     }
   };
 
-  // Ocultamos el campo "cuenta" si ya la tenemos (vino por el link ?a= o quedó guardada de una
-  // visita anterior): el cliente solo ve usuario + clave. Solo se muestra si NO hay cuenta, o si
-  // el login falla con "Cuenta no encontrada" (cuenta vieja/inválida) -> ahí se abre para corregir.
-  const [accountLocked, setAccountLocked] = useState(!!urlSlug || !!saved?.accountSlug);
+  // Ocultamos el campo "cuenta" SIEMPRE por defecto: el jugador entra sólo con usuario + clave.
+  // La cuenta sale del link (?a=), de una visita guardada, o la resuelve el server por el usuario.
+  // Sólo se muestra si el server pide desambiguar (code account_required) -> ahí se abre.
+  const [accountLocked, setAccountLocked] = useState(true);
 
   // Traemos branding + estado (activo/no) de la cuenta: la del link (?a=) o la guardada de antes.
   // Así la app instalada (que abre sin ?a=) igual muestra la marca y respeta el candado de días.
@@ -75,22 +75,30 @@ export default function LoginPage() {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!username.trim() || !accountSlug.trim()) return;
+    if (!username.trim()) return;
     setBusy(true);
     setError(null);
     try {
       const { data } = await api.post("/api/chat/login", {
-        accountSlug: accountSlug.trim(),
+        ...(accountSlug.trim() ? { accountSlug: accountSlug.trim() } : {}), // sin cuenta: la resuelve el server por el usuario
         username: username.trim(),
         ...(password ? { password } : {}),
       });
       setToken(data.token);
+      // Recordamos la cuenta para que la próxima vez muestre el branding y no pida nada.
+      const slug = accountSlug.trim() || data.accountSlug;
+      if (slug && !saved?.accountSlug) {
+        try {
+          const pub = await api.get(`/api/chat/public/${encodeURIComponent(slug)}`);
+          saveBranding(pub.data.accountSlug, pub.data.branding);
+        } catch { /* noop */ }
+      }
       navigate("/chat", { replace: true });
     } catch (e) {
-      const msg = apiError(e);
-      setError(msg);
-      // Si la cuenta guardada ya no existe, abrimos el campo para poder corregirla.
-      if (msg.toLowerCase().includes("cuenta no encontrada")) setAccountLocked(false);
+      const code = (e as { response?: { data?: { code?: string } } })?.response?.data?.code;
+      setError(apiError(e));
+      // El server pide el nombre de la cuenta (mismo usuario en varias cuentas, o cuenta inválida).
+      if (code === "account_required") setAccountLocked(false);
     } finally {
       setBusy(false);
     }
@@ -158,7 +166,7 @@ export default function LoginPage() {
         {error && <div className="text-sm text-rose-400">{error}</div>}
         <button
           type="submit"
-          disabled={busy || inactive || !username.trim() || !accountSlug.trim()}
+          disabled={busy || inactive || !username.trim()}
           className="w-full rounded-full py-3 font-semibold text-slate-900 disabled:opacity-50"
           style={{ background: "var(--brand-primary)" }}
         >

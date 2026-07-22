@@ -600,36 +600,65 @@ chatPublicRouter.post("/register", async (req, res) => {
 });
 
 const loginSchema = z.object({
-  accountSlug: z.string().min(1).max(60),
+  accountSlug: z.string().max(60).optional(), // opcional: la app instalada abre sin el ?a=
   username: z.string().min(2).max(40),
   password: z.string().max(60).optional(),
 });
 
-// POST /api/chat/login — ingreso del jugador por cuenta + usuario (+ clave). Si el jugador tiene
-// clave seteada (accesos nuevos), hay que verificarla; los viejos passwordless entran sin clave.
-// GATEADO por días: sin línea de WhatsApp vigente, el chat no funciona.
+// POST /api/chat/login — ingreso del jugador. Si tiene clave seteada (accesos nuevos) se verifica;
+// los viejos passwordless entran sin clave. GATEADO por días: sin línea de WhatsApp vigente, apagado.
+//
+// La cuenta se resuelve así:
+//  - con `accountSlug` (link ?a= o cuenta guardada): por slug, como siempre.
+//  - SIN slug (app instalada, que abre sin el ?a=): por el usuario. Buscamos jugadores con ese
+//    usuario y clave; si hay UNO solo, esa es la cuenta (así con usuario+clave alcanza y el jugador
+//    NO tiene que escribir el nombre de la cuenta). Si hay varios, pedimos la cuenta (account_required).
 chatPublicRouter.post("/login", async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
-  const acc = await prisma.user.findUnique({ where: { slug: parsed.data.accountSlug.trim() }, select: { id: true } });
-  if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
-  const player = await prisma.chatPlayer.findUnique({
-    where: { userId_casinoUsername: { userId: acc.id, casinoUsername: parsed.data.username.trim() } },
-    select: { id: true, casinoUsername: true, password: true },
-  });
-  if (!player) return res.status(404).json({ error: "No encontramos ese usuario. Pedile el acceso a quien te invitó." });
+  const username = parsed.data.username.trim();
+  const slug = parsed.data.accountSlug?.trim();
+
+  let player: { id: string; casinoUsername: string; password: string | null; userId: string } | null = null;
+  let accId: string | null = null;
+
+  if (slug) {
+    const acc = await prisma.user.findUnique({ where: { slug }, select: { id: true } });
+    if (!acc) return res.status(404).json({ error: "Cuenta no encontrada", code: "account_required" });
+    accId = acc.id;
+    player = await prisma.chatPlayer.findUnique({
+      where: { userId_casinoUsername: { userId: acc.id, casinoUsername: username } },
+      select: { id: true, casinoUsername: true, password: true, userId: true },
+    });
+  } else {
+    // Sin slug: resolvemos por usuario (jugadores con clave = accesos nuevos).
+    const matches = await prisma.chatPlayer.findMany({
+      where: { casinoUsername: username, password: { not: null } },
+      select: { id: true, casinoUsername: true, password: true, userId: true },
+      take: 5,
+    });
+    if (matches.length === 1) { player = matches[0]; accId = matches[0].userId; }
+    else if (matches.length > 1) {
+      return res.status(409).json({ error: "Necesitamos el nombre de la cuenta.", code: "account_required" });
+    }
+    // 0 matches -> cae al "usuario no encontrado" de abajo.
+  }
+
+  if (!player || !accId) return res.status(404).json({ error: "No encontramos ese usuario. Pedile el acceso a quien te invitó." });
   // Clave: si el acceso tiene clave, se verifica; si no (jugador viejo), entra sin clave.
   if (player.password) {
     const ok = parsed.data.password ? await verifyPassword(parsed.data.password, player.password) : false;
     if (!ok) return res.status(401).json({ error: "Usuario o clave incorrectos." });
   }
   // Candado de días: sin día de WhatsApp vigente el chat está apagado.
-  if (!(await hasActiveWaLine(acc.id))) {
+  if (!(await hasActiveWaLine(accId))) {
     return res.status(403).json({ error: "El chat no está disponible en este momento. Probá más tarde.", code: "line_required" });
   }
-  const conv = await prisma.chatConversation.findFirst({ where: { userId: acc.id, playerId: player.id }, select: { id: true } });
-  const token = signChatClientToken(acc.id, player.id);
-  return res.json({ token, player: { id: player.id, casinoUsername: player.casinoUsername }, conversationId: conv?.id ?? null });
+  const conv = await prisma.chatConversation.findFirst({ where: { userId: accId, playerId: player.id }, select: { id: true } });
+  const acc = await prisma.user.findUnique({ where: { id: accId }, select: { slug: true } });
+  const token = signChatClientToken(accId, player.id);
+  // Devolvemos el slug: la app lo guarda para recordar la cuenta y mostrar el branding la próxima vez.
+  return res.json({ token, player: { id: player.id, casinoUsername: player.casinoUsername }, conversationId: conv?.id ?? null, accountSlug: acc?.slug ?? null });
 });
 
 // GET /api/chat/public/:slug — branding + estado de una cuenta por su slug (público, para la
