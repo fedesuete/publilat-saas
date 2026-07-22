@@ -31,6 +31,7 @@ import { Button } from "./ui";
 import SupportBubble from "./SupportBubble";
 import OnboardingTour, { type TourStep } from "./OnboardingTour";
 import InstallPWA from "./InstallPWA";
+import UpdatePrompt from "./UpdatePrompt";
 
 // Sonidos de notificación (Web Audio, sin archivos externos).
 let audioCtx: AudioContext | null = null;
@@ -301,6 +302,9 @@ export default function AppLayout() {
           <Outlet />
         </main>
       </div>
+
+      {/* Aviso de versión nueva del panel (se actualiza sin borrar cache). */}
+      <UpdatePrompt />
 
       {/* Globo de soporte por WhatsApp (siempre visible, salvo en el Inbox). */}
       <SupportBubble />

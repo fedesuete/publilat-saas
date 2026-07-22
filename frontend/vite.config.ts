@@ -2,14 +2,15 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
-// El panel de Publi.lat es instalable como app (PWA). SW autogenerado (generateSW) con
-// autoUpdate: no usa push (eso es del Chat App), solo cachea la shell para poder "instalar"
-// y abrir como app. Las llamadas a /api NUNCA se cachean (van siempre a la red).
+// El panel de Publi.lat es instalable como app (PWA). SW autogenerado (generateSW) en modo
+// "prompt": cuando hay una versión nueva deployada, el componente UpdatePrompt muestra un aviso
+// "Actualizar" (no recarga de golpe y no hace falta borrar cache). No usa push (eso es del Chat
+// App), solo cachea la shell. Las llamadas a /api NUNCA se cachean (van siempre a la red).
 export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: "autoUpdate",
+      registerType: "prompt",
       injectRegister: "auto",
       workbox: {
         globPatterns: ["**/*.{js,css,html,png,svg,ico,woff2}"],
