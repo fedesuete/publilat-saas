@@ -12,7 +12,6 @@ const CHAT_PWA_URL = (import.meta.env.VITE_CHAT_PWA_URL as string | undefined) ?
 
 interface Conv { id: string; playerId: string; player: string; username: string; status: string; unread: number; preview: string; lastAt: string }
 interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; metadata?: Record<string, unknown>; createdAt: string }
-interface Invite { id: string; code: string; label: string | null; isActive: boolean; createdAt: string }
 
 // Agrega un mensaje evitando duplicados por id (optimistic add + echo del socket).
 function appendUnique(list: Msg[], m: Msg): Msg[] {
@@ -90,7 +89,7 @@ export default function ChatAppPage() {
         </div>
         <div className="inline-flex rounded-md bg-slate-900 p-1 text-sm">
           <button onClick={() => setTab("chats")} className={`rounded px-3 py-1 font-medium ${tab === "chats" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Conversaciones</button>
-          <button onClick={() => setTab("invites")} className={`rounded px-3 py-1 font-medium ${tab === "invites" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Mi Invitación</button>
+          <button onClick={() => setTab("invites")} className={`rounded px-3 py-1 font-medium ${tab === "invites" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Accesos</button>
           <button onClick={() => setTab("brand")} className={`rounded px-3 py-1 font-medium ${tab === "brand" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Marca</button>
           <button onClick={() => setTab("avisos")} className={`rounded px-3 py-1 font-medium ${tab === "avisos" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Avisos</button>
         </div>
@@ -112,7 +111,7 @@ export default function ChatAppPage() {
           <div className="flex w-80 shrink-0 flex-col overflow-hidden rounded-lg border border-slate-800">
             <div className="border-b border-slate-800 px-4 py-3 text-xs text-slate-500">{convs.length} conversaciones</div>
             <div className="flex-1 overflow-y-auto">
-              {convs.length === 0 ? <p className="p-4 text-sm text-slate-500">Todavía no hay jugadores. Compartí tu link en "Mi Invitación".</p> :
+              {convs.length === 0 ? <p className="p-4 text-sm text-slate-500">Todavía no hay jugadores. Creá un acceso en la pestaña "Accesos".</p> :
                 convs.map((c) => (
                   <button key={c.id} onClick={() => void openConv(c.id)}
                     className={`flex w-full items-start gap-3 border-b border-slate-800/60 px-4 py-3 text-left transition ${selected === c.id ? "bg-slate-800" : "hover:bg-slate-800/50"}`}>
@@ -164,14 +163,11 @@ export default function ChatAppPage() {
   );
 }
 
-// Sub-sección "Mi Invitación": crear/listar/borrar links single-use + QR.
+// Sub-sección "Accesos": el ÚNICO flujo — crear un acceso (usuario + clave) y pasarle al cliente
+// el mensaje con el link (que ya trae cuenta + usuario) + QR + clave. Descarga la app y entra.
 function InvitesTab() {
-  const [invites, setInvites] = useState<Invite[]>([]);
-  const [label, setLabel] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
-  // Crear ACCESO (usuario + clave) — el flujo principal: se lo pasás al cliente y entra a la app.
+  // Crear ACCESO (usuario + clave) — el ÚNICO flujo: se lo pasás al cliente y entra a la app.
   const [accUser, setAccUser] = useState("");
   const [accPass, setAccPass] = useState("Hola123");
   const [accBusy, setAccBusy] = useState(false);
@@ -203,31 +199,11 @@ function InvitesTab() {
       );
       setCreds(data);
       setAccUser(""); setAccPass("Hola123");
-      await load();
     } catch (e) { setError(apiError(e)); } finally { setAccBusy(false); }
   };
   const copyCreds = async () => {
     if (!creds) return;
     try { await navigator.clipboard.writeText(credsMsg(creds)); setAccCopied(true); setTimeout(() => setAccCopied(false), 2500); } catch { /* noop */ }
-  };
-
-  const load = async () => {
-    try { const { data } = await api.get<{ invites: Invite[] }>("/api/chat/invites"); setInvites(data.invites); }
-    catch (e) { setError(apiError(e)); }
-  };
-  useEffect(() => { void load(); }, []);
-
-  const create = async (e: FormEvent) => {
-    e.preventDefault(); setBusy(true); setError(null);
-    try { await api.post("/api/chat/invites", { label: label.trim() || undefined }); setLabel(""); await load(); }
-    catch (e) { setError(apiError(e)); } finally { setBusy(false); }
-  };
-  const remove = async (id: string) => {
-    try { await api.delete(`/api/chat/invites/${id}`); await load(); } catch (e) { setError(apiError(e)); }
-  };
-  const linkFor = (code: string) => `${CHAT_PWA_URL}/i/${code}`;
-  const copy = async (code: string) => {
-    try { await navigator.clipboard.writeText(linkFor(code)); setCopied(code); setTimeout(() => setCopied(null), 1500); } catch { /* noop */ }
   };
 
   return (
@@ -250,41 +226,18 @@ function InvitesTab() {
         {creds && (
           <div className="mt-3 rounded-md border border-wa-green/40 bg-slate-900/60 p-3">
             <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Paso 2 · Mandale esto al cliente</div>
-            <div className="mb-1 text-xs font-semibold text-wa-green">{creds.reset ? "🔁 Clave reseteada" : "✅ Acceso creado"}</div>
-            <pre className="whitespace-pre-wrap rounded bg-slate-900 p-2 text-xs text-slate-200">{credsMsg(creds)}</pre>
+            <div className="mb-2 text-xs font-semibold text-wa-green">{creds.reset ? "🔁 Clave reseteada" : "✅ Acceso creado"}</div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+              <pre className="min-w-0 flex-1 whitespace-pre-wrap rounded bg-slate-900 p-2 text-xs text-slate-200">{credsMsg(creds)}</pre>
+              <div className="shrink-0 text-center">
+                <InviteQr url={entryLink(creds)} code={creds.username} />
+                <div className="mt-1 text-[10px] text-slate-500">o escaneá el QR</div>
+              </div>
+            </div>
             <Button className="mt-2" onClick={() => void copyCreds()}>{accCopied ? "¡Copiado! ✓" : "📋 Copiar y mandar"}</Button>
           </div>
         )}
       </Card>
-
-      <Card className="mb-5">
-        <div className="mb-2 text-sm font-semibold text-slate-100">Nuevo link de invitación</div>
-        <p className="mb-3 text-xs text-slate-500">Cada link sirve para registrar a UN jugador. Compartilo (link o QR); cuando se registra, se cierra solo.</p>
-        <form onSubmit={create} className="flex items-center gap-2">
-          <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Etiqueta (opcional, ej: Juan de Facebook)" className="flex-1" />
-          <Button type="submit" disabled={busy}>{busy ? "…" : "Crear link"}</Button>
-        </form>
-      </Card>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        {invites.map((inv) => (
-          <Card key={inv.id}>
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="font-semibold text-slate-100">{inv.label || "Sin etiqueta"}</div>
-                <div className={`text-xs font-medium ${inv.isActive ? "text-wa-green" : "text-slate-500"}`}>{inv.isActive ? "● Sin usar" : "○ Ya usado"}</div>
-                <code className="mt-1 block break-all text-[11px] text-slate-400">{linkFor(inv.code)}</code>
-              </div>
-              {inv.isActive && <InviteQr url={linkFor(inv.code)} code={inv.code} />}
-            </div>
-            <div className="mt-3 flex gap-2">
-              <Button variant="secondary" onClick={() => void copy(inv.code)}>{copied === inv.code ? "¡Copiado!" : "Copiar link"}</Button>
-              <Button variant="danger" onClick={() => void remove(inv.id)}>Borrar</Button>
-            </div>
-          </Card>
-        ))}
-        {invites.length === 0 && <p className="text-sm text-slate-500">No tenés links todavía. Creá uno arriba.</p>}
-      </div>
     </div>
   );
 }
