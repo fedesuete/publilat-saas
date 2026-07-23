@@ -7,8 +7,19 @@ import { api, apiError } from "../lib/api";
 import { API_BASE } from "../lib/config";
 import { fmtDate } from "../lib/format";
 import { Button, Input, Card, ErrorMsg } from "../components/ui";
+import OnboardingTour, { type TourStep } from "../components/OnboardingTour";
+import { GraduationCap } from "lucide-react";
 
 const CHAT_PWA_URL = (import.meta.env.VITE_CHAT_PWA_URL as string | undefined) ?? "https://chat.publi.lat";
+
+// Recorrido guiado del Chat App (misma mecánica que el de las landings / primer panel).
+const CHATAPP_TOUR: TourStep[] = [
+  { targetId: "ca-title", title: "Tu app de chat 💬", body: "Chat App es tu propia aplicación para hablar con los jugadores — instalable en el celu y separada de WhatsApp. Te muestro cómo usarla en 4 pasos." },
+  { targetId: "ca-tab-invites", title: "1. Creá un acceso", body: "Entrá a “Accesos” y generá un usuario + clave para cada jugador. Le pasás ese acceso y con eso instala la app y entra." },
+  { targetId: "ca-tab-chats", title: "2. Chateá en vivo", body: "En “Conversaciones” aparecen los jugadores que entraron. Les respondés al instante, como un WhatsApp propio tuyo." },
+  { targetId: "ca-tab-avisos", title: "3. Mandá avisos", body: "En “Avisos” enviás notificaciones al celular de tus jugadores (promos) y configurás el popup que ven al abrir la app." },
+  { targetId: "ca-tab-brand", title: "4. Tu marca", body: "En “Marca” le ponés tu logo, tus colores y el nombre de la app. Queda 100% con tu identidad." },
+];
 
 interface Conv { id: string; playerId: string; player: string; username: string; status: string; unread: number; preview: string; lastAt: string }
 interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; metadata?: Record<string, unknown>; createdAt: string }
@@ -28,6 +39,17 @@ export default function ChatAppPage() {
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [activeLine, setActiveLine] = useState(true); // ¿hay línea WA activa para operar el Chat App?
+  const [tour, setTour] = useState(false); // recorrido guiado
+  const tourStarted = useRef(false);
+  const startTour = () => { setTab("chats"); window.setTimeout(() => setTour(true), 120); };
+  useEffect(() => {
+    if (tourStarted.current) return;
+    tourStarted.current = true;
+    if (localStorage.getItem("pl_chatapp_tour") === "done") return;
+    localStorage.setItem("pl_chatapp_tour", "done");
+    startTour();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const selectedRef = useRef<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   selectedRef.current = selected;
@@ -83,13 +105,18 @@ export default function ChatAppPage() {
   return (
     <div className="overflow-x-hidden p-6">
       <div className="mb-4">
-        <h1 className="text-xl font-bold">Chat App</h1>
-        <p className="mb-3 text-sm text-slate-400">Canal directo con tus jugadores (app instalable). Separado del WhatsApp.</p>
-        <div className="flex gap-1 overflow-x-auto rounded-md bg-slate-900 p-1 text-sm sm:inline-flex sm:overflow-visible">
-          <button onClick={() => setTab("chats")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "chats" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Conversaciones</button>
-          <button onClick={() => setTab("invites")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "invites" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Accesos</button>
-          <button onClick={() => setTab("brand")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "brand" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Marca</button>
-          <button onClick={() => setTab("avisos")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "avisos" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Avisos</button>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h1 id="ca-title" className="text-xl font-bold">Chat App</h1>
+            <p className="text-sm text-slate-400">Canal directo con tus jugadores (app instalable). Separado del WhatsApp.</p>
+          </div>
+          <Button variant="ghost" onClick={startTour} className="shrink-0"><GraduationCap className="h-4 w-4" /> Guía</Button>
+        </div>
+        <div className="mt-3 flex gap-1 overflow-x-auto rounded-md bg-slate-900 p-1 text-sm sm:inline-flex sm:overflow-visible">
+          <button id="ca-tab-chats" onClick={() => setTab("chats")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "chats" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Conversaciones</button>
+          <button id="ca-tab-invites" onClick={() => setTab("invites")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "invites" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Accesos</button>
+          <button id="ca-tab-brand" onClick={() => setTab("brand")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "brand" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Marca</button>
+          <button id="ca-tab-avisos" onClick={() => setTab("avisos")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "avisos" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Avisos</button>
         </div>
       </div>
 
@@ -160,6 +187,8 @@ export default function ChatAppPage() {
       ) : (
         <AvisosTab />
       )}
+
+      {tour && <OnboardingTour steps={CHATAPP_TOUR} onClose={() => setTour(false)} />}
     </div>
   );
 }
