@@ -430,10 +430,10 @@ chatRouter.patch("/popup", requireActiveLine, async (req, res) => {
 // ---- Bot de carga/descarga (config por cuenta) ----
 const botSelect = { botEnabled: true, botPaymentInfo: true, botWelcome: true } as const;
 
-// GET /api/chat/bot — config actual del bot (operador).
+// GET /api/chat/bot — config actual del bot (operador) + el slug para armar el link de la landing.
 chatRouter.get("/bot", async (req, res) => {
-  const bot = await prisma.user.findUnique({ where: { id: req.userId! }, select: botSelect });
-  return res.json({ bot });
+  const u = await prisma.user.findUnique({ where: { id: req.userId! }, select: { ...botSelect, slug: true } });
+  return res.json({ bot: u ? { botEnabled: u.botEnabled, botPaymentInfo: u.botPaymentInfo, botWelcome: u.botWelcome } : null, slug: u?.slug ?? null });
 });
 
 const botSchema = z.object({

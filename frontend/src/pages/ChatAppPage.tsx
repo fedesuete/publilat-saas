@@ -691,13 +691,16 @@ function BotTab() {
   const [enabled, setEnabled] = useState(false);
   const [pay, setPay] = useState("");
   const [welcome, setWelcome] = useState("");
+  const [slug, setSlug] = useState("");
+  const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [ok, setOk] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const link = slug ? `${CHAT_PWA_URL}/login?a=${slug}` : "";
 
   useEffect(() => {
-    void api.get<{ bot: { botEnabled: boolean; botPaymentInfo: string | null; botWelcome: string | null } | null }>("/api/chat/bot")
-      .then(({ data }) => { const b = data.bot; if (b) { setEnabled(!!b.botEnabled); setPay(b.botPaymentInfo ?? ""); setWelcome(b.botWelcome ?? ""); } })
+    void api.get<{ bot: { botEnabled: boolean; botPaymentInfo: string | null; botWelcome: string | null } | null; slug: string | null }>("/api/chat/bot")
+      .then(({ data }) => { const b = data.bot; if (b) { setEnabled(!!b.botEnabled); setPay(b.botPaymentInfo ?? ""); setWelcome(b.botWelcome ?? ""); } setSlug(data.slug ?? ""); })
       .catch(() => undefined);
   }, []);
 
@@ -741,6 +744,17 @@ function BotTab() {
         </ol>
         <p className="mt-3 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-[11px] leading-tight text-slate-500">Próximamente: conectamos el sistema de tu socio para que la carga/descarga sea 100% automática. Por ahora vos das el OK final desde el chat.</p>
       </Card>
+
+      {link && (
+        <Card className="lg:col-span-2">
+          <div className="mb-1 text-sm font-semibold text-slate-100">🔗 Link para tu landing / anuncio</div>
+          <p className="mb-2 text-xs text-slate-500">Poné este link en tu landing o en el botón del anuncio. Los jugadores entran a la app y el bot los atiende solo.</p>
+          <div className="flex items-center gap-2">
+            <code className="min-w-0 flex-1 truncate rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-200">{link}</code>
+            <Button variant="secondary" className="shrink-0" onClick={() => { void navigator.clipboard.writeText(link); setCopied(true); window.setTimeout(() => setCopied(false), 1500); }}>{copied ? "✓ Copiado" : "Copiar"}</Button>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
