@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { ArrowLeft, PanelLeftClose, PanelLeftOpen, Smile, Mic, Square, MessageSquareText, Music, Upload, Trash2, Send, X } from "lucide-react";
 import { api, apiError } from "../lib/api";
 import { getSocket, type InboxMessagePayload, type InboxMessageStatusPayload } from "../lib/socket";
 import type { Msg, Stage } from "../lib/types";
 import { fmtDate } from "../lib/format";
-import { Button, Input, StageBadge, ErrorMsg } from "../components/ui";
+import { Button, StageBadge, ErrorMsg } from "../components/ui";
 
 interface Conversation {
   id: string;
@@ -85,6 +85,7 @@ export default function InboxPage() {
   const [showEmoji, setShowEmoji] = useState(false);
   const [showQuick, setShowQuick] = useState(false);
   const [quick, setQuick] = useState<QuickReply[]>([]);
+  const [qForm, setQForm] = useState<{ title: string; body: string } | null>(null); // editor multilínea de mensaje guardado
   const [showAudios, setShowAudios] = useState(false);
   const [audioClips, setAudioClips] = useState<AudioClip[]>([]);
   const [recording, setRecording] = useState(false);
@@ -97,6 +98,7 @@ export default function InboxPage() {
   const chunksRef = useRef<Blob[]>([]);
   const recTargetRef = useRef<"chat" | "lib">("chat"); // destino de la grabación en curso
   const fileRef = useRef<HTMLInputElement>(null); // input oculto para subir audios a la biblioteca
+  const draftRef = useRef<HTMLTextAreaElement>(null); // compositor (para auto-alto)
   selectedRef.current = selected;
 
   const loadConvs = async () => {
@@ -143,8 +145,17 @@ export default function InboxPage() {
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
-  const send = async (e: FormEvent) => {
-    e.preventDefault();
+  // Auto-alto del compositor (crece con los saltos de línea, hasta un tope) — cubre escribir,
+  // pegar, insertar un mensaje guardado y el reset al enviar.
+  useEffect(() => {
+    const t = draftRef.current;
+    if (!t) return;
+    t.style.height = "auto";
+    t.style.height = Math.min(t.scrollHeight, 140) + "px";
+  }, [draft]);
+
+  const send = async (e?: { preventDefault?: () => void }) => {
+    e?.preventDefault?.();
     if (!selected || !draft.trim()) return;
     setSending(true); setChatError(null);
     const body = draft.trim();
@@ -256,12 +267,11 @@ export default function InboxPage() {
   };
 
   // --- Mensajes guardados ---
-  const addQuick = async () => {
-    const title = window.prompt("Título del mensaje guardado (ej: Bienvenida):")?.trim();
-    if (!title) return;
-    const body = window.prompt("Texto del mensaje:")?.trim();
-    if (!body) return;
-    try { await api.post("/api/inbox/quick-replies", { title, body }); await loadQuick(); }
+  const saveQuick = async () => {
+    const title = qForm?.title.trim();
+    const body = qForm?.body.trim();
+    if (!title || !body) { setChatError("Poné un título y el texto del mensaje."); return; }
+    try { await api.post("/api/inbox/quick-replies", { title, body }); await loadQuick(); setQForm(null); }
     catch (err) { setChatError(apiError(err)); }
   };
   const delQuick = async (id: string) => {
@@ -435,9 +445,18 @@ export default function InboxPage() {
                 <div className="absolute bottom-full left-2 mb-2 w-80 rounded-lg border border-slate-700 bg-slate-900 p-2 shadow-xl">
                   <div className="mb-2 flex items-center justify-between">
                     <span className="text-xs font-semibold text-slate-300">Mensajes guardados</span>
-                    <button type="button" onClick={addQuick} className="text-xs font-medium text-wa-green hover:underline">+ Nuevo</button>
+                    {!qForm && <button type="button" onClick={() => setQForm({ title: "", body: "" })} className="text-xs font-medium text-wa-green hover:underline">+ Nuevo</button>}
                   </div>
-                  {quick.length === 0 ? (
+                  {qForm ? (
+                    <div className="space-y-2">
+                      <input value={qForm.title} onChange={(e) => setQForm({ ...qForm, title: e.target.value })} placeholder="Título (ej: Bienvenida)" className="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-wa-green" />
+                      <textarea value={qForm.body} onChange={(e) => setQForm({ ...qForm, body: e.target.value })} placeholder="Texto del mensaje — podés usar saltos de línea y párrafos" rows={6} className="w-full resize-y rounded border border-slate-700 bg-slate-800 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-wa-green" />
+                      <div className="flex justify-end gap-2">
+                        <button type="button" onClick={() => setQForm(null)} className="text-xs text-slate-400 hover:text-white">Cancelar</button>
+                        <button type="button" onClick={() => void saveQuick()} className="rounded bg-wa-green px-3 py-1 text-xs font-semibold text-slate-900">Guardar</button>
+                      </div>
+                    </div>
+                  ) : quick.length === 0 ? (
                     <p className="px-1 py-2 text-xs text-slate-500">Sin mensajes guardados. Creá uno con "+ Nuevo".</p>
                   ) : (
                     <div className="max-h-60 space-y-1 overflow-y-auto">
@@ -493,7 +512,15 @@ export default function InboxPage() {
                 <button type="button" title="Biblioteca de audios" onClick={() => { setShowAudios((v) => !v); setShowEmoji(false); setShowQuick(false); }} className={`rounded p-2 ${showAudios ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
                   <Music className="h-5 w-5" />
                 </button>
-                <Input placeholder="Escribí un mensaje… (Enter para enviar)" value={draft} onChange={(e) => setDraft(e.target.value)} className="flex-1" />
+                <textarea
+                  ref={draftRef}
+                  rows={1}
+                  placeholder="Escribí un mensaje…  (Enter envía · Shift+Enter salto de línea)"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
+                  className="max-h-36 flex-1 resize-none rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-wa-green"
+                />
                 {recording ? (
                   <button type="button" title="Detener" onClick={stopRec} className="flex items-center gap-1 rounded bg-rose-500 px-3 py-2 text-sm font-medium text-white">
                     <Square className="h-4 w-4" /> <span className="animate-pulse">grabando…</span>
