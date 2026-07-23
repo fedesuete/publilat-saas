@@ -13,6 +13,7 @@ import { resolveUserPixel } from "../lib/pixel.js";
 import { emitChat, playerHasLiveSocket } from "../lib/io.js";
 import { pushEnabled, publicVapidKey, enqueuePlayerPush, enqueueAccountBroadcast } from "../lib/chat-push.js";
 import { s3Enabled } from "../lib/s3.js";
+import { runChatBot } from "../lib/chat-bot.js";
 
 // Router del OPERADOR (se monta bajo requireAuth): gestión de links de invitación.
 export const chatRouter = Router();
@@ -426,6 +427,32 @@ chatRouter.patch("/popup", requireActiveLine, async (req, res) => {
   return res.json({ popup });
 });
 
+// ---- Bot de carga/descarga (config por cuenta) ----
+const botSelect = { botEnabled: true, botPaymentInfo: true, botWelcome: true } as const;
+
+// GET /api/chat/bot — config actual del bot (operador).
+chatRouter.get("/bot", async (req, res) => {
+  const bot = await prisma.user.findUnique({ where: { id: req.userId! }, select: botSelect });
+  return res.json({ bot });
+});
+
+const botSchema = z.object({
+  botEnabled: z.boolean().optional(),
+  botPaymentInfo: z.string().max(1500).nullish(),
+  botWelcome: z.string().max(500).nullish(),
+});
+// PATCH /api/chat/bot — prende/apaga el bot y edita los datos de pago / bienvenida.
+chatRouter.patch("/bot", async (req, res) => {
+  const parsed = botSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const data: Record<string, unknown> = {};
+  if (parsed.data.botEnabled !== undefined) data.botEnabled = parsed.data.botEnabled;
+  if (parsed.data.botPaymentInfo !== undefined) data.botPaymentInfo = parsed.data.botPaymentInfo;
+  if (parsed.data.botWelcome !== undefined) data.botWelcome = parsed.data.botWelcome;
+  const bot = await prisma.user.update({ where: { id: req.userId! }, data, select: botSelect });
+  return res.json({ bot });
+});
+
 // ============================ JUGADOR (requireChatClient) ============================
 
 // GET /api/chat/me/conversation — su conversación + historial. Marca leído.
@@ -463,6 +490,11 @@ chatPublicRouter.post("/me/messages", requireChatClient, async (req, res) => {
   const payload = { conversationId: conv.id, message: msg };
   emitChat(`chat:${req.accountId}`, "chat:message", payload);                              // al operador
   emitChat(`chat:${req.accountId}:player:${req.chatPlayerId}`, "chat:message", payload);   // al jugador (otros dispositivos)
+
+  // Bot de carga/descarga (Fase 1): responde solo si la cuenta lo tiene PRENDIDO. Best-effort y
+  // aislado: sin bot es no-op; un error del bot no afecta el envío del jugador.
+  void runChatBot(req.accountId!, conv.id, req.chatPlayerId!, parsed.data.body).catch((e) => console.error("[chat-bot]", e instanceof Error ? e.message : String(e)));
+
   return res.status(201).json({ message: msg });
 });
 

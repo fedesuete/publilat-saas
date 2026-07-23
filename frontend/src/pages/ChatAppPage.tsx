@@ -31,7 +31,7 @@ function appendUnique(list: Msg[], m: Msg): Msg[] {
 }
 
 export default function ChatAppPage() {
-  const [tab, setTab] = useState<"chats" | "invites" | "brand" | "avisos">("chats");
+  const [tab, setTab] = useState<"chats" | "invites" | "brand" | "avisos" | "bot">("chats");
   const [convs, setConvs] = useState<Conv[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -117,6 +117,7 @@ export default function ChatAppPage() {
           <button id="ca-tab-invites" onClick={() => setTab("invites")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "invites" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Accesos</button>
           <button id="ca-tab-brand" onClick={() => setTab("brand")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "brand" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Marca</button>
           <button id="ca-tab-avisos" onClick={() => setTab("avisos")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "avisos" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Avisos</button>
+          <button id="ca-tab-bot" onClick={() => setTab("bot")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "bot" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>🤖 Bot</button>
         </div>
       </div>
 
@@ -184,8 +185,10 @@ export default function ChatAppPage() {
         <InvitesTab />
       ) : tab === "brand" ? (
         <BrandingTab />
-      ) : (
+      ) : tab === "avisos" ? (
         <AvisosTab />
+      ) : (
+        <BotTab />
       )}
 
       {tour && <OnboardingTour steps={CHATAPP_TOUR} onClose={() => setTour(false)} />}
@@ -679,6 +682,65 @@ function AvisosTab() {
           </Card>
         </div>
       )}
+    </div>
+  );
+}
+
+// Sub-sección "🤖 Bot": prende/apaga el bot de carga y configura los datos de pago que muestra.
+function BotTab() {
+  const [enabled, setEnabled] = useState(false);
+  const [pay, setPay] = useState("");
+  const [welcome, setWelcome] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [ok, setOk] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api.get<{ bot: { botEnabled: boolean; botPaymentInfo: string | null; botWelcome: string | null } | null }>("/api/chat/bot")
+      .then(({ data }) => { const b = data.bot; if (b) { setEnabled(!!b.botEnabled); setPay(b.botPaymentInfo ?? ""); setWelcome(b.botWelcome ?? ""); } })
+      .catch(() => undefined);
+  }, []);
+
+  const save = async () => {
+    setBusy(true); setError(null); setOk(false);
+    try { await api.patch("/api/chat/bot", { botEnabled: enabled, botPaymentInfo: pay, botWelcome: welcome }); setOk(true); }
+    catch (e) { setError(apiError(e)); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="grid max-w-5xl gap-6 lg:grid-cols-[1fr_20rem]">
+      <Card>
+        <div className="mb-1 text-sm font-semibold text-slate-100">🤖 Bot de carga</div>
+        <p className="mb-4 text-xs text-slate-500">El bot atiende solo a los jugadores en la app: les toma el monto, les pasa tus datos de pago y te avisa para acreditar. Vos podés tomar el chat cuando quieras (el jugador escribe “cajero” o vos le respondés).</p>
+
+        <label className="mb-4 flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2.5">
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="h-5 w-5 accent-wa-green" />
+          <span className="text-sm text-slate-200">{enabled ? "Bot ACTIVADO — atiende automático 🟢" : "Bot apagado"}</span>
+        </label>
+
+        <label className="mb-1 block text-xs text-slate-400">Datos de pago (lo que el bot le muestra al jugador para cargar)</label>
+        <textarea value={pay} onChange={(e) => setPay(e.target.value)} rows={4} placeholder={"Ej:\nAlias: micasino.mp\nTitular: Juan Pérez\n(o el QR / la dirección USDT)"} className="mb-3 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
+
+        <label className="mb-1 block text-xs text-slate-400">Saludo del bot (opcional)</label>
+        <textarea value={welcome} onChange={(e) => setWelcome(e.target.value)} rows={2} placeholder="Ej: ¡Hola! Soy el asistente de MiCasino 🎰" className="mb-3 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
+
+        {error && <div className="mb-2"><ErrorMsg>{error}</ErrorMsg></div>}
+        <div className="flex items-center gap-3">
+          <Button onClick={() => void save()} disabled={busy}>{busy ? "Guardando…" : "Guardar"}</Button>
+          {ok && <span className="text-sm text-wa-green">✓ Guardado</span>}
+        </div>
+      </Card>
+
+      <Card>
+        <div className="mb-2 text-sm font-semibold text-slate-100">Cómo funciona</div>
+        <ol className="space-y-2 text-xs text-slate-400">
+          <li><b className="text-slate-200">1.</b> El jugador entra a la app y escribe.</li>
+          <li><b className="text-slate-200">2.</b> El bot le ofrece <b>Cargar · Retirar · Cajero</b>.</li>
+          <li><b className="text-slate-200">3.</b> En carga: le pide el monto y le muestra tus datos de pago.</li>
+          <li><b className="text-slate-200">4.</b> Cuando el jugador dice “ya pagué”, te avisa en <b>Conversaciones</b> para que verifiques y cargues.</li>
+        </ol>
+        <p className="mt-3 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-[11px] leading-tight text-slate-500">Próximamente: conectamos el sistema de tu socio para que la carga/descarga sea 100% automática. Por ahora vos das el OK final desde el chat.</p>
+      </Card>
     </div>
   );
 }

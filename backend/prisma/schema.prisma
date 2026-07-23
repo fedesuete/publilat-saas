@@ -59,6 +59,11 @@ model User {
   popupFrom       DateTime? // ventana opcional: no se muestra antes de esta fecha/hora
   popupUntil      DateTime? // ni después de esta
   popupUpdatedAt  DateTime?
+  // --- Bot de carga/descarga del Chat App (opcional, por cuenta; aislado, no toca WhatsApp) ---
+  botEnabled     Boolean  @default(false)  // prende/apaga el bot para esta cuenta
+  botPaymentInfo String?                   // datos de pago que muestra el bot (alias/CBU/QR/USDT del cliente)
+  botWelcome     String?                   // saludo inicial del bot (opcional)
+  botLoadWebhook String?                   // URL del sistema del socio para disparar la carga (Fase 3)
   createdAt DateTime @default(now())
 
   lines       WaLine[]
@@ -416,6 +421,8 @@ model ChatConversation {
   unreadPlayer       Int      @default(0)
   lastMessageAt      DateTime?
   lastMessagePreview String?
+  botStep            String?  // estado del bot: null=menú | carga_monto | carga_pago | human (bot apagado)
+  botAmount          Int?     // monto de carga pendiente (centavos)
   createdAt          DateTime @default(now())
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   player             ChatPlayer @relation(fields: [playerId], references: [id], onDelete: Cascade)
