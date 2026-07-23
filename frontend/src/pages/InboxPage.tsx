@@ -99,6 +99,9 @@ export default function InboxPage() {
   const recTargetRef = useRef<"chat" | "lib">("chat"); // destino de la grabación en curso
   const fileRef = useRef<HTMLInputElement>(null); // input oculto para subir audios a la biblioteca
   const draftRef = useRef<HTMLTextAreaElement>(null); // compositor (para auto-alto)
+  const holdStartRef = useRef(0); // inicio del "mantener apretado" (descarta toques muy cortos)
+  const recCancelRef = useRef(false); // grabación cancelada -> no enviar
+  const pendingStopRef = useRef(false); // pidieron stop mientras el grabador aún arrancaba (permiso)
   selectedRef.current = selected;
 
   const loadConvs = async () => {
@@ -209,6 +212,7 @@ export default function InboxPage() {
       rec.ondataavailable = (ev) => { if (ev.data.size) chunksRef.current.push(ev.data); };
       rec.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
+        if (recCancelRef.current) { recCancelRef.current = false; setRecording(false); return; } // cancelada / toque corto
         const blob = new Blob(chunksRef.current, { type: rec.mimeType });
         // Grabación vacía o muy corta (tap instantáneo / micrófono que no capturó): NO la mandamos,
         // porque llega vacía y ffmpeg la rechaza ("Invalid data"). Avisamos para regrabar.
@@ -233,9 +237,43 @@ export default function InboxPage() {
       recRef.current = rec;
       rec.start();
       setRecording(true);
-    } catch { setChatError("No pude acceder al micrófono. Revisá los permisos del navegador."); }
+      if (pendingStopRef.current) rec.stop(); // soltó el micrófono antes de que arrancara (hold corto)
+    } catch { setChatError("No pude acceder al micrófono. Revisá los permisos del navegador."); setRecording(false); }
   };
   const stopRec = () => { recRef.current?.stop(); setRecording(false); };
+
+  // Grabar tipo WhatsApp: mantener apretado el micrófono y soltar para enviar.
+  const startHold = () => {
+    if (recRef.current?.state === "recording") return;
+    recCancelRef.current = false;
+    pendingStopRef.current = false;
+    holdStartRef.current = Date.now();
+    setRecording(true);
+    void startRec("chat");
+  };
+  const stopHold = () => {
+    const dur = Date.now() - holdStartRef.current;
+    if (dur < 450) { // toque muy corto: descartar y explicar cómo se usa
+      recCancelRef.current = true;
+      setChatError("Mantené apretado el micrófono para grabar y soltá para enviar.");
+    }
+    pendingStopRef.current = true; // por si el grabador aún no arrancó (permiso)
+    if (recRef.current?.state === "recording") recRef.current.stop();
+    setRecording(false);
+  };
+  const cancelHold = () => {
+    recCancelRef.current = true;
+    pendingStopRef.current = true;
+    if (recRef.current?.state === "recording") recRef.current.stop();
+    setRecording(false);
+  };
+  // Grabar para la BIBLIOTECA es tap-para-empezar / tap-para-detener (toggle), no hold.
+  const startLibRec = () => {
+    if (recRef.current?.state === "recording") { stopRec(); return; }
+    recCancelRef.current = false;
+    pendingStopRef.current = false;
+    void startRec("lib");
+  };
 
   // --- Biblioteca de audios ---
   // Guarda un audio (data URL) en la biblioteca, pidiendo un nombre.
@@ -487,8 +525,8 @@ export default function InboxPage() {
                   <div className="mb-2 flex items-center justify-between">
                     <span className="text-xs font-semibold text-slate-300">Biblioteca de audios</span>
                     <div className="flex items-center gap-2">
-                      <button type="button" onClick={() => startRec("lib")} disabled={recording} className="flex items-center gap-1 text-xs font-medium text-wa-green hover:underline disabled:opacity-50">
-                        <Mic className="h-3.5 w-3.5" /> Grabar
+                      <button type="button" onClick={startLibRec} className={`flex items-center gap-1 text-xs font-medium hover:underline ${recording && recTargetRef.current === "lib" ? "text-rose-400" : "text-wa-green"}`}>
+                        <Mic className="h-3.5 w-3.5" /> {recording && recTargetRef.current === "lib" ? "Detener y guardar" : "Grabar"}
                       </button>
                       <button type="button" onClick={() => fileRef.current?.click()} className="flex items-center gap-1 text-xs font-medium text-wa-green hover:underline">
                         <Upload className="h-3.5 w-3.5" /> Subir
@@ -510,33 +548,46 @@ export default function InboxPage() {
 
               <form onSubmit={send} className="flex items-end gap-1.5 px-3 pt-2.5" style={{ paddingBottom: "calc(0.6rem + env(safe-area-inset-bottom))" }}>
                 <input ref={fileRef} type="file" accept="audio/*" onChange={onFilePicked} className="hidden" />
-                <button type="button" title="Emojis" onClick={() => { setShowEmoji((v) => !v); setShowQuick(false); setShowAudios(false); }} className={`rounded p-2 ${showEmoji ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
-                  {showEmoji ? <X className="h-5 w-5" /> : <Smile className="h-5 w-5" />}
-                </button>
-                <button type="button" title="Mensajes guardados" onClick={() => { setShowQuick((v) => !v); setShowEmoji(false); setShowAudios(false); }} className={`rounded p-2 ${showQuick ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
-                  <MessageSquareText className="h-5 w-5" />
-                </button>
-                <button type="button" title="Biblioteca de audios" onClick={() => { setShowAudios((v) => !v); setShowEmoji(false); setShowQuick(false); }} className={`rounded p-2 ${showAudios ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
-                  <Music className="h-5 w-5" />
-                </button>
-                <textarea
-                  ref={draftRef}
-                  rows={1}
-                  placeholder="Escribí un mensaje…"
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
-                  className="max-h-36 min-h-[46px] flex-1 resize-none rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-base text-slate-100 placeholder-slate-500 outline-none focus:border-wa-green"
-                />
                 {recording ? (
-                  <button type="button" title="Detener" onClick={stopRec} className="flex items-center gap-1 rounded bg-rose-500 px-3 py-2 text-sm font-medium text-white">
-                    <Square className="h-4 w-4" /> <span className="animate-pulse">grabando…</span>
-                  </button>
-                ) : draft.trim() ? (
+                  <div className="flex h-[46px] flex-1 items-center gap-2 rounded-2xl bg-rose-500/15 px-4 text-sm font-medium text-rose-300">
+                    <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-rose-500" />
+                    Grabando… soltá el micrófono para enviar
+                  </div>
+                ) : (
+                  <>
+                    <button type="button" title="Emojis" onClick={() => { setShowEmoji((v) => !v); setShowQuick(false); setShowAudios(false); }} className={`rounded p-2 ${showEmoji ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
+                      {showEmoji ? <X className="h-5 w-5" /> : <Smile className="h-5 w-5" />}
+                    </button>
+                    <button type="button" title="Mensajes guardados" onClick={() => { setShowQuick((v) => !v); setShowEmoji(false); setShowAudios(false); }} className={`rounded p-2 ${showQuick ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
+                      <MessageSquareText className="h-5 w-5" />
+                    </button>
+                    <button type="button" title="Biblioteca de audios" onClick={() => { setShowAudios((v) => !v); setShowEmoji(false); setShowQuick(false); }} className={`rounded p-2 ${showAudios ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
+                      <Music className="h-5 w-5" />
+                    </button>
+                    <textarea
+                      ref={draftRef}
+                      rows={1}
+                      placeholder="Escribí un mensaje…"
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
+                      className="max-h-36 min-h-[46px] flex-1 resize-none rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-base text-slate-100 placeholder-slate-500 outline-none focus:border-wa-green"
+                    />
+                  </>
+                )}
+                {draft.trim() && !recording ? (
                   <Button type="submit" disabled={sending}>{sending ? "…" : <Send className="h-4 w-4" />}</Button>
                 ) : (
-                  <button type="button" title="Grabar audio" onClick={() => startRec()} className="rounded p-2 text-slate-400 hover:bg-slate-800 hover:text-white">
-                    <Mic className="h-5 w-5" />
+                  <button
+                    type="button"
+                    title="Mantené apretado para grabar, soltá para enviar"
+                    onPointerDown={(e) => { e.preventDefault(); try { (e.currentTarget as HTMLButtonElement).setPointerCapture(e.pointerId); } catch { /* noop */ } startHold(); }}
+                    onPointerUp={(e) => { e.preventDefault(); stopHold(); }}
+                    onPointerCancel={() => cancelHold()}
+                    onContextMenu={(e) => e.preventDefault()}
+                    className={`shrink-0 touch-none select-none rounded-full p-3 transition ${recording ? "scale-110 bg-rose-500 text-white shadow-lg" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}
+                  >
+                    {recording ? <Square className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
                   </button>
                 )}
               </form>
