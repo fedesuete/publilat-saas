@@ -184,7 +184,7 @@ export default function DashboardPage() {
   const w = wins?.[period];
 
   return (
-    <div className="p-6">
+    <div className="overflow-x-hidden p-6">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-bold">Analytics</h1>
         <div className="flex items-center gap-3">
@@ -285,7 +285,9 @@ export default function DashboardPage() {
 
 function GroupTable({ title, rows }: { title: string; rows: GroupRow[] }) {
   return (
-    <div>
+    // min-w-0: como ítem de grilla, deja que la tabla scrollee DENTRO de su recuadro en vez de
+    // crecer y arrastrar toda la página de costado.
+    <div className="min-w-0">
       <h2 className="mb-2 text-sm font-semibold text-slate-200">{title}</h2>
       {rows.length === 0 ? (
         <Card><p className="text-sm text-slate-400">Sin datos todavía.</p></Card>
