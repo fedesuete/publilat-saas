@@ -508,7 +508,7 @@ export default function InboxPage() {
                 </div>
               )}
 
-              <form onSubmit={send} className="flex items-center gap-1.5 p-3">
+              <form onSubmit={send} className="flex items-end gap-1.5 px-3 pt-2.5" style={{ paddingBottom: "calc(0.6rem + env(safe-area-inset-bottom))" }}>
                 <input ref={fileRef} type="file" accept="audio/*" onChange={onFilePicked} className="hidden" />
                 <button type="button" title="Emojis" onClick={() => { setShowEmoji((v) => !v); setShowQuick(false); setShowAudios(false); }} className={`rounded p-2 ${showEmoji ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
                   {showEmoji ? <X className="h-5 w-5" /> : <Smile className="h-5 w-5" />}
@@ -522,11 +522,11 @@ export default function InboxPage() {
                 <textarea
                   ref={draftRef}
                   rows={1}
-                  placeholder="Escribí un mensaje…  (Enter envía · Shift+Enter salto de línea)"
+                  placeholder="Escribí un mensaje…"
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
-                  className="max-h-36 flex-1 resize-none rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-wa-green"
+                  className="max-h-36 min-h-[46px] flex-1 resize-none rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-base text-slate-100 placeholder-slate-500 outline-none focus:border-wa-green"
                 />
                 {recording ? (
                   <button type="button" title="Detener" onClick={stopRec} className="flex items-center gap-1 rounded bg-rose-500 px-3 py-2 text-sm font-medium text-white">
