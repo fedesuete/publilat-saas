@@ -4,7 +4,7 @@ import { api, apiError, API_BASE, getToken, clearToken, loadBranding } from "../
 import { subscribeToPush, pushSupported, pushPermission } from "../lib/push";
 import InstallPrompt from "../components/InstallPrompt";
 
-interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; image?: string | null; createdAt: string }
+interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; image?: string | null; buttons?: string[] | null; createdAt: string }
 interface Popup { title?: string | null; text?: string | null; image?: string | null; link?: string | null; version: string }
 const POPUP_SEEN_KEY = "publilat_popup_seen";
 
@@ -70,16 +70,20 @@ export default function ChatPage() {
     return () => { socket.off("chat:message", onMsg); socket.disconnect(); };
   }, []);
 
+  const sendBody = async (body: string) => {
+    if (!body.trim()) return;
+    setSending(true); setError(null);
+    try {
+      const { data } = await api.post<{ message: Msg }>("/api/chat/me/messages", { body: body.trim() });
+      setMessages((prev) => appendUnique(prev, data.message)); // optimistic; el echo se deduplica
+    } catch (e) { setError(apiError(e)); } finally { setSending(false); }
+  };
   const send = async (e: FormEvent) => {
     e.preventDefault();
     const body = draft.trim();
     if (!body) return;
-    setSending(true); setError(null);
-    try {
-      const { data } = await api.post<{ message: Msg }>("/api/chat/me/messages", { body });
-      setMessages((prev) => appendUnique(prev, data.message)); // optimistic; el echo se deduplica
-      setDraft("");
-    } catch (e) { setError(apiError(e)); } finally { setSending(false); }
+    setDraft("");
+    await sendBody(body);
   };
 
   return (
@@ -148,6 +152,19 @@ export default function ChatPage() {
       </div>
 
       {error && <div className="px-4 py-1 text-center text-xs text-rose-400">{error}</div>}
+
+      {/* Botones del bot (chips): tocar = mandar ese texto. Muestra los del último mensaje. */}
+      {messages[messages.length - 1]?.buttons?.length ? (
+        <div className="flex flex-wrap gap-2 border-t border-slate-800 px-3 pt-2.5">
+          {messages[messages.length - 1]!.buttons!.map((b) => (
+            <button key={b} type="button" disabled={sending} onClick={() => void sendBody(b)}
+              className="rounded-full border bg-slate-800 px-3.5 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700 disabled:opacity-50"
+              style={{ borderColor: "var(--brand-primary, #25d366)" }}>
+              {b}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <form onSubmit={send} className="flex items-center gap-2 border-t border-slate-800 p-3" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
         <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Escribí un mensaje…"

@@ -465,7 +465,7 @@ chatPublicRouter.get("/me/conversation", requireChatClient, async (req, res) => 
     select: { id: true, senderType: true, body: true, metadata: true, createdAt: true },
   });
   await prisma.chatConversation.update({ where: { id: conv.id }, data: { unreadPlayer: 0 } });
-  const messages = rows.map((m) => ({ id: m.id, senderType: m.senderType, body: m.body, image: (m.metadata as { image?: string })?.image ?? null, createdAt: m.createdAt }));
+  const messages = rows.map((m) => ({ id: m.id, senderType: m.senderType, body: m.body, image: (m.metadata as { image?: string })?.image ?? null, buttons: (m.metadata as { buttons?: string[] })?.buttons ?? null, createdAt: m.createdAt }));
   return res.json({ conversationId: conv.id, messages });
 });
 
