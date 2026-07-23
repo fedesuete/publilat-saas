@@ -81,17 +81,15 @@ export default function ChatAppPage() {
   const current = convs.find((c) => c.id === selected);
 
   return (
-    <div className="p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold">Chat App</h1>
-          <p className="text-sm text-slate-400">Canal directo con tus jugadores (app instalable). Separado del WhatsApp.</p>
-        </div>
-        <div className="inline-flex rounded-md bg-slate-900 p-1 text-sm">
-          <button onClick={() => setTab("chats")} className={`rounded px-3 py-1 font-medium ${tab === "chats" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Conversaciones</button>
-          <button onClick={() => setTab("invites")} className={`rounded px-3 py-1 font-medium ${tab === "invites" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Accesos</button>
-          <button onClick={() => setTab("brand")} className={`rounded px-3 py-1 font-medium ${tab === "brand" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Marca</button>
-          <button onClick={() => setTab("avisos")} className={`rounded px-3 py-1 font-medium ${tab === "avisos" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Avisos</button>
+    <div className="overflow-x-hidden p-6">
+      <div className="mb-4">
+        <h1 className="text-xl font-bold">Chat App</h1>
+        <p className="mb-3 text-sm text-slate-400">Canal directo con tus jugadores (app instalable). Separado del WhatsApp.</p>
+        <div className="flex gap-1 overflow-x-auto rounded-md bg-slate-900 p-1 text-sm sm:inline-flex sm:overflow-visible">
+          <button onClick={() => setTab("chats")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "chats" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Conversaciones</button>
+          <button onClick={() => setTab("invites")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "invites" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Accesos</button>
+          <button onClick={() => setTab("brand")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "brand" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Marca</button>
+          <button onClick={() => setTab("avisos")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "avisos" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Avisos</button>
         </div>
       </div>
 
@@ -106,9 +104,9 @@ export default function ChatAppPage() {
       {error && <div className="mb-3"><ErrorMsg>{error}</ErrorMsg></div>}
 
       {tab === "chats" ? (
-        <div className="flex h-[calc(100vh-11rem)] gap-4">
-          {/* Lista */}
-          <div className="flex w-80 shrink-0 flex-col overflow-hidden rounded-lg border border-slate-800">
+        <div className="flex h-[calc(100vh-13rem)] gap-4">
+          {/* Lista: full en el celu; se oculta al abrir un chat. Al costado en desktop. */}
+          <div className={`w-full shrink-0 flex-col overflow-hidden rounded-lg border border-slate-800 lg:flex lg:w-80 ${selected ? "hidden lg:flex" : "flex"}`}>
             <div className="border-b border-slate-800 px-4 py-3 text-xs text-slate-500">{convs.length} conversaciones</div>
             <div className="flex-1 overflow-y-auto">
               {convs.length === 0 ? <p className="p-4 text-sm text-slate-500">Todavía no hay jugadores. Creá un acceso en la pestaña "Accesos".</p> :
@@ -127,13 +125,16 @@ export default function ChatAppPage() {
             </div>
           </div>
 
-          {/* Hilo */}
-          <div className="flex flex-1 flex-col overflow-hidden rounded-lg border border-slate-800">
+          {/* Hilo: full en el celu (visible sólo con conversación abierta). */}
+          <div className={`flex-1 flex-col overflow-hidden rounded-lg border border-slate-800 ${selected ? "flex" : "hidden lg:flex"}`}>
             {!selected ? (
               <div className="flex flex-1 items-center justify-center text-slate-500">Elegí una conversación.</div>
             ) : (
               <>
-                <div className="border-b border-slate-800 px-4 py-3 text-sm font-semibold text-slate-100">{current?.player} <span className="text-xs font-normal text-slate-500">· {current?.username}</span></div>
+                <div className="flex items-center gap-2 border-b border-slate-800 px-4 py-3 text-sm font-semibold text-slate-100">
+                  <button onClick={() => setSelected(null)} className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white lg:hidden" title="Volver">←</button>
+                  <span>{current?.player} <span className="text-xs font-normal text-slate-500">· {current?.username}</span></span>
+                </div>
                 <div className="flex-1 space-y-2 overflow-y-auto p-4">
                   {messages.map((m) => (
                     <div key={m.id} className={`flex ${m.senderType === "operator" ? "justify-end" : m.senderType === "system" ? "justify-center" : "justify-start"}`}>
