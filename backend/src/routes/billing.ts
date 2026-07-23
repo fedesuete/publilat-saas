@@ -118,11 +118,11 @@ billingRouter.post("/checkout", async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
   const { provider, buyer } = parsed.data;
 
-  // Promo: precio fijo con descuento. Hoy solo se cobra por tarjeta (Pagopar).
+  // Promo: precio fijo con descuento. Se cobra por tarjeta (Pagopar) o cripto (USDT).
   const promo = parsed.data.promo ? promoFor(parsed.data.promo) : null;
   if (parsed.data.promo && !promo) return res.status(400).json({ error: "Promo inválida." });
-  if (promo && provider !== "pagopar") {
-    return res.status(400).json({ error: "La promo se paga con tarjeta." });
+  if (promo && provider !== "pagopar" && provider !== "usdt") {
+    return res.status(400).json({ error: "La promo se paga con tarjeta o cripto (USDT)." });
   }
 
   const days = promo ? promo.days : parsed.data.days;
@@ -173,7 +173,7 @@ billingRouter.post("/checkout", async (req, res) => {
               ...(promo ? { amountOverride: promo.pyg, descripcionOverride: `Publi.lat — ${promo.label} (${promo.days} días de línea activa)` } : {}),
             });
           })()
-      : await createUsdtInvoice({ paymentId: payment.id, days });
+      : await createUsdtInvoice({ paymentId: payment.id, days, ...(promo ? { amountUsdOverride: promo.usd } : {}) });
     await prisma.payment.update({ where: { id: payment.id }, data: { externalId: out.id } });
     return res.json({ stub: false, provider, url: out.url, paymentId: payment.id });
   } catch (e) {

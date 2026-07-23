@@ -228,22 +228,25 @@ export default function BillingPage() {
                   Elegí el medio de pago; los días se acreditan al confirmarse el pago.
                 </p>
 
-                {/* Promo 2 meses: 60 días a mitad de precio, con tarjeta (Pagopar). */}
-                {methods.pagopar && (
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-wa-green/30 bg-wa-green/5 p-3">
-                    <div>
-                      <div className="text-sm font-semibold text-wa-green">🎁 Promo 2 meses</div>
-                      <div className="text-xs text-slate-400">
-                        60 días de línea activa por <b className="text-slate-200">60 USD</b> — la mitad (1 USD/día). Se paga con tarjeta.
-                      </div>
+                {/* Promo 2 meses: 60 días con descuento — tarjeta (Pagopar) o cripto (USDT). */}
+                {(methods.pagopar || methods.usdt) && (
+                  <div className="mt-4 rounded-lg border border-wa-green/30 bg-wa-green/5 p-3">
+                    <div className="text-sm font-semibold text-wa-green">🎁 Promo 2 meses</div>
+                    <div className="mb-3 text-xs text-slate-400">
+                      60 días de línea activa por <b className="text-slate-200">80 USD</b> (en vez de 120). Pagá con tarjeta o cripto.
                     </div>
-                    <Button
-                      type="button"
-                      disabled={buying !== null}
-                      onClick={() => { setPromoMode(true); setShowPagopar(true); setCheckoutMsg(null); }}
-                    >
-                      Aprovechar promo · 60 USD
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      {methods.pagopar && (
+                        <Button type="button" disabled={buying !== null} onClick={() => { setPromoMode(true); setShowPagopar(true); setCheckoutMsg(null); }}>
+                          💳 Tarjeta · 80 USD
+                        </Button>
+                      )}
+                      {methods.usdt && (
+                        <Button type="button" variant="secondary" disabled={buying !== null} onClick={() => void buy("usdt", undefined, "2meses")}>
+                          ₮ Cripto (USDT) · 80 USD
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 )}
               </>
@@ -262,7 +265,7 @@ export default function BillingPage() {
           {showPagopar && (
             <Card className="md:col-span-2">
               <div className="mb-1 text-sm font-semibold">
-                {promoMode ? "🎁 Promo 2 meses — 60 USD (60 días)" : "Pago con tarjeta"}
+                {promoMode ? "🎁 Promo 2 meses — 80 USD (60 días)" : "Pago con tarjeta"}
               </div>
               <p className="mb-3 text-xs text-slate-400">
                 {promoMode && "Se acreditan 60 días de línea activa. "}
@@ -310,7 +313,7 @@ export default function BillingPage() {
               </div>
               <p className="mt-2 text-xs text-slate-500">
                 {promoMode
-                  ? "La promo se cobra en guaraníes (≈ 450.000 PYG, equivale a 60 USD) en un checkout seguro (Pagopar); los 60 días se acreditan al confirmarse."
+                  ? "La promo se cobra en guaraníes (≈ 600.000 PYG, equivale a 80 USD) en un checkout seguro (Pagopar); los 60 días se acreditan al confirmarse."
                   : "El pago se procesa en guaraníes (PYG) en un checkout seguro (Pagopar); los días se acreditan automáticamente al confirmarse."}
               </p>
             </Card>

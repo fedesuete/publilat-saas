@@ -34,10 +34,10 @@ export function priceFor(provider: Provider, days: number): { amount: number; cu
 }
 
 // ---- Promos (bundles a precio fijo, independientes del precio por día del selector) ----
-// "2meses": 60 días a mitad de precio (1 USD/día = 60 USD ≈ 450.000 PYG). Todo por env.
+// "2meses": 60 días de línea activa por 80 USD (~1,33 USD/día, contra 2 USD/día normal). Todo por env.
 const PROMO_2M_DAYS = Number(process.env.PROMO_2M_DAYS ?? 60);
-const PROMO_2M_USD = Number(process.env.PROMO_2M_USD ?? 60);
-const PROMO_2M_PYG = Number(process.env.PROMO_2M_PYG ?? 450000);
+const PROMO_2M_USD = Number(process.env.PROMO_2M_USD ?? 80);
+const PROMO_2M_PYG = Number(process.env.PROMO_2M_PYG ?? 600000);
 
 export type PromoKey = "2meses";
 export interface PromoInfo { key: PromoKey; days: number; usd: number; pyg: number; label: string }
@@ -198,8 +198,8 @@ export const nowpaymentsEnabled = () => Boolean(NOW_API_KEY);
 // "usdt" disponible si hay wallet directa O NOWPayments.
 export const usdtEnabled = () => usdtDirectEnabled() || nowpaymentsEnabled();
 
-export async function createUsdtInvoice(args: { paymentId: string; days: number }): Promise<{ id: string; url: string }> {
-  const { amount } = priceFor("usdt", args.days);
+export async function createUsdtInvoice(args: { paymentId: string; days: number; amountUsdOverride?: number }): Promise<{ id: string; url: string }> {
+  const amount = args.amountUsdOverride ?? priceFor("usdt", args.days).amount; // override = precio de promo (USD)
   const { data } = await axios.post(
     "https://api.nowpayments.io/v1/invoice",
     {
