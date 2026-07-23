@@ -343,6 +343,10 @@ inboxRouter.post("/:contactId/audio", async (req, res) => {
   const mimeMatch = parsed.data.audio.match(/^data:([^;]+);base64,/);
   const mime = mimeMatch?.[1] ?? "audio/ogg";
   const base64 = parsed.data.audio.replace(/^data:[^;]+;base64,/, "");
+  // Grabación vacía: llega sin datos y ffmpeg la rechaza ("Invalid data"). Cortamos con un mensaje claro.
+  if (Buffer.from(base64, "base64").length < 800) {
+    return res.status(400).json({ error: "El audio salió vacío. Grabalo de nuevo (tocá el micrófono, hablá unos segundos y recién ahí detené)." });
+  }
   const destination = contact.waJid ?? contact.phone;
   if (!destination) return res.status(400).json({ error: "El contacto aún no tiene teléfono" });
 

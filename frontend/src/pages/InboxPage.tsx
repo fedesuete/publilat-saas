@@ -210,6 +210,13 @@ export default function InboxPage() {
       rec.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(chunksRef.current, { type: rec.mimeType });
+        // Grabación vacía o muy corta (tap instantáneo / micrófono que no capturó): NO la mandamos,
+        // porque llega vacía y ffmpeg la rechaza ("Invalid data"). Avisamos para regrabar.
+        if (blob.size < 1200) {
+          setChatError("La grabación salió vacía o muy corta. Tocá el micrófono, hablá unos segundos y recién ahí detené.");
+          setRecording(false);
+          return;
+        }
         const dataUrl: string = await new Promise((resolve) => {
           const fr = new FileReader();
           fr.onloadend = () => resolve(String(fr.result));
