@@ -87,6 +87,31 @@ model User {
   chatPushSubs      ChatPushSub[]
   brandingAssets    BrandingAsset[]
   chatBroadcasts    ChatBroadcast[]
+  casinoTxs         CasinoTx[]
+}
+
+// Carga/descarga contra la plataforma del socio (ganamos). Idempotencia y reversa por `referencia`,
+// que es UNIQUE a nivel DB (el débito no hereda idempotencia; el UNIQUE evita el doble débito
+// concurrente). El monto va ENTERO en la moneda del tenant (ARS), sin centavos.
+model CasinoTx {
+  id             String   @id @default(cuid())
+  userId         String   // cuenta (tenant) de Publi
+  conversationId String?  // conversación del chat que la originó
+  playerId       String?
+  type           String   // credit | debit
+  usuario        String   // username del casino (ganamos)
+  amount         Int      // entero en la moneda del tenant (ARS), sin centavos
+  currency       String   @default("ARS")
+  referencia     String   @unique // idempotency key end-to-end
+  status         String   @default("pending") // pending | completed | failed | reversed
+  txId           String?  // id de transacción que devuelve ganamos
+  errorCode      String?  // code del error de ganamos (ej. player_not_found)
+  attempts       Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
 }
 
 // Automatización / secuencia (tipo ManyChat) para WhatsApp.
