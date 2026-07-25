@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ChangeEvent } from "react";
 import { api, apiError } from "../../lib/api";
 import { Button, Input, Card, ErrorMsg } from "../../components/ui";
 import VideoEmbed from "../../components/VideoEmbed";
@@ -22,6 +22,25 @@ export default function AdminTutorials() {
   const [videoUrl, setVideoUrl] = useState("");
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [upPct, setUpPct] = useState(0);
+
+  // Sube un .mp4 a Publi (S3 propio) → devuelve una URL servida por nuestro backend (sin YouTube).
+  const onPickVideo = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true); setUpPct(0); setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("video", file);
+      const { data } = await api.post<{ videoUrl: string }>("/api/admin/tutorials/upload", fd, {
+        onUploadProgress: (p) => { if (p.total) setUpPct(Math.round((p.loaded / p.total) * 100)); },
+      });
+      setVideoUrl(data.videoUrl);
+      if (!title.trim()) setTitle(file.name.replace(/\.[^.]+$/, ""));
+    } catch (err) { setError(apiError(err)); }
+    finally { setUploading(false); e.target.value = ""; }
+  };
 
   const load = async () => {
     setError(null);
@@ -81,8 +100,9 @@ export default function AdminTutorials() {
     <div className="p-6">
       <h1 className="mb-1 text-xl font-bold">Tutoriales</h1>
       <p className="mb-4 text-sm text-slate-400">
-        Videos que ven todos los clientes en <span className="text-slate-200">Tutoriales</span>. Subí el video a
-        YouTube/Vimeo (podés ponerlo como <span className="text-slate-200">"no listado"</span>) o usá un link .mp4, y pegá acá la URL.
+        Videos que ven todos los clientes en <span className="text-slate-200">Tutoriales</span>. Dos formas:
+        <span className="text-slate-200"> subí el .mp4 acá</span> (se aloja en Publi, se ve <span className="text-slate-200">sin YouTube ni recomendaciones</span>),
+        o pegá un link de YouTube/Vimeo.
       </p>
       {error && <div className="mb-3"><ErrorMsg>{error}</ErrorMsg></div>}
 
@@ -91,6 +111,14 @@ export default function AdminTutorials() {
         <div className="mb-2 text-sm font-semibold text-slate-200">Agregar tutorial</div>
         <form onSubmit={create} className="space-y-2">
           <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Título (ej: Cómo conectar WhatsApp)" />
+          <div className="flex flex-wrap items-center gap-2">
+            <label className={`flex cursor-pointer items-center gap-2 rounded-md border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800 ${uploading ? "opacity-60" : "text-slate-200"}`}>
+              {uploading ? `Subiendo… ${upPct}%` : "⬆️ Subir video (.mp4)"}
+              <input type="file" accept="video/*" className="hidden" disabled={uploading} onChange={onPickVideo} />
+            </label>
+            <span className="text-xs text-slate-500">Se aloja en Publi. Sin recomendaciones. Máx 200 MB.</span>
+          </div>
+          <div className="text-center text-xs text-slate-600">— o pegá un link —</div>
           <Input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="Link del video (YouTube, Vimeo o .mp4)" />
           <textarea
             value={description}

@@ -91,6 +91,32 @@ export async function uploadBuffer(key: string, body: Buffer, contentType: strin
   }
 }
 
+// Lee un objeto del bucket (aunque sea PRIVADO) para que el backend lo sirva él mismo.
+// Soporta `range` (ej "bytes=0-") → el <video> puede adelantar/atrasar (seek). Devuelve el
+// stream + headers relevantes, o null si S3 no está configurado / no existe la key / falla.
+export async function getS3Object(
+  key: string,
+  range?: string,
+): Promise<{ body: any; contentType?: string; contentLength?: number; contentRange?: string } | null> {
+  if (!s3Enabled()) return null;
+  try {
+    const specifier = "@aws-sdk/client-s3";
+    const mod: any = await import(specifier).catch(() => null);
+    if (!mod) return null;
+    const { S3Client, GetObjectCommand } = mod;
+    const client = new S3Client({ region: REGION, ...(ENDPOINT ? { endpoint: ENDPOINT, forcePathStyle: false } : {}) });
+    const out: any = await client.send(new GetObjectCommand({ Bucket: BUCKET, Key: key, ...(range ? { Range: range } : {}) }));
+    return {
+      body: out.Body,
+      contentType: out.ContentType,
+      contentLength: typeof out.ContentLength === "number" ? out.ContentLength : undefined,
+      contentRange: out.ContentRange,
+    };
+  } catch {
+    return null; // NoSuchKey u otro → el caller responde 404
+  }
+}
+
 // Sube el HTML como <slug>/index.html y devuelve la URL pública (CDN/S3). null si falla.
 export async function publishToS3(slug: string, html: string): Promise<string | null> {
   if (!s3Enabled()) return null;

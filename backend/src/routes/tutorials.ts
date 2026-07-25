@@ -1,13 +1,23 @@
 // Tutoriales en video del panel.
 //  - tutorialsRouter (cliente, requireAuth): lista los tutoriales ACTIVOS para /tutoriales.
 //  - tutorialsAdminRouter (admin, requireAdmin): ABM de tutoriales desde el panel maestro.
-// El video no se aloja acá: se guarda la URL (YouTube/Vimeo/mp4) y el front arma el embed.
+//  - tutorialVideoRouter (PÚBLICO): sirve los videos SUBIDOS a Publi (S3 privado) con soporte de
+//    Range. Es propio → sin YouTube, sin recomendaciones al final, sin logo. Alternativa a pegar
+//    un link de YouTube/Vimeo (que igual sigue soportado).
 import { Router } from "express";
 import { z } from "zod";
+import crypto from "node:crypto";
+import multer from "multer";
 import { prisma } from "../lib/prisma.js";
+import { s3Enabled, uploadBuffer, getS3Object } from "../lib/s3.js";
 
 export const tutorialsRouter = Router();
 export const tutorialsAdminRouter = Router();
+export const tutorialVideoRouter = Router();
+
+// Tope de tamaño del video subido (memoria → S3). Videos largos/pesados: subir a YouTube/Vimeo.
+const VIDEO_MAX_MB = 200;
+const uploadVideo = multer({ storage: multer.memoryStorage(), limits: { fileSize: VIDEO_MAX_MB * 1024 * 1024 } });
 
 // ---- Cliente: sólo los activos, ordenados ----
 tutorialsRouter.get("/", async (_req, res) => {
@@ -74,4 +84,60 @@ tutorialsAdminRouter.delete("/:id", async (req, res) => {
   if (!existing) return res.status(404).json({ error: "Tutorial no encontrado" });
   await prisma.tutorial.delete({ where: { id: existing.id } });
   return res.json({ ok: true });
+});
+
+// POST /api/admin/tutorials/upload — sube un video (.mp4/.webm/.mov) al almacenamiento PROPIO
+// (S3 privado) y devuelve una URL servida por NUESTRO backend. Así el tutorial se ve sin YouTube
+// (sin recomendaciones al final, sin logo). Campo del form-data: "video".
+tutorialsAdminRouter.post(
+  "/upload",
+  (req, res, next) =>
+    uploadVideo.single("video")(req, res, (err: any) => {
+      if (err) {
+        const msg =
+          err?.code === "LIMIT_FILE_SIZE"
+            ? `El video supera ${VIDEO_MAX_MB} MB. Comprimilo/acortalo, o subilo a YouTube y pegá el link.`
+            : "No se pudo subir el video.";
+        return res.status(400).json({ error: msg });
+      }
+      next();
+    }),
+  async (req, res) => {
+    const f = (req as any).file as { buffer: Buffer; mimetype: string; originalname: string } | undefined;
+    if (!f) return res.status(400).json({ error: "Falta el archivo de video." });
+    if (!/^video\//.test(f.mimetype || "")) return res.status(400).json({ error: "El archivo no parece un video." });
+    if (!s3Enabled())
+      return res.status(500).json({ error: "El almacenamiento de videos no está configurado en el servidor." });
+    const ext = (f.originalname.match(/\.([A-Za-z0-9]{2,5})$/)?.[1] || "mp4").toLowerCase();
+    const name = `${crypto.randomUUID()}.${ext}`;
+    const stored = await uploadBuffer(`tutorials/${name}`, f.buffer, f.mimetype || "video/mp4");
+    if (!stored) return res.status(500).json({ error: "No se pudo guardar el video. Probá de nuevo." });
+    const proto = (req.headers["x-forwarded-proto"] as string | undefined)?.split(",")[0] || req.protocol || "https";
+    const videoUrl = `${proto}://${req.get("host")}/api/tutorial-video/${name}`;
+    return res.json({ videoUrl });
+  },
+);
+
+// ---- Público: sirve el video subido desde S3 (bucket privado) con soporte de Range (seek) ----
+// El <video> del navegador no manda token → ruta pública, pero acotada al prefijo tutorials/ y a
+// un nombre saneado (nada de rutas ni "..") para no exponer otros objetos del bucket.
+tutorialVideoRouter.get("/:name", async (req, res) => {
+  const name = req.params.name;
+  if (!/^[A-Za-z0-9._-]+$/.test(name) || name.includes("..")) return res.status(400).end();
+  const range = typeof req.headers.range === "string" ? req.headers.range : undefined;
+  const obj = await getS3Object(`tutorials/${name}`, range);
+  if (!obj) return res.status(404).end();
+  if (obj.contentType) res.setHeader("Content-Type", obj.contentType);
+  res.setHeader("Accept-Ranges", "bytes");
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  if (obj.contentRange) res.setHeader("Content-Range", obj.contentRange);
+  if (obj.contentLength != null) res.setHeader("Content-Length", String(obj.contentLength));
+  res.status(range && obj.contentRange ? 206 : 200);
+  const body = obj.body;
+  if (body && typeof body.pipe === "function") {
+    body.on("error", () => { if (!res.headersSent) res.status(500); res.end(); });
+    body.pipe(res);
+  } else {
+    res.end();
+  }
 });
