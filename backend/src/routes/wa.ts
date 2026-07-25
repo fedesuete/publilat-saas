@@ -428,6 +428,16 @@ waRouter.post("/lines/:id/reset", async (req, res) => {
   }
 });
 
+// POST /api/wa/lines/:id/warmup — prende/apaga el calentamiento (rampa de envíos) de la línea.
+// Apagado = envíos sin límite (ojo: más riesgo de baneo del número si se manda mucho en frío).
+waRouter.post("/lines/:id/warmup", async (req, res) => {
+  const line = await getOwnedLine(req.userId!, req.params.id);
+  if (!line) return res.status(404).json({ error: "Línea no encontrada" });
+  const enabled = req.body?.enabled === true;
+  const updated = await prisma.waLine.update({ where: { id: line.id }, data: { warmupEnabled: enabled } });
+  return res.json({ line: { id: updated.id, warmupEnabled: updated.warmupEnabled }, warmup: await warmupState(updated) });
+});
+
 // GET /api/wa/lines/:id/status — estado en vivo desde Evolution; sincroniza la DB.
 waRouter.get("/lines/:id/status", async (req, res) => {
   const line = await getOwnedLine(req.userId!, req.params.id);
