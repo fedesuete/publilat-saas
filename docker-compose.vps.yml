@@ -29,6 +29,9 @@ services:
       # Pisa el WAHA_WEBHOOK_URL del .env (que apunta al blackhole de la instancia de
       # prueba): acá las sesiones se configuran con el webhook interno real.
       WAHA_WEBHOOK_URL: http://app:4000/api/wa/webhook?token=${EVOLUTION_WEBHOOK_TOKEN}
+      # Videos de tutoriales subidos al panel: se guardan en el disco (volumen persistente),
+      # no en S3 (las credenciales de S3 solo suben landings, no leen).
+      TUTORIALS_DIR: /data/tutorials
     ports:
       - "4010:4000" # Traefik -> http://IP:4010
     # Si el app queda colgado (no responde /health), autoheal lo reinicia solo (label abajo).
@@ -40,6 +43,8 @@ services:
       start_period: 45s
     labels:
       autoheal: "true"
+    volumes:
+      - tutorial_videos:/data/tutorials # persiste los videos de tutoriales entre deploys
 
   # Vigila los contenedores con label autoheal=true y reinicia los que queden "unhealthy".
   # Solo toca los NUESTROS (label), no las apps del socio (n8n/prospeccion).
@@ -171,3 +176,4 @@ volumes:
   redisdata:
   evolution_instances:
   waha_sessions:
+  tutorial_videos:

@@ -7,17 +7,36 @@
 import { Router } from "express";
 import { z } from "zod";
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import multer from "multer";
 import { prisma } from "../lib/prisma.js";
-import { s3Enabled, uploadBuffer, getS3Object } from "../lib/s3.js";
 
 export const tutorialsRouter = Router();
 export const tutorialsAdminRouter = Router();
 export const tutorialVideoRouter = Router();
 
-// Tope de tamaño del video subido (memoria → S3). Videos largos/pesados: subir a YouTube/Vimeo.
+// Los videos subidos se guardan en el disco (volumen persistente), NO en S3 (las credenciales
+// de S3 del server solo suben landings; no tienen permiso de lectura). En local cae a ./data.
 const VIDEO_MAX_MB = 200;
-const uploadVideo = multer({ storage: multer.memoryStorage(), limits: { fileSize: VIDEO_MAX_MB * 1024 * 1024 } });
+const TUT_DIR = process.env.TUTORIALS_DIR || path.resolve(process.cwd(), "data/tutorials");
+try { fs.mkdirSync(TUT_DIR, { recursive: true }); } catch { /* se crea al primer upload si hace falta */ }
+
+const VIDEO_MIME: Record<string, string> = {
+  mp4: "video/mp4", webm: "video/webm", ogg: "video/ogg", ogv: "video/ogg",
+  mov: "video/quicktime", m4v: "video/x-m4v",
+};
+
+const uploadVideo = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, TUT_DIR),
+    filename: (_req, file, cb) => {
+      const ext = (file.originalname.match(/\.([A-Za-z0-9]{2,5})$/)?.[1] || "mp4").toLowerCase();
+      cb(null, `${crypto.randomUUID()}.${ext}`);
+    },
+  }),
+  limits: { fileSize: VIDEO_MAX_MB * 1024 * 1024 },
+});
 
 // ---- Cliente: sólo los activos, ordenados ----
 tutorialsRouter.get("/", async (_req, res) => {
@@ -83,6 +102,9 @@ tutorialsAdminRouter.delete("/:id", async (req, res) => {
   const existing = await prisma.tutorial.findUnique({ where: { id: req.params.id } });
   if (!existing) return res.status(404).json({ error: "Tutorial no encontrado" });
   await prisma.tutorial.delete({ where: { id: existing.id } });
+  // Si el video estaba subido a Publi (disco), borro el archivo para no dejar huérfanos.
+  const m = existing.videoUrl.match(/\/api\/tutorial-video\/([A-Za-z0-9._-]+)$/);
+  if (m && !m[1].includes("..")) { try { fs.unlinkSync(path.join(TUT_DIR, m[1])); } catch { /* ya no está */ } }
   return res.json({ ok: true });
 });
 
@@ -103,41 +125,56 @@ tutorialsAdminRouter.post(
       next();
     }),
   async (req, res) => {
-    const f = (req as any).file as { buffer: Buffer; mimetype: string; originalname: string } | undefined;
+    const f = (req as any).file as { filename: string; mimetype: string; path: string } | undefined;
     if (!f) return res.status(400).json({ error: "Falta el archivo de video." });
-    if (!/^video\//.test(f.mimetype || "")) return res.status(400).json({ error: "El archivo no parece un video." });
-    if (!s3Enabled())
-      return res.status(500).json({ error: "El almacenamiento de videos no está configurado en el servidor." });
-    const ext = (f.originalname.match(/\.([A-Za-z0-9]{2,5})$/)?.[1] || "mp4").toLowerCase();
-    const name = `${crypto.randomUUID()}.${ext}`;
-    const stored = await uploadBuffer(`tutorials/${name}`, f.buffer, f.mimetype || "video/mp4");
-    if (!stored) return res.status(500).json({ error: "No se pudo guardar el video. Probá de nuevo." });
+    // multer ya lo escribió a disco; si no es video, lo borro.
+    if (!/^video\//.test(f.mimetype || "")) {
+      try { fs.unlinkSync(f.path); } catch { /* ignore */ }
+      return res.status(400).json({ error: "El archivo no parece un video." });
+    }
     const proto = (req.headers["x-forwarded-proto"] as string | undefined)?.split(",")[0] || req.protocol || "https";
-    const videoUrl = `${proto}://${req.get("host")}/api/tutorial-video/${name}`;
+    const videoUrl = `${proto}://${req.get("host")}/api/tutorial-video/${f.filename}`;
     return res.json({ videoUrl });
   },
 );
 
-// ---- Público: sirve el video subido desde S3 (bucket privado) con soporte de Range (seek) ----
-// El <video> del navegador no manda token → ruta pública, pero acotada al prefijo tutorials/ y a
-// un nombre saneado (nada de rutas ni "..") para no exponer otros objetos del bucket.
-tutorialVideoRouter.get("/:name", async (req, res) => {
+// ---- Público: sirve el video subido desde el disco con soporte de Range (seek) ----
+// El <video> del navegador no manda token → ruta pública, pero acotada a TUT_DIR y a un nombre
+// saneado (nada de rutas ni "..") para no exponer otros archivos.
+tutorialVideoRouter.get("/:name", (req, res) => {
   const name = req.params.name;
   if (!/^[A-Za-z0-9._-]+$/.test(name) || name.includes("..")) return res.status(400).end();
-  const range = typeof req.headers.range === "string" ? req.headers.range : undefined;
-  const obj = await getS3Object(`tutorials/${name}`, range);
-  if (!obj) return res.status(404).end();
-  if (obj.contentType) res.setHeader("Content-Type", obj.contentType);
-  res.setHeader("Accept-Ranges", "bytes");
-  res.setHeader("Cache-Control", "public, max-age=86400");
-  if (obj.contentRange) res.setHeader("Content-Range", obj.contentRange);
-  if (obj.contentLength != null) res.setHeader("Content-Length", String(obj.contentLength));
-  res.status(range && obj.contentRange ? 206 : 200);
-  const body = obj.body;
-  if (body && typeof body.pipe === "function") {
-    body.on("error", () => { if (!res.headersSent) res.status(500); res.end(); });
-    body.pipe(res);
-  } else {
-    res.end();
-  }
+  const filePath = path.join(TUT_DIR, name);
+  fs.stat(filePath, (err, stat) => {
+    if (err || !stat.isFile()) return res.status(404).end();
+    const total = stat.size;
+    const ext = (name.match(/\.([A-Za-z0-9]+)$/)?.[1] || "mp4").toLowerCase();
+    res.setHeader("Content-Type", VIDEO_MIME[ext] || "application/octet-stream");
+    res.setHeader("Accept-Ranges", "bytes");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    const range = req.headers.range;
+    if (typeof range === "string") {
+      const m = /bytes=(\d*)-(\d*)/.exec(range);
+      let start = m && m[1] ? parseInt(m[1], 10) : 0;
+      let end = m && m[2] ? parseInt(m[2], 10) : total - 1;
+      if (!Number.isFinite(start) || start < 0) start = 0;
+      if (!Number.isFinite(end) || end >= total) end = total - 1;
+      if (start > end) {
+        res.setHeader("Content-Range", `bytes */${total}`);
+        return res.status(416).end();
+      }
+      res.status(206);
+      res.setHeader("Content-Range", `bytes ${start}-${end}/${total}`);
+      res.setHeader("Content-Length", String(end - start + 1));
+      const s = fs.createReadStream(filePath, { start, end });
+      s.on("error", () => res.destroy());
+      s.pipe(res);
+    } else {
+      res.status(200);
+      res.setHeader("Content-Length", String(total));
+      const s = fs.createReadStream(filePath);
+      s.on("error", () => res.destroy());
+      s.pipe(res);
+    }
+  });
 });
