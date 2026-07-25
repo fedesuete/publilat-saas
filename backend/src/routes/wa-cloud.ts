@@ -143,11 +143,16 @@ cloudWebhookRouter.post("/", async (req, res) => {
           const pushName = profileNames.get(phone); // nombre de WhatsApp del contacto (si vino)
           const referral = msg.referral; // presente sólo en el 1er msg de un anuncio CTWA
 
-          // 1) Resolver contacto por teléfono (o crearlo).
-          let contact = await prisma.contact.findFirst({
-            where: { userId, phone },
-            orderBy: { createdAt: "desc" },
-          });
+          // 1) Resolver contacto: PRIMERO por el código (ref: XXXX) que trae el mensaje de la landing
+          //    /go — así el fbclid NO se pierde (evita la atribución partida). Si no, por teléfono.
+          //    Misma lógica que el webhook de Baileys (webhook.ts).
+          const codeMatch = text.match(/ref:\s*([A-Z0-9]{4,})/i);
+          let contact = codeMatch
+            ? await prisma.contact.findFirst({ where: { userId, code: codeMatch[1].toUpperCase() } })
+            : null;
+          if (!contact) {
+            contact = await prisma.contact.findFirst({ where: { userId, phone }, orderBy: { createdAt: "desc" } });
+          }
           let isNewCtwaLead = false;
 
           if (!contact) {
@@ -173,6 +178,7 @@ cloudWebhookRouter.post("/", async (req, res) => {
             void notify(userId, "lead", "Nuevo lead 💬", `Te escribió un contacto nuevo (${phone}).`);
           } else {
             const patch: Record<string, unknown> = {};
+            if (!contact.phone) patch.phone = phone; // contacto de /go recién matcheado por código: le seteamos el teléfono
             if (!contact.waJid) patch.waJid = String(msg.from);
             if (!contact.lineId) patch.lineId = line.id;
             if (pushName && !contact.name) patch.name = pushName; // completa el nombre si faltaba
