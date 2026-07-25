@@ -33,7 +33,9 @@ export default function VideoEmbed({ url, className = "" }: { url: string; class
     inner = (
       <iframe
         className={frame}
-        src={`https://www.youtube.com/embed/${yt}`}
+        // rel=0: al terminar, las "recomendaciones" son SOLO de tu propio canal (no de la competencia
+        // ni random). modestbranding: menos logo de YouTube. Para CERO recomendaciones, usá un .mp4 directo.
+        src={`https://www.youtube.com/embed/${yt}?rel=0&modestbranding=1&playsinline=1`}
         title="Tutorial"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
         allowFullScreen
