@@ -357,9 +357,20 @@ adminRouter.get("/lines", async (req, res) => {
   const lines = await prisma.waLine.findMany({
     where,
     orderBy: { createdAt: "desc" },
-    select: { id: true, label: true, phone: true, provider: true, status: true, connected: true, expiresAt: true, lastUsedAt: true, user: { select: { email: true, name: true } } },
+    select: { id: true, label: true, phone: true, provider: true, status: true, connected: true, expiresAt: true, lastUsedAt: true, warmupEnabled: true, user: { select: { email: true, name: true } } },
   });
   return res.json({ lines });
+});
+
+// POST /api/admin/lines/:id/warmup — prende/apaga el calentamiento de CUALQUIER línea (admin).
+// Apagado = envíos sin límite (más riesgo de baneo si se manda mucho en frío).
+adminRouter.post("/lines/:id/warmup", async (req, res) => {
+  const enabled = req.body?.enabled === true;
+  const line = await prisma.waLine.findUnique({ where: { id: req.params.id }, select: { id: true, userId: true } });
+  if (!line) return res.status(404).json({ error: "Línea no encontrada" });
+  const updated = await prisma.waLine.update({ where: { id: line.id }, data: { warmupEnabled: enabled }, select: { warmupEnabled: true } });
+  await adminLog(req.userId!, "warmup_toggle", line.userId, { lineId: line.id, enabled });
+  return res.json({ ok: true, warmupEnabled: updated.warmupEnabled });
 });
 
 // ============================ 4D. INGRESOS ============================
