@@ -65,6 +65,10 @@ model User {
   botPaymentInfo String?                   // datos de pago que muestra el bot (alias/CBU/QR/USDT del cliente)
   botWelcome     String?                   // saludo inicial del bot (opcional)
   botLoadWebhook String?                   // URL del sistema del socio para disparar la carga (Fase 3)
+  // --- Saludo automático con botones para chats de anuncio (CTWA / Cloud API) ---
+  waWelcomeEnabled Boolean @default(false) // prende el auto-saludo al entrar el 1er msg del anuncio
+  waWelcomeText    String?                 // cuerpo del saludo (ej. "¡Hola! ¿Cómo podemos ayudarte?")
+  waWelcomeButtons String?                 // hasta 3 botones, etiquetas separadas por "|"
   createdAt DateTime @default(now())
 
   lines       WaLine[]

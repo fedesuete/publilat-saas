@@ -39,6 +39,31 @@ export async function sendCloudText(line: CloudLine, to: string, text: string) {
   return data;
 }
 
+// Envía un mensaje INTERACTIVO con botones de respuesta (reply buttons). Cloud API: máximo 3
+// botones, título ≤ 20 chars, cuerpo ≤ 1024. Cuando el usuario toca uno, WhatsApp devuelve el
+// `button_reply.title` (que el webhook ya parsea como texto). Los labels vacíos se descartan.
+export async function sendCloudButtons(line: CloudLine, to: string, body: string, buttons: string[]) {
+  if (!line.wabaPhoneNumberId) throw new Error("La línea Cloud no tiene Phone Number ID");
+  const btns = buttons
+    .map((b) => b.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .map((title, i) => ({ type: "reply", reply: { id: `btn_${i}`, title: title.slice(0, 20) } }));
+  // Sin botones válidos, cae a texto plano (no rompe el flujo).
+  if (btns.length === 0) return sendCloudText(line, to, body);
+  const { data } = await axios.post(
+    `${GRAPH}/${line.wabaPhoneNumberId}/messages`,
+    {
+      messaging_product: "whatsapp",
+      to,
+      type: "interactive",
+      interactive: { type: "button", body: { text: body.slice(0, 1024) }, action: { buttons: btns } },
+    },
+    { headers: { Authorization: `Bearer ${token(line)}`, "Content-Type": "application/json" }, timeout: 15000 },
+  );
+  return data;
+}
+
 // Convierte cualquier audio del navegador (WebM/OPUS de Chrome, OGG/OPUS de Firefox) a un
 // OGG/OPUS LIMPIO y compatible con la Cloud API. La entrada se escribe a un archivo temporal
 // porque WebM/Matroska necesita "saltar" (seek) para demuxear — un pipe no lo permite y sale

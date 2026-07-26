@@ -6,7 +6,7 @@ import { Router } from "express";
 import crypto from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
-import { getCloudMediaBase64 } from "../lib/wa-cloud.js";
+import { getCloudMediaBase64, sendCloudButtons } from "../lib/wa-cloud.js";
 import { fireCtwaLead } from "../lib/ctwa.js";
 import { detectPayment } from "../lib/payment-detect.js";
 import { notify } from "../lib/notifications.js";
@@ -117,7 +117,10 @@ cloudWebhookRouter.post("/", async (req, res) => {
         console.log(`[cloud-webhook] match línea ${line.id} (user ${line.userId})`);
         const userId = line.userId;
 
-        const owner = await prisma.user.findUnique({ where: { id: userId }, select: { paymentDetection: true } });
+        const owner = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { paymentDetection: true, waWelcomeEnabled: true, waWelcomeText: true, waWelcomeButtons: true },
+        });
         const paymentMode = owner?.paymentDetection ?? "off";
 
         // Nombre de perfil de WhatsApp: viene en value.contacts[].profile.name (indexado por wa_id).
@@ -232,6 +235,14 @@ cloudWebhookRouter.post("/", async (req, res) => {
           // 4) Lead CTWA (sólo en el 1er mensaje con referral).
           if (isNewCtwaLead) {
             void fireCtwaLead(userId, { id: contact.id, externalId: contact.externalId, phone: contact.phone, ctwaClid: contact.ctwaClid });
+          }
+
+          // 4b) Saludo automático con botones al entrar el 1er mensaje de un anuncio (si está prendido).
+          //     Best-effort y AISLADO: no bloquea el webhook ni afecta la atribución de arriba.
+          if (isNewCtwaLead && owner?.waWelcomeEnabled && owner.waWelcomeText?.trim()) {
+            const buttons = (owner.waWelcomeButtons ?? "").split("|").map((b) => b.trim()).filter(Boolean);
+            void sendCloudButtons(line, phone, owner.waWelcomeText.trim(), buttons)
+              .catch((e) => console.error("[wa-cloud] saludo automático falló:", e instanceof Error ? e.message : String(e)));
           }
 
           // 5) Detección de pago (texto + comprobante por imagen/PDF con IA).

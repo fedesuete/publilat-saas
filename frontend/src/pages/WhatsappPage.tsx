@@ -24,6 +24,77 @@ interface EsConfig {
   graphVersion: string;
 }
 
+// Saludo automático con botones para chats de anuncio (CTWA / Cloud API). Replica el "saludo
+// automático + botones" que ve el jugador al escribir desde un anuncio, sin salir de WhatsApp.
+function WelcomeConfig() {
+  const [enabled, setEnabled] = useState(false);
+  const [text, setText] = useState("");
+  const [btns, setBtns] = useState<string[]>(["", "", ""]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [ok, setOk] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get<{ welcome: { waWelcomeEnabled: boolean; waWelcomeText: string | null; waWelcomeButtons: string | null } | null }>("/api/wa/welcome")
+      .then(({ data }) => {
+        const w = data.welcome;
+        if (w) {
+          setEnabled(w.waWelcomeEnabled);
+          setText(w.waWelcomeText ?? "");
+          const parts = (w.waWelcomeButtons ?? "").split("|");
+          setBtns([parts[0] ?? "", parts[1] ?? "", parts[2] ?? ""]);
+        }
+      })
+      .catch((e) => setError(apiError(e)))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const save = async () => {
+    setSaving(true); setError(null); setOk(false);
+    try {
+      const buttons = btns.map((b) => b.trim()).filter(Boolean).join("|");
+      await api.patch("/api/wa/welcome", { waWelcomeEnabled: enabled, waWelcomeText: text.trim() || null, waWelcomeButtons: buttons || null });
+      setOk(true); setTimeout(() => setOk(false), 2000);
+    } catch (e) { setError(apiError(e)); }
+    finally { setSaving(false); }
+  };
+
+  if (loading) return null;
+
+  return (
+    <Card className="mb-6 max-w-xl">
+      <div className="mb-1 flex items-center justify-between">
+        <div className="text-sm font-semibold text-slate-100">💬 Saludo automático con botones (anuncios)</div>
+        <label className="flex items-center gap-2 text-xs text-slate-400">
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Activo
+        </label>
+      </div>
+      <p className="mb-3 text-xs text-slate-500">
+        Cuando alguien te escribe desde un anuncio (Click-to-WhatsApp) por una línea <b>Cloud API</b>, se le
+        manda solo este saludo con botones. Máx 3 botones de 20 caracteres.
+      </p>
+      {error && <div className="mb-2"><ErrorMsg>{error}</ErrorMsg></div>}
+      <label className="mb-1 block text-xs text-slate-400">Mensaje de saludo</label>
+      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2}
+        placeholder="Ej: ¡Hola! ¿Cómo podemos ayudarte?"
+        className="mb-3 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
+      <label className="mb-1 block text-xs text-slate-400">Botones (hasta 3)</label>
+      <div className="mb-3 space-y-2">
+        {btns.map((b, i) => (
+          <Input key={i} value={b} maxLength={20}
+            onChange={(e) => setBtns((p) => p.map((x, j) => (j === i ? e.target.value : x)))}
+            placeholder={i === 0 ? "Ej: Crear nuevo Usuario" : i === 1 ? "Ej: Ya tengo un usuario" : "Botón 3 (opcional)"} />
+        ))}
+      </div>
+      <div className="flex items-center gap-3">
+        <Button onClick={() => void save()} disabled={saving}>{saving ? "Guardando…" : "Guardar"}</Button>
+        {ok && <span className="text-xs text-wa-green">✓ Guardado</span>}
+      </div>
+    </Card>
+  );
+}
+
 export default function WhatsappPage() {
   const [lines, setLines] = useState<Line[]>([]);
   const [qrs, setQrs] = useState<Record<string, string>>({});
@@ -475,6 +546,8 @@ export default function WhatsappPage() {
       <p className="mb-5 text-sm text-slate-400">
         Conectá por QR (Baileys) o con la API oficial (Cloud API) para anuncios Click-to-WhatsApp.
       </p>
+
+      <WelcomeConfig />
 
       <Card className="mb-6 max-w-xl">
         {/* Selector de tipo de conexión */}

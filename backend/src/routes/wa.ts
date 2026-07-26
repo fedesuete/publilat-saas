@@ -205,6 +205,38 @@ waRouter.get("/cloud/config", (_req, res) => {
   });
 });
 
+// ---- Saludo automático con botones para chats de anuncio (CTWA / Cloud API) ----
+// GET /api/wa/welcome — config actual (para el formulario del panel).
+waRouter.get("/welcome", async (req, res) => {
+  const u = await prisma.user.findUnique({
+    where: { id: req.userId! },
+    select: { waWelcomeEnabled: true, waWelcomeText: true, waWelcomeButtons: true },
+  });
+  return res.json({ welcome: u });
+});
+
+const welcomeSchema = z.object({
+  waWelcomeEnabled: z.boolean().optional(),
+  waWelcomeText: z.string().max(1024).nullish(),
+  waWelcomeButtons: z.string().max(200).nullish(), // hasta 3 etiquetas separadas por "|"
+});
+
+// PATCH /api/wa/welcome — prende/apaga y edita el saludo + los botones.
+waRouter.patch("/welcome", async (req, res) => {
+  const parsed = welcomeSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const data: Record<string, unknown> = {};
+  if (parsed.data.waWelcomeEnabled !== undefined) data.waWelcomeEnabled = parsed.data.waWelcomeEnabled;
+  if (parsed.data.waWelcomeText !== undefined) data.waWelcomeText = parsed.data.waWelcomeText;
+  if (parsed.data.waWelcomeButtons !== undefined) data.waWelcomeButtons = parsed.data.waWelcomeButtons;
+  const u = await prisma.user.update({
+    where: { id: req.userId! },
+    data,
+    select: { waWelcomeEnabled: true, waWelcomeText: true, waWelcomeButtons: true },
+  });
+  return res.json({ welcome: u });
+});
+
 const connectSchema = z.object({
   code: z.string().min(10).max(4000),
   phoneNumberId: z.string().min(3).max(40).optional(),
