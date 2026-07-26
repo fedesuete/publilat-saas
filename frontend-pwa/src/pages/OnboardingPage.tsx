@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, apiError, setToken, saveBranding, applyBranding, type Branding } from "../lib/api";
+import { isInAppBrowser, tryOpenInBrowser } from "../lib/inapp";
 
 function cookie(name: string): string {
   const m = document.cookie.match("(^|;)\\s*" + name + "\\s*=\\s*([^;]+)");
@@ -30,6 +31,14 @@ export default function OnboardingPage() {
   const [nickname, setNickname] = useState("");
   const [prog, setProg] = useState(8);
   const [creds, setCreds] = useState<{ username: string; password: string | null } | null>(null);
+  const [forceForm, setForceForm] = useState(false); // "continuar igual" desde el aviso in-app
+  const [copied, setCopied] = useState(false);
+  const inApp = isInAppBrowser();
+
+  const copyLink = async () => {
+    try { await navigator.clipboard.writeText(location.href); setCopied(true); setTimeout(() => setCopied(false), 1600); }
+    catch { /* algunos webviews bloquean el portapapeles */ }
+  };
 
   useEffect(() => {
     if (!code) return;
@@ -98,8 +107,29 @@ export default function OnboardingPage() {
             style={{ boxShadow: "0 0 26px -6px var(--brand-primary, #7c3aed)" }} />
         )}
 
-        {/* --------- PASO: link ya usado --------- */}
-        {branding?.codeActive === false && step === "form" ? (
+        {/* --------- PASO: abrí en tu navegador (webview de FB/IG/TikTok) --------- */}
+        {inApp && !forceForm && step === "form" ? (
+          <>
+            <div className="text-4xl">🌐</div>
+            <h1 className="mt-2 text-xl font-extrabold tracking-tight">Abrí esto en tu navegador</h1>
+            <p className="mt-2 text-sm text-slate-400">
+              Estás dentro de una app (Instagram/Facebook/TikTok). Para crear tu cuenta y que funcione bien,
+              abrilo en Chrome o Safari.
+            </p>
+            <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-3 text-left text-sm text-slate-300">
+              Tocá el menú <b>•••</b> (arriba a la derecha) y elegí <b>“Abrir en el navegador”</b>.
+            </div>
+            <button onClick={() => tryOpenInBrowser()}
+              className="mt-4 w-full rounded-xl py-3.5 text-base font-extrabold text-white transition active:scale-[.98]"
+              style={{ background: primary, boxShadow: "0 12px 30px -10px var(--brand-primary, #7c3aed)" }}>
+              Abrir en el navegador
+            </button>
+            <button onClick={copyLink} className="mt-2 w-full rounded-xl border border-white/15 py-3 text-sm text-slate-200 hover:bg-white/5">
+              {copied ? "✓ ¡Link copiado!" : "Copiar link"}
+            </button>
+            <button onClick={() => setForceForm(true)} className="mt-3 text-xs text-slate-500 underline">Continuar igual acá</button>
+          </>
+        ) : branding?.codeActive === false && step === "form" ? (
           <>
             <h1 className="text-xl font-bold">{name}</h1>
             <div className="mt-4 rounded-xl border border-amber-600/40 bg-amber-900/20 p-4 text-sm text-amber-100">
