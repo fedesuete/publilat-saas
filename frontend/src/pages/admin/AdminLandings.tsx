@@ -44,7 +44,7 @@ export default function AdminLandings() {
   const setFilter = (st: string) => { setStatus(st); void load(q, st); };
 
   return (
-    <div className="p-6">
+    <div className="p-4 md:p-6">
       <h1 className="mb-1 text-xl font-bold">Landings</h1>
       <p className="mb-4 text-sm text-slate-400">Todas las landings de los clientes con su URL, para verificar que funcionan sin entrar a cada panel.</p>
       {error && <div className="mb-3"><ErrorMsg>{error}</ErrorMsg></div>}

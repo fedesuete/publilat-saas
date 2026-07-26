@@ -151,7 +151,7 @@ export default function AdminClients() {
   };
 
   return (
-    <div className="p-6">
+    <div className="p-4 md:p-6">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-xl font-bold">Clientes</h1>
         <Button onClick={() => { setShowCreate((v) => !v); setCreatedCreds(null); }}>

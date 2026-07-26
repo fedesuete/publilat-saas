@@ -35,7 +35,7 @@ export default function AdminLines() {
   };
 
   return (
-    <div className="p-6">
+    <div className="p-4 md:p-6">
       <h1 className="mb-1 text-xl font-bold">Líneas (todas)</h1>
       <p className="mb-4 text-xs text-slate-500">🔥 <b>Calentamiento</b>: rampa anti-ban de líneas nuevas (cupo de envíos que sube con los días). Apagarlo = envíos sin límite (más riesgo de baneo si mandan mucho en frío).</p>
       {error && <div className="mb-3"><ErrorMsg>{error}</ErrorMsg></div>}

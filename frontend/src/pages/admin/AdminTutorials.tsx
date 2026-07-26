@@ -97,7 +97,7 @@ export default function AdminTutorials() {
   };
 
   return (
-    <div className="p-6">
+    <div className="p-4 md:p-6">
       <h1 className="mb-1 text-xl font-bold">Tutoriales</h1>
       <p className="mb-4 text-sm text-slate-400">
         Videos que ven todos los clientes en <span className="text-slate-200">Tutoriales</span>. Dos formas:

@@ -34,11 +34,11 @@ export default function AdminOverview() {
     api.get<Overview>("/api/admin/overview").then(({ data }) => setD(data)).catch((e) => setError(apiError(e)));
   }, []);
 
-  if (error) return <div className="p-6"><ErrorMsg>{error}</ErrorMsg></div>;
+  if (error) return <div className="p-4 md:p-6"><ErrorMsg>{error}</ErrorMsg></div>;
   if (!d) return <div className="p-6 text-slate-400">Cargando…</div>;
 
   return (
-    <div className="p-6">
+    <div className="p-4 md:p-6">
       <h1 className="mb-5 text-xl font-bold">Resumen</h1>
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">

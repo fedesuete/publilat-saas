@@ -28,7 +28,7 @@ export default function AdminExport() {
   };
 
   return (
-    <div className="p-6">
+    <div className="p-4 md:p-6">
       <h1 className="mb-4 text-xl font-bold">Exportar</h1>
       {error && <div className="mb-3"><ErrorMsg>{error}</ErrorMsg></div>}
       <div className="grid gap-4 sm:grid-cols-3">

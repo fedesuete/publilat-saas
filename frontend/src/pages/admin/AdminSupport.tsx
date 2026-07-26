@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { ArrowLeft } from "lucide-react";
 import { api, apiError } from "../../lib/api";
 import { getSocket } from "../../lib/socket";
 import { fmtDate } from "../../lib/format";
@@ -51,8 +52,9 @@ export default function AdminSupport() {
   const current = threads.find((t) => t.userId === sel);
 
   return (
-    <div className="flex h-screen">
-      <div className="flex w-80 flex-col border-r border-slate-800">
+    <div className="flex h-[calc(100dvh-3.25rem)] md:h-screen">
+      {/* Lista: full width en móvil (se oculta al abrir un chat), fija en desktop */}
+      <div className={`${sel ? "hidden md:flex" : "flex"} w-full flex-col border-r border-slate-800 md:w-80`}>
         <div className="border-b border-slate-800 px-4 py-3"><h1 className="font-bold">Soporte</h1><div className="text-xs text-slate-500">{threads.length} conversaciones</div></div>
         {error && <div className="p-3"><ErrorMsg>{error}</ErrorMsg></div>}
         <div className="flex-1 overflow-y-auto">
@@ -64,10 +66,16 @@ export default function AdminSupport() {
           ))}
         </div>
       </div>
-      <div className="flex flex-1 flex-col">
+      {/* Conversación: en móvil solo cuando hay un chat abierto */}
+      <div className={`${sel ? "flex" : "hidden md:flex"} flex-1 flex-col`}>
         {!sel ? <div className="flex flex-1 items-center justify-center text-slate-500">Elegí una conversación.</div> : (
           <>
-            <div className="border-b border-slate-800 px-4 py-3 font-semibold">{current?.name || current?.email || "Conversación"}</div>
+            <div className="flex items-center gap-2 border-b border-slate-800 px-4 py-3 font-semibold">
+              <button onClick={() => setSel(null)} className="-ml-1 rounded p-1 text-slate-400 hover:bg-slate-800 md:hidden" aria-label="Volver">
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+              <span className="truncate">{current?.name || current?.email || "Conversación"}</span>
+            </div>
             <div className="flex-1 space-y-2 overflow-y-auto bg-slate-900/40 p-4">
               {messages.map((m) => (
                 <div key={m.id} className={`flex ${m.fromAdmin ? "justify-end" : "justify-start"}`}>
