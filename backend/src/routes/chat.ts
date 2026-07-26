@@ -23,6 +23,12 @@ export const chatPublicRouter = Router();
 // Código de invitación: 8 chars base64url (crypto), único.
 const newCode = () => crypto.randomBytes(6).toString("base64url"); // 6 bytes -> 8 chars
 
+// Fase A (registro de un tap): el server genera un usuario único (apodo + dígitos) y una clave
+// numérica corta. `crypto.randomInt` da aleatoriedad real; el @@unique(userId,casinoUsername)
+// cubre choques (reintentamos con otros dígitos). Ej: "fede" -> "fede86686" + clave "412907".
+const nickSlug = (s: string) => s.toLowerCase().normalize("NFD").replace(/[^a-z0-9]/g, "").slice(0, 12);
+const randDigits = (n: number) => { let s = ""; for (let i = 0; i < n; i++) s += crypto.randomInt(0, 10); return s; };
+
 // ¿La cuenta tiene al menos una línea de WhatsApp con un DÍA PAGADO VIGENTE (expiresAt futuro)?
 // El Chat App se vende junto con el servicio de líneas. Gateamos por el día pagado y NO por
 // status/connected a propósito: el `status` sigue a la conexión (webhook.ts pone active/inactive
@@ -326,13 +332,13 @@ chatRouter.get("/broadcasts", async (req, res) => {
 
 // Solo estos campos del User son "branding" del Chat App. El PATCH NUNCA toca otra cosa
 // (nada de plan, tokenVersion, líneas de WhatsApp, etc.).
-const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "welcomeText", "welcomeMsgText", "welcomeMsgImage"] as const;
+const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "welcomeText", "welcomeMsgText", "welcomeMsgImage", "chatWaLink"] as const;
 
 // GET /api/chat/branding — branding actual de la cuenta (para poblar el formulario del panel).
 chatRouter.get("/branding", async (req, res) => {
   const acc = await prisma.user.findUnique({
     where: { id: req.userId! },
-    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true },
+    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true },
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   return res.json({ accountSlug: acc.slug, branding: acc, s3: s3Enabled() });
@@ -347,6 +353,7 @@ const brandingSchema = z.object({
   welcomeText: z.string().max(300).nullish(),
   welcomeMsgText: z.string().max(1000).nullish(),
   welcomeMsgImage: z.string().url().max(600).nullish(),
+  chatWaLink: z.string().max(300).nullish(), // link o número de WhatsApp para el CTA del registro
 });
 
 // PATCH /api/chat/branding — actualiza SOLO los campos de branding del User del token.
@@ -363,7 +370,7 @@ chatRouter.patch("/branding", async (req, res) => {
   const acc = await prisma.user.update({
     where: { id: req.userId! },
     data,
-    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true },
+    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true },
   });
   return res.json({ branding: acc });
 });
@@ -572,7 +579,7 @@ chatPublicRouter.get("/branding/:code", async (req, res) => {
   if (!invite) return res.status(404).json({ error: "Link inválido" });
   const acc = await prisma.user.findUnique({
     where: { id: invite.userId },
-    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true },
+    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, chatWaLink: true },
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   return res.json({
@@ -584,23 +591,29 @@ chatPublicRouter.get("/branding/:code", async (req, res) => {
       primaryColor: acc.primaryColor,
       accentColor: acc.accentColor,
       welcomeText: acc.welcomeText,
+      chatWaLink: acc.chatWaLink,
     },
   });
 });
 
 const registerSchema = z.object({
   code: z.string().min(4).max(40),
-  username: z.string().min(2).max(40),
+  username: z.string().min(2).max(40).optional(),  // modo clásico: usuario elegido (passwordless)
+  nickname: z.string().max(40).optional(),         // modo un-tap: nombre visible (semilla del usuario)
+  autogenerate: z.boolean().optional(),            // true = el server genera usuario + clave
   fbclid: z.string().max(400).optional(),
   fbp: z.string().max(200).optional(),
   fbc: z.string().max(200).optional(),
 });
 
-// POST /api/chat/register — registro passwordless por link single-use.
+// POST /api/chat/register — registro por link single-use. Dos modos:
+//  - clásico: `username` elegido, passwordless (login sin clave). Como siempre.
+//  - un-tap (autogenerate:true): el server genera usuario (apodo + dígitos) y una clave numérica,
+//    los guarda y los DEVUELVE para mostrarlos ("¡Cuenta creada!"). Reintenta si el usuario choca.
 chatPublicRouter.post("/register", async (req, res) => {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
-  const { code, username, fbclid, fbp, fbc } = parsed.data;
+  const { code, autogenerate, fbclid, fbp, fbc } = parsed.data;
 
   const invite = await prisma.inviteCode.findUnique({ where: { code } });
   if (!invite || !invite.isActive) {
@@ -609,23 +622,49 @@ chatPublicRouter.post("/register", async (req, res) => {
   }
 
   // Crear el jugador PRIMERO (así, si el usuario está tomado, el link NO se cierra y puede
-  // reintentar con otro nombre). El unique (userId, casinoUsername) + P2002 cubre la carrera.
-  let player;
-  try {
-    player = await prisma.chatPlayer.create({
-      data: {
-        userId: invite.userId,
-        casinoUsername: username.trim(),
-        invitedByUserId: invite.operatorId,
-        inviteCodeId: invite.id,
-      },
-      select: { id: true, casinoUsername: true },
-    });
-  } catch (e) {
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      return res.status(409).json({ error: "Ese usuario ya está registrado. Elegí otro o iniciá sesión.", code: "USERNAME_TAKEN" });
+  // reintentar). El unique (userId, casinoUsername) + P2002 cubre la carrera.
+  let player: { id: string; casinoUsername: string } | undefined;
+  let plainPassword: string | null = null;
+
+  if (autogenerate) {
+    const base = nickSlug(parsed.data.nickname ?? "") || "user";
+    const nombre = (parsed.data.nickname ?? "").trim() || null;
+    plainPassword = randDigits(6);
+    const hash = await hashPassword(plainPassword);
+    for (let i = 0; i < 8 && !player; i++) {
+      try {
+        player = await prisma.chatPlayer.create({
+          data: {
+            userId: invite.userId,
+            casinoUsername: `${base}${randDigits(5)}`,
+            password: hash,
+            nombre,
+            invitedByUserId: invite.operatorId,
+            inviteCodeId: invite.id,
+            estatus: "active",
+          },
+          select: { id: true, casinoUsername: true },
+        });
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") continue; // usuario chocó -> reintenta
+        throw e;
+      }
     }
-    throw e;
+    if (!player) return res.status(500).json({ error: "No se pudo generar tu usuario, probá de nuevo." });
+  } else {
+    const username = (parsed.data.username ?? "").trim();
+    if (username.length < 2) return res.status(400).json({ error: "Elegí un usuario." });
+    try {
+      player = await prisma.chatPlayer.create({
+        data: { userId: invite.userId, casinoUsername: username, invitedByUserId: invite.operatorId, inviteCodeId: invite.id },
+        select: { id: true, casinoUsername: true },
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        return res.status(409).json({ error: "Ese usuario ya está registrado. Elegí otro o iniciá sesión.", code: "USERNAME_TAKEN" });
+      }
+      throw e;
+    }
   }
 
   // Cerramos el link de forma ATÓMICA (single-use): solo seguimos si NOSOTROS lo cerramos
@@ -667,7 +706,8 @@ chatPublicRouter.post("/register", async (req, res) => {
   if (fbclid || fbc) void fireChatLead(invite.userId, player.id, { fbclid, fbp, fbc });
 
   const token = signChatClientToken(invite.userId, player.id);
-  return res.status(201).json({ token, player, conversationId: conv.id });
+  // `password` + `username`: solo en modo un-tap (plainPassword != null) para mostrar "¡Cuenta creada!".
+  return res.status(201).json({ token, player, conversationId: conv.id, username: player.casinoUsername, password: plainPassword });
 });
 
 const loginSchema = z.object({
@@ -738,7 +778,7 @@ chatPublicRouter.post("/login", async (req, res) => {
 chatPublicRouter.get("/public/:slug", async (req, res) => {
   const acc = await prisma.user.findUnique({
     where: { slug: req.params.slug },
-    select: { id: true, slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true },
+    select: { id: true, slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, chatWaLink: true },
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   return res.json({
@@ -746,7 +786,7 @@ chatPublicRouter.get("/public/:slug", async (req, res) => {
     active: await hasActiveWaLine(acc.id),
     branding: {
       brandName: acc.brandName, logoUrl: acc.logoUrl,
-      primaryColor: acc.primaryColor, accentColor: acc.accentColor, welcomeText: acc.welcomeText,
+      primaryColor: acc.primaryColor, accentColor: acc.accentColor, welcomeText: acc.welcomeText, chatWaLink: acc.chatWaLink,
     },
   });
 });

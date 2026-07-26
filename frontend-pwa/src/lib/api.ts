@@ -33,6 +33,7 @@ export interface Branding {
   primaryColor: string | null;
   accentColor: string | null;
   welcomeText: string | null;
+  chatWaLink?: string | null; // CTA "Escribinos por WhatsApp" (registro un-tap)
 }
 
 export function saveBranding(accountSlug: string, b: Branding) {

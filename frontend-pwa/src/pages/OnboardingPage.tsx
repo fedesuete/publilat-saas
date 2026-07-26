@@ -7,14 +7,29 @@ function cookie(name: string): string {
   return m ? decodeURIComponent(m.pop()!) : "";
 }
 
+// Normaliza el CTA de WhatsApp: acepta un link completo (https://wa.me/...) o un número suelto.
+function waHref(v?: string | null): string | null {
+  if (!v) return null;
+  const t = v.trim();
+  if (/^https?:\/\//i.test(t)) return t;
+  const digits = t.replace(/[^0-9]/g, "");
+  return digits ? `https://wa.me/${digits}` : null;
+}
+
+type Step = "form" | "creating" | "done";
+type BrandingFull = Branding & { accountSlug: string; codeActive: boolean };
+
 export default function OnboardingPage() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
-  const [branding, setBranding] = useState<(Branding & { accountSlug: string; codeActive: boolean }) | null>(null);
+  const [branding, setBranding] = useState<BrandingFull | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [username, setUsername] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+
+  const [step, setStep] = useState<Step>("form");
+  const [nickname, setNickname] = useState("");
+  const [prog, setProg] = useState(8);
+  const [creds, setCreds] = useState<{ username: string; password: string | null } | null>(null);
 
   useEffect(() => {
     if (!code) return;
@@ -29,27 +44,38 @@ export default function OnboardingPage() {
       .finally(() => setLoading(false));
   }, [code]);
 
-  // Registrarse es la PRIMERA acción: al entrar queda la sesión y, ya en el chat, se ofrece
-  // instalar la app. Así, cuando abran la app instalada, entran directo al chat (no al login).
-  const register = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!username.trim() || !code) return;
-    setSubmitting(true); setError(null);
+  // Barra de progreso de "Preparando tu acceso…": crece al entrar al paso.
+  useEffect(() => {
+    if (step !== "creating") return;
+    setProg(8);
+    const t = setTimeout(() => setProg(92), 60);
+    return () => clearTimeout(t);
+  }, [step]);
+
+  // UN TAP: el server genera usuario + clave y los devuelve. Dejamos ver ~1s el "preparando".
+  const register = async (e?: FormEvent) => {
+    e?.preventDefault();
+    if (!code) return;
+    setStep("creating"); setError(null);
+    const params = new URLSearchParams(location.search);
     try {
-      const params = new URLSearchParams(location.search);
-      const { data } = await api.post("/api/chat/register", {
-        code,
-        username: username.trim(),
-        fbclid: params.get("fbclid") || undefined,
-        fbp: cookie("_fbp") || undefined,
-        fbc: cookie("_fbc") || undefined,
-      });
+      const [{ data }] = await Promise.all([
+        api.post("/api/chat/register", {
+          code,
+          nickname: nickname.trim() || undefined,
+          autogenerate: true,
+          fbclid: params.get("fbclid") || undefined,
+          fbp: cookie("_fbp") || undefined,
+          fbc: cookie("_fbc") || undefined,
+        }),
+        new Promise((r) => setTimeout(r, 1000)),
+      ]);
       setToken(data.token);
-      navigate("/chat", { replace: true });
-    } catch (e) {
-      setError(apiError(e));
-    } finally {
-      setSubmitting(false);
+      setCreds({ username: data.username, password: data.password ?? null });
+      setStep("done");
+    } catch (err) {
+      setError(apiError(err));
+      setStep("form");
     }
   };
 
@@ -57,30 +83,103 @@ export default function OnboardingPage() {
   if (error && !branding) return <Center><span className="text-rose-400">{error}</span></Center>;
 
   const name = branding?.brandName || "Chat";
+  const wa = waHref(branding?.chatWaLink);
+  const primary = "var(--brand-primary, #7c3aed)";
+  const accent = "var(--brand-accent, #c084fc)";
 
   return (
-    <div className="mx-auto flex min-h-full max-w-md flex-col items-center justify-center p-6 text-center">
-      {branding?.logoUrl && <img src={branding.logoUrl} alt={name} className="mb-4 h-20 w-20 rounded-2xl object-cover" />}
-      <h1 className="text-2xl font-bold">{name}</h1>
-      {branding?.welcomeText && <p className="mt-2 text-sm text-slate-400">{branding.welcomeText}</p>}
+    <div className="mx-auto flex min-h-full max-w-md flex-col items-center justify-center p-5">
+      <div
+        className="w-full rounded-3xl border border-white/10 bg-black/40 p-6 text-center shadow-2xl backdrop-blur"
+        style={{ boxShadow: "0 0 70px -24px var(--brand-primary, #7c3aed)" }}
+      >
+        {branding?.logoUrl && (
+          <img src={branding.logoUrl} alt={name} className="mx-auto mb-4 h-20 w-20 rounded-2xl object-cover"
+            style={{ boxShadow: "0 0 26px -6px var(--brand-primary, #7c3aed)" }} />
+        )}
 
-      {branding?.codeActive === false ? (
-        <div className="mt-6 w-full rounded-xl border border-amber-700 bg-amber-900/30 p-4 text-sm text-amber-100">
-          Este link ya fue usado. Si ya te habías registrado, <a href="/login" className="underline">iniciá sesión</a>.
-        </div>
-      ) : (
-        <form onSubmit={register} className="mt-6 w-full space-y-3">
-          <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Elegí tu usuario"
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-center outline-none" />
-          {error && <div className="text-sm text-rose-400">{error}</div>}
-          <button type="submit" disabled={submitting || !username.trim()}
-            className="w-full rounded-full py-3 font-semibold text-slate-900 disabled:opacity-50" style={{ background: "var(--brand-primary)" }}>
-            {submitting ? "Entrando…" : "Empezar a chatear"}
-          </button>
-          <p className="text-xs text-slate-600">Después de entrar vas a poder instalar la app para recibir avisos.</p>
-        </form>
+        {/* --------- PASO: link ya usado --------- */}
+        {branding?.codeActive === false && step === "form" ? (
+          <>
+            <h1 className="text-xl font-bold">{name}</h1>
+            <div className="mt-4 rounded-xl border border-amber-600/40 bg-amber-900/20 p-4 text-sm text-amber-100">
+              Este link ya fue usado. Si ya te habías registrado, <a href="/login" className="underline">iniciá sesión</a>.
+            </div>
+          </>
+        ) : step === "done" && creds ? (
+          /* --------- PASO: cuenta creada --------- */
+          <>
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500 text-3xl font-bold text-white"
+              style={{ boxShadow: "0 0 30px -4px #22c55e" }}>✓</div>
+            <h1 className="text-2xl font-extrabold tracking-tight">¡CUENTA CREADA!</h1>
+            <div className="mt-5 space-y-2">
+              <Field label="USUARIO" value={creds.username} />
+              {creds.password && <Field label="CLAVE" value={creds.password} />}
+            </div>
+            <button onClick={() => navigate("/chat", { replace: true })}
+              className="mt-5 w-full rounded-xl py-3.5 text-base font-extrabold text-white transition active:scale-[.98]"
+              style={{ background: "#22c55e", boxShadow: "0 12px 30px -10px #22c55e" }}>
+              JUGAR YA!
+            </button>
+            <p className="mt-3 text-xs text-slate-500">Guardá tus datos para volver a entrar cuando quieras.</p>
+            {wa && (
+              <a href={wa} target="_blank" rel="noopener noreferrer"
+                className="mt-3 inline-flex items-center gap-1 text-sm text-slate-400 underline">
+                💬 Escribinos por WhatsApp
+              </a>
+            )}
+          </>
+        ) : step === "creating" ? (
+          /* --------- PASO: preparando --------- */
+          <>
+            <h1 className="text-2xl font-extrabold tracking-tight">
+              Creá tu <span style={{ color: accent }}>cuenta gratis</span>
+            </h1>
+            {nickname.trim() && (
+              <div className="mt-5 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left text-base">{nickname.trim()}</div>
+            )}
+            <div className="mt-5 h-2 w-full overflow-hidden rounded-full bg-white/10">
+              <div className="h-full rounded-full transition-[width] duration-[900ms] ease-out"
+                style={{ width: `${prog}%`, background: primary }} />
+            </div>
+            <p className="mt-3 text-sm text-slate-400">Preparando tu acceso…</p>
+          </>
+        ) : (
+          /* --------- PASO: formulario (un tap) --------- */
+          <form onSubmit={register}>
+            <h1 className="text-2xl font-extrabold tracking-tight">
+              Creá tu <span style={{ color: accent }}>cuenta gratis</span>
+            </h1>
+            <p className="mt-1 text-sm text-slate-400">{branding?.welcomeText || "Estamos Online 24hs!"}</p>
+
+            <input value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="Ej: Martín"
+              autoFocus
+              className="mt-5 w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3.5 text-center text-base outline-none focus:border-white/40" />
+            {error && <div className="mt-2 text-sm text-rose-400">{error}</div>}
+
+            <button type="submit"
+              className="mt-3 w-full rounded-xl py-3.5 text-base font-extrabold text-white transition active:scale-[.98]"
+              style={{ background: primary, boxShadow: "0 12px 30px -10px var(--brand-primary, #7c3aed)" }}>
+              CREAR MI CUENTA
+            </button>
+
+            <p className="mt-4 text-xs text-slate-500">🔒 registro seguro · sin tarjeta · gratis</p>
+          </form>
+        )}
+      </div>
+
+      {step !== "done" && (
+        <a href="/login" className="mt-4 text-xs text-slate-500 underline">Ya tengo cuenta</a>
       )}
-      <a href="/login" className="mt-4 text-xs text-slate-500 underline">Ya tengo cuenta</a>
+    </div>
+  );
+}
+
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+      <span className="ml-auto text-lg font-bold">{value}</span>
     </div>
   );
 }

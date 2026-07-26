@@ -49,6 +49,7 @@ model User {
   welcomeText     String?   // texto de bienvenida en la PWA
   welcomeMsgText  String?   // primer mensaje automático de la conversación
   welcomeMsgImage String?
+  chatWaLink      String?   // link wa.me para el CTA "Escribinos por WhatsApp" (registro un-tap)
   // Popup/promo que ve el jugador al entrar a la PWA (imagen + texto + link). popupUpdatedAt
   // versiona el aviso: el jugador lo ve de nuevo cada vez que cambia (dedupe en el cliente).
   popupActive     Boolean   @default(false)
