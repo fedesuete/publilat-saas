@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { LayoutDashboard, Users, Phone, LayoutTemplate, DollarSign, Gift, LifeBuoy, Download, GraduationCap, ArrowLeft, Menu, X, type LucideIcon } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { Button } from "./ui";
+import InstallPWA from "./InstallPWA";
 
 const NAV: Array<{ to: string; label: string; icon: LucideIcon; end?: boolean }> = [
   { to: "/admin", label: "Resumen", icon: LayoutDashboard, end: true },
@@ -61,6 +62,7 @@ export default function AdminLayout() {
             </NavLink>
           ))}
         </nav>
+        <InstallPWA />
         <div className="border-t border-slate-800 p-4 text-xs text-slate-400">
           <button
             onClick={() => { setOpen(false); navigate("/dashboard"); }}
