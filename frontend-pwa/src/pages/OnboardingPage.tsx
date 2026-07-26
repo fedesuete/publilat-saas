@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, apiError, setToken, saveBranding, applyBranding, type Branding } from "../lib/api";
 import { isInAppBrowser, tryOpenInBrowser } from "../lib/inapp";
+import { fireMetaPixel } from "../lib/pixel";
 
 function cookie(name: string): string {
   const m = document.cookie.match("(^|;)\\s*" + name + "\\s*=\\s*([^;]+)");
@@ -80,6 +81,8 @@ export default function OnboardingPage() {
         new Promise((r) => setTimeout(r, 1000)),
       ]);
       setToken(data.token);
+      // Pixel del navegador (además de la CAPI del server), deduplicado por eventId. Best-effort.
+      if (data.pixel) fireMetaPixel(data.pixel, "CompleteRegistration", { eventId: data.eventId, externalId: data.username });
       setCreds({ username: data.username, password: data.password ?? null });
       setStep("done");
     } catch (err) {

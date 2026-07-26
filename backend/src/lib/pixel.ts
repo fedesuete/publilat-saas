@@ -11,7 +11,7 @@ export interface ResolvedPixel {
 
 export async function resolveUserPixel(
   userId: string,
-  eventName: "Lead" | "Purchase"
+  eventName: "Lead" | "Purchase" | "CompleteRegistration"
 ): Promise<ResolvedPixel | undefined> {
   const pixel =
     (await prisma.pixel.findFirst({ where: { userId, eventType: eventName } })) ??

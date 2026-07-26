@@ -117,6 +117,33 @@ async function fireChatLead(userId: string, playerId: string, at: { fbclid?: str
   }
 }
 
+// Fase C — CompleteRegistration por CAPI al crearse la cuenta (registro de un tap). external_id =
+// el USUARIO generado, MISMO id que usará el Purchase de la carga (Fase E) → Meta matchea registro
+// con compra. `eventId` dedup con el pixel del navegador (que dispara la PWA con el mismo id).
+// Recibe los creds ya resueltos (para no volver a pegarle a la DB). Best-effort.
+async function fireChatRegistration(
+  creds: { pixelId: string; capiToken: string } | undefined,
+  username: string,
+  eventId: string,
+  at: { fbclid?: string; fbp?: string; fbc?: string },
+) {
+  try {
+    const fbc = at.fbc ?? (at.fbclid ? `fb.1.${Date.now()}.${at.fbclid}` : undefined);
+    await sendCapiEvent({
+      eventName: "CompleteRegistration",
+      externalId: username,
+      eventId,
+      fbp: at.fbp,
+      fbc,
+      actionSource: "chat",
+      pixelId: creds?.pixelId,
+      capiToken: creds?.capiToken,
+    });
+  } catch (e) {
+    console.error("[chat] CompleteRegistration CAPI falló:", e instanceof Error ? e.message : String(e));
+  }
+}
+
 // ============================ OPERADOR (requireAuth) ============================
 
 // GET /api/chat/invites — links del operador (su cuenta).
@@ -702,12 +729,27 @@ chatPublicRouter.post("/register", async (req, res) => {
     });
   }
 
-  // Lead por CAPI si vino de un anuncio (fbclid). Best-effort, no bloquea el registro.
-  if (fbclid || fbc) void fireChatLead(invite.userId, player.id, { fbclid, fbp, fbc });
+  // CAPI del registro (best-effort, no bloquea). Un-tap: CompleteRegistration con external_id =
+  // usuario (matchea el Purchase de la carga, Fase E). Clásico: Lead con external_id = playerId.
+  let regPixel: string | null = null;
+  let regEventId: string | null = null;
+  if (autogenerate) {
+    regEventId = `${player.casinoUsername}:register`;
+    const creds = await resolveUserPixel(invite.userId, "CompleteRegistration");
+    regPixel = creds?.pixelId ?? null;
+    void fireChatRegistration(creds, player.casinoUsername, regEventId, { fbclid, fbp, fbc });
+  } else if (fbclid || fbc) {
+    void fireChatLead(invite.userId, player.id, { fbclid, fbp, fbc });
+  }
 
   const token = signChatClientToken(invite.userId, player.id);
-  // `password` + `username`: solo en modo un-tap (plainPassword != null) para mostrar "¡Cuenta creada!".
-  return res.status(201).json({ token, player, conversationId: conv.id, username: player.casinoUsername, password: plainPassword });
+  // `password` + `username`: solo en modo un-tap. `pixel` + `eventId`: para que la PWA dispare el
+  // MISMO evento por el pixel del navegador (dedup con la CAPI por eventId).
+  return res.status(201).json({
+    token, player, conversationId: conv.id,
+    username: player.casinoUsername, password: plainPassword,
+    pixel: regPixel, eventId: regEventId,
+  });
 });
 
 const loginSchema = z.object({
