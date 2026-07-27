@@ -974,11 +974,12 @@ chatPublicRouter.get("/me/wallet", requireChatClient, async (req, res) => {
     update: {},
     select: { balance: true, currency: true },
   });
-  const [deposits, withdrawals] = await Promise.all([
+  const [deposits, withdrawals, acc] = await Promise.all([
     prisma.chatDeposit.findMany({ where: { playerId: req.chatPlayerId! }, orderBy: { createdAt: "desc" }, take: 20, select: { id: true, amount: true, method: true, status: true, createdAt: true } }),
     prisma.chatWithdrawal.findMany({ where: { playerId: req.chatPlayerId! }, orderBy: { createdAt: "desc" }, take: 20, select: { id: true, amount: true, destino: true, status: true, createdAt: true } }),
+    prisma.user.findUnique({ where: { id: req.accountId! }, select: { botPaymentInfo: true } }),
   ]);
-  return res.json({ balance: wallet.balance, currency: wallet.currency, minDeposit: MIN_DEPOSIT, minWithdrawal: MIN_WITHDRAWAL, deposits, withdrawals });
+  return res.json({ balance: wallet.balance, currency: wallet.currency, minDeposit: MIN_DEPOSIT, minWithdrawal: MIN_WITHDRAWAL, paymentInfo: acc?.botPaymentInfo ?? null, deposits, withdrawals });
 });
 
 const depositSchema = z.object({

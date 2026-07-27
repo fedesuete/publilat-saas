@@ -31,7 +31,7 @@ function appendUnique(list: Msg[], m: Msg): Msg[] {
 }
 
 export default function ChatAppPage() {
-  const [tab, setTab] = useState<"chats" | "invites" | "brand" | "avisos" | "bot">("chats");
+  const [tab, setTab] = useState<"chats" | "invites" | "brand" | "avisos" | "bot" | "cajero">("chats");
   const [convs, setConvs] = useState<Conv[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -118,6 +118,7 @@ export default function ChatAppPage() {
           <button id="ca-tab-brand" onClick={() => setTab("brand")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "brand" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Marca</button>
           <button id="ca-tab-avisos" onClick={() => setTab("avisos")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "avisos" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Avisos</button>
           <button id="ca-tab-bot" onClick={() => setTab("bot")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "bot" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>🤖 Bot</button>
+          <button id="ca-tab-cajero" onClick={() => setTab("cajero")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "cajero" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>💰 Cajero</button>
         </div>
       </div>
 
@@ -187,8 +188,10 @@ export default function ChatAppPage() {
         <BrandingTab />
       ) : tab === "avisos" ? (
         <AvisosTab />
-      ) : (
+      ) : tab === "bot" ? (
         <BotTab />
+      ) : (
+        <CajeroTab />
       )}
 
       {tour && <OnboardingTour steps={CHATAPP_TOUR} onClose={() => setTour(false)} />}
@@ -757,6 +760,105 @@ function BotTab() {
             <Button variant="secondary" className="shrink-0" onClick={() => { void navigator.clipboard.writeText(link); setCopied(true); window.setTimeout(() => setCopied(false), 1500); }}>{copied ? "✓ Copiado" : "Copiar"}</Button>
           </div>
         </Card>
+      )}
+    </div>
+  );
+}
+
+// Sección "Cajero": el operador ve las cargas/retiros pendientes y los aprueba/rechaza. Aprobar una
+// carga ACREDITA al jugador y dispara el Purchase (solo acá). Se actualiza en vivo por el socket /chat.
+interface CashierDeposit { id: string; player: string; amount: number; method: string; hasComprobante: boolean; createdAt: string; }
+interface CashierWithdrawal { id: string; player: string; amount: number; destino: string; createdAt: string; }
+
+function CajeroTab() {
+  const [deposits, setDeposits] = useState<CashierDeposit[]>([]);
+  const [withdrawals, setWithdrawals] = useState<CashierWithdrawal[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [viewImg, setViewImg] = useState<string | null>(null);
+  const money = (n: number) => "$" + n.toLocaleString("es-AR");
+
+  const load = async () => {
+    try {
+      const { data } = await api.get<{ deposits: CashierDeposit[]; withdrawals: CashierWithdrawal[] }>("/api/chat/cashier");
+      setDeposits(data.deposits); setWithdrawals(data.withdrawals);
+    } catch (e) { setError(apiError(e)); } finally { setLoading(false); }
+  };
+  useEffect(() => { void load(); }, []);
+  // Vivo: al entrar una carga/retiro nuevo, recargamos.
+  useEffect(() => {
+    const socket: Socket = io(`${API_BASE}/chat`, { withCredentials: true });
+    socket.on("chat:cashier", () => void load());
+    return () => { socket.off("chat:cashier"); socket.disconnect(); };
+  }, []);
+
+  const act = async (kind: "deposit" | "withdrawal", id: string, action: "approve" | "reject") => {
+    if (action === "approve" && kind === "deposit" && !confirm("¿Confirmás que la plata entró de verdad? Se va a acreditar al jugador.")) return;
+    setBusy(id); setError(null);
+    try { await api.post(`/api/chat/cashier/${kind}/${id}/${action}`); await load(); }
+    catch (e) { setError(apiError(e)); } finally { setBusy(null); }
+  };
+
+  if (loading) return <Card><p className="text-sm text-slate-500">Cargando…</p></Card>;
+
+  return (
+    <div className="space-y-6">
+      {error && <ErrorMsg>{error}</ErrorMsg>}
+
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">🧾 Cargas pendientes ({deposits.length})</h2>
+          <Button variant="ghost" onClick={() => void load()}>Actualizar</Button>
+        </div>
+        {deposits.length === 0 ? (
+          <Card><p className="text-sm text-slate-500">No hay cargas pendientes.</p></Card>
+        ) : (
+          <div className="space-y-2">
+            {deposits.map((d) => (
+              <Card key={d.id} className="flex flex-wrap items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-slate-100">{d.player} · <span className="text-wa-green">{money(d.amount)}</span></div>
+                  <div className="text-xs text-slate-500">{d.method} · {fmtDate(d.createdAt)}</div>
+                </div>
+                {d.hasComprobante && (
+                  <button onClick={() => setViewImg(`${API_BASE}/api/chat/cashier/deposit/${d.id}/comprobante`)} className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800">Ver comprobante</button>
+                )}
+                <button disabled={busy === d.id} onClick={() => void act("deposit", d.id, "approve")} className="rounded-md bg-wa-green px-3 py-1.5 text-xs font-semibold text-slate-900 hover:brightness-95 disabled:opacity-50">✓ Acreditar</button>
+                <button disabled={busy === d.id} onClick={() => void act("deposit", d.id, "reject")} className="rounded-md border border-rose-500/40 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-500/10 disabled:opacity-50">Rechazar</button>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">🏧 Retiros pendientes ({withdrawals.length})</h2>
+        {withdrawals.length === 0 ? (
+          <Card><p className="text-sm text-slate-500">No hay retiros pendientes.</p></Card>
+        ) : (
+          <div className="space-y-2">
+            {withdrawals.map((w) => (
+              <Card key={w.id} className="flex flex-wrap items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-slate-100">{w.player} · <span className="text-amber-300">{money(w.amount)}</span></div>
+                  <div className="break-all text-xs text-slate-500">a {w.destino} · {fmtDate(w.createdAt)}</div>
+                </div>
+                <button disabled={busy === w.id} onClick={() => void act("withdrawal", w.id, "approve")} className="rounded-md bg-wa-green px-3 py-1.5 text-xs font-semibold text-slate-900 hover:brightness-95 disabled:opacity-50">✓ Marcar pagado</button>
+                <button disabled={busy === w.id} onClick={() => void act("withdrawal", w.id, "reject")} className="rounded-md border border-rose-500/40 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-500/10 disabled:opacity-50">Rechazar</button>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <p className="text-xs text-slate-600">💡 Acreditá una carga SOLO después de confirmar que la plata entró de verdad. Al acreditar se suma al saldo del jugador y se registra la venta (Purchase) en tu pixel.</p>
+
+      {viewImg && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4" onClick={() => setViewImg(null)}>
+          <img src={viewImg} alt="comprobante" className="max-h-[90vh] max-w-full rounded-lg" onClick={(e) => e.stopPropagation()} />
+          <button onClick={() => setViewImg(null)} className="absolute right-4 top-4 text-3xl text-white">✕</button>
+        </div>
       )}
     </div>
   );
