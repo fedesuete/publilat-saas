@@ -782,6 +782,17 @@ function CajeroTab() {
   const [viewImg, setViewImg] = useState<string | null>(null);
   const money = (n: number) => "$" + n.toLocaleString("es-AR");
 
+  // Baja el comprobante por axios (manda la cookie del operador) y lo muestra como object URL.
+  // Más robusto que un <img src> directo (que depende de la cookie en la request de imagen).
+  const verComprobante = async (id: string) => {
+    setError(null);
+    try {
+      const { data } = await api.get(`/api/chat/cashier/deposit/${id}/comprobante`, { responseType: "blob" });
+      setViewImg(URL.createObjectURL(data as Blob));
+    } catch (e) { setError(apiError(e)); }
+  };
+  const closeImg = () => { if (viewImg) URL.revokeObjectURL(viewImg); setViewImg(null); };
+
   const load = async () => {
     try {
       const { data } = await api.get<{ deposits: CashierDeposit[]; withdrawals: CashierWithdrawal[] }>("/api/chat/cashier");
@@ -825,7 +836,7 @@ function CajeroTab() {
                   <div className="text-xs text-slate-500">{d.method} · {fmtDate(d.createdAt)}</div>
                 </div>
                 {d.hasComprobante && (
-                  <button onClick={() => setViewImg(`${API_BASE}/api/chat/cashier/deposit/${d.id}/comprobante`)} className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800">Ver comprobante</button>
+                  <button onClick={() => void verComprobante(d.id)} className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800">Ver comprobante</button>
                 )}
                 <button disabled={busy === d.id} onClick={() => void act("deposit", d.id, "approve")} className="rounded-md bg-wa-green px-3 py-1.5 text-xs font-semibold text-slate-900 hover:brightness-95 disabled:opacity-50">✓ Acreditar</button>
                 <button disabled={busy === d.id} onClick={() => void act("deposit", d.id, "reject")} className="rounded-md border border-rose-500/40 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-500/10 disabled:opacity-50">Rechazar</button>
@@ -858,9 +869,9 @@ function CajeroTab() {
       <p className="text-xs text-slate-600">💡 Acreditá una carga SOLO después de confirmar que la plata entró de verdad. Al acreditar se suma al saldo del jugador y se registra la venta (Purchase) en tu pixel.</p>
 
       {viewImg && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4" onClick={() => setViewImg(null)}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4" onClick={closeImg}>
           <img src={viewImg} alt="comprobante" className="max-h-[90vh] max-w-full rounded-lg" onClick={(e) => e.stopPropagation()} />
-          <button onClick={() => setViewImg(null)} className="absolute right-4 top-4 text-3xl text-white">✕</button>
+          <button onClick={closeImg} className="absolute right-4 top-4 text-3xl text-white">✕</button>
         </div>
       )}
     </div>
