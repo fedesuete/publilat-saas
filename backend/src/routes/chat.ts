@@ -933,3 +933,187 @@ chatPublicRouter.post("/start", async (req, res) => {
   const token = signChatClientToken(acc.id, player.id);
   return res.status(player ? 200 : 201).json({ token, player, conversationId });
 });
+
+// ============================ CAJERO SELF-SERVICE (Fase E) ============================
+// REGLA DURA: la acreditación al wallet la habilita SOLO el operador aprobando, o un webhook de
+// gateway REAL. NUNCA por la imagen del comprobante. El Purchase CAPI se dispara SOLO al acreditar.
+const MIN_DEPOSIT = 2000;      // carga mínima ARS
+const MIN_WITHDRAWAL = 5000;   // retiro mínimo ARS
+const ars = (n: number) => `$${n.toLocaleString("es-AR")}`;
+
+// Purchase por CAPI al ACREDITAR una carga. external_id = usuario (matchea el CompleteRegistration
+// de Fase C → cierra el loop registro↔compra). eventId por depósito (dedup). Best-effort.
+async function firePlayerPurchase(userId: string, username: string, amount: number, currency: string, depositId: string) {
+  try {
+    const creds = await resolveUserPixel(userId, "Purchase");
+    await sendCapiEvent({
+      eventName: "Purchase", externalId: username, eventId: `${depositId}:purchase`,
+      value: amount, currency, actionSource: "chat", pixelId: creds?.pixelId, capiToken: creds?.capiToken,
+    });
+  } catch (e) { console.error("[chat] Purchase CAPI (carga) falló:", e instanceof Error ? e.message : String(e)); }
+}
+
+// Deja un mensaje del sistema en la conversación del jugador (aviso de carga/retiro) + emite en vivo.
+async function postCashierMsg(userId: string, playerId: string, body: string) {
+  const conv = await prisma.chatConversation.findFirst({ where: { userId, playerId }, select: { id: true } });
+  if (!conv) return;
+  const msg = await prisma.chatMessage.create({ data: { userId, conversationId: conv.id, senderType: "system", body }, select: { id: true, senderType: true, body: true, createdAt: true } });
+  await prisma.chatConversation.update({ where: { id: conv.id }, data: { lastMessageAt: new Date(), lastMessagePreview: body.slice(0, 120), unreadPlayer: { increment: 1 } } });
+  const payload = { conversationId: conv.id, message: msg };
+  emitChat(`chat:${userId}:player:${playerId}`, "chat:message", payload);
+  emitChat(`chat:${userId}`, "chat:message", payload);
+}
+
+// ---- JUGADOR (requireChatClient) ----
+
+// GET /api/chat/me/wallet — saldo + historial de cargas/retiros.
+chatPublicRouter.get("/me/wallet", requireChatClient, async (req, res) => {
+  const wallet = await prisma.chatWallet.upsert({
+    where: { playerId: req.chatPlayerId! },
+    create: { userId: req.accountId!, playerId: req.chatPlayerId!, balance: 0 },
+    update: {},
+    select: { balance: true, currency: true },
+  });
+  const [deposits, withdrawals] = await Promise.all([
+    prisma.chatDeposit.findMany({ where: { playerId: req.chatPlayerId! }, orderBy: { createdAt: "desc" }, take: 20, select: { id: true, amount: true, method: true, status: true, createdAt: true } }),
+    prisma.chatWithdrawal.findMany({ where: { playerId: req.chatPlayerId! }, orderBy: { createdAt: "desc" }, take: 20, select: { id: true, amount: true, destino: true, status: true, createdAt: true } }),
+  ]);
+  return res.json({ balance: wallet.balance, currency: wallet.currency, minDeposit: MIN_DEPOSIT, minWithdrawal: MIN_WITHDRAWAL, deposits, withdrawals });
+});
+
+const depositSchema = z.object({
+  amount: z.number().int().positive(),
+  method: z.string().min(1).max(60),
+  comprobante: z.string().regex(/^data:image\/(png|jpeg|jpg|webp);base64,/, "Imagen inválida").optional(),
+});
+
+// POST /api/chat/me/deposit — el jugador informa una carga (queda PENDING; NO acredita nada).
+chatPublicRouter.post("/me/deposit", requireChatClient, async (req, res) => {
+  const parsed = depositSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
+  if (parsed.data.amount < MIN_DEPOSIT) return res.status(400).json({ error: `La carga mínima es ${ars(MIN_DEPOSIT)}.` });
+  let comprobanteType: string | null = null, comprobanteData: Buffer | null = null;
+  if (parsed.data.comprobante) {
+    const d = parsed.data.comprobante;
+    comprobanteType = d.slice(5, d.indexOf(";"));
+    comprobanteData = Buffer.from(d.slice(d.indexOf(",") + 1), "base64");
+    if (comprobanteData.length > 700 * 1024) return res.status(413).json({ error: "El comprobante supera 700 KB. Sacá una foto más liviana." });
+  }
+  const dep = await prisma.chatDeposit.create({
+    data: { userId: req.accountId!, playerId: req.chatPlayerId!, amount: parsed.data.amount, method: parsed.data.method, comprobanteType, comprobanteData, status: "pending" },
+    select: { id: true, amount: true, method: true, status: true, createdAt: true },
+  });
+  // Aviso al operador (en vivo, para la sección Cajero) — NO acredita.
+  emitChat(`chat:${req.accountId}`, "chat:cashier", { type: "deposit", id: dep.id });
+  await postCashierMsg(req.accountId!, req.chatPlayerId!, `🧾 Registraste una carga de ${ars(dep.amount)} (${dep.method}). La estamos verificando.`).catch(() => undefined);
+  return res.status(201).json({ deposit: dep });
+});
+
+const withdrawalSchema = z.object({ amount: z.number().int().positive(), destino: z.string().min(3).max(60) });
+
+// POST /api/chat/me/withdrawal — el jugador pide un retiro (queda REQUESTED). Chequea saldo.
+chatPublicRouter.post("/me/withdrawal", requireChatClient, async (req, res) => {
+  const parsed = withdrawalSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  if (parsed.data.amount < MIN_WITHDRAWAL) return res.status(400).json({ error: `El retiro mínimo es ${ars(MIN_WITHDRAWAL)}.` });
+  const wallet = await prisma.chatWallet.findUnique({ where: { playerId: req.chatPlayerId! }, select: { balance: true } });
+  if (!wallet || wallet.balance < parsed.data.amount) return res.status(400).json({ error: "Saldo insuficiente para ese retiro." });
+  const w = await prisma.chatWithdrawal.create({
+    data: { userId: req.accountId!, playerId: req.chatPlayerId!, amount: parsed.data.amount, destino: parsed.data.destino.trim(), status: "requested" },
+    select: { id: true, amount: true, destino: true, status: true, createdAt: true },
+  });
+  emitChat(`chat:${req.accountId}`, "chat:cashier", { type: "withdrawal", id: w.id });
+  await postCashierMsg(req.accountId!, req.chatPlayerId!, `🏧 Pediste un retiro de ${ars(w.amount)}. Lo estamos procesando.`).catch(() => undefined);
+  return res.status(201).json({ withdrawal: w });
+});
+
+// ---- OPERADOR (requireAuth) ----
+
+// GET /api/chat/cashier — pendientes (cargas pending + retiros requested) con el usuario del jugador.
+chatRouter.get("/cashier", async (req, res) => {
+  const [deposits, withdrawals] = await Promise.all([
+    prisma.chatDeposit.findMany({ where: { userId: req.userId!, status: "pending" }, orderBy: { createdAt: "asc" }, select: { id: true, playerId: true, amount: true, method: true, comprobanteType: true, createdAt: true } }),
+    prisma.chatWithdrawal.findMany({ where: { userId: req.userId!, status: "requested" }, orderBy: { createdAt: "asc" }, select: { id: true, playerId: true, amount: true, destino: true, createdAt: true } }),
+  ]);
+  const ids = [...new Set([...deposits.map((d) => d.playerId), ...withdrawals.map((w) => w.playerId)])];
+  const players = ids.length ? await prisma.chatPlayer.findMany({ where: { id: { in: ids } }, select: { id: true, casinoUsername: true, nombre: true } }) : [];
+  const nameById = new Map(players.map((p) => [p.id, p.nombre || p.casinoUsername]));
+  return res.json({
+    deposits: deposits.map((d) => ({ id: d.id, player: nameById.get(d.playerId) ?? "Jugador", amount: d.amount, method: d.method, hasComprobante: !!d.comprobanteType, createdAt: d.createdAt })),
+    withdrawals: withdrawals.map((w) => ({ id: w.id, player: nameById.get(w.playerId) ?? "Jugador", amount: w.amount, destino: w.destino, createdAt: w.createdAt })),
+  });
+});
+
+// GET /api/chat/cashier/deposit/:id/comprobante — sirve la imagen del comprobante (operador).
+chatRouter.get("/cashier/deposit/:id/comprobante", async (req, res) => {
+  const dep = await prisma.chatDeposit.findFirst({ where: { id: req.params.id, userId: req.userId! }, select: { comprobanteType: true, comprobanteData: true } });
+  if (!dep?.comprobanteData) return res.status(404).json({ error: "Sin comprobante" });
+  res.setHeader("Content-Type", dep.comprobanteType ?? "image/jpeg");
+  res.setHeader("Cache-Control", "private, max-age=300");
+  return res.send(Buffer.from(dep.comprobanteData));
+});
+
+// POST /api/chat/cashier/deposit/:id/approve — ACREDITA (única vía manual). Suma al wallet, marca
+// credited y dispara Purchase CAPI. Idempotente por status (solo procesa si está pending).
+chatRouter.post("/cashier/deposit/:id/approve", async (req, res) => {
+  const dep = await prisma.chatDeposit.findFirst({ where: { id: req.params.id, userId: req.userId! } });
+  if (!dep) return res.status(404).json({ error: "No encontrado" });
+  if (dep.status !== "pending") return res.status(409).json({ error: "Esa carga ya fue resuelta." });
+  const wallet = await prisma.chatWallet.upsert({
+    where: { playerId: dep.playerId },
+    create: { userId: req.userId!, playerId: dep.playerId, balance: dep.amount, currency: dep.currency },
+    update: { balance: { increment: dep.amount } },
+    select: { balance: true },
+  });
+  await prisma.chatDeposit.update({ where: { id: dep.id }, data: { status: "credited", resolvedAt: new Date() } });
+  const player = await prisma.chatPlayer.findUnique({ where: { id: dep.playerId }, select: { casinoUsername: true } });
+  if (player) void firePlayerPurchase(req.userId!, player.casinoUsername, dep.amount, dep.currency, dep.id); // SOLO acá
+  await postCashierMsg(req.userId!, dep.playerId, `✅ ¡Carga acreditada! ${ars(dep.amount)}. Tu saldo: ${ars(wallet.balance)}.`);
+  emitChat(`chat:${req.userId}:player:${dep.playerId}`, "chat:wallet", { balance: wallet.balance });
+  return res.json({ ok: true, balance: wallet.balance });
+});
+
+// POST /api/chat/cashier/deposit/:id/reject
+chatRouter.post("/cashier/deposit/:id/reject", async (req, res) => {
+  const dep = await prisma.chatDeposit.findFirst({ where: { id: req.params.id, userId: req.userId! } });
+  if (!dep) return res.status(404).json({ error: "No encontrado" });
+  if (dep.status !== "pending") return res.status(409).json({ error: "Esa carga ya fue resuelta." });
+  await prisma.chatDeposit.update({ where: { id: dep.id }, data: { status: "rejected", resolvedAt: new Date() } });
+  await postCashierMsg(req.userId!, dep.playerId, `❌ No pudimos verificar tu carga de ${ars(dep.amount)}. Escribinos y lo revisamos.`);
+  return res.json({ ok: true });
+});
+
+// POST /api/chat/cashier/withdrawal/:id/approve — DÉBITO atómico (solo si el saldo alcanza) + paid.
+chatRouter.post("/cashier/withdrawal/:id/approve", async (req, res) => {
+  const w = await prisma.chatWithdrawal.findFirst({ where: { id: req.params.id, userId: req.userId! } });
+  if (!w) return res.status(404).json({ error: "No encontrado" });
+  if (w.status !== "requested") return res.status(409).json({ error: "Ese retiro ya fue resuelto." });
+  // Débito condicional: solo descuenta si el saldo alcanza (evita saldo negativo en carreras).
+  const debited = await prisma.chatWallet.updateMany({ where: { playerId: w.playerId, balance: { gte: w.amount } }, data: { balance: { decrement: w.amount } } });
+  if (debited.count !== 1) return res.status(400).json({ error: "Saldo insuficiente del jugador para pagar el retiro." });
+  await prisma.chatWithdrawal.update({ where: { id: w.id }, data: { status: "paid", resolvedAt: new Date() } });
+  const wallet = await prisma.chatWallet.findUnique({ where: { playerId: w.playerId }, select: { balance: true } });
+  await postCashierMsg(req.userId!, w.playerId, `✅ Retiro pagado: ${ars(w.amount)} a ${w.destino}. Saldo: ${ars(wallet?.balance ?? 0)}.`);
+  emitChat(`chat:${req.userId}:player:${w.playerId}`, "chat:wallet", { balance: wallet?.balance ?? 0 });
+  return res.json({ ok: true });
+});
+
+// POST /api/chat/cashier/withdrawal/:id/reject
+chatRouter.post("/cashier/withdrawal/:id/reject", async (req, res) => {
+  const w = await prisma.chatWithdrawal.findFirst({ where: { id: req.params.id, userId: req.userId! } });
+  if (!w) return res.status(404).json({ error: "No encontrado" });
+  if (w.status !== "requested") return res.status(409).json({ error: "Ese retiro ya fue resuelto." });
+  await prisma.chatWithdrawal.update({ where: { id: w.id }, data: { status: "rejected", resolvedAt: new Date() } });
+  await postCashierMsg(req.userId!, w.playerId, `❌ Tu retiro de ${ars(w.amount)} no se pudo procesar. Escribinos y lo vemos.`);
+  return res.json({ ok: true });
+});
+
+// POST /api/chat/pay/webhook — gateway REAL (recaudadora/Pagopar). PREPARADO pero APAGADO sin claves.
+// Es el ÚNICO camino de acreditación AUTOMÁTICA seguro: al confirmar un pago real (firma HMAC válida),
+// busca el ChatDeposit por gatewayRef, lo pasa a verified→credited, acredita el wallet y dispara el
+// Purchase CAPI (igual que el approve manual). NUNCA se acredita por la imagen del comprobante.
+// TODO: implementar la validación de firma + la acreditación cuando estén las claves del gateway.
+chatPublicRouter.post("/pay/webhook", async (_req, res) => {
+  if (!process.env.CHAT_PAY_WEBHOOK_SECRET) return res.status(503).json({ error: "Gateway de pagos no configurado" });
+  return res.status(501).json({ error: "Webhook de gateway pendiente de implementación (faltan claves)" });
+});

@@ -93,6 +93,9 @@ model User {
   brandingAssets    BrandingAsset[]
   chatBroadcasts    ChatBroadcast[]
   casinoTxs         CasinoTx[]
+  chatWallets       ChatWallet[]
+  chatDeposits      ChatDeposit[]
+  chatWithdrawals   ChatWithdrawal[]
 }
 
 // Carga/descarga contra la plataforma del socio (ganamos). Idempotencia y reversa por `referencia`,
@@ -115,6 +118,55 @@ model CasinoTx {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+// --- Cajero self-service del Chat App (Fase E). ARS entero (sin centavos). REGLA DURA: la
+//     acreditación al wallet la habilita SOLO el operador aprobando, o un webhook de gateway REAL.
+//     NUNCA por la imagen del comprobante sola. El Purchase CAPI se dispara SOLO al acreditar. ---
+model ChatWallet {
+  id        String   @id @default(cuid())
+  userId    String   // cuenta (tenant)
+  playerId  String   @unique // saldo por jugador
+  balance   Int      @default(0) // ARS entero
+  currency  String   @default("ARS")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model ChatDeposit {
+  id              String    @id @default(cuid())
+  userId          String
+  playerId        String
+  amount          Int       // ARS entero
+  currency        String    @default("ARS")
+  method          String    // método que eligió el jugador (transferencia/alias/etc.)
+  comprobanteType String?   // mime de la imagen del comprobante (si subió)
+  comprobanteData Bytes?    // bytes del comprobante — NO acredita por sí solo
+  gatewayRef      String?   // referencia si vino por webhook de gateway real
+  status          String    @default("pending") // pending | verified | credited | rejected
+  createdAt       DateTime  @default(now())
+  resolvedAt      DateTime?
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+model ChatWithdrawal {
+  id         String    @id @default(cuid())
+  userId     String
+  playerId   String
+  amount     Int       // ARS entero
+  currency   String    @default("ARS")
+  destino    String    // CBU/CVU/alias del jugador
+  status     String    @default("requested") // requested | approved | paid | rejected
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, status])
 }
