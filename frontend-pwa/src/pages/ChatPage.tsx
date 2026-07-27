@@ -4,7 +4,8 @@ import { api, apiError, API_BASE, getToken, clearToken, loadBranding } from "../
 import { subscribeToPush, pushSupported, pushPermission } from "../lib/push";
 import InstallPrompt from "../components/InstallPrompt";
 
-interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; image?: string | null; buttons?: string[] | null; link?: { label: string; url: string } | null; createdAt: string }
+interface Pay { cbu: string | null; alias: string | null; titular: string | null }
+interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; image?: string | null; buttons?: string[] | null; link?: { label: string; url: string } | null; pay?: Pay | null; createdAt: string }
 interface Popup { title?: string | null; text?: string | null; image?: string | null; link?: string | null; version: string }
 interface Wallet { balance: number; minDeposit: number; minWithdrawal: number; paymentInfo: string | null; pay?: { cbu: string | null; alias: string | null; titular: string | null } }
 const POPUP_SEEN_KEY = "publilat_popup_seen";
@@ -57,6 +58,16 @@ export default function ChatPage() {
       setCashier(null); setDepositCard(false); setAmount(""); setComprobante(null); setCashMsg("✅ Carga registrada. La estamos verificando.");
       void loadWallet();
     } catch (e) { setCashMsg(apiError(e)); } finally { setCashBusy(false); }
+  };
+  // CARGAR: deja los datos de pago como MENSAJE en la conversación (persiste, estilo mensajería) y abre el form.
+  const openDeposit = async () => {
+    setCashier(null); setCashMsg(null); setAmount(""); setComprobante(null);
+    try {
+      const { data } = await api.post<{ message: Msg }>("/api/chat/me/deposit/help");
+      setMessages((prev) => appendUnique(prev, data.message));
+    } catch { /* si falla igual mostramos el form con lo que haya en wallet */ }
+    setDepositCard(true);
+    setTimeout(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), 90);
   };
   const submitWithdrawal = async () => {
     const amt = parseInt(amount.replace(/\D/g, ""), 10);
@@ -134,6 +145,15 @@ export default function ChatPage() {
     await sendBody(body);
   };
 
+  // id del último mensaje con datos de pago (ahí va el form de carga activo).
+  let lastPayId: string | null = null;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const p = messages[i].pay;
+    if (p && (p.cbu || p.alias || p.titular)) { lastPayId = messages[i].id; break; }
+  }
+  // si el operador no cargó datos estructurados, el form igual se ancla al último mensaje de datos.
+  if (!lastPayId) { for (let i = messages.length - 1; i >= 0; i--) { if (messages[i].pay) { lastPayId = messages[i].id; break; } } }
+
   return (
     <div className="flex h-full flex-col bg-[#e5ddd5]">
       <header className="flex items-center gap-3 px-4 py-2.5 text-white shadow" style={{ background: "#0b7d6e" }}>
@@ -145,9 +165,11 @@ export default function ChatPage() {
         {wallet && <div className="ml-auto rounded-full bg-white/20 px-3 py-1 text-sm font-bold">💰 {money(wallet.balance)}</div>}
       </header>
 
-      {/* Barra "conectado" (estilo competencia): azul, informativa. */}
-      <div className="bg-[#e0f2fe] px-4 py-1.5 text-center text-xs font-medium text-[#1d4ed8]">
-        Conectado. Escribinos y te respondemos.
+      {/* Pill "conectado" (estilo competencia): azul, redondeada, flotando sobre el fondo. */}
+      <div className="flex justify-center px-4 pt-3 pb-1">
+        <div className="rounded-full bg-[#e0f2fe] px-4 py-1.5 text-center text-xs font-medium text-[#1d4ed8] shadow-sm">
+          Conectado. Escribinos y te respondemos.
+        </div>
       </div>
 
       {/* El link a la plataforma va SOLO en el primer mensaje (welcome), no en una barra arriba. */}
@@ -209,66 +231,57 @@ export default function ChatPage() {
           );
           // system y operator se muestran igual: burbuja blanca a la IZQUIERDA (como que la marca
           // te escribe primero, estilo WhatsApp). Solo el jugador va a la derecha en verde.
+          const hasPay = !!(m.pay && (m.pay.cbu || m.pay.alias || m.pay.titular));
+          const showForm = depositCard && m.id === lastPayId; // el form de carga va en el mensaje activo
           return (
             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[82%] px-2.5 py-1.5 text-sm text-slate-800 shadow-sm ${mine ? "rounded-lg rounded-tr-sm" : "rounded-lg rounded-tl-sm bg-white"}`}
+              <div className={`max-w-[85%] px-2.5 py-1.5 text-sm text-slate-800 shadow-sm ${mine ? "rounded-lg rounded-tr-sm" : "rounded-lg rounded-tl-sm bg-white"}`}
                 style={mine ? { background: "#d9fdd3" } : undefined}>
                 {img}
                 {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
                 {linkBtn}
+                {(hasPay || showForm) && (
+                  <div className="mt-1.5">
+                    {hasPay ? (
+                      <>
+                        <div className="rounded-lg bg-slate-50 p-2.5 text-xs">
+                          {m.pay!.cbu && <div className="flex items-center justify-between gap-2 py-0.5"><span className="text-slate-500">CBU/CVU</span><span className="break-all text-right font-semibold text-slate-800">{m.pay!.cbu}</span></div>}
+                          {m.pay!.alias && <div className="flex items-center justify-between gap-2 py-0.5"><span className="text-slate-500">Alias</span><span className="break-all text-right font-semibold text-slate-800">{m.pay!.alias}</span></div>}
+                          {m.pay!.titular && <div className="flex items-center justify-between gap-2 py-0.5"><span className="text-slate-500">Titular</span><span className="text-right font-semibold text-slate-800">{m.pay!.titular}</span></div>}
+                        </div>
+                        <div className="mt-2 flex flex-col gap-2">
+                          {m.pay!.cbu && <button onClick={() => void copy("cbu", m.pay!.cbu!)} className={`w-full rounded-lg border py-2.5 text-sm font-bold ${copied === "cbu" ? "border-emerald-500 bg-emerald-500 text-white" : "border-[#1fa855] text-[#1fa855]"}`}>{copied === "cbu" ? "✓ Copiado" : "Copiar CBU"}</button>}
+                          {m.pay!.alias && <button onClick={() => void copy("alias", m.pay!.alias!)} className={`w-full rounded-lg border py-2.5 text-sm font-bold ${copied === "alias" ? "border-emerald-500 bg-emerald-500 text-white" : "border-[#1fa855] text-[#1fa855]"}`}>{copied === "alias" ? "✓ Copiado" : "Copiar ALIAS"}</button>}
+                        </div>
+                      </>
+                    ) : (showForm && wallet?.paymentInfo) ? (
+                      <div className="whitespace-pre-wrap rounded-lg bg-slate-50 p-2.5 text-xs text-slate-700">{wallet.paymentInfo}</div>
+                    ) : null}
+                    {showForm && wallet && (
+                      <div className="mt-2 border-t border-slate-100 pt-2">
+                        <input inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={`Monto a cargar (mín ${money(wallet.minDeposit)})`}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none focus:border-[#1fa855] [color-scheme:light]" />
+                        <label className="mt-2 flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#1fa855] py-3 text-sm font-bold text-white">
+                          {comprobante ? "✓ Comprobante listo" : "📎 SUBIR COMPROBANTE"}
+                          <input type="file" accept="image/*" className="hidden" onChange={onComprobante} />
+                        </label>
+                        {cashMsg && <div className="mt-1.5 text-xs text-rose-500">{cashMsg}</div>}
+                        <div className="mt-2 flex gap-2">
+                          <button onClick={() => { setDepositCard(false); setCashMsg(null); }}
+                            className="rounded-lg border border-slate-300 px-3 py-2.5 text-xs font-semibold text-slate-500">Cerrar</button>
+                          <button onClick={() => void submitDeposit()} disabled={cashBusy}
+                            className="flex-1 rounded-lg bg-[#0b7d6e] py-2.5 text-sm font-bold text-white disabled:opacity-50">{cashBusy ? "Enviando…" : "Ya transferí, avisar"}</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="mt-0.5 text-right text-[10px] leading-none text-slate-500">{time}</div>
               </div>
             </div>
           );
         })}
         {messages.length === 0 && <p className="mt-8 text-center text-sm text-slate-600">Escribinos, te respondemos al toque.</p>}
-
-        {/* CARGAR como mensaje en el chat (estilo competencia): datos + copiar + subir comprobante. */}
-        {depositCard && wallet && (
-          <div className="flex justify-start">
-            <div className="max-w-[86%] rounded-lg rounded-tl-sm bg-white px-3 py-2.5 text-sm text-slate-800 shadow-sm">
-              <div className="mb-2 font-medium">Para cargar transferí a estos datos y subí el comprobante por favor 🙏</div>
-              {(wallet.pay?.cbu || wallet.pay?.alias || wallet.pay?.titular) ? (
-                <div className="rounded-lg bg-slate-50 p-2.5 text-xs">
-                  {wallet.pay?.cbu && <div className="flex items-center justify-between gap-2 py-0.5"><span className="text-slate-500">CBU/CVU</span><span className="break-all text-right font-semibold text-slate-800">{wallet.pay.cbu}</span></div>}
-                  {wallet.pay?.alias && <div className="flex items-center justify-between gap-2 py-0.5"><span className="text-slate-500">Alias</span><span className="break-all text-right font-semibold text-slate-800">{wallet.pay.alias}</span></div>}
-                  {wallet.pay?.titular && <div className="flex items-center justify-between gap-2 py-0.5"><span className="text-slate-500">Titular</span><span className="text-right font-semibold text-slate-800">{wallet.pay.titular}</span></div>}
-                </div>
-              ) : wallet.paymentInfo ? (
-                <div className="whitespace-pre-wrap rounded-lg bg-slate-50 p-2.5 text-xs text-slate-700">{wallet.paymentInfo}</div>
-              ) : null}
-              {(wallet.pay?.cbu || wallet.pay?.alias) && (
-                <div className="mt-2 flex flex-col gap-2">
-                  {wallet.pay?.cbu && (
-                    <button onClick={() => void copy("cbu", wallet.pay!.cbu!)}
-                      className={`w-full rounded-lg border py-2.5 text-sm font-bold ${copied === "cbu" ? "border-emerald-500 bg-emerald-500 text-white" : "border-[#1fa855] text-[#1fa855]"}`}>
-                      {copied === "cbu" ? "✓ Copiado" : "Copiar CBU"}
-                    </button>
-                  )}
-                  {wallet.pay?.alias && (
-                    <button onClick={() => void copy("alias", wallet.pay!.alias!)}
-                      className={`w-full rounded-lg border py-2.5 text-sm font-bold ${copied === "alias" ? "border-emerald-500 bg-emerald-500 text-white" : "border-[#1fa855] text-[#1fa855]"}`}>
-                      {copied === "alias" ? "✓ Copiado" : "Copiar ALIAS"}
-                    </button>
-                  )}
-                </div>
-              )}
-              <input inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={`Monto a cargar (mín ${money(wallet.minDeposit)})`}
-                className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none focus:border-[#1fa855] [color-scheme:light]" />
-              <label className="mt-2 flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#1fa855] py-3 text-sm font-bold text-white">
-                {comprobante ? "✓ Comprobante listo" : "📎 SUBIR COMPROBANTE"}
-                <input type="file" accept="image/*" className="hidden" onChange={onComprobante} />
-              </label>
-              {cashMsg && <div className="mt-1.5 text-xs text-rose-500">{cashMsg}</div>}
-              <div className="mt-2 flex gap-2">
-                <button onClick={() => { setDepositCard(false); setCashMsg(null); }}
-                  className="rounded-lg border border-slate-300 px-3 py-2.5 text-xs font-semibold text-slate-500">Cancelar</button>
-                <button onClick={() => void submitDeposit()} disabled={cashBusy}
-                  className="flex-1 rounded-lg bg-[#0b7d6e] py-2.5 text-sm font-bold text-white disabled:opacity-50">{cashBusy ? "Enviando…" : "Ya transferí, avisar"}</button>
-              </div>
-            </div>
-          </div>
-        )}
         <div ref={endRef} />
       </div>
 
@@ -289,7 +302,7 @@ export default function ChatPage() {
       {/* Barra del cajero: cargar / retirar / soporte (E3). */}
       {wallet && (
         <div className="flex gap-2 bg-white px-3 pt-2.5">
-          <button onClick={() => { setDepositCard(true); setCashier(null); setCashMsg(null); setAmount(""); setComprobante(null); setTimeout(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), 60); }}
+          <button onClick={() => void openDeposit()}
             className="flex-1 rounded-md bg-[#1fa855] py-2 text-sm font-bold text-white">CARGAR</button>
           <button onClick={() => { setCashier("withdrawal"); setDepositCard(false); setCashMsg(null); setAmount(""); }}
             className="flex-1 rounded-md border border-[#1fa855] py-2 text-sm font-bold text-[#1fa855]">RETIRAR</button>

@@ -521,8 +521,33 @@ chatPublicRouter.get("/me/conversation", requireChatClient, async (req, res) => 
     select: { id: true, senderType: true, body: true, metadata: true, createdAt: true },
   });
   await prisma.chatConversation.update({ where: { id: conv.id }, data: { unreadPlayer: 0 } });
-  const messages = rows.map((m) => ({ id: m.id, senderType: m.senderType, body: m.body, image: (m.metadata as { image?: string })?.image ?? null, buttons: (m.metadata as { buttons?: string[] })?.buttons ?? null, link: (m.metadata as { link?: { label: string; url: string } })?.link ?? null, createdAt: m.createdAt }));
+  const messages = rows.map((m) => ({ id: m.id, senderType: m.senderType, body: m.body, image: (m.metadata as { image?: string })?.image ?? null, buttons: (m.metadata as { buttons?: string[] })?.buttons ?? null, link: (m.metadata as { link?: { label: string; url: string } })?.link ?? null, pay: (m.metadata as { pay?: { cbu: string | null; alias: string | null; titular: string | null } })?.pay ?? null, createdAt: m.createdAt }));
   return res.json({ conversationId: conv.id, messages });
+});
+
+// POST /api/chat/me/deposit/help — el jugador toca CARGAR: dejamos en la conversación un mensaje
+// (persistente, estilo mensajería) con los datos de pago. NO acredita nada. Dedup: si el último
+// mensaje ya son las instrucciones, lo devolvemos sin repostear.
+chatPublicRouter.post("/me/deposit/help", requireChatClient, async (req, res) => {
+  const conv = await prisma.chatConversation.findFirst({ where: { userId: req.accountId!, playerId: req.chatPlayerId! }, select: { id: true } });
+  if (!conv) return res.status(404).json({ error: "Conversación no encontrada" });
+  const acc = await prisma.user.findUnique({ where: { id: req.accountId! }, select: { chatPayCbu: true, chatPayAlias: true, chatPayTitular: true, botPaymentInfo: true } });
+  const pay = { cbu: acc?.chatPayCbu ?? null, alias: acc?.chatPayAlias ?? null, titular: acc?.chatPayTitular ?? null };
+  const last = await prisma.chatMessage.findFirst({ where: { conversationId: conv.id }, orderBy: { createdAt: "desc" }, select: { id: true, senderType: true, body: true, metadata: true, createdAt: true } });
+  if (last && (last.metadata as { pay?: unknown })?.pay) {
+    const lp = (last.metadata as { pay: typeof pay }).pay;
+    return res.json({ message: { id: last.id, senderType: last.senderType, body: last.body, image: null, buttons: null, link: null, pay: lp, createdAt: last.createdAt } });
+  }
+  const hasData = pay.cbu || pay.alias || pay.titular || acc?.botPaymentInfo;
+  const body = hasData ? "Para cargar transferí a estos datos y subí el comprobante por favor 🙏" : "Para cargar, escribinos y te pasamos los datos 🙏";
+  const metadata = { pay };
+  const msg = await prisma.chatMessage.create({ data: { userId: req.accountId!, conversationId: conv.id, senderType: "system", body, metadata }, select: { id: true, senderType: true, body: true, createdAt: true } });
+  await prisma.chatConversation.update({ where: { id: conv.id }, data: { lastMessageAt: new Date(), lastMessagePreview: body.slice(0, 120) } });
+  const outMsg = { id: msg.id, senderType: msg.senderType, body: msg.body, image: null, buttons: null, link: null, pay, createdAt: msg.createdAt };
+  const payload = { conversationId: conv.id, message: outMsg };
+  emitChat(`chat:${req.accountId}:player:${req.chatPlayerId}`, "chat:message", payload);
+  emitChat(`chat:${req.accountId}`, "chat:message", payload);
+  return res.json({ message: outMsg });
 });
 
 const playerSendSchema = z.object({ body: z.string().min(1).max(4000) });
