@@ -145,6 +145,11 @@ export default function ChatPage() {
         {wallet && <div className="ml-auto rounded-full bg-white/20 px-3 py-1 text-sm font-bold">💰 {money(wallet.balance)}</div>}
       </header>
 
+      {/* Barra "conectado" (estilo competencia): azul, informativa. */}
+      <div className="bg-[#e0f2fe] px-4 py-1.5 text-center text-xs font-medium text-[#1d4ed8]">
+        Conectado. Escribinos y te respondemos.
+      </div>
+
       {/* El link a la plataforma va SOLO en el primer mensaje (welcome), no en una barra arriba. */}
 
       {/* Popup/promo al entrar (imagen + texto + link), configurable por el operador. */}
