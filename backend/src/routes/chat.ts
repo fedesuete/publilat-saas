@@ -28,6 +28,8 @@ const newCode = () => crypto.randomBytes(6).toString("base64url"); // 6 bytes ->
 // cubre choques (reintentamos con otros dígitos). Ej: "fede" -> "fede86686" + clave "412907".
 const nickSlug = (s: string) => s.toLowerCase().normalize("NFD").replace(/[^a-z0-9]/g, "").slice(0, 12);
 const randDigits = (n: number) => { let s = ""; for (let i = 0; i < n; i++) s += crypto.randomInt(0, 10); return s; };
+// Clave fija simple para los usuarios autogenerados (fácil de recordar, se muestra en "cuenta creada").
+const PLAYER_PASSWORD = "123456";
 
 // ¿La cuenta tiene al menos una línea de WhatsApp con un DÍA PAGADO VIGENTE (expiresAt futuro)?
 // El Chat App se vende junto con el servicio de líneas. Gateamos por el día pagado y NO por
@@ -656,7 +658,7 @@ chatPublicRouter.post("/register", async (req, res) => {
   if (autogenerate) {
     const base = nickSlug(parsed.data.nickname ?? "") || "user";
     const nombre = (parsed.data.nickname ?? "").trim() || null;
-    plainPassword = randDigits(6);
+    plainPassword = PLAYER_PASSWORD;
     const hash = await hashPassword(plainPassword);
     for (let i = 0; i < 8 && !player; i++) {
       try {
@@ -867,7 +869,7 @@ chatPublicRouter.post("/start", async (req, res) => {
   if (autogenerate) {
     const base = nickSlug(parsed.data.nickname ?? "") || "user";
     const nombre = (parsed.data.nickname ?? "").trim() || null;
-    const plainPassword = randDigits(6);
+    const plainPassword = PLAYER_PASSWORD;
     const hash = await hashPassword(plainPassword);
     let np: { id: string; casinoUsername: string } | undefined;
     for (let i = 0; i < 8 && !np; i++) {
