@@ -310,9 +310,9 @@ function InviteQr({ url, code }: { url: string; code: string }) {
 // Sub-sección "Marca": branding white-label de la PWA del jugador (logo, colores, textos).
 interface Brand {
   brandName: string | null; logoUrl: string | null; primaryColor: string | null; accentColor: string | null;
-  welcomeText: string | null; welcomeMsgText: string | null; welcomeMsgImage: string | null; chatWaLink: string | null;
+  welcomeText: string | null; welcomeMsgText: string | null; welcomeMsgImage: string | null; chatWaLink: string | null; chatPlatformUrl: string | null;
 }
-const EMPTY_BRAND: Brand = { brandName: null, logoUrl: null, primaryColor: null, accentColor: null, welcomeText: null, welcomeMsgText: null, welcomeMsgImage: null, chatWaLink: null };
+const EMPTY_BRAND: Brand = { brandName: null, logoUrl: null, primaryColor: null, accentColor: null, welcomeText: null, welcomeMsgText: null, welcomeMsgImage: null, chatWaLink: null, chatPlatformUrl: null };
 
 function BrandingTab() {
   const [form, setForm] = useState<Brand>(EMPTY_BRAND);
@@ -400,6 +400,9 @@ function BrandingTab() {
 
           <label className="mb-1 block text-xs text-slate-400">WhatsApp de contacto (opcional — botón "Escribinos" en el registro)</label>
           <Input value={form.chatWaLink ?? ""} onChange={(e) => set("chatWaLink", e.target.value || null)} placeholder="Ej: 5493764000000 o https://wa.me/549..." className="mb-4" />
+
+          <label className="mb-1 block text-xs text-slate-400">Link de la plataforma (botón "Entrar a la plataforma" + primer mensaje)</label>
+          <Input value={form.chatPlatformUrl ?? ""} onChange={(e) => set("chatPlatformUrl", e.target.value || null)} placeholder="Ej: https://ganamos.net" className="mb-4" />
 
           <label className="mb-1 block text-xs text-slate-400">Primer mensaje automático</label>
           <textarea value={form.welcomeMsgText ?? ""} onChange={(e) => set("welcomeMsgText", e.target.value || null)}

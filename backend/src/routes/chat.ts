@@ -146,6 +146,18 @@ async function fireChatRegistration(
   }
 }
 
+// Primer mensaje del chat al registrarse por un-tap: intro (welcomeText) + usuario + clave + botón a
+// la plataforma. El `link` en metadata lo renderiza la PWA como botón. Configurable: welcomeMsgText +
+// chatPlatformUrl. Crea el mensaje y actualiza la conversación (unread para el jugador).
+async function postWelcomeCreds(userId: string, conversationId: string, intro: string | null, username: string, password: string | null, platformUrl: string | null) {
+  const lines = [intro?.trim() || "¡Bienvenido/a! 🎉 Tu cuenta está lista.", "", `👤 Usuario: ${username}`];
+  if (password) lines.push(`🔑 Clave: ${password}`);
+  const body = lines.join("\n");
+  const metadata = platformUrl ? { link: { label: "🎮 Entrar a la plataforma", url: platformUrl } } : {};
+  await prisma.chatMessage.create({ data: { userId, conversationId, senderType: "system", body, metadata } });
+  await prisma.chatConversation.update({ where: { id: conversationId }, data: { lastMessageAt: new Date(), lastMessagePreview: body.slice(0, 120), unreadPlayer: 1 } });
+}
+
 // ============================ OPERADOR (requireAuth) ============================
 
 // GET /api/chat/invites — links del operador (su cuenta).
@@ -361,13 +373,13 @@ chatRouter.get("/broadcasts", async (req, res) => {
 
 // Solo estos campos del User son "branding" del Chat App. El PATCH NUNCA toca otra cosa
 // (nada de plan, tokenVersion, líneas de WhatsApp, etc.).
-const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "welcomeText", "welcomeMsgText", "welcomeMsgImage", "chatWaLink"] as const;
+const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "welcomeText", "welcomeMsgText", "welcomeMsgImage", "chatWaLink", "chatPlatformUrl"] as const;
 
 // GET /api/chat/branding — branding actual de la cuenta (para poblar el formulario del panel).
 chatRouter.get("/branding", async (req, res) => {
   const acc = await prisma.user.findUnique({
     where: { id: req.userId! },
-    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true },
+    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true },
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   return res.json({ accountSlug: acc.slug, branding: acc, s3: s3Enabled() });
@@ -383,6 +395,7 @@ const brandingSchema = z.object({
   welcomeMsgText: z.string().max(1000).nullish(),
   welcomeMsgImage: z.string().url().max(600).nullish(),
   chatWaLink: z.string().max(300).nullish(), // link o número de WhatsApp para el CTA del registro
+  chatPlatformUrl: z.string().max(300).nullish(), // link a la plataforma de juego
 });
 
 // PATCH /api/chat/branding — actualiza SOLO los campos de branding del User del token.
@@ -399,7 +412,7 @@ chatRouter.patch("/branding", async (req, res) => {
   const acc = await prisma.user.update({
     where: { id: req.userId! },
     data,
-    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true },
+    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true },
   });
   return res.json({ branding: acc });
 });
@@ -501,7 +514,7 @@ chatPublicRouter.get("/me/conversation", requireChatClient, async (req, res) => 
     select: { id: true, senderType: true, body: true, metadata: true, createdAt: true },
   });
   await prisma.chatConversation.update({ where: { id: conv.id }, data: { unreadPlayer: 0 } });
-  const messages = rows.map((m) => ({ id: m.id, senderType: m.senderType, body: m.body, image: (m.metadata as { image?: string })?.image ?? null, buttons: (m.metadata as { buttons?: string[] })?.buttons ?? null, createdAt: m.createdAt }));
+  const messages = rows.map((m) => ({ id: m.id, senderType: m.senderType, body: m.body, image: (m.metadata as { image?: string })?.image ?? null, buttons: (m.metadata as { buttons?: string[] })?.buttons ?? null, link: (m.metadata as { link?: { label: string; url: string } })?.link ?? null, createdAt: m.createdAt }));
   return res.json({ conversationId: conv.id, messages });
 });
 
@@ -608,7 +621,7 @@ chatPublicRouter.get("/branding/:code", async (req, res) => {
   if (!invite) return res.status(404).json({ error: "Link inválido" });
   const acc = await prisma.user.findUnique({
     where: { id: invite.userId },
-    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, chatWaLink: true },
+    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, chatWaLink: true, chatPlatformUrl: true },
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   return res.json({
@@ -620,7 +633,7 @@ chatPublicRouter.get("/branding/:code", async (req, res) => {
       primaryColor: acc.primaryColor,
       accentColor: acc.accentColor,
       welcomeText: acc.welcomeText,
-      chatWaLink: acc.chatWaLink,
+      chatWaLink: acc.chatWaLink, chatPlatformUrl: acc.chatPlatformUrl,
     },
   });
 });
@@ -705,30 +718,29 @@ chatPublicRouter.post("/register", async (req, res) => {
     return res.status(404).json({ error: "Este link acaba de usarse. Pedí uno nuevo o iniciá sesión." });
   }
 
-  // Abrir la conversación asignada al operador del link + mensaje de bienvenida de la cuenta.
+  // Abrir la conversación asignada al operador del link + primer mensaje.
   const acc = await prisma.user.findUnique({
     where: { id: invite.userId },
-    select: { welcomeMsgText: true, welcomeMsgImage: true },
+    select: { welcomeMsgText: true, welcomeMsgImage: true, chatPlatformUrl: true },
   });
   const conv = await prisma.chatConversation.create({
     data: { userId: invite.userId, playerId: player.id, assignedOperatorId: invite.operatorId, status: "open" },
     select: { id: true },
   });
-  const welcomeBody = acc?.welcomeMsgText?.trim();
-  if (welcomeBody || acc?.welcomeMsgImage) {
-    await prisma.chatMessage.create({
-      data: {
-        userId: invite.userId,
-        conversationId: conv.id,
-        senderType: "system",
-        body: welcomeBody ?? null,
-        metadata: acc?.welcomeMsgImage ? { image: acc.welcomeMsgImage } : {},
-      },
-    });
-    await prisma.chatConversation.update({
-      where: { id: conv.id },
-      data: { lastMessageAt: new Date(), lastMessagePreview: welcomeBody ?? "📷 Imagen", unreadPlayer: 1 },
-    });
+  if (autogenerate) {
+    // Un-tap: primer mensaje = usuario + clave + botón a la plataforma.
+    await postWelcomeCreds(invite.userId, conv.id, acc?.welcomeMsgText ?? null, player.casinoUsername, plainPassword, acc?.chatPlatformUrl ?? null);
+  } else {
+    const welcomeBody = acc?.welcomeMsgText?.trim();
+    if (welcomeBody || acc?.welcomeMsgImage) {
+      await prisma.chatMessage.create({
+        data: { userId: invite.userId, conversationId: conv.id, senderType: "system", body: welcomeBody ?? null, metadata: acc?.welcomeMsgImage ? { image: acc.welcomeMsgImage } : {} },
+      });
+      await prisma.chatConversation.update({
+        where: { id: conv.id },
+        data: { lastMessageAt: new Date(), lastMessagePreview: welcomeBody ?? "📷 Imagen", unreadPlayer: 1 },
+      });
+    }
   }
 
   // CAPI del registro (best-effort, no bloquea). Un-tap: CompleteRegistration con external_id =
@@ -822,7 +834,7 @@ chatPublicRouter.post("/login", async (req, res) => {
 chatPublicRouter.get("/public/:slug", async (req, res) => {
   const acc = await prisma.user.findUnique({
     where: { slug: req.params.slug },
-    select: { id: true, slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, chatWaLink: true },
+    select: { id: true, slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, chatWaLink: true, chatPlatformUrl: true },
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   return res.json({
@@ -830,7 +842,7 @@ chatPublicRouter.get("/public/:slug", async (req, res) => {
     active: await hasActiveWaLine(acc.id),
     branding: {
       brandName: acc.brandName, logoUrl: acc.logoUrl,
-      primaryColor: acc.primaryColor, accentColor: acc.accentColor, welcomeText: acc.welcomeText, chatWaLink: acc.chatWaLink,
+      primaryColor: acc.primaryColor, accentColor: acc.accentColor, welcomeText: acc.welcomeText, chatWaLink: acc.chatWaLink, chatPlatformUrl: acc.chatPlatformUrl,
     },
   });
 });
@@ -856,7 +868,7 @@ chatPublicRouter.post("/start", async (req, res) => {
 
   const acc = await prisma.user.findUnique({
     where: { slug: accountSlug },
-    select: { id: true, welcomeMsgText: true, welcomeMsgImage: true },
+    select: { id: true, welcomeMsgText: true, welcomeMsgImage: true, chatPlatformUrl: true },
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   // Candado de días: sin día de WhatsApp vigente el chat está apagado.
@@ -885,11 +897,8 @@ chatPublicRouter.post("/start", async (req, res) => {
     }
     if (!np) return res.status(500).json({ error: "No se pudo generar tu usuario, probá de nuevo." });
     const conv = await prisma.chatConversation.create({ data: { userId: acc.id, playerId: np.id, status: "open" }, select: { id: true } });
-    const wb = acc.welcomeMsgText?.trim();
-    if (wb || acc.welcomeMsgImage) {
-      await prisma.chatMessage.create({ data: { userId: acc.id, conversationId: conv.id, senderType: "system", body: wb ?? null, metadata: acc.welcomeMsgImage ? { image: acc.welcomeMsgImage } : {} } });
-      await prisma.chatConversation.update({ where: { id: conv.id }, data: { lastMessageAt: new Date(), lastMessagePreview: wb ?? "📷 Imagen", unreadPlayer: 1 } });
-    }
+    // Primer mensaje = usuario + clave + botón a la plataforma.
+    await postWelcomeCreds(acc.id, conv.id, acc.welcomeMsgText ?? null, np.casinoUsername, plainPassword, acc.chatPlatformUrl ?? null);
     const eventId = `${np.casinoUsername}:register`;
     const creds = await resolveUserPixel(acc.id, "CompleteRegistration");
     void fireChatRegistration(creds, np.casinoUsername, eventId, { fbclid, fbp, fbc });

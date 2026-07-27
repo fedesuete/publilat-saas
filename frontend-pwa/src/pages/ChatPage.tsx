@@ -4,7 +4,7 @@ import { api, apiError, API_BASE, getToken, clearToken, loadBranding } from "../
 import { subscribeToPush, pushSupported, pushPermission } from "../lib/push";
 import InstallPrompt from "../components/InstallPrompt";
 
-interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; image?: string | null; buttons?: string[] | null; createdAt: string }
+interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; image?: string | null; buttons?: string[] | null; link?: { label: string; url: string } | null; createdAt: string }
 interface Popup { title?: string | null; text?: string | null; image?: string | null; link?: string | null; version: string }
 const POPUP_SEEN_KEY = "publilat_popup_seen";
 
@@ -136,6 +136,15 @@ export default function ChatPage() {
         {wallet && <div className="ml-auto rounded-full bg-slate-800 px-3 py-1 text-sm font-bold text-emerald-400">💰 {money(wallet.balance)}</div>}
       </header>
 
+      {/* Botón "Entrar a la plataforma" (configurable por el operador). */}
+      {branding?.chatPlatformUrl && (
+        <a href={branding.chatPlatformUrl} target="_blank" rel="noopener noreferrer"
+          className="mx-3 mt-2 flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-extrabold text-slate-900 transition active:scale-[.99]"
+          style={{ background: "var(--brand-primary)", boxShadow: "0 8px 22px -10px var(--brand-primary)" }}>
+          🎮 Entrar a la plataforma
+        </a>
+      )}
+
       {/* Popup/promo al entrar (imagen + texto + link), configurable por el operador. */}
       {popup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={closePopup}>
@@ -175,21 +184,46 @@ export default function ChatPage() {
         </div>
       )}
 
-      <div className="flex-1 space-y-2 overflow-y-auto p-4">
-        {messages.map((m) => (
-          <div key={m.id} className={`flex ${m.senderType === "player" ? "justify-end" : m.senderType === "system" ? "justify-center" : "justify-start"}`}>
-            <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
-              m.senderType === "player" ? "text-slate-900" : m.senderType === "system" ? "bg-slate-800 text-slate-400 text-xs italic" : "bg-slate-700 text-slate-100"
-            }`} style={m.senderType === "player" ? { background: "var(--brand-primary)" } : undefined}>
-              {m.image && (
-                <a href={m.image} target="_blank" rel="noopener noreferrer">
-                  <img src={m.image} alt="" className="mb-1.5 max-h-72 w-full rounded-md object-cover" />
-                </a>
-              )}
-              {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
+      <div className="flex-1 space-y-1.5 overflow-y-auto p-4">
+        {messages.map((m) => {
+          const mine = m.senderType === "player";
+          const sys = m.senderType === "system";
+          const time = new Date(m.createdAt).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+          const img = m.image && (
+            <a href={m.image} target="_blank" rel="noopener noreferrer">
+              <img src={m.image} alt="" className="mb-1.5 max-h-72 w-full rounded-lg object-cover" />
+            </a>
+          );
+          const linkBtn = m.link && (
+            <a href={m.link.url} target="_blank" rel="noopener noreferrer"
+              className="mt-2 flex items-center justify-center gap-1 rounded-lg py-2 text-sm font-extrabold text-slate-900"
+              style={{ background: "var(--brand-primary)" }}>
+              {m.link.label}
+            </a>
+          );
+          if (sys) {
+            return (
+              <div key={m.id} className="flex justify-center py-1">
+                <div className="max-w-[88%] rounded-2xl bg-slate-800 px-4 py-2.5 text-sm text-slate-100 shadow">
+                  {img}
+                  {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
+                  {linkBtn}
+                </div>
+              </div>
+            );
+          }
+          return (
+            <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+              <div className={`max-w-[82%] px-3 py-1.5 text-sm shadow ${mine ? "rounded-2xl rounded-tr-md text-slate-900" : "rounded-2xl rounded-tl-md bg-slate-700 text-slate-100"}`}
+                style={mine ? { background: "var(--brand-primary)" } : undefined}>
+                {img}
+                {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
+                {linkBtn}
+                <div className={`mt-0.5 text-right text-[10px] leading-none ${mine ? "text-slate-900/55" : "text-slate-400"}`}>{time}</div>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         {messages.length === 0 && <p className="mt-8 text-center text-sm text-slate-500">Escribinos, te respondemos al toque.</p>}
         <div ref={endRef} />
       </div>

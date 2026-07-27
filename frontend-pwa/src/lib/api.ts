@@ -34,6 +34,7 @@ export interface Branding {
   accentColor: string | null;
   welcomeText: string | null;
   chatWaLink?: string | null; // CTA "Escribinos por WhatsApp" (registro un-tap)
+  chatPlatformUrl?: string | null; // botón "Entrar a la plataforma"
 }
 
 export function saveBranding(accountSlug: string, b: Branding) {
