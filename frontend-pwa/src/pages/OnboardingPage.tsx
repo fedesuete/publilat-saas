@@ -1,8 +1,12 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { api, apiError, setToken, saveBranding, applyBranding, type Branding } from "../lib/api";
+import { api, apiError, setToken, getToken, clearToken, saveBranding, applyBranding, type Branding } from "../lib/api";
 import { isInAppBrowser, tryOpenInBrowser } from "../lib/inapp";
 import { fireMetaPixel } from "../lib/pixel";
+
+// Recuerda a qué cuenta (slug) pertenece la sesión guardada. Si volvés a abrir el mismo /r/:slug
+// y ya tenés sesión de esa cuenta, ofrecemos entrar en vez de crear OTRA cuenta nueva.
+const SESSION_SLUG_KEY = "publilat_session_slug";
 
 function cookie(name: string): string {
   const m = document.cookie.match("(^|;)\\s*" + name + "\\s*=\\s*([^;]+)");
@@ -18,7 +22,7 @@ function waHref(v?: string | null): string | null {
   return digits ? `https://wa.me/${digits}` : null;
 }
 
-type Step = "form" | "creating" | "done";
+type Step = "form" | "creating" | "done" | "resume";
 type BrandingFull = Branding & { accountSlug: string; codeActive: boolean };
 
 export default function OnboardingPage() {
@@ -41,6 +45,11 @@ export default function OnboardingPage() {
     try { await navigator.clipboard.writeText(location.href); setCopied(true); setTimeout(() => setCopied(false), 1600); }
     catch { /* algunos webviews bloquean el portapapeles */ }
   };
+
+  // Entrada abierta (/r/:slug): si ya tenés sesión de ESTA cuenta, ofrecemos entrar (no crear otra).
+  useEffect(() => {
+    if (slug && getToken() && localStorage.getItem(SESSION_SLUG_KEY) === slug) setStep("resume");
+  }, [slug]);
 
   useEffect(() => {
     if (!code && !slug) return;
@@ -85,6 +94,7 @@ export default function OnboardingPage() {
         new Promise((r) => setTimeout(r, 1000)),
       ]);
       setToken(data.token);
+      if (slug) localStorage.setItem(SESSION_SLUG_KEY, slug); // marca la cuenta de esta sesión
       // Pixel del navegador (además de la CAPI del server), deduplicado por eventId. Best-effort.
       if (data.pixel) fireMetaPixel(data.pixel, "CompleteRegistration", { eventId: data.eventId, externalId: data.username });
       setCreds({ username: data.username, password: data.password ?? null });
@@ -142,6 +152,21 @@ export default function OnboardingPage() {
             <div className="mt-4 rounded-xl border border-amber-600/40 bg-amber-900/20 p-4 text-sm text-amber-100">
               Este link ya fue usado. Si ya te habías registrado, <a href="/login" className="underline">iniciá sesión</a>.
             </div>
+          </>
+        ) : step === "resume" ? (
+          /* --------- PASO: ya tenés cuenta en esta marca --------- */
+          <>
+            <h1 className="text-2xl font-extrabold tracking-tight">Hola de nuevo 👋</h1>
+            <p className="mt-2 text-sm text-slate-400">Ya tenés una cuenta en {name}.</p>
+            <button onClick={() => navigate("/chat", { replace: true })}
+              className="mt-5 w-full rounded-xl py-3.5 text-base font-extrabold text-white transition active:scale-[.98]"
+              style={{ background: "#22c55e", boxShadow: "0 12px 30px -10px #22c55e" }}>
+              Entrar a mi cuenta
+            </button>
+            <button onClick={() => { clearToken(); localStorage.removeItem(SESSION_SLUG_KEY); setStep("form"); }}
+              className="mt-2 w-full rounded-xl border border-white/15 py-3 text-sm text-slate-200 hover:bg-white/5">
+              Crear otra cuenta
+            </button>
           </>
         ) : step === "done" && creds ? (
           /* --------- PASO: cuenta creada --------- */

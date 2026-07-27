@@ -280,7 +280,10 @@ chatNs.on("connection", (socket) => {
     socket.join(`chat:${c.userId}`);
     socket.join(`chat:${c.userId}:op:${c.userId}`);
   } else {
-    socket.join(`chat:${c.accountId}`);
+    // El jugador se une SOLO a su room personal. NO al room de cuenta (`chat:${accountId}`),
+    // que es del operador: si el jugador entrara ahí recibiría los mensajes de TODOS los demás
+    // jugadores de la cuenta (incluida su bienvenida con usuario/clave). Todas las respuestas al
+    // jugador se emiten también a `:player:${playerId}`, así que no pierde nada.
     socket.join(`chat:${c.accountId}:player:${c.playerId}`);
   }
 });
