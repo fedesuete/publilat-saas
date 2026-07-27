@@ -311,8 +311,9 @@ function InviteQr({ url, code }: { url: string; code: string }) {
 interface Brand {
   brandName: string | null; logoUrl: string | null; primaryColor: string | null; accentColor: string | null;
   welcomeText: string | null; welcomeMsgText: string | null; welcomeMsgImage: string | null; chatWaLink: string | null; chatPlatformUrl: string | null;
+  chatPayCbu: string | null; chatPayAlias: string | null; chatPayTitular: string | null;
 }
-const EMPTY_BRAND: Brand = { brandName: null, logoUrl: null, primaryColor: null, accentColor: null, welcomeText: null, welcomeMsgText: null, welcomeMsgImage: null, chatWaLink: null, chatPlatformUrl: null };
+const EMPTY_BRAND: Brand = { brandName: null, logoUrl: null, primaryColor: null, accentColor: null, welcomeText: null, welcomeMsgText: null, welcomeMsgImage: null, chatWaLink: null, chatPlatformUrl: null, chatPayCbu: null, chatPayAlias: null, chatPayTitular: null };
 
 function BrandingTab() {
   const [form, setForm] = useState<Brand>(EMPTY_BRAND);
@@ -403,6 +404,16 @@ function BrandingTab() {
 
           <label className="mb-1 block text-xs text-slate-400">Link de la plataforma (botón "Entrar a la plataforma" + primer mensaje)</label>
           <Input value={form.chatPlatformUrl ?? ""} onChange={(e) => set("chatPlatformUrl", e.target.value || null)} placeholder="Ej: https://ganamos.net" className="mb-4" />
+
+          <div className="mb-2 mt-1 rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+            <div className="mb-2 text-xs font-semibold text-slate-200">Datos de pago del cajero (botones "Copiar CBU" / "Copiar Alias")</div>
+            <label className="mb-1 block text-xs text-slate-400">CBU / CVU</label>
+            <Input value={form.chatPayCbu ?? ""} onChange={(e) => set("chatPayCbu", e.target.value || null)} placeholder="Ej: 0000088800010000009761" className="mb-3" />
+            <label className="mb-1 block text-xs text-slate-400">Alias</label>
+            <Input value={form.chatPayAlias ?? ""} onChange={(e) => set("chatPayAlias", e.target.value || null)} placeholder="Ej: mi.alias.mp" className="mb-3" />
+            <label className="mb-1 block text-xs text-slate-400">Titular de la cuenta</label>
+            <Input value={form.chatPayTitular ?? ""} onChange={(e) => set("chatPayTitular", e.target.value || null)} placeholder="Ej: Camila Ordoñez" />
+          </div>
 
           <label className="mb-1 block text-xs text-slate-400">Primer mensaje automático</label>
           <textarea value={form.welcomeMsgText ?? ""} onChange={(e) => set("welcomeMsgText", e.target.value || null)}

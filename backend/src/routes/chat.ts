@@ -377,13 +377,13 @@ chatRouter.get("/broadcasts", async (req, res) => {
 
 // Solo estos campos del User son "branding" del Chat App. El PATCH NUNCA toca otra cosa
 // (nada de plan, tokenVersion, líneas de WhatsApp, etc.).
-const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "welcomeText", "welcomeMsgText", "welcomeMsgImage", "chatWaLink", "chatPlatformUrl"] as const;
+const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "welcomeText", "welcomeMsgText", "welcomeMsgImage", "chatWaLink", "chatPlatformUrl", "chatPayCbu", "chatPayAlias", "chatPayTitular"] as const;
 
 // GET /api/chat/branding — branding actual de la cuenta (para poblar el formulario del panel).
 chatRouter.get("/branding", async (req, res) => {
   const acc = await prisma.user.findUnique({
     where: { id: req.userId! },
-    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true },
+    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true, chatPayCbu: true, chatPayAlias: true, chatPayTitular: true },
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   return res.json({ accountSlug: acc.slug, branding: acc, s3: s3Enabled() });
@@ -400,6 +400,9 @@ const brandingSchema = z.object({
   welcomeMsgImage: z.string().url().max(600).nullish(),
   chatWaLink: z.string().max(300).nullish(), // link o número de WhatsApp para el CTA del registro
   chatPlatformUrl: z.string().max(300).nullish(), // link a la plataforma de juego
+  chatPayCbu: z.string().max(60).nullish(),
+  chatPayAlias: z.string().max(60).nullish(),
+  chatPayTitular: z.string().max(80).nullish(),
 });
 
 // PATCH /api/chat/branding — actualiza SOLO los campos de branding del User del token.
@@ -416,7 +419,7 @@ chatRouter.patch("/branding", async (req, res) => {
   const acc = await prisma.user.update({
     where: { id: req.userId! },
     data,
-    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true },
+    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true, chatPayCbu: true, chatPayAlias: true, chatPayTitular: true },
   });
   return res.json({ branding: acc });
 });
@@ -992,9 +995,14 @@ chatPublicRouter.get("/me/wallet", requireChatClient, async (req, res) => {
   const [deposits, withdrawals, acc] = await Promise.all([
     prisma.chatDeposit.findMany({ where: { playerId: req.chatPlayerId! }, orderBy: { createdAt: "desc" }, take: 20, select: { id: true, amount: true, method: true, status: true, createdAt: true } }),
     prisma.chatWithdrawal.findMany({ where: { playerId: req.chatPlayerId! }, orderBy: { createdAt: "desc" }, take: 20, select: { id: true, amount: true, destino: true, status: true, createdAt: true } }),
-    prisma.user.findUnique({ where: { id: req.accountId! }, select: { botPaymentInfo: true } }),
+    prisma.user.findUnique({ where: { id: req.accountId! }, select: { botPaymentInfo: true, chatPayCbu: true, chatPayAlias: true, chatPayTitular: true } }),
   ]);
-  return res.json({ balance: wallet.balance, currency: wallet.currency, minDeposit: MIN_DEPOSIT, minWithdrawal: MIN_WITHDRAWAL, paymentInfo: acc?.botPaymentInfo ?? null, deposits, withdrawals });
+  return res.json({
+    balance: wallet.balance, currency: wallet.currency, minDeposit: MIN_DEPOSIT, minWithdrawal: MIN_WITHDRAWAL,
+    paymentInfo: acc?.botPaymentInfo ?? null,
+    pay: { cbu: acc?.chatPayCbu ?? null, alias: acc?.chatPayAlias ?? null, titular: acc?.chatPayTitular ?? null },
+    deposits, withdrawals,
+  });
 });
 
 const depositSchema = z.object({
