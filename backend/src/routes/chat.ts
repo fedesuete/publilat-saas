@@ -835,7 +835,9 @@ chatPublicRouter.get("/public/:slug", async (req, res) => {
 
 const startSchema = z.object({
   accountSlug: z.string().min(1).max(60),
-  username: z.string().min(2).max(40),
+  username: z.string().min(2).max(40).optional(),  // clásico: usuario elegido (retoma o crea)
+  nickname: z.string().max(40).optional(),         // un-tap: semilla del usuario generado
+  autogenerate: z.boolean().optional(),            // true = el server genera usuario + clave
   fbclid: z.string().max(400).optional(),
   fbp: z.string().max(200).optional(),
   fbc: z.string().max(200).optional(),
@@ -848,7 +850,7 @@ const startSchema = z.object({
 chatPublicRouter.post("/start", async (req, res) => {
   const parsed = startSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
-  const { accountSlug, username, fbclid, fbp, fbc } = parsed.data;
+  const { accountSlug, autogenerate, fbclid, fbp, fbc } = parsed.data;
 
   const acc = await prisma.user.findUnique({
     where: { slug: accountSlug },
@@ -860,7 +862,42 @@ chatPublicRouter.post("/start", async (req, res) => {
     return res.status(403).json({ error: "El chat no está disponible en este momento. Probá más tarde.", code: "line_required" });
   }
 
-  // Entra si ya existe (retoma), o se registra si es nuevo.
+  // --- Modo un-tap (landing del Chat App): el server genera usuario + clave y crea SIEMPRE un
+  //     jugador nuevo. Reusa la misma lógica que /register autogenerate + CompleteRegistration. ---
+  if (autogenerate) {
+    const base = nickSlug(parsed.data.nickname ?? "") || "user";
+    const nombre = (parsed.data.nickname ?? "").trim() || null;
+    const plainPassword = randDigits(6);
+    const hash = await hashPassword(plainPassword);
+    let np: { id: string; casinoUsername: string } | undefined;
+    for (let i = 0; i < 8 && !np; i++) {
+      try {
+        np = await prisma.chatPlayer.create({
+          data: { userId: acc.id, casinoUsername: `${base}${randDigits(5)}`, password: hash, nombre, estatus: "active" },
+          select: { id: true, casinoUsername: true },
+        });
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") continue;
+        throw e;
+      }
+    }
+    if (!np) return res.status(500).json({ error: "No se pudo generar tu usuario, probá de nuevo." });
+    const conv = await prisma.chatConversation.create({ data: { userId: acc.id, playerId: np.id, status: "open" }, select: { id: true } });
+    const wb = acc.welcomeMsgText?.trim();
+    if (wb || acc.welcomeMsgImage) {
+      await prisma.chatMessage.create({ data: { userId: acc.id, conversationId: conv.id, senderType: "system", body: wb ?? null, metadata: acc.welcomeMsgImage ? { image: acc.welcomeMsgImage } : {} } });
+      await prisma.chatConversation.update({ where: { id: conv.id }, data: { lastMessageAt: new Date(), lastMessagePreview: wb ?? "📷 Imagen", unreadPlayer: 1 } });
+    }
+    const eventId = `${np.casinoUsername}:register`;
+    const creds = await resolveUserPixel(acc.id, "CompleteRegistration");
+    void fireChatRegistration(creds, np.casinoUsername, eventId, { fbclid, fbp, fbc });
+    const token = signChatClientToken(acc.id, np.id);
+    return res.status(201).json({ token, player: np, conversationId: conv.id, username: np.casinoUsername, password: plainPassword, pixel: creds?.pixelId ?? null, eventId });
+  }
+
+  // --- Modo clásico (username explícito): retoma si existe, o crea si es nuevo. ---
+  const username = (parsed.data.username ?? "").trim();
+  if (username.length < 2) return res.status(400).json({ error: "Falta el usuario." });
   let player = await prisma.chatPlayer.findUnique({
     where: { userId_casinoUsername: { userId: acc.id, casinoUsername: username.trim() } },
     select: { id: true, casinoUsername: true },

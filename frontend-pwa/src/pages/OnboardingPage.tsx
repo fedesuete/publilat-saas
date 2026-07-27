@@ -22,7 +22,8 @@ type Step = "form" | "creating" | "done";
 type BrandingFull = Branding & { accountSlug: string; codeActive: boolean };
 
 export default function OnboardingPage() {
-  const { code } = useParams<{ code: string }>();
+  // Dos modos: invitación (/i/:code, single-use) o ABIERTO por cuenta (/r/:slug, landing del Chat App).
+  const { code, slug } = useParams<{ code?: string; slug?: string }>();
   const navigate = useNavigate();
   const [branding, setBranding] = useState<BrandingFull | null>(null);
   const [loading, setLoading] = useState(true);
@@ -42,17 +43,18 @@ export default function OnboardingPage() {
   };
 
   useEffect(() => {
-    if (!code) return;
-    api.get(`/api/chat/branding/${code}`)
+    if (!code && !slug) return;
+    // invite -> /branding/:code (trae codeActive); abierto -> /public/:slug (no expira).
+    api.get(code ? `/api/chat/branding/${code}` : `/api/chat/public/${slug}`)
       .then(({ data }) => {
         const b: Branding = data.branding;
         applyBranding(b);
         saveBranding(data.accountSlug, b); // recuerda la cuenta -> el login no vuelve a pedirla
-        setBranding({ ...b, accountSlug: data.accountSlug, codeActive: data.codeActive });
+        setBranding({ ...b, accountSlug: data.accountSlug, codeActive: code ? data.codeActive : true });
       })
       .catch((e) => setError(apiError(e)))
       .finally(() => setLoading(false));
-  }, [code]);
+  }, [code, slug]);
 
   // Barra de progreso de "Preparando tu acceso…": crece al entrar al paso.
   useEffect(() => {
@@ -65,19 +67,21 @@ export default function OnboardingPage() {
   // UN TAP: el server genera usuario + clave y los devuelve. Dejamos ver ~1s el "preparando".
   const register = async (e?: FormEvent) => {
     e?.preventDefault();
-    if (!code) return;
+    if (!code && !slug) return;
     setStep("creating"); setError(null);
     const params = new URLSearchParams(location.search);
+    const common = {
+      nickname: nickname.trim() || undefined,
+      autogenerate: true,
+      fbclid: params.get("fbclid") || undefined,
+      fbp: cookie("_fbp") || undefined,
+      fbc: cookie("_fbc") || undefined,
+    };
     try {
       const [{ data }] = await Promise.all([
-        api.post("/api/chat/register", {
-          code,
-          nickname: nickname.trim() || undefined,
-          autogenerate: true,
-          fbclid: params.get("fbclid") || undefined,
-          fbp: cookie("_fbp") || undefined,
-          fbc: cookie("_fbc") || undefined,
-        }),
+        code
+          ? api.post("/api/chat/register", { code, ...common })
+          : api.post("/api/chat/start", { accountSlug: slug, ...common }),
         new Promise((r) => setTimeout(r, 1000)),
       ]);
       setToken(data.token);

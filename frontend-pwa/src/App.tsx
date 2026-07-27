@@ -20,6 +20,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/i/:code" element={<OnboardingPage />} />
+      <Route path="/r/:slug" element={<OnboardingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/chat" element={<ChatRoute />} />
       <Route path="/" element={<IndexRoute />} />
