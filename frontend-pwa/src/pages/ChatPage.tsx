@@ -27,6 +27,7 @@ export default function ChatPage() {
   // --- Cajero (Fase E3): saldo + cargar/retirar ---
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [cashier, setCashier] = useState<"deposit" | "withdrawal" | null>(null);
+  const [depositCard, setDepositCard] = useState(false); // el "cargar" se muestra como mensaje en el chat
   const [amount, setAmount] = useState("");
   const [destino, setDestino] = useState("");
   const [comprobante, setComprobante] = useState<string | null>(null);
@@ -53,7 +54,7 @@ export default function ChatPage() {
     setCashBusy(true); setCashMsg(null);
     try {
       await api.post("/api/chat/me/deposit", { amount: amt, method: "Transferencia", comprobante: comprobante || undefined });
-      setCashier(null); setAmount(""); setComprobante(null); setCashMsg("✅ Carga registrada. La estamos verificando.");
+      setCashier(null); setDepositCard(false); setAmount(""); setComprobante(null); setCashMsg("✅ Carga registrada. La estamos verificando.");
       void loadWallet();
     } catch (e) { setCashMsg(apiError(e)); } finally { setCashBusy(false); }
   };
@@ -147,7 +148,7 @@ export default function ChatPage() {
       {/* Botón "Entrar a la plataforma" (configurable por el operador). */}
       {branding?.chatPlatformUrl && (
         <a href={branding.chatPlatformUrl} target="_blank" rel="noopener noreferrer"
-          className="flex items-center justify-center gap-2 py-2.5 text-sm font-extrabold text-white transition active:scale-[.99]"
+          className="btn-glow flex items-center justify-center gap-2 py-2.5 text-sm font-extrabold text-white transition active:scale-[.99]"
           style={{ background: "var(--brand-primary, #7c2fd6)" }}>
           🎮 Entrar a la plataforma
         </a>
@@ -195,7 +196,6 @@ export default function ChatPage() {
       <div className="flex-1 space-y-1.5 overflow-y-auto px-3 py-3">
         {messages.map((m) => {
           const mine = m.senderType === "player";
-          const sys = m.senderType === "system";
           const time = new Date(m.createdAt).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
           const img = m.image && (
             <a href={m.image} target="_blank" rel="noopener noreferrer">
@@ -204,22 +204,13 @@ export default function ChatPage() {
           );
           const linkBtn = m.link && (
             <a href={m.link.url} target="_blank" rel="noopener noreferrer"
-              className="mt-2 flex items-center justify-center gap-1 rounded-lg py-2 text-sm font-extrabold text-white"
+              className="btn-glow mt-2 flex items-center justify-center gap-1 rounded-lg py-2 text-sm font-extrabold text-white"
               style={{ background: "var(--brand-primary, #7c2fd6)" }}>
               {m.link.label}
             </a>
           );
-          if (sys) {
-            return (
-              <div key={m.id} className="flex justify-center py-1">
-                <div className="max-w-[90%] rounded-lg bg-white px-3.5 py-2.5 text-sm text-slate-800 shadow-sm">
-                  {img}
-                  {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
-                  {linkBtn}
-                </div>
-              </div>
-            );
-          }
+          // system y operator se muestran igual: burbuja blanca a la IZQUIERDA (como que la marca
+          // te escribe primero, estilo WhatsApp). Solo el jugador va a la derecha en verde.
           return (
             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[82%] px-2.5 py-1.5 text-sm text-slate-800 shadow-sm ${mine ? "rounded-lg rounded-tr-sm" : "rounded-lg rounded-tl-sm bg-white"}`}
@@ -233,6 +224,53 @@ export default function ChatPage() {
           );
         })}
         {messages.length === 0 && <p className="mt-8 text-center text-sm text-slate-600">Escribinos, te respondemos al toque.</p>}
+
+        {/* CARGAR como mensaje en el chat (estilo competencia): datos + copiar + subir comprobante. */}
+        {depositCard && wallet && (
+          <div className="flex justify-start">
+            <div className="max-w-[86%] rounded-lg rounded-tl-sm bg-white px-3 py-2.5 text-sm text-slate-800 shadow-sm">
+              <div className="mb-2 font-medium">Para cargar transferí a estos datos y subí el comprobante por favor 🙏</div>
+              {(wallet.pay?.cbu || wallet.pay?.alias || wallet.pay?.titular) ? (
+                <div className="rounded-lg bg-slate-50 p-2.5 text-xs">
+                  {wallet.pay?.cbu && <div className="flex items-center justify-between gap-2 py-0.5"><span className="text-slate-500">CBU/CVU</span><span className="break-all text-right font-semibold text-slate-800">{wallet.pay.cbu}</span></div>}
+                  {wallet.pay?.alias && <div className="flex items-center justify-between gap-2 py-0.5"><span className="text-slate-500">Alias</span><span className="break-all text-right font-semibold text-slate-800">{wallet.pay.alias}</span></div>}
+                  {wallet.pay?.titular && <div className="flex items-center justify-between gap-2 py-0.5"><span className="text-slate-500">Titular</span><span className="text-right font-semibold text-slate-800">{wallet.pay.titular}</span></div>}
+                </div>
+              ) : wallet.paymentInfo ? (
+                <div className="whitespace-pre-wrap rounded-lg bg-slate-50 p-2.5 text-xs text-slate-700">{wallet.paymentInfo}</div>
+              ) : null}
+              {(wallet.pay?.cbu || wallet.pay?.alias) && (
+                <div className="mt-2 flex gap-2">
+                  {wallet.pay?.cbu && (
+                    <button onClick={() => void copy("cbu", wallet.pay!.cbu!)}
+                      className={`flex-1 rounded-lg border py-2 text-xs font-bold ${copied === "cbu" ? "border-emerald-500 bg-emerald-500 text-white" : "border-[#1fa855] text-[#1fa855]"}`}>
+                      {copied === "cbu" ? "✓ Copiado" : "Copiar CBU"}
+                    </button>
+                  )}
+                  {wallet.pay?.alias && (
+                    <button onClick={() => void copy("alias", wallet.pay!.alias!)}
+                      className={`flex-1 rounded-lg border py-2 text-xs font-bold ${copied === "alias" ? "border-emerald-500 bg-emerald-500 text-white" : "border-[#1fa855] text-[#1fa855]"}`}>
+                      {copied === "alias" ? "✓ Copiado" : "Copiar ALIAS"}
+                    </button>
+                  )}
+                </div>
+              )}
+              <input inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={`Monto a cargar (mín ${money(wallet.minDeposit)})`}
+                className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 outline-none focus:border-[#1fa855]" />
+              <label className="mt-2 flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#1fa855] py-2.5 text-sm font-bold text-white">
+                {comprobante ? "✓ Comprobante listo" : "📎 SUBIR COMPROBANTE"}
+                <input type="file" accept="image/*" className="hidden" onChange={onComprobante} />
+              </label>
+              {cashMsg && <div className="mt-1.5 text-xs text-rose-500">{cashMsg}</div>}
+              <div className="mt-2 flex gap-2">
+                <button onClick={() => { setDepositCard(false); setCashMsg(null); }}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-500">Cancelar</button>
+                <button onClick={() => void submitDeposit()} disabled={cashBusy}
+                  className="flex-1 rounded-lg bg-[#0b7d6e] py-2 text-xs font-bold text-white disabled:opacity-50">{cashBusy ? "Enviando…" : "Ya transferí, avisar"}</button>
+              </div>
+            </div>
+          </div>
+        )}
         <div ref={endRef} />
       </div>
 
@@ -253,9 +291,9 @@ export default function ChatPage() {
       {/* Barra del cajero: cargar / retirar / soporte (E3). */}
       {wallet && (
         <div className="flex gap-2 bg-white px-3 pt-2.5">
-          <button onClick={() => { setCashier("deposit"); setCashMsg(null); setAmount(""); }}
+          <button onClick={() => { setDepositCard(true); setCashier(null); setCashMsg(null); setAmount(""); setComprobante(null); setTimeout(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), 60); }}
             className="flex-1 rounded-md bg-[#1fa855] py-2 text-sm font-bold text-white">CARGAR</button>
-          <button onClick={() => { setCashier("withdrawal"); setCashMsg(null); setAmount(""); }}
+          <button onClick={() => { setCashier("withdrawal"); setDepositCard(false); setCashMsg(null); setAmount(""); }}
             className="flex-1 rounded-md border border-[#1fa855] py-2 text-sm font-bold text-[#1fa855]">RETIRAR</button>
           <button onClick={() => inputRef.current?.focus()}
             className="flex-1 rounded-md border border-[#1fa855] py-2 text-sm font-bold text-[#1fa855]">SOPORTE</button>
@@ -271,70 +309,8 @@ export default function ChatPage() {
       </form>
 
       {/* Toast de confirmación (carga/retiro enviados). */}
-      {cashMsg && !cashier && (
+      {cashMsg && !cashier && !depositCard && (
         <div className="fixed left-1/2 top-4 z-[60] max-w-[92%] -translate-x-1/2 rounded-full bg-emerald-600 px-4 py-2 text-center text-sm font-semibold text-white shadow-lg">{cashMsg}</div>
-      )}
-
-      {/* Modal CARGAR */}
-      {cashier === "deposit" && wallet && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-3 sm:items-center" onClick={() => setCashier(null)}>
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5 text-slate-800" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-900">Cargar fichas</h3>
-              <button onClick={() => setCashier(null)} className="text-xl text-slate-400">✕</button>
-            </div>
-            <p className="mb-3 text-sm text-slate-600">Transferí a estos datos y después subí el comprobante 👇</p>
-
-            {(wallet.pay?.cbu || wallet.pay?.alias || wallet.pay?.titular) ? (
-              <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
-                {wallet.pay?.cbu && (
-                  <div className="flex items-center justify-between gap-2 py-0.5">
-                    <span className="text-slate-500">CBU/CVU</span><span className="break-all text-right font-semibold text-slate-800">{wallet.pay.cbu}</span>
-                  </div>
-                )}
-                {wallet.pay?.alias && (
-                  <div className="flex items-center justify-between gap-2 py-0.5">
-                    <span className="text-slate-500">Alias</span><span className="break-all text-right font-semibold text-slate-800">{wallet.pay.alias}</span>
-                  </div>
-                )}
-                {wallet.pay?.titular && (
-                  <div className="flex items-center justify-between gap-2 py-0.5">
-                    <span className="text-slate-500">Titular</span><span className="text-right font-semibold text-slate-800">{wallet.pay.titular}</span>
-                  </div>
-                )}
-                <div className="mt-2.5 flex gap-2">
-                  {wallet.pay?.cbu && (
-                    <button onClick={() => void copy("cbu", wallet.pay!.cbu!)}
-                      className={`flex-1 rounded-lg border py-2 text-xs font-bold ${copied === "cbu" ? "border-emerald-500 bg-emerald-500 text-white" : "border-[#1fa855] text-[#1fa855]"}`}>
-                      {copied === "cbu" ? "✓ Copiado" : "Copiar CBU"}
-                    </button>
-                  )}
-                  {wallet.pay?.alias && (
-                    <button onClick={() => void copy("alias", wallet.pay!.alias!)}
-                      className={`flex-1 rounded-lg border py-2 text-xs font-bold ${copied === "alias" ? "border-emerald-500 bg-emerald-500 text-white" : "border-[#1fa855] text-[#1fa855]"}`}>
-                      {copied === "alias" ? "✓ Copiado" : "Copiar Alias"}
-                    </button>
-                  )}
-                </div>
-              </div>
-            ) : wallet.paymentInfo ? (
-              <div className="mb-3 whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">{wallet.paymentInfo}</div>
-            ) : null}
-
-            <p className="mb-1.5 text-xs text-slate-500">Carga mínima {money(wallet.minDeposit)}.</p>
-            <input inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Monto a cargar"
-              className="mb-2 w-full rounded-xl border border-slate-300 px-4 py-3 text-base text-slate-800 outline-none focus:border-[#1fa855]" />
-            <label className="mb-3 flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#1fa855] py-3 text-sm font-bold text-white">
-              {comprobante ? "✓ Comprobante listo" : "📎 SUBIR COMPROBANTE"}
-              <input type="file" accept="image/*" className="hidden" onChange={onComprobante} />
-            </label>
-            {cashMsg && <p className="mb-2 text-sm text-rose-500">{cashMsg}</p>}
-            <button onClick={() => void submitDeposit()} disabled={cashBusy}
-              className="w-full rounded-xl border border-slate-300 py-3 font-bold text-slate-700 disabled:opacity-50">
-              {cashBusy ? "Enviando…" : "Ya transferí, avisar al cajero"}
-            </button>
-          </div>
-        </div>
       )}
 
       {/* Modal RETIRAR */}

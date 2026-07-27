@@ -15,3 +15,11 @@ html, body, #root {
   color: #e9edef;
   font-family: system-ui, "Segoe UI", Roboto, sans-serif;
 }
+
+/* Efecto de "resalte" para el CTA principal (botón violeta "Entrar a la plataforma"). */
+@keyframes brandGlow {
+  0%, 100% { box-shadow: 0 6px 18px -8px var(--brand-primary, #7c2fd6); }
+  50%      { box-shadow: 0 0 20px 2px var(--brand-primary, #7c2fd6), 0 6px 18px -8px var(--brand-primary, #7c2fd6); }
+}
+.btn-glow { animation: brandGlow 1.9s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .btn-glow { animation: none; } }
