@@ -223,7 +223,7 @@ export default function ChatPage() {
           );
           const linkBtn = m.link && (
             <a href={m.link.url} target="_blank" rel="noopener noreferrer"
-              className="btn-glow mt-2 flex items-center justify-center gap-1 rounded-lg py-2 text-sm font-extrabold text-white"
+              className="btn-glow mt-2 flex w-full items-center justify-center gap-1 rounded-lg py-2.5 text-sm font-extrabold text-white"
               style={{ background: "var(--brand-primary, #7c2fd6)" }}>
               {m.link.label}
             </a>
@@ -231,11 +231,13 @@ export default function ChatPage() {
           // system y operator se muestran igual: burbuja blanca a la IZQUIERDA (como que la marca
           // te escribe primero, estilo WhatsApp). Solo el jugador va a la derecha en verde.
           const hasPay = !!(m.pay && (m.pay.cbu || m.pay.alias || m.pay.titular));
-          const isPayMsg = hasPay || !!(m.pay); // mensaje de datos de pago (aunque no tenga estructurados)
           const showForm = m.id === lastPayId;  // el form persiste en el último mensaje de datos (no se achica al enviar)
+          // Cards con botón (bienvenida con link + datos de pago) usan el MISMO ancho, para que todos
+          // los botones tengan las mismas proporciones y el chat no se "descuadre".
+          const isWide = hasPay || !!m.pay || !!m.link;
           return (
             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-              <div className={`px-2.5 py-1.5 text-sm text-slate-800 shadow-sm ${isPayMsg ? "w-[95%] max-w-[95%]" : "max-w-[82%]"} ${mine ? "rounded-lg rounded-tr-sm" : "rounded-lg rounded-tl-sm bg-white"}`}
+              <div className={`px-2.5 py-1.5 text-sm text-slate-800 shadow-sm ${isWide ? "w-[88%] max-w-[88%]" : "max-w-[82%]"} ${mine ? "rounded-lg rounded-tr-sm" : "rounded-lg rounded-tl-sm bg-white"}`}
                 style={mine ? { background: "#d9fdd3" } : undefined}>
                 {img}
                 {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
@@ -260,14 +262,14 @@ export default function ChatPage() {
                     {showForm && wallet && (
                       <div className="mt-2">
                         <input inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={`Monto a cargar (mín ${money(wallet.minDeposit)})`}
-                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm text-slate-800 placeholder:text-slate-400 outline-none focus:border-[#1fa855] [color-scheme:light]" />
-                        <label className="mt-2 flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#1fa855] py-3 text-sm font-bold text-white">
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none focus:border-[#1fa855] [color-scheme:light]" />
+                        <label className="mt-2 flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#1fa855] py-2.5 text-sm font-bold text-white">
                           {comprobante ? "✓ Comprobante listo" : "📎 SUBIR COMPROBANTE"}
                           <input type="file" accept="image/*" className="hidden" onChange={onComprobante} />
                         </label>
                         {cashMsg && <div className="mt-1.5 text-center text-xs text-rose-500">{cashMsg}</div>}
                         <button onClick={() => void submitDeposit()} disabled={cashBusy}
-                          className="mt-2 w-full rounded-lg bg-[#0b7d6e] py-3 text-sm font-bold text-white disabled:opacity-50">{cashBusy ? "Enviando…" : "Ya transferí, avisar"}</button>
+                          className="mt-2 w-full rounded-lg bg-[#0b7d6e] py-2.5 text-sm font-bold text-white disabled:opacity-50">{cashBusy ? "Enviando…" : "Ya transferí, avisar"}</button>
                       </div>
                     )}
                   </div>
