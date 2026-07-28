@@ -1076,11 +1076,15 @@ async function firePlayerPurchase(userId: string, username: string, amount: numb
 }
 
 // Deja un mensaje del sistema en la conversación del jugador (aviso de carga/retiro) + emite en vivo.
-async function postCashierMsg(userId: string, playerId: string, body: string) {
+// senderType "player" -> el mensaje sale del lado del JUGADOR (burbuja derecha) y flaguea al
+// operador. Se usa para las acciones que inicia el jugador (registrar carga / pedir retiro).
+// "system" (default) -> avisos del casino al jugador (acreditado/rechazado): burbuja izquierda.
+async function postCashierMsg(userId: string, playerId: string, body: string, senderType: "system" | "player" = "system") {
   const conv = await prisma.chatConversation.findFirst({ where: { userId, playerId }, select: { id: true } });
   if (!conv) return;
-  const msg = await prisma.chatMessage.create({ data: { userId, conversationId: conv.id, senderType: "system", body }, select: { id: true, senderType: true, body: true, createdAt: true } });
-  await prisma.chatConversation.update({ where: { id: conv.id }, data: { lastMessageAt: new Date(), lastMessagePreview: body.slice(0, 120), unreadPlayer: { increment: 1 } } });
+  const msg = await prisma.chatMessage.create({ data: { userId, conversationId: conv.id, senderType, senderId: senderType === "player" ? playerId : null, body }, select: { id: true, senderType: true, body: true, createdAt: true } });
+  const unread = senderType === "player" ? { unreadOperator: { increment: 1 } } : { unreadPlayer: { increment: 1 } };
+  await prisma.chatConversation.update({ where: { id: conv.id }, data: { lastMessageAt: new Date(), lastMessagePreview: body.slice(0, 120), ...unread } });
   const payload = { conversationId: conv.id, message: msg };
   emitChat(`chat:${userId}:player:${playerId}`, "chat:message", payload);
   emitChat(`chat:${userId}`, "chat:message", payload);
@@ -1133,7 +1137,7 @@ chatPublicRouter.post("/me/deposit", requireChatClient, async (req, res) => {
   });
   // Aviso al operador (en vivo, para la sección Cajero) — NO acredita.
   emitChat(`chat:${req.accountId}`, "chat:cashier", { type: "deposit", id: dep.id });
-  await postCashierMsg(req.accountId!, req.chatPlayerId!, `🧾 Registraste una carga de ${ars(dep.amount)} (${dep.method}). La estamos verificando.`).catch(() => undefined);
+  await postCashierMsg(req.accountId!, req.chatPlayerId!, `🧾 Registraste una carga de ${ars(dep.amount)} (${dep.method}). La estamos verificando.`, "player").catch(() => undefined);
   return res.status(201).json({ deposit: dep });
 });
 
@@ -1151,7 +1155,7 @@ chatPublicRouter.post("/me/withdrawal", requireChatClient, async (req, res) => {
     select: { id: true, amount: true, destino: true, status: true, createdAt: true },
   });
   emitChat(`chat:${req.accountId}`, "chat:cashier", { type: "withdrawal", id: w.id });
-  await postCashierMsg(req.accountId!, req.chatPlayerId!, `🏧 Pediste un retiro de ${ars(w.amount)}. Lo estamos procesando.`).catch(() => undefined);
+  await postCashierMsg(req.accountId!, req.chatPlayerId!, `🏧 Pediste un retiro de ${ars(w.amount)}. Lo estamos procesando.`, "player").catch(() => undefined);
   return res.status(201).json({ withdrawal: w });
 });
 

@@ -287,7 +287,7 @@ export default function ChatPage() {
                     {showForm && wallet && (
                       <div className="mt-2">
                         <input inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={`Monto a cargar (mín ${money(wallet.minDeposit)})`}
-                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none focus:border-[#1fa855] [color-scheme:light]" />
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-base text-slate-800 placeholder:text-slate-400 outline-none focus:border-[#1fa855] [color-scheme:light]" />
                         <label className="mt-2 flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#1fa855] py-2.5 text-sm font-bold text-white">
                           {comprobante ? "✓ Comprobante listo" : "📎 SUBIR COMPROBANTE"}
                           <input type="file" accept="image/*" className="hidden" onChange={onComprobante} />
