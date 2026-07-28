@@ -712,6 +712,35 @@ chatPublicRouter.post("/push/subscribe", requireChatClient, async (req, res) => 
 
 // ============================ PÚBLICO (jugador) ============================
 
+// GET /api/chat/manifest — manifest PWA DINÁMICO por sesión. El chat-pwa lo proxea same-origin en
+// /session-manifest?t=<token>&s=<slug>. El start_url incluye la sesión, así la app instalada en
+// iPhone (storage aislado de Safari) abre YA logueada (iOS usa el start_url del manifest para lanzar).
+chatPublicRouter.get("/manifest", async (req, res) => {
+  const t = typeof req.query.t === "string" ? req.query.t : "";
+  const s = typeof req.query.s === "string" ? req.query.s : "";
+  let name = "Chat";
+  if (s) {
+    const acc = await prisma.user.findFirst({ where: { slug: s }, select: { brandName: true } }).catch(() => null);
+    if (acc?.brandName) name = acc.brandName;
+  }
+  const qs = new URLSearchParams();
+  if (t) qs.set("t", t);
+  if (s) qs.set("s", s);
+  const startUrl = qs.toString() ? `/chat?${qs.toString()}` : "/chat";
+  res.type("application/manifest+json");
+  res.set("Cache-Control", "no-store");
+  return res.json({
+    name, short_name: name, display: "standalone",
+    start_url: startUrl, scope: "/",
+    theme_color: "#0b141a", background_color: "#0b141a",
+    icons: [
+      { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+    ],
+  });
+});
+
 // GET /api/chat/branding/asset/:id — sirve una imagen de branding (logo / bienvenida). PÚBLICA:
 // la cargan los <img> del panel y de la PWA. Cache largo (el id es aleatorio e inmutable).
 chatPublicRouter.get("/branding/asset/:id", async (req, res) => {

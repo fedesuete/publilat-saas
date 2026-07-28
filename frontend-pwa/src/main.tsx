@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import "./index.css";
 import { loadBranding, applyBranding, saveBranding, getToken, setToken, API_BASE } from "./lib/api";
+import { pointManifestToSession } from "./lib/install";
 
 // App instalada en iPhone: la sesión viene horneada en la URL de lanzamiento (?t=token&s=slug),
 // porque iOS aísla el storage de la app respecto de Safari. La leemos ANTES de pintar para entrar
@@ -28,6 +29,9 @@ try {
 // Aplicar la marca guardada apenas arranca (antes de pintar), para no ver el flash genérico.
 const saved = loadBranding();
 if (saved) applyBranding(saved);
+
+// Si ya hay sesión, apuntamos el manifest a la sesión (para que la instalación en iPhone abra logueada).
+pointManifestToSession();
 
 // Registrar el service worker (para push + shell). injectRegister:false en vite.config.
 // Auto-actualización: cuando el SW nuevo toma control (skipWaiting + claim en sw.ts), recargamos

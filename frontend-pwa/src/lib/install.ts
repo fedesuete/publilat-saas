@@ -3,18 +3,37 @@ import { getToken, loadBranding } from "./api";
 
 export type InstallPrompt = { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
 
-// Hornea la sesión (token + slug de la marca) en la URL, para que al "Agregar a inicio" en iPhone
-// la app instalada abra YA logueada. iOS aísla el localStorage de la app respecto de Safari, así
-// que el token no se hereda: viaja por la URL de lanzamiento (iOS captura la URL actual al instalar)
-// y main.tsx la lee al abrir. En Android no hace falta (la PWA comparte storage con el navegador).
-export function bakeSessionIntoUrl(): void {
+function sessionParams(): string | null {
   const t = getToken();
-  if (!t) return;
+  if (!t) return null;
   const params = new URLSearchParams();
   params.set("t", t);
   const slug = loadBranding()?.accountSlug;
   if (slug) params.set("s", slug);
-  try { history.replaceState(null, "", `/chat?${params.toString()}`); } catch { /* noop */ }
+  return params.toString();
+}
+
+// Apunta el <link rel="manifest"> a un manifest DINÁMICO por sesión (/session-manifest?t=..&s=..).
+// Su start_url incluye la sesión, así la app instalada en iPhone (storage aislado de Safari) abre YA
+// logueada — iOS usa el start_url del manifest para lanzar la app. Se setea desde el load (main.tsx)
+// y al montar el chat, para que al "Agregar a inicio" iOS lea el manifest con la sesión actual.
+export function pointManifestToSession(): void {
+  const qs = sessionParams();
+  if (!qs) return;
+  try {
+    let link = document.querySelector('link[rel="manifest"]') as HTMLLinkElement | null;
+    if (!link) { link = document.createElement("link"); link.rel = "manifest"; document.head.appendChild(link); }
+    link.href = `/session-manifest?${qs}`;
+  } catch { /* noop */ }
+}
+
+// Al tocar instalar: además de apuntar el manifest, horneamos la sesión en la URL actual (iOS viejo
+// captura la URL actual al "Agregar a inicio"). En Android no hace falta (comparte storage).
+export function bakeSessionIntoUrl(): void {
+  const qs = sessionParams();
+  if (!qs) return;
+  try { history.replaceState(null, "", `/chat?${qs}`); } catch { /* noop */ }
+  pointManifestToSession();
 }
 
 let deferred: InstallPrompt | null = null;

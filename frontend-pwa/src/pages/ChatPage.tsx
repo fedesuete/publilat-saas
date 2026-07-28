@@ -3,7 +3,7 @@ import { io, type Socket } from "socket.io-client";
 import { api, apiError, API_BASE, getToken, clearToken, loadBranding } from "../lib/api";
 import { subscribeToPush, pushSupported, pushPermission } from "../lib/push";
 import InstallPrompt, { InstallGuide } from "../components/InstallPrompt";
-import { promptInstall, onInstallAvailable, bakeSessionIntoUrl } from "../lib/install";
+import { promptInstall, onInstallAvailable, bakeSessionIntoUrl, pointManifestToSession } from "../lib/install";
 
 interface Pay { cbu: string | null; alias: string | null; titular: string | null }
 interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; image?: string | null; buttons?: string[] | null; link?: { label: string; url: string } | null; pay?: Pay | null; install?: boolean; createdAt: string }
@@ -41,6 +41,7 @@ export default function ChatPage() {
   const [showGuide, setShowGuide] = useState(false);
   const [chatImage, setChatImage] = useState<string | null>(null);
   useEffect(() => onInstallAvailable(setCanInstall), []);
+  useEffect(() => { pointManifestToSession(); }, []); // manifest por sesión -> instalar en iPhone abre logueado
   const doInstall = () => { if (canInstall) { void promptInstall(); } else { bakeSessionIntoUrl(); setShowGuide(true); } };
   const money = (n: number) => "$" + n.toLocaleString("es-AR");
   const copy = async (label: string, value: string) => {
