@@ -56,6 +56,23 @@ function sessionConfig(proxy?: ProxyConfig | null) {
 const toChatId = (number: string) =>
   number.includes("@") ? number.replace("@s.whatsapp.net", "@c.us") : `${number.replace(/\D/g, "")}@c.us`;
 
+// Resuelve un LID (@lid: remitente con el teléfono OCULTO por privacidad) al JID de teléfono
+// (@c.us). WAHA (WEBJS) devuelve en contact.id el JID real de teléfono aunque el peer sea un LID.
+// Sin esto, enviar a un @lid da 422 (WAHA no lo rutea). Los no-LID pasan por toChatId sin cambios.
+async function resolveChatId(session: string, number: string): Promise<string> {
+  if (!number.includes("@lid")) return toChatId(number);
+  try {
+    const { data } = await client().get("/api/contacts", { params: { session, contactId: number } });
+    const id = (data as { id?: string | { _serialized?: string } })?.id;
+    const serialized = typeof id === "string" ? id : id?._serialized;
+    if (typeof serialized === "string" && serialized.endsWith("@c.us")) return serialized;
+    console.warn(`[waha] LID ${number} sin teléfono resoluble (id=${JSON.stringify(id)})`);
+  } catch (e) {
+    console.warn(`[waha] error resolviendo LID ${number}:`, e instanceof Error ? e.message : String(e));
+  }
+  return toChatId(number); // fallback: intenta con el LID tal cual (puede 422, pero no rompe el flujo)
+}
+
 // id de mensaje como STRING serializado. WAHA lo manda distinto según engine/versión:
 // WEBJS puede traer un objeto { _serialized } y NOWEB un string plano. El ack y el
 // mensaje guardado tienen que usar LA MISMA forma, si no el ERROR del 463 no matchea
@@ -158,9 +175,10 @@ export async function connectionState(instanceName: string): Promise<string> {
 }
 
 export async function sendText(instanceName: string, number: string, text: string) {
+  const chatId = await resolveChatId(instanceName, number);
   const { data } = await client().post("/api/sendText", {
     session: instanceName,
-    chatId: toChatId(number),
+    chatId,
     text,
   });
   return { ...data, key: { id: sentId(data) } };
@@ -168,9 +186,10 @@ export async function sendText(instanceName: string, number: string, text: strin
 
 export async function sendWhatsAppAudio(instanceName: string, number: string, audioBase64: string) {
   try {
+    const chatId = await resolveChatId(instanceName, number);
     const { data } = await client().post("/api/sendVoice", {
       session: instanceName,
-      chatId: toChatId(number),
+      chatId,
       // convert: WAHA transcodea a ogg/opus (nota de voz real) si el origen es otro formato.
       file: { mimetype: "audio/ogg; codecs=opus", data: audioBase64 },
       convert: true,
