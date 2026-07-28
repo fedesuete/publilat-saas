@@ -6,7 +6,7 @@ import { prisma } from "./prisma.js";
 import { emitToUser } from "./io.js";
 import { sendCapiEvent } from "./meta-capi.js";
 import { resolveUserPixel } from "./pixel.js";
-import { consumeDayAndActivate } from "./access.js";
+import { consumeDayAndActivate, consumeChatDayAndActivate } from "./access.js";
 import { getEngine } from "./wa-engine.js";
 import { getPhoneQuality } from "./wa-cloud.js";
 import { decryptSecret } from "./crypto.js";
@@ -58,6 +58,20 @@ export async function expireLines(): Promise<number> {
     .deleteMany({ where: { createdAt: { lt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) } } })
     .catch(() => undefined);
   return deactivated;
+}
+
+// Renueva/vence los "días de Chat App" (canal propio, sin WhatsApp): por cada cliente con el día
+// prendido y vencido, intenta consumir 1 día (renueva 24h) si hay saldo y no tiene línea WA activa;
+// sin saldo queda vencido y el candado se cierra solo. Mismo modelo que expireLines().
+export async function expireChatDays(): Promise<void> {
+  const now = new Date();
+  const users = await prisma.user.findMany({
+    where: { chatDayEnabled: true, OR: [{ chatDayExpiresAt: null }, { chatDayExpiresAt: { lt: now } }] },
+    select: { id: true },
+  });
+  for (const u of users) {
+    await consumeChatDayAndActivate(u.id).catch(() => undefined);
+  }
 }
 
 // Reintenta los MetaEvent fallidos (últimas 24h). Reconstruye el evento desde el Contact
@@ -305,6 +319,7 @@ export async function initQueues(): Promise<void> {
           const { resumeFlowRun } = await import("./flow-engine.js");
           return resumeFlowRun(job.data.runId as string);
         }
+        await expireChatDays().catch((e) => console.error("[chat-day] expire:", e instanceof Error ? e.message : String(e)));
         return expireLines();
       },
       { connection }

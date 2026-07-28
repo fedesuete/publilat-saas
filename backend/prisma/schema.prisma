@@ -59,6 +59,12 @@ model User {
   chatInstallMsg3 String?
   chatTutIosImg     String? // foto tutorial de instalación iPhone (URL /branding/asset/:id)
   chatTutAndroidImg String? // foto tutorial de instalación Android
+  // Día de Chat App INDEPENDIENTE de WhatsApp: el cliente que no quiere/puede usar WhatsApp gasta
+  // 1 día del saldo (mismo pool) y opera por el canal propio. Se auto-renueva 24h mientras esté
+  // prendido y haya saldo (igual que las líneas). El Chat App se prende si hay línea WA con día
+  // vigente O este día vigente.
+  chatDayEnabled   Boolean   @default(false)
+  chatDayExpiresAt DateTime?
   // Popup/promo que ve el jugador al entrar a la PWA (imagen + texto + link). popupUpdatedAt
   // versiona el aviso: el jugador lo ve de nuevo cada vez que cambia (dedupe en el cliente).
   popupActive     Boolean   @default(false)

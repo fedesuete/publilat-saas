@@ -14,6 +14,7 @@ import { emitChat, playerHasLiveSocket } from "../lib/io.js";
 import { pushEnabled, publicVapidKey, enqueuePlayerPush, enqueueAccountBroadcast } from "../lib/chat-push.js";
 import { s3Enabled } from "../lib/s3.js";
 import { runChatBot } from "../lib/chat-bot.js";
+import { canOperateChat, consumeChatDayAndActivate, getAvailableDays } from "../lib/access.js";
 
 // Router del OPERADOR (se monta bajo requireAuth): gestión de links de invitación.
 export const chatRouter = Router();
@@ -36,25 +37,57 @@ const PLAYER_PASSWORD = "123456";
 // status/connected a propósito: el `status` sigue a la conexión (webhook.ts pone active/inactive
 // según connected), así que una desconexión momentánea de WhatsApp NO debe apagar el Chat App de
 // alguien que pagó. Cuando el día vence, line-expiry deja expiresAt en el pasado -> se corta solo.
-async function hasActiveWaLine(userId: string): Promise<boolean> {
-  const n = await prisma.waLine.count({ where: { userId, expiresAt: { gt: new Date() } } });
-  return n > 0;
-}
+// canOperateChat (lib/access) además prende el chat con un "día de Chat App" propio (sin WhatsApp).
 
 // Gate para las acciones SALIENTES del Chat App (responder, notificar, popup): requieren una línea
 // de WhatsApp activa. Sin ella respondemos 403 con un mensaje claro para que el panel lo muestre.
 // El branding, los invites y la lectura NO se gatean (el operador puede seguir viendo/configurando).
 async function requireActiveLine(req: Request, res: Response, next: NextFunction): Promise<void> {
-  if (await hasActiveWaLine(req.userId!)) return next();
+  if (await canOperateChat(req.userId!)) return next();
   res.status(403).json({
     error: "Necesitás una línea de WhatsApp activa (con días) para responder, notificar o mostrar popups en el Chat App. Recargá días y activá una línea.",
     code: "line_required",
   });
 }
 
-// GET /api/chat/status — el panel consulta si puede operar (hay línea de WhatsApp activa).
+// GET /api/chat/status — el panel consulta si puede operar (línea WhatsApp activa O día de Chat App).
 chatRouter.get("/status", async (req, res) => {
-  res.json({ activeLine: await hasActiveWaLine(req.userId!) });
+  res.json({ activeLine: await canOperateChat(req.userId!) });
+});
+
+// GET /api/chat/day — estado del "día de Chat App" (canal propio sin WhatsApp) para el panel.
+chatRouter.get("/day", async (req, res) => {
+  const [u, availableDays] = await Promise.all([
+    prisma.user.findUnique({ where: { id: req.userId! }, select: { chatDayEnabled: true, chatDayExpiresAt: true } }),
+    getAvailableDays(req.userId!),
+  ]);
+  const waActive = (await prisma.waLine.count({ where: { userId: req.userId!, expiresAt: { gt: new Date() } } })) > 0;
+  res.json({
+    enabled: !!u?.chatDayEnabled,
+    expiresAt: u?.chatDayExpiresAt ?? null,
+    active: !!(u?.chatDayExpiresAt && u.chatDayExpiresAt > new Date()),
+    availableDays,
+    waActive, // si hay WhatsApp con día vigente, el chat ya está cubierto (no gasta día propio)
+  });
+});
+
+const chatDaySchema = z.object({ enabled: z.boolean() });
+
+// POST /api/chat/day — prende/apaga el "día de Chat App". Al prender consume 1 día del saldo y
+// activa 24h (si no hay saldo devuelve error). Al apagar, deja de renovar (el día en curso corre).
+chatRouter.post("/day", async (req, res) => {
+  const parsed = chatDaySchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  await prisma.user.update({ where: { id: req.userId! }, data: { chatDayEnabled: parsed.data.enabled } });
+  if (parsed.data.enabled) {
+    const ok = await consumeChatDayAndActivate(req.userId!);
+    if (!ok) {
+      await prisma.user.update({ where: { id: req.userId! }, data: { chatDayEnabled: false } });
+      return res.status(402).json({ error: "No te quedan días. Recargá días para usar el Chat App.", code: "no_credit" });
+    }
+  }
+  const u = await prisma.user.findUnique({ where: { id: req.userId! }, select: { chatDayEnabled: true, chatDayExpiresAt: true } });
+  res.json({ enabled: !!u?.chatDayEnabled, expiresAt: u?.chatDayExpiresAt ?? null, active: !!(u?.chatDayExpiresAt && u.chatDayExpiresAt > new Date()) });
 });
 
 // Clave por defecto de un acceso nuevo (el operador se la pasa al cliente; el cliente entra con eso).
@@ -662,7 +695,7 @@ chatPublicRouter.post("/me/messages", requireChatClient, async (req, res) => {
 // para que la PWA lo muestre una sola vez por versión.
 chatPublicRouter.get("/me/popup", requireChatClient, async (req, res) => {
   // Sin línea de WhatsApp activa, la cuenta no muestra popup (mismo gate que las acciones del operador).
-  if (!(await hasActiveWaLine(req.accountId!))) return res.json({ popup: null });
+  if (!(await canOperateChat(req.accountId!))) return res.json({ popup: null });
   const u = await prisma.user.findUnique({
     where: { id: req.accountId! },
     select: { popupActive: true, popupImageUrl: true, popupTitle: true, popupText: true, popupLink: true, popupFrom: true, popupUntil: true, popupUpdatedAt: true },
@@ -958,7 +991,7 @@ chatPublicRouter.post("/login", async (req, res) => {
     if (!ok) return res.status(401).json({ error: "Usuario o clave incorrectos." });
   }
   // Candado de días: sin día de WhatsApp vigente el chat está apagado.
-  if (!(await hasActiveWaLine(accId))) {
+  if (!(await canOperateChat(accId))) {
     return res.status(403).json({ error: "El chat no está disponible en este momento. Probá más tarde.", code: "line_required" });
   }
   const conv = await prisma.chatConversation.findFirst({ where: { userId: accId, playerId: player.id }, select: { id: true } });
@@ -979,7 +1012,7 @@ chatPublicRouter.get("/public/:slug", async (req, res) => {
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   return res.json({
     accountSlug: acc.slug,
-    active: await hasActiveWaLine(acc.id),
+    active: await canOperateChat(acc.id),
     branding: {
       brandName: acc.brandName, logoUrl: acc.logoUrl,
       primaryColor: acc.primaryColor, accentColor: acc.accentColor, welcomeText: acc.welcomeText, chatWaLink: acc.chatWaLink, chatPlatformUrl: acc.chatPlatformUrl,
@@ -1012,7 +1045,7 @@ chatPublicRouter.post("/start", async (req, res) => {
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   // Candado de días: sin día de WhatsApp vigente el chat está apagado.
-  if (!(await hasActiveWaLine(acc.id))) {
+  if (!(await canOperateChat(acc.id))) {
     return res.status(403).json({ error: "El chat no está disponible en este momento. Probá más tarde.", code: "line_required" });
   }
 

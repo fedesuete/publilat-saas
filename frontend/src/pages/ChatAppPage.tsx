@@ -38,7 +38,15 @@ export default function ChatAppPage() {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  const [activeLine, setActiveLine] = useState(true); // ¿hay línea WA activa para operar el Chat App?
+  const [activeLine, setActiveLine] = useState(true); // ¿se puede operar el Chat App (línea WA O día propio)?
+  const [day, setDay] = useState<{ enabled: boolean; active: boolean; expiresAt: string | null; availableDays: number; waActive: boolean } | null>(null);
+  const [dayBusy, setDayBusy] = useState(false);
+  const loadDay = () => api.get("/api/chat/day").then(({ data }) => setDay(data)).catch(() => undefined);
+  const toggleDay = async (enabled: boolean) => {
+    setDayBusy(true); setError(null);
+    try { await api.post("/api/chat/day", { enabled }); await Promise.all([loadDay(), api.get<{ activeLine: boolean }>("/api/chat/status").then(({ data }) => setActiveLine(data.activeLine))]); }
+    catch (e) { setError(apiError(e)); } finally { setDayBusy(false); }
+  };
   const [tour, setTour] = useState(false); // recorrido guiado
   const tourStarted = useRef(false);
   const startTour = () => { setTab("chats"); window.setTimeout(() => setTour(true), 120); };
@@ -69,8 +77,9 @@ export default function ChatAppPage() {
 
   useEffect(() => {
     void loadConvs();
-    // Estado de línea: si no hay línea WA activa, el Chat App queda en solo-lectura.
+    // Estado de línea: si no hay línea WA activa NI día de Chat App, queda en solo-lectura.
     api.get<{ activeLine: boolean }>("/api/chat/status").then(({ data }) => setActiveLine(data.activeLine)).catch(() => undefined);
+    void loadDay();
   }, []);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
@@ -135,9 +144,31 @@ export default function ChatAppPage() {
 
       {!activeLine && (
         <div className="mb-3 rounded-lg border border-amber-600/50 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-          ⚠️ <b>Chat App en solo-lectura.</b> No tenés una línea de WhatsApp activa, así que no podés
-          responder, enviar avisos ni mostrar el popup. Recargá días y activá una línea en{" "}
-          <a href="/whatsapp" className="underline">WhatsApp</a> para reactivarlo.
+          ⚠️ <b>Chat App en solo-lectura.</b> No podés responder ni enviar avisos. Activá una línea en{" "}
+          <a href="/whatsapp" className="underline">WhatsApp</a>, o prendé el <b>Chat App con tus días</b> acá abajo 👇 (funciona sin WhatsApp).
+        </div>
+      )}
+
+      {/* Día de Chat App: operar por el canal PROPIO sin WhatsApp, gastando días del mismo saldo. */}
+      {day && (
+        <div className="mb-3 rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-3 text-sm">
+          {day.waActive ? (
+            <div className="text-slate-300"><span className="text-emerald-400">●</span> Chat App activo — cubierto por tu línea de WhatsApp (no gasta un día aparte).</div>
+          ) : day.active ? (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-slate-200"><span className="text-emerald-400">●</span> <b>Chat App activo con tus días</b> · renueva {day.expiresAt ? fmtDate(day.expiresAt) : ""} · te quedan <b>{day.availableDays}</b> días</div>
+              <button onClick={() => void toggleDay(false)} disabled={dayBusy} className="rounded-md border border-slate-600 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800 disabled:opacity-50">{dayBusy ? "…" : "Apagar"}</button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-slate-300">💬 <b>Usá el Chat App sin WhatsApp.</b> Gastás 1 día del saldo (tenés <b>{day.availableDays}</b>) y se renueva solo cada 24h mientras tengas días.</div>
+              {day.availableDays >= 1 ? (
+                <button onClick={() => void toggleDay(true)} disabled={dayBusy} className="shrink-0 rounded-md bg-wa-green px-3 py-1.5 text-xs font-semibold text-slate-900 disabled:opacity-50">{dayBusy ? "Activando…" : "Activar (1 día)"}</button>
+              ) : (
+                <a href="/whatsapp" className="shrink-0 rounded-md border border-amber-500 px-3 py-1.5 text-xs text-amber-200">Recargá días</a>
+              )}
+            </div>
+          )}
         </div>
       )}
 
