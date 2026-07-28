@@ -18,7 +18,8 @@ const configSchema = z.object({
   subtitle: z.string().max(240).optional(),
   buttonText: z.string().max(40).optional(),
   msg: z.string().max(400).optional(),
-  autoRedirect: z.boolean().optional(), // pasa 1 seg por la landing y redirige a WhatsApp
+  autoRedirect: z.boolean().optional(), // pasa 1 seg por la landing y redirige
+  destino: z.enum(["whatsapp", "chatapp"]).optional(), // a dónde va el botón (default whatsapp)
 });
 type Cfg = z.infer<typeof configSchema>;
 
@@ -43,9 +44,11 @@ async function buildHtml(userId: string, userSlug: string, cfg: Cfg): Promise<st
     title: cfg.title ?? "Publi.lat",
     headline: cfg.headline ?? cfg.title ?? "Hablá con nosotros",
     subtitle: cfg.subtitle ?? "Escribinos por WhatsApp y te atendemos al toque.",
-    buttonText: cfg.buttonText ?? "Hablar por WhatsApp",
+    buttonText: cfg.buttonText ?? (cfg.destino === "chatapp" ? "Abrir chat" : "Hablar por WhatsApp"),
     msg: cfg.msg ?? "Hola, quiero info",
     autoRedirect: cfg.autoRedirect ?? false,
+    destino: cfg.destino ?? "whatsapp",
+    chatBase: process.env.CHAT_PWA_URL ?? "https://chat.publi.lat",
   };
   return renderTrackedLanding(full);
 }

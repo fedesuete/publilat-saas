@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>GANAMOS</title>
+<style>
+  :root { --v1:#7c2fd6; --v2:#4c1d95; --gold:#ffcf3f; --ink:#0e0a1a; }
+  * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+  html,body { height:100%; }
+  body {
+    font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    color:#fff; background:
+      radial-gradient(1200px 600px at 50% -10%, rgba(124,47,214,.55), transparent 60%),
+      radial-gradient(900px 500px at 50% 110%, rgba(76,29,149,.45), transparent 60%),
+      var(--ink);
+    min-height:100dvh; display:flex; align-items:center; justify-content:center; padding:24px 18px;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  }
+  .card { width:100%; max-width:440px; text-align:center; }
+  .logo {
+    display:inline-flex; align-items:center; gap:10px; font-weight:900; letter-spacing:.5px;
+    font-size:30px; text-transform:uppercase;
+  }
+  .logo .spade { width:38px;height:38px;border-radius:50%;
+    background:linear-gradient(145deg,var(--v1),var(--v2)); display:grid;place-items:center;
+    box-shadow:0 8px 26px -8px var(--v1); font-size:20px; }
+  .badge {
+    margin:22px auto 0; display:inline-block; padding:7px 16px; border-radius:999px;
+    background:linear-gradient(90deg,var(--gold),#ffb300); color:#3a2600; font-weight:800;
+    font-size:13px; letter-spacing:.4px; box-shadow:0 10px 30px -12px var(--gold);
+  }
+  h1 { margin-top:18px; font-size:34px; line-height:1.1; font-weight:900; text-wrap:balance; }
+  h1 span { color:var(--gold); }
+  p.sub { margin-top:12px; color:#cbb8e8; font-size:16px; line-height:1.5; }
+  .hero {
+    margin:26px auto 4px; width:220px; height:220px; border-radius:50%;
+    background:radial-gradient(circle at 50% 35%, rgba(124,47,214,.6), rgba(14,10,26,0) 70%);
+    display:grid; place-items:center; font-size:110px;
+  }
+  .cta {
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    margin-top:20px; width:100%; padding:18px; border-radius:16px; text-decoration:none;
+    font-size:20px; font-weight:900; color:#231600; letter-spacing:.4px;
+    background:linear-gradient(90deg,var(--gold),#ffb300);
+    box-shadow:0 16px 40px -12px var(--gold);
+    animation:pulse 1.9s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{box-shadow:0 16px 40px -14px var(--gold)} 50%{box-shadow:0 0 0 4px rgba(255,207,63,.25),0 16px 40px -10px var(--gold)} }
+  @media (prefers-reduced-motion: reduce){ .cta{animation:none} }
+  .trust { margin-top:18px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+  .trust span { font-size:12.5px; color:#b9a7dd; background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.08); padding:6px 12px; border-radius:999px; }
+  .foot { margin-top:22px; font-size:11px; color:#7c6ca0; line-height:1.5; }
+</style>
+</head>
+<body>
+  <main class="card">
+    <div class="logo"><span class="spade">♠</span> Ganamos</div>
+    <div class="badge">🎁 BONO DEL 50% EN TU 1ª CARGA</div>
+    <div class="hero">🎰</div>
+    <h1>Cargá y llevate un <span>50% de bono</span></h1>
+    <p class="sub">Registrate gratis en 1 minuto, hacé tu primera carga y te damos un 50% extra para arrancar. Atención directa, 24 horas.</p>
+
+    <a class="cta" href="https://chat.publi.lat/r/victor">JUGÁ YA →</a>
+
+    <div class="trust">
+      <span>⚡ Registro en 1 tap</span>
+      <span>💬 Atención 24 hs</span>
+      <span>🔒 Sin tarjeta</span>
+    </div>
+    <p class="foot">Solo para mayores de 18 años. Jugá con responsabilidad.</p>
+  </main>
+
+  <!-- Meta Pixel (victor / GANAMOS) -->
+  <script>
+    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+    n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script',
+    'https://connect.facebook.net/en_US/fbevents.js');
+    fbq('init','2066250657335669');
+    fbq('track','PageView');
+  </script>
+  <noscript><img height="1" width="1" style="display:none"
+    src="https://www.facebook.com/tr?id=2066250657335669&ev=PageView&noscript=1"/></noscript>
+
+  <!-- Reenvía el fbclid al chat (para atribuir el registro) y dispara Lead al tocar el botón. -->
+  <script>
+    (function(){
+      var p = new URLSearchParams(location.search);
+      var q = new URLSearchParams();
+      ['fbclid','utm_source','utm_medium','utm_campaign'].forEach(function(k){ if(p.get(k)) q.set(k,p.get(k)); });
+      var dest = 'https://chat.publi.lat/r/victor' + (q.toString() ? '?' + q.toString() : '');
+      document.querySelectorAll('a.cta').forEach(function(a){
+        a.setAttribute('href', dest);
+        a.addEventListener('click', function(){ try{ fbq('track','Lead'); }catch(e){} });
+      });
+    })();
+  </script>
+</body>
+</html>

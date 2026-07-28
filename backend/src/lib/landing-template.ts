@@ -4,14 +4,16 @@
 
 export interface LandingConfig {
   pixelId: string;
-  userSlug: string; // para el CTA -> /go?u=<userSlug>
+  userSlug: string; // para el CTA -> /go?u=<userSlug> (WhatsApp) o /r/<userSlug> (Chat App)
   goBase: string; // base del backend (ej http://localhost:4000)
   title: string;
   headline: string;
   subtitle: string;
   buttonText: string;
   msg: string; // texto que se manda a WhatsApp
-  autoRedirect?: boolean; // si true, redirige solo a WhatsApp tras ~1 seg
+  autoRedirect?: boolean; // si true, redirige solo tras ~1 seg
+  destino?: "whatsapp" | "chatapp"; // a dónde va el botón (default whatsapp)
+  chatBase?: string; // base de la PWA del Chat App (ej https://chat.publi.lat) para /r/<slug>
 }
 
 const esc = (s: string) =>
@@ -45,11 +47,14 @@ export function injectGoTracking(html: string, goBase = ""): string {
 }
 
 export function renderTrackedLanding(cfg: LandingConfig): string {
+  const isChat = cfg.destino === "chatapp";
   // El JSON va dentro de <script>; escapamos "<" para no cerrar el tag.
   const json = JSON.stringify({
     slug: cfg.userSlug,
     msg: cfg.msg,
     goBase: cfg.goBase,
+    chatBase: (cfg.chatBase || "").replace(/\/$/, ""),
+    destino: isChat ? "chatapp" : "whatsapp",
     autoRedirect: !!cfg.autoRedirect,
   }).replace(/</g, "\\u003c");
 
@@ -91,8 +96,8 @@ src="https://www.facebook.com/tr?id=${esc(cfg.pixelId)}&ev=PageView&noscript=1"/
   <div class="card">
     <h1>${esc(cfg.headline)}</h1>
     <p>${esc(cfg.subtitle)}</p>
-    <button id="cta"><span class="wa">🟢</span>${esc(cfg.buttonText)}</button>
-    <small id="hint">Te redirigimos a WhatsApp de forma segura.</small>
+    <button id="cta"><span class="wa">${isChat ? "💬" : "🟢"}</span>${esc(cfg.buttonText)}</button>
+    <small id="hint">${isChat ? "Abrimos tu chat directo." : "Te redirigimos a WhatsApp de forma segura."}</small>
   </div>
 <script>
   var CFG = ${json};
@@ -121,12 +126,27 @@ src="https://www.facebook.com/tr?id=${esc(cfg.pixelId)}&ev=PageView&noscript=1"/
     var target = CFG.goBase + '/go?' + p.toString();
     setTimeout(function(){ window.location.href = target; }, 300);
   }
-  document.getElementById('cta').addEventListener('click', goToWhatsApp);
-  // Redirección automática: pasa ~1 seg por la landing (deja disparar el PageView) y va a WhatsApp.
+  // Destino Chat App: dispara Lead y va al registro de un tap /r/<slug>, reenviando la atribución
+  // (fbclid/utm) por la URL para que el registro matchee el pixel del cliente.
+  function goToChat(){
+    if (redirected) return; redirected = true;
+    try { fbq('track', 'Lead'); } catch(e){}
+    var p = new URLSearchParams();
+    var here = new URLSearchParams(location.search);
+    ['fbclid','campaign','ad','src','utm_source','utm_medium','utm_campaign'].forEach(function(k){
+      var v = here.get(k); if (v) p.set(k, v);
+    });
+    var qs = p.toString();
+    var target = CFG.chatBase + '/r/' + CFG.slug + (qs ? '?' + qs : '');
+    setTimeout(function(){ window.location.href = target; }, 250);
+  }
+  var goAction = CFG.destino === 'chatapp' ? goToChat : goToWhatsApp;
+  document.getElementById('cta').addEventListener('click', goAction);
+  // Redirección automática: pasa ~1 seg por la landing (deja disparar el PageView) y redirige.
   if (CFG.autoRedirect) {
     var h = document.getElementById('hint');
-    if (h) h.textContent = 'Redirigiendo a WhatsApp…';
-    setTimeout(goToWhatsApp, 1000);
+    if (h) h.textContent = CFG.destino === 'chatapp' ? 'Abriendo el chat…' : 'Redirigiendo a WhatsApp…';
+    setTimeout(goAction, 1000);
   }
 </script>
 </body>
