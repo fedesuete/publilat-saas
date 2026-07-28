@@ -28,7 +28,6 @@ export default function ChatPage() {
   // --- Cajero (Fase E3): saldo + cargar/retirar ---
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [cashier, setCashier] = useState<"deposit" | "withdrawal" | null>(null);
-  const [depositCard, setDepositCard] = useState(false); // el "cargar" se muestra como mensaje en el chat
   const [amount, setAmount] = useState("");
   const [destino, setDestino] = useState("");
   const [comprobante, setComprobante] = useState<string | null>(null);
@@ -55,7 +54,8 @@ export default function ChatPage() {
     setCashBusy(true); setCashMsg(null);
     try {
       await api.post("/api/chat/me/deposit", { amount: amt, method: "Transferencia", comprobante: comprobante || undefined });
-      setCashier(null); setDepositCard(false); setAmount(""); setComprobante(null); setCashMsg("✅ Carga registrada. La estamos verificando.");
+      // El card de datos QUEDA en el chat (no se achica). El backend deja el mensaje "🧾 Registraste una carga…".
+      setAmount(""); setComprobante(null); setCashMsg(null);
       void loadWallet();
     } catch (e) { setCashMsg(apiError(e)); } finally { setCashBusy(false); }
   };
@@ -65,8 +65,7 @@ export default function ChatPage() {
     try {
       const { data } = await api.post<{ message: Msg }>("/api/chat/me/deposit/help");
       setMessages((prev) => appendUnique(prev, data.message));
-    } catch { /* si falla igual mostramos el form con lo que haya en wallet */ }
-    setDepositCard(true);
+    } catch { /* si falla igual queda el form en el último mensaje de datos */ }
     setTimeout(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), 90);
   };
   const submitWithdrawal = async () => {
@@ -75,7 +74,7 @@ export default function ChatPage() {
     setCashBusy(true); setCashMsg(null);
     try {
       await api.post("/api/chat/me/withdrawal", { amount: amt, destino: destino.trim() });
-      setCashier(null); setAmount(""); setDestino(""); setCashMsg("✅ Pedido de retiro enviado.");
+      setCashier(null); setAmount(""); setDestino(""); setCashMsg(null); // el chat deja "🏧 Pediste un retiro…"
       void loadWallet();
     } catch (e) { setCashMsg(apiError(e)); } finally { setCashBusy(false); }
   };
@@ -232,10 +231,11 @@ export default function ChatPage() {
           // system y operator se muestran igual: burbuja blanca a la IZQUIERDA (como que la marca
           // te escribe primero, estilo WhatsApp). Solo el jugador va a la derecha en verde.
           const hasPay = !!(m.pay && (m.pay.cbu || m.pay.alias || m.pay.titular));
-          const showForm = depositCard && m.id === lastPayId; // el form de carga va en el mensaje activo
+          const isPayMsg = hasPay || !!(m.pay); // mensaje de datos de pago (aunque no tenga estructurados)
+          const showForm = m.id === lastPayId;  // el form persiste en el último mensaje de datos (no se achica al enviar)
           return (
             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[85%] px-2.5 py-1.5 text-sm text-slate-800 shadow-sm ${mine ? "rounded-lg rounded-tr-sm" : "rounded-lg rounded-tl-sm bg-white"}`}
+              <div className={`px-2.5 py-1.5 text-sm text-slate-800 shadow-sm ${isPayMsg ? "w-[95%] max-w-[95%]" : "max-w-[82%]"} ${mine ? "rounded-lg rounded-tr-sm" : "rounded-lg rounded-tl-sm bg-white"}`}
                 style={mine ? { background: "#d9fdd3" } : undefined}>
                 {img}
                 {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
@@ -258,20 +258,16 @@ export default function ChatPage() {
                       <div className="whitespace-pre-wrap rounded-lg bg-slate-50 p-2.5 text-xs text-slate-700">{wallet.paymentInfo}</div>
                     ) : null}
                     {showForm && wallet && (
-                      <div className="mt-2 border-t border-slate-100 pt-2">
+                      <div className="mt-2">
                         <input inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={`Monto a cargar (mín ${money(wallet.minDeposit)})`}
-                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none focus:border-[#1fa855] [color-scheme:light]" />
-                        <label className="mt-2 flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#1fa855] py-3 text-sm font-bold text-white">
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm text-slate-800 placeholder:text-slate-400 outline-none focus:border-[#1fa855] [color-scheme:light]" />
+                        <label className="mt-2 flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#1fa855] py-3 text-sm font-bold text-white">
                           {comprobante ? "✓ Comprobante listo" : "📎 SUBIR COMPROBANTE"}
                           <input type="file" accept="image/*" className="hidden" onChange={onComprobante} />
                         </label>
-                        {cashMsg && <div className="mt-1.5 text-xs text-rose-500">{cashMsg}</div>}
-                        <div className="mt-2 flex gap-2">
-                          <button onClick={() => { setDepositCard(false); setCashMsg(null); }}
-                            className="rounded-lg border border-slate-300 px-3 py-2.5 text-xs font-semibold text-slate-500">Cerrar</button>
-                          <button onClick={() => void submitDeposit()} disabled={cashBusy}
-                            className="flex-1 rounded-lg bg-[#0b7d6e] py-2.5 text-sm font-bold text-white disabled:opacity-50">{cashBusy ? "Enviando…" : "Ya transferí, avisar"}</button>
-                        </div>
+                        {cashMsg && <div className="mt-1.5 text-center text-xs text-rose-500">{cashMsg}</div>}
+                        <button onClick={() => void submitDeposit()} disabled={cashBusy}
+                          className="mt-2 w-full rounded-lg bg-[#0b7d6e] py-3 text-sm font-bold text-white disabled:opacity-50">{cashBusy ? "Enviando…" : "Ya transferí, avisar"}</button>
                       </div>
                     )}
                   </div>
@@ -304,7 +300,7 @@ export default function ChatPage() {
         <div className="flex gap-2 bg-white px-3 pt-2.5">
           <button onClick={() => void openDeposit()}
             className="flex-1 rounded-md bg-[#1fa855] py-2 text-sm font-bold text-white">CARGAR</button>
-          <button onClick={() => { setCashier("withdrawal"); setDepositCard(false); setCashMsg(null); setAmount(""); }}
+          <button onClick={() => { setCashier("withdrawal"); setCashMsg(null); setAmount(""); }}
             className="flex-1 rounded-md border border-[#1fa855] py-2 text-sm font-bold text-[#1fa855]">RETIRAR</button>
           <button onClick={() => inputRef.current?.focus()}
             className="flex-1 rounded-md border border-[#1fa855] py-2 text-sm font-bold text-[#1fa855]">SOPORTE</button>
@@ -318,11 +314,6 @@ export default function ChatPage() {
           ➤
         </button>
       </form>
-
-      {/* Toast de confirmación (carga/retiro enviados). */}
-      {cashMsg && !cashier && !depositCard && (
-        <div className="fixed left-1/2 top-4 z-[60] max-w-[92%] -translate-x-1/2 rounded-full bg-emerald-600 px-4 py-2 text-center text-sm font-semibold text-white shadow-lg">{cashMsg}</div>
-      )}
 
       {/* Modal RETIRAR */}
       {cashier === "withdrawal" && wallet && (
