@@ -54,6 +54,11 @@ model User {
   chatPayCbu      String?   // datos de pago estructurados (botones copiar individual en el cajero)
   chatPayAlias    String?
   chatPayTitular  String?
+  chatInstallMsg1 String?   // secuencia de instalación (mensajes guardados que el operador envía)
+  chatInstallMsg2 String?   // el 2do lleva botón "INSTALAR APP" en la PWA
+  chatInstallMsg3 String?
+  chatTutIosImg     String? // foto tutorial de instalación iPhone (URL /branding/asset/:id)
+  chatTutAndroidImg String? // foto tutorial de instalación Android
   // Popup/promo que ve el jugador al entrar a la PWA (imagen + texto + link). popupUpdatedAt
   // versiona el aviso: el jugador lo ve de nuevo cada vez que cambia (dedupe en el cliente).
   popupActive     Boolean   @default(false)

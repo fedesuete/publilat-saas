@@ -15,7 +15,7 @@ function ShareIcon() {
 }
 
 // Guía visual paso a paso para "Agregar a inicio" en iPhone (en iOS no se puede instalar por botón).
-function InstallGuide({ onClose }: { onClose: () => void }) {
+export function InstallGuide({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left" onClick={(e) => e.stopPropagation()}>

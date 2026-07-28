@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, type FormEvent, type ChangeEvent } from "r
 import { io, type Socket } from "socket.io-client";
 import { api, apiError, API_BASE, getToken, clearToken, loadBranding } from "../lib/api";
 import { subscribeToPush, pushSupported, pushPermission } from "../lib/push";
-import InstallPrompt from "../components/InstallPrompt";
+import InstallPrompt, { InstallGuide } from "../components/InstallPrompt";
+import { promptInstall, onInstallAvailable } from "../lib/install";
 
 interface Pay { cbu: string | null; alias: string | null; titular: string | null }
-interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; image?: string | null; buttons?: string[] | null; link?: { label: string; url: string } | null; pay?: Pay | null; createdAt: string }
+interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; image?: string | null; buttons?: string[] | null; link?: { label: string; url: string } | null; pay?: Pay | null; install?: boolean; createdAt: string }
 interface Popup { title?: string | null; text?: string | null; image?: string | null; link?: string | null; version: string }
 interface Wallet { balance: number; minDeposit: number; minWithdrawal: number; paymentInfo: string | null; pay?: { cbu: string | null; alias: string | null; titular: string | null } }
 const POPUP_SEEN_KEY = "publilat_popup_seen";
@@ -35,6 +36,12 @@ export default function ChatPage() {
   const [cashMsg, setCashMsg] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Instalación (botón "INSTALAR APP" en mensajes) + clip para adjuntar imagen.
+  const [canInstall, setCanInstall] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+  const [chatImage, setChatImage] = useState<string | null>(null);
+  useEffect(() => onInstallAvailable(setCanInstall), []);
+  const doInstall = () => { if (canInstall) void promptInstall(); else setShowGuide(true); };
   const money = (n: number) => "$" + n.toLocaleString("es-AR");
   const copy = async (label: string, value: string) => {
     try { await navigator.clipboard.writeText(value); setCopied(label); setTimeout(() => setCopied(null), 1500); } catch { /* algunos webviews bloquean */ }
@@ -128,20 +135,28 @@ export default function ChatPage() {
     return () => { socket.off("chat:message", onMsg); socket.off("chat:wallet", onWallet); socket.disconnect(); };
   }, []);
 
-  const sendBody = async (body: string) => {
-    if (!body.trim()) return;
+  const sendBody = async (body: string, image?: string) => {
+    if (!body.trim() && !image) return;
     setSending(true); setError(null);
     try {
-      const { data } = await api.post<{ message: Msg }>("/api/chat/me/messages", { body: body.trim() });
+      const { data } = await api.post<{ message: Msg }>("/api/chat/me/messages", { body: body.trim() || undefined, image });
       setMessages((prev) => appendUnique(prev, data.message)); // optimistic; el echo se deduplica
     } catch (e) { setError(apiError(e)); } finally { setSending(false); }
   };
   const send = async (e: FormEvent) => {
     e.preventDefault();
     const body = draft.trim();
-    if (!body) return;
-    setDraft("");
-    await sendBody(body);
+    const image = chatImage;
+    if (!body && !image) return;
+    setDraft(""); setChatImage(null);
+    await sendBody(body, image || undefined);
+  };
+  // Clip: adjuntar una imagen (comprobante/foto) al mensaje del jugador.
+  const onChatImage = (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]; if (!f) { return; }
+    if (f.size > 700 * 1024) { setError("La imagen supera 700 KB. Sacá una foto más liviana."); e.target.value = ""; return; }
+    const r = new FileReader(); r.onload = () => setChatImage(r.result as string); r.readAsDataURL(f);
+    e.target.value = "";
   };
 
   // id del último mensaje con datos de pago (ahí va el form de carga activo).
@@ -228,13 +243,22 @@ export default function ChatPage() {
               {m.link.label}
             </a>
           );
+          // Botón "INSTALAR APP" (mensaje 2 de la secuencia de instalación): dispara el instalador
+          // (Android) o la guía de iPhone.
+          const installBtn = m.install && (
+            <button onClick={doInstall}
+              className="btn-glow mt-2 flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-extrabold text-white"
+              style={{ background: "var(--brand-primary, #7c2fd6)" }}>
+              📲 INSTALAR APP
+            </button>
+          );
           // system y operator se muestran igual: burbuja blanca a la IZQUIERDA (como que la marca
           // te escribe primero, estilo WhatsApp). Solo el jugador va a la derecha en verde.
           const hasPay = !!(m.pay && (m.pay.cbu || m.pay.alias || m.pay.titular));
           const showForm = m.id === lastPayId;  // el form persiste en el último mensaje de datos (no se achica al enviar)
-          // Cards con botón (bienvenida con link + datos de pago) usan el MISMO ancho, para que todos
-          // los botones tengan las mismas proporciones y el chat no se "descuadre".
-          const isWide = hasPay || !!m.pay || !!m.link;
+          // Cards con botón (bienvenida con link + datos de pago + instalar) usan el MISMO ancho, para
+          // que todos los botones tengan las mismas proporciones y el chat no se "descuadre".
+          const isWide = hasPay || !!m.pay || !!m.link || !!m.install;
           return (
             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
               <div className={`px-2.5 py-1.5 text-sm text-slate-800 shadow-sm ${isWide ? "w-[88%] max-w-[88%]" : "max-w-[82%]"} ${mine ? "rounded-lg rounded-tr-sm" : "rounded-lg rounded-tl-sm bg-white"}`}
@@ -242,6 +266,7 @@ export default function ChatPage() {
                 {img}
                 {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
                 {linkBtn}
+                {installBtn}
                 {(hasPay || showForm) && (
                   <div className="mt-1.5">
                     {hasPay ? (
@@ -309,12 +334,25 @@ export default function ChatPage() {
         </div>
       )}
 
-      <form onSubmit={send} className="flex items-center gap-2 bg-white p-3" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
-        <input ref={inputRef} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Escribí un mensaje…"
-          className="flex-1 rounded-full border border-slate-300 bg-slate-100 px-4 py-2.5 text-slate-800 placeholder:text-slate-400 outline-none focus:border-[#1fa855] [color-scheme:light]" />
-        <button type="submit" disabled={sending || !draft.trim()} className="flex h-11 w-11 items-center justify-center rounded-full bg-[#1fa855] text-lg text-white disabled:opacity-50">
-          ➤
-        </button>
+      <form onSubmit={send} className="bg-white p-3" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
+        {chatImage && (
+          <div className="mb-2 flex items-center gap-2 rounded-lg bg-slate-100 p-2">
+            <img src={chatImage} alt="" className="h-14 w-14 rounded object-cover" />
+            <span className="text-xs text-slate-500">Imagen lista para enviar</span>
+            <button type="button" onClick={() => setChatImage(null)} className="ml-auto px-2 text-slate-400" aria-label="Quitar imagen">✕</button>
+          </div>
+        )}
+        <div className="flex items-center gap-2">
+          <label className="flex h-11 w-9 shrink-0 cursor-pointer items-center justify-center text-2xl text-slate-400" aria-label="Adjuntar imagen">
+            📎
+            <input type="file" accept="image/*" className="hidden" onChange={onChatImage} />
+          </label>
+          <input ref={inputRef} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Escribí un mensaje…"
+            className="flex-1 rounded-full border border-slate-300 bg-slate-100 px-4 py-2.5 text-slate-800 placeholder:text-slate-400 outline-none focus:border-[#1fa855] [color-scheme:light]" />
+          <button type="submit" disabled={sending || (!draft.trim() && !chatImage)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#1fa855] text-lg text-white disabled:opacity-50">
+            ➤
+          </button>
+        </div>
       </form>
 
       {/* Modal RETIRAR */}
@@ -342,6 +380,9 @@ export default function ChatPage() {
           </div>
         </div>
       )}
+
+      {/* Guía de instalación en iPhone (al tocar "INSTALAR APP" cuando no hay instalador nativo). */}
+      {showGuide && <InstallGuide onClose={() => setShowGuide(false)} />}
     </div>
   );
 }

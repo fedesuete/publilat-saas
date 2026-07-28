@@ -277,6 +277,67 @@ chatRouter.post("/messages", requireActiveLine, async (req, res) => {
   return res.status(201).json({ message: msg });
 });
 
+// Textos por defecto de la secuencia de instalación (el operador puede editarlos en el panel).
+const DEFAULT_INSTALL = {
+  msg1: "¡Hola! 🎉 Ya tenemos tu carga. Para acreditártela necesitás instalar nuestra app.",
+  msg2: "Instalá nuestra app para entrar más rápido y no perderte nada. Es un toque 👇",
+  msg3: "Si no podés, decinos y te indicamos con dos fotitos cómo es, por favor 🙏",
+};
+const installSendSchema = z.object({
+  conversationId: z.string().min(1),
+  which: z.enum(["sequence", "msg1", "msg2", "msg3", "tut_ios", "tut_android"]),
+});
+
+// POST /api/chat/messages/install — el operador manda mensajes GUARDADOS de la secuencia de
+// instalación (o una foto de tutorial). El msg2 lleva metadata.install -> botón "INSTALAR APP" en la PWA.
+chatRouter.post("/messages/install", requireActiveLine, async (req, res) => {
+  const parsed = installSendSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const conv = await prisma.chatConversation.findFirst({ where: { id: parsed.data.conversationId, userId: req.userId! }, select: { id: true, playerId: true } });
+  if (!conv) return res.status(404).json({ error: "Conversación no encontrada" });
+  const acc = await prisma.user.findUnique({ where: { id: req.userId! }, select: { chatInstallMsg1: true, chatInstallMsg2: true, chatInstallMsg3: true, chatTutIosImg: true, chatTutAndroidImg: true } });
+  const m1 = acc?.chatInstallMsg1?.trim() || DEFAULT_INSTALL.msg1;
+  const m2 = acc?.chatInstallMsg2?.trim() || DEFAULT_INSTALL.msg2;
+  const m3 = acc?.chatInstallMsg3?.trim() || DEFAULT_INSTALL.msg3;
+
+  const items: { body: string | null; metadata: Prisma.InputJsonObject }[] = [];
+  switch (parsed.data.which) {
+    case "sequence":
+      items.push({ body: m1, metadata: {} }, { body: m2, metadata: { install: true } }, { body: m3, metadata: {} });
+      break;
+    case "msg1": items.push({ body: m1, metadata: {} }); break;
+    case "msg2": items.push({ body: m2, metadata: { install: true } }); break;
+    case "msg3": items.push({ body: m3, metadata: {} }); break;
+    case "tut_ios":
+      if (!acc?.chatTutIosImg) return res.status(400).json({ error: "Cargá primero la foto de instalación de iPhone en el panel (Marca)." });
+      items.push({ body: "📱 Instalación en iPhone:", metadata: { image: acc.chatTutIosImg } });
+      break;
+    case "tut_android":
+      if (!acc?.chatTutAndroidImg) return res.status(400).json({ error: "Cargá primero la foto de instalación de Android en el panel (Marca)." });
+      items.push({ body: "🤖 Instalación en Android:", metadata: { image: acc.chatTutAndroidImg } });
+      break;
+  }
+
+  const out = [];
+  for (const it of items) {
+    const msg = await prisma.chatMessage.create({
+      data: { userId: req.userId!, conversationId: conv.id, senderType: "operator", senderId: req.userId!, body: it.body, metadata: it.metadata },
+      select: { id: true, senderType: true, body: true, metadata: true, createdAt: true },
+    });
+    const preview = (it.metadata.image ? "📷 " : "") + (it.body ?? "").slice(0, 110);
+    await prisma.chatConversation.update({ where: { id: conv.id }, data: { lastMessageAt: new Date(), lastMessagePreview: preview, unreadPlayer: { increment: 1 } } });
+    const outMsg = { id: msg.id, senderType: msg.senderType, body: msg.body, image: (msg.metadata as { image?: string })?.image ?? null, install: (msg.metadata as { install?: boolean })?.install ?? false, createdAt: msg.createdAt };
+    const payload = { conversationId: conv.id, message: outMsg };
+    emitChat(`chat:${req.userId}:player:${conv.playerId}`, "chat:message", payload);
+    emitChat(`chat:${req.userId}`, "chat:message", payload);
+    out.push(outMsg);
+  }
+  if (!(await playerHasLiveSocket(req.userId!, conv.playerId))) {
+    void enqueuePlayerPush(req.userId!, conv.playerId, { title: "Nuevo mensaje", body: (items[0]?.body ?? "Instalá la app").slice(0, 140), url: "/chat" }).catch(() => undefined);
+  }
+  return res.status(201).json({ messages: out });
+});
+
 const broadcastSchema = z.object({
   title: z.string().min(1).max(80),
   body: z.string().min(1).max(240),
@@ -377,13 +438,15 @@ chatRouter.get("/broadcasts", async (req, res) => {
 
 // Solo estos campos del User son "branding" del Chat App. El PATCH NUNCA toca otra cosa
 // (nada de plan, tokenVersion, líneas de WhatsApp, etc.).
-const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "welcomeText", "welcomeMsgText", "welcomeMsgImage", "chatWaLink", "chatPlatformUrl", "chatPayCbu", "chatPayAlias", "chatPayTitular"] as const;
+const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "welcomeText", "welcomeMsgText", "welcomeMsgImage", "chatWaLink", "chatPlatformUrl", "chatPayCbu", "chatPayAlias", "chatPayTitular", "chatInstallMsg1", "chatInstallMsg2", "chatInstallMsg3", "chatTutIosImg", "chatTutAndroidImg"] as const;
+// Select del branding del OPERADOR (incluye los campos de instalación; NO se exponen al jugador).
+const BRANDING_SELECT = { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true, chatPayCbu: true, chatPayAlias: true, chatPayTitular: true, chatInstallMsg1: true, chatInstallMsg2: true, chatInstallMsg3: true, chatTutIosImg: true, chatTutAndroidImg: true } as const;
 
 // GET /api/chat/branding — branding actual de la cuenta (para poblar el formulario del panel).
 chatRouter.get("/branding", async (req, res) => {
   const acc = await prisma.user.findUnique({
     where: { id: req.userId! },
-    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true, chatPayCbu: true, chatPayAlias: true, chatPayTitular: true },
+    select: BRANDING_SELECT,
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   return res.json({ accountSlug: acc.slug, branding: acc, s3: s3Enabled() });
@@ -403,6 +466,11 @@ const brandingSchema = z.object({
   chatPayCbu: z.string().max(60).nullish(),
   chatPayAlias: z.string().max(60).nullish(),
   chatPayTitular: z.string().max(80).nullish(),
+  chatInstallMsg1: z.string().max(1000).nullish(),
+  chatInstallMsg2: z.string().max(1000).nullish(),
+  chatInstallMsg3: z.string().max(1000).nullish(),
+  chatTutIosImg: z.string().url().max(600).nullish(),
+  chatTutAndroidImg: z.string().url().max(600).nullish(),
 });
 
 // PATCH /api/chat/branding — actualiza SOLO los campos de branding del User del token.
@@ -419,7 +487,7 @@ chatRouter.patch("/branding", async (req, res) => {
   const acc = await prisma.user.update({
     where: { id: req.userId! },
     data,
-    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true, chatPayCbu: true, chatPayAlias: true, chatPayTitular: true },
+    select: BRANDING_SELECT,
   });
   return res.json({ branding: acc });
 });
@@ -521,7 +589,7 @@ chatPublicRouter.get("/me/conversation", requireChatClient, async (req, res) => 
     select: { id: true, senderType: true, body: true, metadata: true, createdAt: true },
   });
   await prisma.chatConversation.update({ where: { id: conv.id }, data: { unreadPlayer: 0 } });
-  const messages = rows.map((m) => ({ id: m.id, senderType: m.senderType, body: m.body, image: (m.metadata as { image?: string })?.image ?? null, buttons: (m.metadata as { buttons?: string[] })?.buttons ?? null, link: (m.metadata as { link?: { label: string; url: string } })?.link ?? null, pay: (m.metadata as { pay?: { cbu: string | null; alias: string | null; titular: string | null } })?.pay ?? null, createdAt: m.createdAt }));
+  const messages = rows.map((m) => ({ id: m.id, senderType: m.senderType, body: m.body, image: (m.metadata as { image?: string })?.image ?? null, buttons: (m.metadata as { buttons?: string[] })?.buttons ?? null, link: (m.metadata as { link?: { label: string; url: string } })?.link ?? null, pay: (m.metadata as { pay?: { cbu: string | null; alias: string | null; titular: string | null } })?.pay ?? null, install: (m.metadata as { install?: boolean })?.install ?? false, createdAt: m.createdAt }));
   return res.json({ conversationId: conv.id, messages });
 });
 
@@ -550,33 +618,44 @@ chatPublicRouter.post("/me/deposit/help", requireChatClient, async (req, res) =>
   return res.json({ message: outMsg });
 });
 
-const playerSendSchema = z.object({ body: z.string().min(1).max(4000) });
+const playerSendSchema = z.object({
+  body: z.string().max(4000).optional(),
+  image: z.string().regex(/^data:image\/(png|jpeg|jpg|webp|gif);base64,/, "Imagen inválida").optional(), // clip: comprobante/foto
+}).refine((d) => (d.body && d.body.trim().length > 0) || d.image, { message: "Mensaje vacío" });
 
-// POST /api/chat/me/messages — el jugador manda. Emite al operador por /chat.
+// POST /api/chat/me/messages — el jugador manda (texto y/o imagen del clip). Emite al operador por /chat.
 chatPublicRouter.post("/me/messages", requireChatClient, async (req, res) => {
   const parsed = playerSendSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
   const conv = await prisma.chatConversation.findFirst({ where: { userId: req.accountId!, playerId: req.chatPlayerId! }, select: { id: true } });
   if (!conv) return res.status(404).json({ error: "Conversación no encontrada" });
 
+  const body = parsed.data.body?.trim() || null;
+  const image = parsed.data.image;
+  if (image) {
+    const bytes = Buffer.from(image.slice(image.indexOf(",") + 1), "base64").length;
+    if (bytes > 700 * 1024) return res.status(413).json({ error: "La imagen supera 700 KB. Sacá una foto más liviana." });
+  }
+  const metadata = image ? { image } : {};
   const msg = await prisma.chatMessage.create({
-    data: { userId: req.accountId!, conversationId: conv.id, senderType: "player", senderId: req.chatPlayerId!, body: parsed.data.body },
-    select: { id: true, senderType: true, body: true, createdAt: true },
+    data: { userId: req.accountId!, conversationId: conv.id, senderType: "player", senderId: req.chatPlayerId!, body, metadata },
+    select: { id: true, senderType: true, body: true, metadata: true, createdAt: true },
   });
   await prisma.chatConversation.update({
     where: { id: conv.id },
-    data: { lastMessageAt: new Date(), lastMessagePreview: parsed.data.body.slice(0, 120), unreadOperator: { increment: 1 } },
+    data: { lastMessageAt: new Date(), lastMessagePreview: (image ? "📷 " : "") + (body ?? "Imagen").slice(0, 118), unreadOperator: { increment: 1 } },
   });
 
-  const payload = { conversationId: conv.id, message: msg };
+  const outMsg = { id: msg.id, senderType: msg.senderType, body: msg.body, image: (msg.metadata as { image?: string })?.image ?? null, createdAt: msg.createdAt };
+  const payload = { conversationId: conv.id, message: outMsg };
   emitChat(`chat:${req.accountId}`, "chat:message", payload);                              // al operador
   emitChat(`chat:${req.accountId}:player:${req.chatPlayerId}`, "chat:message", payload);   // al jugador (otros dispositivos)
 
   // Bot de carga/descarga (Fase 1): responde solo si la cuenta lo tiene PRENDIDO. Best-effort y
   // aislado: sin bot es no-op; un error del bot no afecta el envío del jugador.
-  void runChatBot(req.accountId!, conv.id, req.chatPlayerId!, parsed.data.body).catch((e) => console.error("[chat-bot]", e instanceof Error ? e.message : String(e)));
+  void runChatBot(req.accountId!, conv.id, req.chatPlayerId!, body ?? "").catch((e) => console.error("[chat-bot]", e instanceof Error ? e.message : String(e)));
 
-  return res.status(201).json({ message: msg });
+  return res.status(201).json({ message: outMsg });
 });
 
 // GET /api/chat/me/popup — el popup/promo activo de la cuenta (o null). `version` = popupUpdatedAt,
