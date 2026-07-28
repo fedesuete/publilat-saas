@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ChangeEvent } from "react";
 import { io, type Socket } from "socket.io-client";
-import { api, apiError, API_BASE, getToken, clearToken, loadBranding } from "../lib/api";
+import { api, apiError, API_BASE, getToken, clearToken, loadBranding, saveBranding, applyBranding, type Branding } from "../lib/api";
 import { subscribeToPush, pushSupported, pushPermission } from "../lib/push";
 import InstallPrompt, { InstallGuide } from "../components/InstallPrompt";
 import { promptInstall, onInstallAvailable, bakeSessionIntoUrl, pointManifestToSession } from "../lib/install";
@@ -16,7 +16,17 @@ function appendUnique(list: Msg[], m: Msg): Msg[] {
 }
 
 export default function ChatPage() {
-  const branding = loadBranding();
+  // Marca desde localStorage, pero la REFRESCAMOS del server al abrir para tomar cambios del
+  // operador (tema/logo/colores) sin re-registrarse.
+  const [branding, setBranding] = useState(loadBranding());
+  useEffect(() => {
+    const slug = branding?.accountSlug;
+    if (!slug) return;
+    api.get<{ branding: Branding }>(`/api/chat/public/${slug}`)
+      .then(({ data }) => { if (data?.branding) { applyBranding(data.branding); saveBranding(slug, data.branding); setBranding({ accountSlug: slug, ...data.branding }); } })
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
