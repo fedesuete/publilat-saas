@@ -337,7 +337,7 @@ model WaLine {
   lastCheckedAt DateTime?    // último chequeo de salud de la línea
   // --- Anti-ban (líneas Baileys) ---
   proxyUrl        String?    // proxy de salida por línea (URL completa, cifrada en reposo)
-  warmupEnabled   Boolean   @default(true)  // rampa de calentamiento activable por línea
+  warmupEnabled   Boolean   @default(false)  // rampa de calentamiento OFF por default (se activa por línea en Admin)
   warmupStartedAt DateTime?  // arranca al primer emparejamiento; se resetea si cambia el número
   expiresAt   DateTime? // se desactiva al vencer (consumo de días)
   lastUsedAt  DateTime? // para rotación LRU de clics entre líneas activas
