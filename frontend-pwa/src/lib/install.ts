@@ -1,5 +1,21 @@
 // Utilidades de instalación de la PWA (beforeinstallprompt + detección de iOS/standalone).
+import { getToken, loadBranding } from "./api";
+
 export type InstallPrompt = { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
+
+// Hornea la sesión (token + slug de la marca) en la URL, para que al "Agregar a inicio" en iPhone
+// la app instalada abra YA logueada. iOS aísla el localStorage de la app respecto de Safari, así
+// que el token no se hereda: viaja por la URL de lanzamiento (iOS captura la URL actual al instalar)
+// y main.tsx la lee al abrir. En Android no hace falta (la PWA comparte storage con el navegador).
+export function bakeSessionIntoUrl(): void {
+  const t = getToken();
+  if (!t) return;
+  const params = new URLSearchParams();
+  params.set("t", t);
+  const slug = loadBranding()?.accountSlug;
+  if (slug) params.set("s", slug);
+  try { history.replaceState(null, "", `/chat?${params.toString()}`); } catch { /* noop */ }
+}
 
 let deferred: InstallPrompt | null = null;
 const listeners = new Set<(available: boolean) => void>();

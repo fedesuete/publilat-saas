@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { onInstallAvailable, promptInstall, isIos, isStandalone, isInAppBrowser } from "../lib/install";
+import { onInstallAvailable, promptInstall, isIos, isStandalone, isInAppBrowser, bakeSessionIntoUrl } from "../lib/install";
 
 const HIDE_KEY = "publilat_install_hidden";
 
@@ -73,7 +73,7 @@ export default function InstallPrompt() {
           link en <b>Chrome</b> (Android) o <b>Safari</b> (iPhone): tocá el menú <b>⋮ / •••</b> → <b>Abrir en Chrome/Safari</b>.
         </div>
       ) : isIos() ? (
-        <button onClick={() => setShowGuide(true)} className="flex w-full items-center justify-center gap-2 rounded-full py-2.5 font-semibold text-slate-900" style={{ background: "var(--brand-primary)" }}>
+        <button onClick={() => { bakeSessionIntoUrl(); setShowGuide(true); }} className="flex w-full items-center justify-center gap-2 rounded-full py-2.5 font-semibold text-slate-900" style={{ background: "var(--brand-primary)" }}>
           <ShareIcon /> Cómo instalar en iPhone
         </button>
       ) : (

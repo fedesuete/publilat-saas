@@ -3,7 +3,27 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import "./index.css";
-import { loadBranding, applyBranding } from "./lib/api";
+import { loadBranding, applyBranding, saveBranding, getToken, setToken, API_BASE } from "./lib/api";
+
+// App instalada en iPhone: la sesión viene horneada en la URL de lanzamiento (?t=token&s=slug),
+// porque iOS aísla el storage de la app respecto de Safari. La leemos ANTES de pintar para entrar
+// directo al chat con la sesión, refrescamos la marca (storage aislado) y limpiamos la URL.
+try {
+  const url = new URL(window.location.href);
+  const urlToken = url.searchParams.get("t");
+  const urlSlug = url.searchParams.get("s");
+  if (urlToken && !getToken()) setToken(urlToken);
+  if (urlSlug) {
+    fetch(`${API_BASE}/api/chat/public/${urlSlug}`)
+      .then((r) => r.json())
+      .then((d) => { if (d?.branding) { applyBranding(d.branding); saveBranding(urlSlug, d.branding); } })
+      .catch(() => undefined);
+  }
+  if (urlToken || urlSlug) {
+    url.searchParams.delete("t"); url.searchParams.delete("s");
+    history.replaceState(null, "", (url.pathname || "/chat") + url.hash);
+  }
+} catch { /* noop */ }
 
 // Aplicar la marca guardada apenas arranca (antes de pintar), para no ver el flash genérico.
 const saved = loadBranding();
