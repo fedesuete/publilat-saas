@@ -46,6 +46,7 @@ model User {
   logoUrl         String?
   primaryColor    String?
   accentColor     String?
+  chatTheme       String    @default("whatsapp") // diseño de la PWA del chat: whatsapp | midnight
   welcomeText     String?   // texto de bienvenida en la PWA
   welcomeMsgText  String?   // primer mensaje automático de la conversación
   welcomeMsgImage String?

@@ -364,12 +364,18 @@ function InviteQr({ url, code }: { url: string; code: string }) {
 
 // Sub-sección "Marca": branding white-label de la PWA del jugador (logo, colores, textos).
 interface Brand {
-  brandName: string | null; logoUrl: string | null; primaryColor: string | null; accentColor: string | null;
+  brandName: string | null; logoUrl: string | null; primaryColor: string | null; accentColor: string | null; chatTheme: string | null;
   welcomeText: string | null; welcomeMsgText: string | null; welcomeMsgImage: string | null; chatWaLink: string | null; chatPlatformUrl: string | null;
   chatPayCbu: string | null; chatPayAlias: string | null; chatPayTitular: string | null;
   chatInstallMsg1: string | null; chatInstallMsg2: string | null; chatInstallMsg3: string | null; chatTutIosImg: string | null; chatTutAndroidImg: string | null;
 }
-const EMPTY_BRAND: Brand = { brandName: null, logoUrl: null, primaryColor: null, accentColor: null, welcomeText: null, welcomeMsgText: null, welcomeMsgImage: null, chatWaLink: null, chatPlatformUrl: null, chatPayCbu: null, chatPayAlias: null, chatPayTitular: null, chatInstallMsg1: null, chatInstallMsg2: null, chatInstallMsg3: null, chatTutIosImg: null, chatTutAndroidImg: null };
+const EMPTY_BRAND: Brand = { brandName: null, logoUrl: null, primaryColor: null, accentColor: null, chatTheme: "whatsapp", welcomeText: null, welcomeMsgText: null, welcomeMsgImage: null, chatWaLink: null, chatPlatformUrl: null, chatPayCbu: null, chatPayAlias: null, chatPayTitular: null, chatInstallMsg1: null, chatInstallMsg2: null, chatInstallMsg3: null, chatTutIosImg: null, chatTutAndroidImg: null };
+
+// Diseños disponibles del chat (mini-preview en el selector). "brand" = usa el color del cliente.
+const CHAT_THEMES = [
+  { id: "whatsapp", label: "WhatsApp (actual)", header: "#0b7d6e", headerText: "#ffffff", bg: "#e5ddd5", op: "#ffffff", opText: "#1e293b", me: "#d9fdd3", accent: "#1fa855" },
+  { id: "midnight", label: "Oscuro / Casino", header: "#0f172a", headerText: "#ffffff", bg: "#0b1220", op: "#1e293b", opText: "#e2e8f0", me: "brand", accent: "brand" },
+];
 
 function BrandingTab() {
   const [form, setForm] = useState<Brand>(EMPTY_BRAND);
@@ -415,6 +421,35 @@ function BrandingTab() {
       {/* Formulario */}
       <div className="space-y-5">
         {error && <ErrorMsg>{error}</ErrorMsg>}
+
+        <Card>
+          <div className="mb-1 text-sm font-semibold text-slate-100">Diseño del chat</div>
+          <p className="mb-3 text-xs text-slate-400">Elegí cómo se ve la app del jugador. Podés cambiarlo cuando quieras (no toca los datos).</p>
+          <div className="grid grid-cols-2 gap-3">
+            {CHAT_THEMES.map((t) => {
+              const active = (form.chatTheme || "whatsapp") === t.id;
+              const me = t.me === "brand" ? primary : t.me;
+              const accent = t.accent === "brand" ? primary : t.accent;
+              return (
+                <button key={t.id} type="button" onClick={() => set("chatTheme", t.id)}
+                  className={`rounded-lg border-2 p-2 text-left transition ${active ? "border-wa-green" : "border-slate-700 hover:border-slate-500"}`}>
+                  <div className="mb-2 overflow-hidden rounded-md" style={{ background: t.bg }}>
+                    <div className="px-2 py-1.5 text-[10px] font-semibold" style={{ background: t.header, color: t.headerText }}>{form.brandName || "Chat"} · en línea</div>
+                    <div className="space-y-1 p-2">
+                      <div className="w-3/4 rounded px-1.5 py-1 text-[9px]" style={{ background: t.op, color: t.opText }}>operador</div>
+                      <div className="ml-auto w-2/3 rounded px-1.5 py-1 text-right text-[9px] text-white" style={{ background: me }}>jugador</div>
+                      <div className="mt-1 rounded py-1 text-center text-[9px] font-bold text-white" style={{ background: accent }}>CARGAR</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-slate-200">
+                    <span className={`inline-block h-3 w-3 rounded-full border ${active ? "border-wa-green bg-wa-green" : "border-slate-500"}`} />
+                    {t.label}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </Card>
 
         <Card>
           <div className="mb-3 text-sm font-semibold text-slate-100">Identidad</div>

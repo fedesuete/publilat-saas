@@ -32,6 +32,7 @@ export interface Branding {
   logoUrl: string | null;
   primaryColor: string | null;
   accentColor: string | null;
+  chatTheme?: string | null; // "whatsapp" (default) | "midnight" — diseño de la PWA del chat
   welcomeText: string | null;
   chatWaLink?: string | null; // CTA "Escribinos por WhatsApp" (registro un-tap)
   chatPlatformUrl?: string | null; // botón "Entrar a la plataforma"

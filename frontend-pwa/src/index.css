@@ -16,6 +16,33 @@ html, body, #root {
   font-family: system-ui, "Segoe UI", Roboto, sans-serif;
 }
 
+/* --- Temas del chat (seleccionables por cliente). Los componentes usan var(--c-*); cambiar de
+   tema = cambiar estas variables. "whatsapp" (default) = el diseño actual, idéntico. --- */
+.chat-root {
+  color-scheme: light;
+  --c-header: #0b7d6e; --c-header-text: #ffffff;
+  --c-bg: #e5ddd5;
+  --c-surface: #ffffff; --c-surface-text: #1e293b;
+  --c-inset: #f1f5f9;
+  --c-me: #d9fdd3; --c-me-text: #1e293b;
+  --c-accent: #1fa855; --c-accent-text: #ffffff;
+  --c-submit: #0b7d6e;
+  --c-input: #f1f5f9; --c-muted: #64748b; --c-border: #cbd5e1;
+  --c-pill-bg: #e0f2fe; --c-pill-text: #1d4ed8;
+}
+.chat-root[data-theme="midnight"] {
+  color-scheme: dark;
+  --c-header: #0f172a; --c-header-text: #ffffff;
+  --c-bg: #0b1220;
+  --c-surface: #1e293b; --c-surface-text: #e2e8f0;
+  --c-inset: rgba(255,255,255,0.06);
+  --c-me: var(--brand-primary, #7c2fd6); --c-me-text: #ffffff;
+  --c-accent: var(--brand-primary, #7c2fd6); --c-accent-text: #ffffff;
+  --c-submit: var(--brand-primary, #7c2fd6);
+  --c-input: #0b1220; --c-muted: #94a3b8; --c-border: #334155;
+  --c-pill-bg: #1e293b; --c-pill-text: #93c5fd;
+}
+
 /* Efecto de "resalte" para el CTA principal (botón violeta "Entrar a la plataforma"). */
 @keyframes brandGlow {
   0%, 100% { box-shadow: 0 6px 18px -8px var(--brand-primary, #7c2fd6); }

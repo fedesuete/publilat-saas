@@ -170,19 +170,19 @@ export default function ChatPage() {
   if (!lastPayId) { for (let i = messages.length - 1; i >= 0; i--) { if (messages[i].pay) { lastPayId = messages[i].id; break; } } }
 
   return (
-    <div className="flex h-full flex-col bg-[#e5ddd5]">
-      <header className="flex items-center gap-3 px-4 py-2.5 text-white shadow" style={{ background: "#0b7d6e" }}>
+    <div className="chat-root flex h-full flex-col bg-[var(--c-bg)]" data-theme={branding?.chatTheme || "whatsapp"}>
+      <header className="flex items-center gap-3 px-4 py-2.5 shadow" style={{ background: "var(--c-header)", color: "var(--c-header-text)" }}>
         {branding?.logoUrl ? <img src={branding.logoUrl} alt="" className="h-9 w-9 rounded-full object-cover" /> : <div className="h-9 w-9 rounded-full bg-white/20" />}
         <div className="min-w-0">
           <div className="truncate font-semibold leading-tight">{branding?.brandName || "Chat"}</div>
-          <div className="text-xs text-white/85">🟢 en línea</div>
+          <div className="text-xs opacity-80">🟢 en línea</div>
         </div>
         {wallet && <div className="ml-auto rounded-full bg-white/20 px-3 py-1 text-sm font-bold">💰 {money(wallet.balance)}</div>}
       </header>
 
-      {/* Pill "conectado" (estilo competencia): azul, redondeada, flotando sobre el fondo. */}
+      {/* Pill "conectado" (estilo competencia): redondeada, flotando sobre el fondo. */}
       <div className="flex justify-center px-4 pt-3 pb-1">
-        <div className="rounded-full bg-[#e0f2fe] px-4 py-1.5 text-center text-xs font-medium text-[#1d4ed8] shadow-sm">
+        <div className="rounded-full px-4 py-1.5 text-center text-xs font-medium shadow-sm" style={{ background: "var(--c-pill-bg)", color: "var(--c-pill-text)" }}>
           Conectado. Escribinos y te respondemos.
         </div>
       </div>
@@ -214,16 +214,16 @@ export default function ChatPage() {
 
       {/* Aviso: activar notificaciones (solo si el navegador las soporta y aún no decidió). */}
       {push === "default" && (
-        <div className="flex items-center justify-between gap-3 bg-white/80 px-4 py-2 text-sm shadow-sm">
-          <span className="text-slate-700">🔔 Activá las notificaciones para no perderte respuestas.</span>
+        <div className="flex items-center justify-between gap-3 px-4 py-2 text-sm shadow-sm" style={{ background: "var(--c-surface)", color: "var(--c-surface-text)" }}>
+          <span>🔔 Activá las notificaciones para no perderte respuestas.</span>
           <button onClick={() => void enablePush()} disabled={pushBusy}
-            className="shrink-0 rounded-full bg-[#1fa855] px-3 py-1 text-xs font-semibold text-white disabled:opacity-50">
+            className="shrink-0 rounded-full px-3 py-1 text-xs font-semibold disabled:opacity-50" style={{ background: "var(--c-accent)", color: "var(--c-accent-text)" }}>
             {pushBusy ? "…" : "Activar"}
           </button>
         </div>
       )}
       {push === "denied" && (
-        <div className="bg-white/70 px-4 py-2 text-center text-xs text-slate-500">
+        <div className="px-4 py-2 text-center text-xs" style={{ background: "var(--c-surface)", color: "var(--c-muted)" }}>
           Notificaciones bloqueadas. Podés activarlas desde los ajustes del navegador.
         </div>
       )}
@@ -262,8 +262,8 @@ export default function ChatPage() {
           const isWide = hasPay || !!m.pay || !!m.link || !!m.install;
           return (
             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-              <div className={`px-2.5 py-1.5 text-sm text-slate-800 shadow-sm ${isWide ? "w-[88%] max-w-[88%]" : "max-w-[82%]"} ${mine ? "rounded-lg rounded-tr-sm" : "rounded-lg rounded-tl-sm bg-white"}`}
-                style={mine ? { background: "#d9fdd3" } : undefined}>
+              <div className={`px-2.5 py-1.5 text-sm shadow-sm ${isWide ? "w-[88%] max-w-[88%]" : "max-w-[82%]"} ${mine ? "rounded-lg rounded-tr-sm" : "rounded-lg rounded-tl-sm"}`}
+                style={mine ? { background: "var(--c-me)", color: "var(--c-me-text)" } : { background: "var(--c-surface)", color: "var(--c-surface-text)" }}>
                 {img}
                 {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
                 {linkBtn}
@@ -272,40 +272,40 @@ export default function ChatPage() {
                   <div className="mt-1.5">
                     {hasPay ? (
                       <>
-                        <div className="rounded-lg bg-slate-50 p-2.5 text-xs">
-                          {m.pay!.cbu && <div className="flex items-center justify-between gap-2 py-0.5"><span className="text-slate-500">CBU/CVU</span><span className="break-all text-right font-semibold text-slate-800">{m.pay!.cbu}</span></div>}
-                          {m.pay!.alias && <div className="flex items-center justify-between gap-2 py-0.5"><span className="text-slate-500">Alias</span><span className="break-all text-right font-semibold text-slate-800">{m.pay!.alias}</span></div>}
-                          {m.pay!.titular && <div className="flex items-center justify-between gap-2 py-0.5"><span className="text-slate-500">Titular</span><span className="text-right font-semibold text-slate-800">{m.pay!.titular}</span></div>}
+                        <div className="rounded-lg p-2.5 text-xs" style={{ background: "var(--c-inset)" }}>
+                          {m.pay!.cbu && <div className="flex items-center justify-between gap-2 py-0.5"><span className="opacity-60">CBU/CVU</span><span className="break-all text-right font-semibold">{m.pay!.cbu}</span></div>}
+                          {m.pay!.alias && <div className="flex items-center justify-between gap-2 py-0.5"><span className="opacity-60">Alias</span><span className="break-all text-right font-semibold">{m.pay!.alias}</span></div>}
+                          {m.pay!.titular && <div className="flex items-center justify-between gap-2 py-0.5"><span className="opacity-60">Titular</span><span className="text-right font-semibold">{m.pay!.titular}</span></div>}
                         </div>
                         <div className="mt-2 flex flex-col gap-2">
-                          {m.pay!.cbu && <button onClick={() => void copy("cbu", m.pay!.cbu!)} className={`w-full rounded-lg border py-2.5 text-sm font-bold ${copied === "cbu" ? "border-emerald-500 bg-emerald-500 text-white" : "border-[#1fa855] text-[#1fa855]"}`}>{copied === "cbu" ? "✓ Copiado" : "Copiar CBU"}</button>}
-                          {m.pay!.alias && <button onClick={() => void copy("alias", m.pay!.alias!)} className={`w-full rounded-lg border py-2.5 text-sm font-bold ${copied === "alias" ? "border-emerald-500 bg-emerald-500 text-white" : "border-[#1fa855] text-[#1fa855]"}`}>{copied === "alias" ? "✓ Copiado" : "Copiar ALIAS"}</button>}
+                          {m.pay!.cbu && <button onClick={() => void copy("cbu", m.pay!.cbu!)} className="w-full rounded-lg border py-2.5 text-sm font-bold" style={copied === "cbu" ? { background: "var(--c-accent)", color: "var(--c-accent-text)", borderColor: "var(--c-accent)" } : { color: "var(--c-accent)", borderColor: "var(--c-accent)" }}>{copied === "cbu" ? "✓ Copiado" : "Copiar CBU"}</button>}
+                          {m.pay!.alias && <button onClick={() => void copy("alias", m.pay!.alias!)} className="w-full rounded-lg border py-2.5 text-sm font-bold" style={copied === "alias" ? { background: "var(--c-accent)", color: "var(--c-accent-text)", borderColor: "var(--c-accent)" } : { color: "var(--c-accent)", borderColor: "var(--c-accent)" }}>{copied === "alias" ? "✓ Copiado" : "Copiar ALIAS"}</button>}
                         </div>
                       </>
                     ) : (showForm && wallet?.paymentInfo) ? (
-                      <div className="whitespace-pre-wrap rounded-lg bg-slate-50 p-2.5 text-xs text-slate-700">{wallet.paymentInfo}</div>
+                      <div className="whitespace-pre-wrap rounded-lg p-2.5 text-xs" style={{ background: "var(--c-inset)" }}>{wallet.paymentInfo}</div>
                     ) : null}
                     {showForm && wallet && (
                       <div className="mt-2">
                         <input inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={`Monto a cargar (mín ${money(wallet.minDeposit)})`}
-                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-base text-slate-800 placeholder:text-slate-400 outline-none focus:border-[#1fa855] [color-scheme:light]" />
-                        <label className="mt-2 flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#1fa855] py-2.5 text-sm font-bold text-white">
+                          className="w-full rounded-lg border px-3 py-2.5 text-base outline-none placeholder:opacity-50" style={{ background: "var(--c-input)", color: "var(--c-surface-text)", borderColor: "var(--c-border)" }} />
+                        <label className="mt-2 flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-bold" style={{ background: "var(--c-accent)", color: "var(--c-accent-text)" }}>
                           {comprobante ? "✓ Comprobante listo" : "📎 SUBIR COMPROBANTE"}
                           <input type="file" accept="image/*" className="hidden" onChange={onComprobante} />
                         </label>
                         {cashMsg && <div className="mt-1.5 text-center text-xs text-rose-500">{cashMsg}</div>}
                         <button onClick={() => void submitDeposit()} disabled={cashBusy}
-                          className="mt-2 w-full rounded-lg bg-[#0b7d6e] py-2.5 text-sm font-bold text-white disabled:opacity-50">{cashBusy ? "Enviando…" : "Ya transferí, avisar"}</button>
+                          className="mt-2 w-full rounded-lg py-2.5 text-sm font-bold text-white disabled:opacity-50" style={{ background: "var(--c-submit)" }}>{cashBusy ? "Enviando…" : "Ya transferí, avisar"}</button>
                       </div>
                     )}
                   </div>
                 )}
-                <div className="mt-0.5 text-right text-[10px] leading-none text-slate-500">{time}</div>
+                <div className="mt-0.5 text-right text-[10px] leading-none opacity-60">{time}</div>
               </div>
             </div>
           );
         })}
-        {messages.length === 0 && <p className="mt-8 text-center text-sm text-slate-600">Escribinos, te respondemos al toque.</p>}
+        {messages.length === 0 && <p className="mt-8 text-center text-sm text-[var(--c-muted)]">Escribinos, te respondemos al toque.</p>}
         <div ref={endRef} />
       </div>
 
@@ -313,10 +313,10 @@ export default function ChatPage() {
 
       {/* Botones del bot (chips): tocar = mandar ese texto. Muestra los del último mensaje. */}
       {messages[messages.length - 1]?.buttons?.length ? (
-        <div className="flex flex-wrap gap-2 bg-white px-3 pt-2.5">
+        <div className="flex flex-wrap gap-2 px-3 pt-2.5" style={{ background: "var(--c-surface)" }}>
           {messages[messages.length - 1]!.buttons!.map((b) => (
             <button key={b} type="button" disabled={sending} onClick={() => void sendBody(b)}
-              className="rounded-full border border-[#1fa855] bg-white px-3.5 py-1.5 text-sm font-medium text-[#1fa855] hover:bg-emerald-50 disabled:opacity-50">
+              className="rounded-full border px-3.5 py-1.5 text-sm font-medium disabled:opacity-50" style={{ borderColor: "var(--c-accent)", color: "var(--c-accent)" }}>
               {b}
             </button>
           ))}
@@ -325,32 +325,32 @@ export default function ChatPage() {
 
       {/* Barra del cajero: cargar / retirar / soporte (E3). */}
       {wallet && (
-        <div className="flex gap-2 bg-white px-3 pt-2.5">
+        <div className="flex gap-2 px-3 pt-2.5" style={{ background: "var(--c-surface)" }}>
           <button onClick={() => void openDeposit()}
-            className="flex-1 rounded-md bg-[#1fa855] py-2 text-sm font-bold text-white">CARGAR</button>
+            className="flex-1 rounded-md py-2 text-sm font-bold" style={{ background: "var(--c-accent)", color: "var(--c-accent-text)" }}>CARGAR</button>
           <button onClick={() => { setCashier("withdrawal"); setCashMsg(null); setAmount(""); }}
-            className="flex-1 rounded-md border border-[#1fa855] py-2 text-sm font-bold text-[#1fa855]">RETIRAR</button>
+            className="flex-1 rounded-md border py-2 text-sm font-bold" style={{ borderColor: "var(--c-accent)", color: "var(--c-accent)" }}>RETIRAR</button>
           <button onClick={() => inputRef.current?.focus()}
-            className="flex-1 rounded-md border border-[#1fa855] py-2 text-sm font-bold text-[#1fa855]">SOPORTE</button>
+            className="flex-1 rounded-md border py-2 text-sm font-bold" style={{ borderColor: "var(--c-accent)", color: "var(--c-accent)" }}>SOPORTE</button>
         </div>
       )}
 
-      <form onSubmit={send} className="bg-white p-3" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
+      <form onSubmit={send} className="p-3" style={{ background: "var(--c-surface)", paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
         {chatImage && (
-          <div className="mb-2 flex items-center gap-2 rounded-lg bg-slate-100 p-2">
+          <div className="mb-2 flex items-center gap-2 rounded-lg p-2" style={{ background: "var(--c-inset)" }}>
             <img src={chatImage} alt="" className="h-14 w-14 rounded object-cover" />
-            <span className="text-xs text-slate-500">Imagen lista para enviar</span>
-            <button type="button" onClick={() => setChatImage(null)} className="ml-auto px-2 text-slate-400" aria-label="Quitar imagen">✕</button>
+            <span className="text-xs opacity-60">Imagen lista para enviar</span>
+            <button type="button" onClick={() => setChatImage(null)} className="ml-auto px-2 opacity-60" aria-label="Quitar imagen">✕</button>
           </div>
         )}
         <div className="flex items-center gap-2">
-          <label className="flex h-11 w-9 shrink-0 cursor-pointer items-center justify-center text-2xl text-slate-400" aria-label="Adjuntar imagen">
+          <label className="flex h-11 w-9 shrink-0 cursor-pointer items-center justify-center text-2xl opacity-50" aria-label="Adjuntar imagen">
             📎
             <input type="file" accept="image/*" className="hidden" onChange={onChatImage} />
           </label>
           <input ref={inputRef} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Escribí un mensaje…"
-            className="flex-1 rounded-full border border-slate-300 bg-slate-100 px-4 py-2.5 text-slate-800 placeholder:text-slate-400 outline-none focus:border-[#1fa855] [color-scheme:light]" />
-          <button type="submit" disabled={sending || (!draft.trim() && !chatImage)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#1fa855] text-lg text-white disabled:opacity-50">
+            className="flex-1 rounded-full border px-4 py-2.5 outline-none placeholder:opacity-50" style={{ background: "var(--c-input)", color: "var(--c-surface-text)", borderColor: "var(--c-border)" }} />
+          <button type="submit" disabled={sending || (!draft.trim() && !chatImage)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-lg disabled:opacity-50" style={{ background: "var(--c-accent)", color: "var(--c-accent-text)" }}>
             ➤
           </button>
         </div>
@@ -359,23 +359,23 @@ export default function ChatPage() {
       {/* Modal RETIRAR */}
       {cashier === "withdrawal" && wallet && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-3 sm:items-center" onClick={() => setCashier(null)}>
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5 text-slate-800" onClick={(e) => e.stopPropagation()}>
+          <div className="chat-root w-full max-w-sm rounded-2xl p-5" data-theme={branding?.chatTheme || "whatsapp"} style={{ background: "var(--c-surface)", color: "var(--c-surface-text)" }} onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-900">Retirar fichas</h3>
-              <button onClick={() => setCashier(null)} className="text-xl text-slate-400">✕</button>
+              <h3 className="text-base font-bold">Retirar fichas</h3>
+              <button onClick={() => setCashier(null)} className="text-xl opacity-50">✕</button>
             </div>
-            <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-left">
-              <div className="text-xs uppercase tracking-wide text-slate-500">Saldo actual</div>
-              <div className="text-xl font-bold text-[#1fa855]">{money(wallet.balance)}</div>
+            <div className="mb-3 rounded-xl p-3 text-left" style={{ background: "var(--c-inset)" }}>
+              <div className="text-xs uppercase tracking-wide opacity-60">Saldo actual</div>
+              <div className="text-xl font-bold" style={{ color: "var(--c-accent)" }}>{money(wallet.balance)}</div>
             </div>
-            <p className="mb-2 text-xs text-slate-500">Retiro mínimo {money(wallet.minWithdrawal)}.</p>
+            <p className="mb-2 text-xs opacity-60">Retiro mínimo {money(wallet.minWithdrawal)}.</p>
             <input inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Monto a retirar"
-              className="mb-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-800 placeholder:text-slate-400 outline-none focus:border-[#1fa855] [color-scheme:light]" />
+              className="mb-2 w-full rounded-xl border px-4 py-3 text-base outline-none placeholder:opacity-50" style={{ background: "var(--c-input)", color: "var(--c-surface-text)", borderColor: "var(--c-border)" }} />
             <input value={destino} onChange={(e) => setDestino(e.target.value)} placeholder="Tu CBU / CVU / alias"
-              className="mb-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-800 placeholder:text-slate-400 outline-none focus:border-[#1fa855] [color-scheme:light]" />
+              className="mb-3 w-full rounded-xl border px-4 py-3 text-base outline-none placeholder:opacity-50" style={{ background: "var(--c-input)", color: "var(--c-surface-text)", borderColor: "var(--c-border)" }} />
             {cashMsg && <p className="mb-2 text-sm text-rose-500">{cashMsg}</p>}
             <button onClick={() => void submitWithdrawal()} disabled={cashBusy}
-              className="w-full rounded-xl bg-[#1fa855] py-3 font-extrabold text-white disabled:opacity-50">
+              className="w-full rounded-xl py-3 font-extrabold disabled:opacity-50" style={{ background: "var(--c-accent)", color: "var(--c-accent-text)" }}>
               {cashBusy ? "Enviando…" : "Enviar pedido de retiro"}
             </button>
           </div>

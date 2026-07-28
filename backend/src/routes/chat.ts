@@ -471,9 +471,9 @@ chatRouter.get("/broadcasts", async (req, res) => {
 
 // Solo estos campos del User son "branding" del Chat App. El PATCH NUNCA toca otra cosa
 // (nada de plan, tokenVersion, líneas de WhatsApp, etc.).
-const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "welcomeText", "welcomeMsgText", "welcomeMsgImage", "chatWaLink", "chatPlatformUrl", "chatPayCbu", "chatPayAlias", "chatPayTitular", "chatInstallMsg1", "chatInstallMsg2", "chatInstallMsg3", "chatTutIosImg", "chatTutAndroidImg"] as const;
+const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "chatTheme", "welcomeText", "welcomeMsgText", "welcomeMsgImage", "chatWaLink", "chatPlatformUrl", "chatPayCbu", "chatPayAlias", "chatPayTitular", "chatInstallMsg1", "chatInstallMsg2", "chatInstallMsg3", "chatTutIosImg", "chatTutAndroidImg"] as const;
 // Select del branding del OPERADOR (incluye los campos de instalación; NO se exponen al jugador).
-const BRANDING_SELECT = { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true, chatPayCbu: true, chatPayAlias: true, chatPayTitular: true, chatInstallMsg1: true, chatInstallMsg2: true, chatInstallMsg3: true, chatTutIosImg: true, chatTutAndroidImg: true } as const;
+const BRANDING_SELECT = { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true, chatPayCbu: true, chatPayAlias: true, chatPayTitular: true, chatInstallMsg1: true, chatInstallMsg2: true, chatInstallMsg3: true, chatTutIosImg: true, chatTutAndroidImg: true } as const;
 
 // GET /api/chat/branding — branding actual de la cuenta (para poblar el formulario del panel).
 chatRouter.get("/branding", async (req, res) => {
@@ -491,6 +491,7 @@ const brandingSchema = z.object({
   logoUrl: z.string().url().max(600).nullish(),
   primaryColor: hexColor.nullish(),
   accentColor: hexColor.nullish(),
+  chatTheme: z.enum(["whatsapp", "midnight"]).optional(),
   welcomeText: z.string().max(300).nullish(),
   welcomeMsgText: z.string().max(1000).nullish(),
   welcomeMsgImage: z.string().url().max(600).nullish(),
@@ -794,7 +795,7 @@ chatPublicRouter.get("/branding/:code", async (req, res) => {
   if (!invite) return res.status(404).json({ error: "Link inválido" });
   const acc = await prisma.user.findUnique({
     where: { id: invite.userId },
-    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, chatWaLink: true, chatPlatformUrl: true },
+    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, chatWaLink: true, chatPlatformUrl: true },
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   return res.json({
@@ -1007,7 +1008,7 @@ chatPublicRouter.post("/login", async (req, res) => {
 chatPublicRouter.get("/public/:slug", async (req, res) => {
   const acc = await prisma.user.findUnique({
     where: { slug: req.params.slug },
-    select: { id: true, slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, welcomeText: true, chatWaLink: true, chatPlatformUrl: true },
+    select: { id: true, slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, chatWaLink: true, chatPlatformUrl: true },
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   return res.json({
