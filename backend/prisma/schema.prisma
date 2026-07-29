@@ -22,7 +22,7 @@ model User {
   password  String
   name      String?
   phone     String?                    // WhatsApp del usuario (registro)
-  paymentDetection String @default("off") // off | assisted | auto (detección de pago en chat)
+  paymentDetection String @default("auto") // off | assisted | auto — lector de comprobantes (default auto)
   // --- Panel maestro (super-admin) ---
   role          Role      @default(USER)
   suspended     Boolean   @default(false)
