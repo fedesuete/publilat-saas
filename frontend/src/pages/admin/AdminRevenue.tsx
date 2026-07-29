@@ -9,7 +9,7 @@ interface Revenue {
   topClients: Array<{ userId: string; email: string; name: string | null; facturacion: number; compras: number }>;
 }
 interface Payment {
-  id: string; provider: string; amount: number; currency: string; status: string; createdAt: string;
+  id: string; provider: string; days: number; amount: number; currency: string; status: string; createdAt: string;
   user: { email: string; name: string | null };
 }
 
@@ -77,19 +77,28 @@ export default function AdminRevenue() {
       <div className="overflow-x-auto rounded-lg border border-slate-800">
         <table className="min-w-full text-sm">
           <thead className="bg-slate-800/80 text-left text-slate-300">
-            <tr><th className="px-3 py-2">Fecha</th><th className="px-3 py-2">Cliente</th><th className="px-3 py-2">Pasarela</th><th className="px-3 py-2">Monto</th><th className="px-3 py-2">Estado</th></tr>
+            <tr><th className="px-3 py-2">Fecha</th><th className="px-3 py-2">Cliente</th><th className="px-3 py-2">Pasarela</th><th className="px-3 py-2">Monto</th><th className="px-3 py-2">Días</th><th className="px-3 py-2">Estado</th></tr>
           </thead>
           <tbody>
             {pays.map((p) => (
               <tr key={p.id} className="border-t border-slate-800">
                 <td className="px-3 py-2 text-xs text-slate-400">{fmtDate(p.createdAt)}</td>
-                <td className="px-3 py-2 text-slate-200">{p.user.name || p.user.email}</td>
+                <td className="px-3 py-2">
+                  <div className="text-slate-200">{p.user.name || "—"}</div>
+                  <div className="text-xs text-slate-500">{p.user.email}</div>
+                </td>
                 <td className="px-3 py-2">{p.provider}</td>
                 <td className="px-3 py-2">{p.amount} {p.currency}</td>
+                <td className="px-3 py-2">
+                  {p.days}
+                  {p.status === "approved"
+                    ? <span className="ml-1 text-xs text-wa-green">✓ acreditados</span>
+                    : <span className="ml-1 text-xs text-slate-500">(sin acreditar)</span>}
+                </td>
                 <td className={`px-3 py-2 font-medium ${p.status === "approved" ? "text-wa-green" : p.status === "rejected" ? "text-rose-400" : "text-amber-300"}`}>{p.status}</td>
               </tr>
             ))}
-            {pays.length === 0 && <tr><td colSpan={5} className="px-3 py-6 text-center text-slate-500">Sin pagos.</td></tr>}
+            {pays.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-slate-500">Sin pagos.</td></tr>}
           </tbody>
         </table>
       </div>
