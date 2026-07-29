@@ -210,7 +210,7 @@ waRouter.get("/cloud/config", (_req, res) => {
 waRouter.get("/welcome", async (req, res) => {
   const u = await prisma.user.findUnique({
     where: { id: req.userId! },
-    select: { waWelcomeEnabled: true, waWelcomeText: true, waWelcomeButtons: true },
+    select: WELCOME_SELECT,
   });
   return res.json({ welcome: u });
 });
@@ -219,20 +219,29 @@ const welcomeSchema = z.object({
   waWelcomeEnabled: z.boolean().optional(),
   waWelcomeText: z.string().max(1024).nullish(),
   waWelcomeButtons: z.string().max(200).nullish(), // hasta 3 etiquetas separadas por "|"
+  // Auto-responder con botón CTA (link): bienvenida + follow-up.
+  waAutoEnabled: z.boolean().optional(),
+  waAutoWelcome: z.string().max(1024).nullish(),
+  waAutoFollowup: z.string().max(1024).nullish(),
+  waAutoBtnLabel: z.string().max(20).nullish(),
+  waAutoBtnUrl: z.string().max(600).nullish(),
 });
+const WELCOME_FIELDS = ["waWelcomeEnabled", "waWelcomeText", "waWelcomeButtons", "waAutoEnabled", "waAutoWelcome", "waAutoFollowup", "waAutoBtnLabel", "waAutoBtnUrl"] as const;
+const WELCOME_SELECT = { waWelcomeEnabled: true, waWelcomeText: true, waWelcomeButtons: true, waAutoEnabled: true, waAutoWelcome: true, waAutoFollowup: true, waAutoBtnLabel: true, waAutoBtnUrl: true } as const;
 
 // PATCH /api/wa/welcome — prende/apaga y edita el saludo + los botones.
 waRouter.patch("/welcome", async (req, res) => {
   const parsed = welcomeSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
   const data: Record<string, unknown> = {};
-  if (parsed.data.waWelcomeEnabled !== undefined) data.waWelcomeEnabled = parsed.data.waWelcomeEnabled;
-  if (parsed.data.waWelcomeText !== undefined) data.waWelcomeText = parsed.data.waWelcomeText;
-  if (parsed.data.waWelcomeButtons !== undefined) data.waWelcomeButtons = parsed.data.waWelcomeButtons;
+  for (const k of WELCOME_FIELDS) {
+    const v = (parsed.data as Record<string, unknown>)[k];
+    if (v !== undefined) data[k] = v;
+  }
   const u = await prisma.user.update({
     where: { id: req.userId! },
     data,
-    select: { waWelcomeEnabled: true, waWelcomeText: true, waWelcomeButtons: true },
+    select: WELCOME_SELECT,
   });
   return res.json({ welcome: u });
 });

@@ -26,17 +26,27 @@ interface EsConfig {
 
 // Saludo automático con botones para chats de anuncio (CTWA / Cloud API). Replica el "saludo
 // automático + botones" que ve el jugador al escribir desde un anuncio, sin salir de WhatsApp.
+interface WelcomeCfg {
+  waWelcomeEnabled: boolean; waWelcomeText: string | null; waWelcomeButtons: string | null;
+  waAutoEnabled: boolean; waAutoWelcome: string | null; waAutoFollowup: string | null; waAutoBtnLabel: string | null; waAutoBtnUrl: string | null;
+}
 function WelcomeConfig() {
   const [enabled, setEnabled] = useState(false);
   const [text, setText] = useState("");
   const [btns, setBtns] = useState<string[]>(["", "", ""]);
+  // Auto-responder con botón CTA (link).
+  const [aEnabled, setAEnabled] = useState(false);
+  const [aWelcome, setAWelcome] = useState("");
+  const [aFollowup, setAFollowup] = useState("");
+  const [aBtnLabel, setABtnLabel] = useState("");
+  const [aBtnUrl, setABtnUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [ok, setOk] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.get<{ welcome: { waWelcomeEnabled: boolean; waWelcomeText: string | null; waWelcomeButtons: string | null } | null }>("/api/wa/welcome")
+    api.get<{ welcome: WelcomeCfg | null }>("/api/wa/welcome")
       .then(({ data }) => {
         const w = data.welcome;
         if (w) {
@@ -44,6 +54,8 @@ function WelcomeConfig() {
           setText(w.waWelcomeText ?? "");
           const parts = (w.waWelcomeButtons ?? "").split("|");
           setBtns([parts[0] ?? "", parts[1] ?? "", parts[2] ?? ""]);
+          setAEnabled(w.waAutoEnabled); setAWelcome(w.waAutoWelcome ?? ""); setAFollowup(w.waAutoFollowup ?? "");
+          setABtnLabel(w.waAutoBtnLabel ?? ""); setABtnUrl(w.waAutoBtnUrl ?? "");
         }
       })
       .catch((e) => setError(apiError(e)))
@@ -54,7 +66,11 @@ function WelcomeConfig() {
     setSaving(true); setError(null); setOk(false);
     try {
       const buttons = btns.map((b) => b.trim()).filter(Boolean).join("|");
-      await api.patch("/api/wa/welcome", { waWelcomeEnabled: enabled, waWelcomeText: text.trim() || null, waWelcomeButtons: buttons || null });
+      await api.patch("/api/wa/welcome", {
+        waWelcomeEnabled: enabled, waWelcomeText: text.trim() || null, waWelcomeButtons: buttons || null,
+        waAutoEnabled: aEnabled, waAutoWelcome: aWelcome.trim() || null, waAutoFollowup: aFollowup.trim() || null,
+        waAutoBtnLabel: aBtnLabel.trim() || null, waAutoBtnUrl: aBtnUrl.trim() || null,
+      });
       setOk(true); setTimeout(() => setOk(false), 2000);
     } catch (e) { setError(apiError(e)); }
     finally { setSaving(false); }
@@ -87,6 +103,38 @@ function WelcomeConfig() {
             placeholder={i === 0 ? "Ej: Crear nuevo Usuario" : i === 1 ? "Ej: Ya tengo un usuario" : "Botón 3 (opcional)"} />
         ))}
       </div>
+      <div className="my-4 border-t border-slate-800 pt-4">
+        <div className="mb-1 flex items-center justify-between">
+          <div className="text-sm font-semibold text-slate-100">🔗 Auto-responder con botón de link (Cloud API)</div>
+          <label className="flex items-center gap-2 text-xs text-slate-400">
+            <input type="checkbox" checked={aEnabled} onChange={(e) => setAEnabled(e.target.checked)} /> Activo
+          </label>
+        </div>
+        <p className="mb-3 text-xs text-slate-500">
+          Responde AUTOMÁTICO a cada mensaje con un botón que abre un link (ej. "Hablar con Meli"): el 1er mensaje
+          usa la bienvenida, los siguientes el follow-up. ⚠️ En la Cloud API oficial mantené el texto <b>neutro</b>
+          (sin casino/cargas/bono) y funneleá con el botón — el texto de casino te banea la cuenta.
+        </p>
+        <label className="mb-1 block text-xs text-slate-400">Bienvenida (1er mensaje)</label>
+        <textarea value={aWelcome} onChange={(e) => setAWelcome(e.target.value)} rows={2}
+          placeholder="Ej: ¡Hola! 👋 Tocá el botón y te atendemos al toque 👇"
+          className="mb-3 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
+        <label className="mb-1 block text-xs text-slate-400">Follow-up (mensajes siguientes)</label>
+        <textarea value={aFollowup} onChange={(e) => setAFollowup(e.target.value)} rows={2}
+          placeholder="Ej: Ya te pasamos el contacto 👇"
+          className="mb-3 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_2fr]">
+          <div>
+            <label className="mb-1 block text-xs text-slate-400">Texto del botón (≤20)</label>
+            <Input value={aBtnLabel} maxLength={20} onChange={(e) => setABtnLabel(e.target.value)} placeholder="Ej: Hablar con Meli" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-slate-400">Link del botón</label>
+            <Input value={aBtnUrl} onChange={(e) => setABtnUrl(e.target.value)} placeholder="https://wa.me/549... o https://chat.publi.lat/r/tu-cuenta" />
+          </div>
+        </div>
+      </div>
+
       <div className="flex items-center gap-3">
         <Button onClick={() => void save()} disabled={saving}>{saving ? "Guardando…" : "Guardar"}</Button>
         {ok && <span className="text-xs text-wa-green">✓ Guardado</span>}

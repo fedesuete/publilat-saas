@@ -85,6 +85,13 @@ model User {
   waWelcomeEnabled Boolean @default(false) // prende el auto-saludo al entrar el 1er msg del anuncio
   waWelcomeText    String?                 // cuerpo del saludo (ej. "¡Hola! ¿Cómo podemos ayudarte?")
   waWelcomeButtons String?                 // hasta 3 botones, etiquetas separadas por "|"
+  // Auto-responder con botón CTA (link) en la Cloud API: bienvenida al 1er msg + follow-up en cada
+  // msg siguiente, con un botón que abre un URL (funnel neutro; el casino NO va en el texto).
+  waAutoEnabled    Boolean @default(false)
+  waAutoWelcome    String?                 // texto del 1er mensaje
+  waAutoFollowup   String?                 // texto de los mensajes siguientes (ej. "Ya te pasamos el contacto 👇")
+  waAutoBtnLabel   String?                 // etiqueta del botón (ej. "Hablar con Meli", ≤20 chars)
+  waAutoBtnUrl     String?                 // URL del botón (wa.me, Chat App, o el link que sea)
   createdAt DateTime @default(now())
 
   lines       WaLine[]

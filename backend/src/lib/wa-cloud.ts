@@ -64,6 +64,31 @@ export async function sendCloudButtons(line: CloudLine, to: string, body: string
   return data;
 }
 
+// Envía un mensaje INTERACTIVO con UN botón CTA que abre un URL (tipo "cta_url"). Es el botón con
+// ícono de link (ej. "Hablar con Meli"): al tocarlo se abre el URL. Sirve para funnelear la Cloud
+// API (neutra) hacia el cajero / Chat App / cualquier link. Sin URL válido cae a texto plano.
+export async function sendCloudCtaUrl(line: CloudLine, to: string, body: string, buttonLabel: string, url: string) {
+  if (!line.wabaPhoneNumberId) throw new Error("La línea Cloud no tiene Phone Number ID");
+  const label = (buttonLabel || "Abrir").trim().slice(0, 20);
+  const link = (url || "").trim();
+  if (!/^https?:\/\//i.test(link)) return sendCloudText(line, to, body); // sin URL válido -> texto plano
+  const { data } = await axios.post(
+    `${GRAPH}/${line.wabaPhoneNumberId}/messages`,
+    {
+      messaging_product: "whatsapp",
+      to,
+      type: "interactive",
+      interactive: {
+        type: "cta_url",
+        body: { text: body.slice(0, 1024) },
+        action: { name: "cta_url", parameters: { display_text: label, url: link } },
+      },
+    },
+    { headers: { Authorization: `Bearer ${token(line)}`, "Content-Type": "application/json" }, timeout: 15000 },
+  );
+  return data;
+}
+
 // Convierte cualquier audio del navegador (WebM/OPUS de Chrome, OGG/OPUS de Firefox) a un
 // OGG/OPUS LIMPIO y compatible con la Cloud API. La entrada se escribe a un archivo temporal
 // porque WebM/Matroska necesita "saltar" (seek) para demuxear — un pipe no lo permite y sale

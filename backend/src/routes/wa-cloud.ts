@@ -6,7 +6,7 @@ import { Router } from "express";
 import crypto from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
-import { getCloudMediaBase64, sendCloudButtons } from "../lib/wa-cloud.js";
+import { getCloudMediaBase64, sendCloudButtons, sendCloudCtaUrl } from "../lib/wa-cloud.js";
 import { fireCtwaLead } from "../lib/ctwa.js";
 import { detectPayment } from "../lib/payment-detect.js";
 import { notify } from "../lib/notifications.js";
@@ -119,7 +119,7 @@ cloudWebhookRouter.post("/", async (req, res) => {
 
         const owner = await prisma.user.findUnique({
           where: { id: userId },
-          select: { paymentDetection: true, waWelcomeEnabled: true, waWelcomeText: true, waWelcomeButtons: true },
+          select: { paymentDetection: true, waWelcomeEnabled: true, waWelcomeText: true, waWelcomeButtons: true, waAutoEnabled: true, waAutoWelcome: true, waAutoFollowup: true, waAutoBtnLabel: true, waAutoBtnUrl: true },
         });
         const paymentMode = owner?.paymentDetection ?? "off";
 
@@ -157,8 +157,10 @@ cloudWebhookRouter.post("/", async (req, res) => {
             contact = await prisma.contact.findFirst({ where: { userId, phone }, orderBy: { createdAt: "desc" } });
           }
           let isNewCtwaLead = false;
+          let isNewContact = false;
 
           if (!contact) {
+            isNewContact = true;
             contact = await prisma.contact.create({
               data: {
                 userId,
@@ -239,9 +241,19 @@ cloudWebhookRouter.post("/", async (req, res) => {
             void fireCtwaLead(userId, { id: contact.id, externalId: contact.externalId, phone: contact.phone, ctwaClid: contact.ctwaClid, name: contact.name });
           }
 
-          // 4b) Saludo automático con botones al entrar el 1er mensaje de un anuncio (si está prendido).
-          //     Best-effort y AISLADO: no bloquea el webhook ni afecta la atribución de arriba.
-          if (isNewCtwaLead && owner?.waWelcomeEnabled && owner.waWelcomeText?.trim()) {
+          // 4b) Auto-responder con botón CTA (link). Best-effort y AISLADO. Bienvenida en el 1er
+          //     mensaje del contacto + follow-up en cada mensaje siguiente, con un botón que abre un
+          //     URL (funnel neutro). El texto lo pone el cliente (que sea NEUTRO en la Cloud API).
+          if (owner?.waAutoEnabled && owner.waAutoBtnUrl?.trim()) {
+            const label = owner.waAutoBtnLabel?.trim() || "Abrir";
+            const url = owner.waAutoBtnUrl.trim();
+            const body = isNewContact ? owner.waAutoWelcome?.trim() : owner.waAutoFollowup?.trim();
+            if (body) {
+              void sendCloudCtaUrl(line, phone, body, label, url)
+                .catch((e) => console.error("[wa-cloud] auto-reply falló:", e instanceof Error ? e.message : String(e)));
+            }
+          } else if (isNewCtwaLead && owner?.waWelcomeEnabled && owner.waWelcomeText?.trim()) {
+            // Compat: saludo viejo con reply buttons (solo si NO está el auto-responder nuevo).
             const buttons = (owner.waWelcomeButtons ?? "").split("|").map((b) => b.trim()).filter(Boolean);
             void sendCloudButtons(line, phone, owner.waWelcomeText.trim(), buttons)
               .catch((e) => console.error("[wa-cloud] saludo automático falló:", e instanceof Error ? e.message : String(e)));
