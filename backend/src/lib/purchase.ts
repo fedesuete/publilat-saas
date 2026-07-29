@@ -95,6 +95,7 @@ export async function markPurchase(
       fbp: contact.fbp ?? undefined,
       fbc: contact.fbc ?? undefined,
       phone: contact.phone ?? undefined,
+      firstName: contact.name ?? undefined,
       value: amount,
       currency,
       eventId: `${contact.externalId}:purchase`,

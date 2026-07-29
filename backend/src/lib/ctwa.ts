@@ -5,10 +5,11 @@
 import { prisma } from "./prisma.js";
 import { resolveUserPixel } from "./pixel.js";
 import { sendCapiEvent } from "./meta-capi.js";
+import { notifyMissingPixel } from "./capi-guard.js";
 
 export async function fireCtwaLead(
   userId: string,
-  contact: { id: string; externalId: string; phone: string | null; ctwaClid: string | null },
+  contact: { id: string; externalId: string; phone: string | null; ctwaClid: string | null; name?: string | null },
 ): Promise<void> {
   const creds = await resolveUserPixel(userId, "Lead");
   const metaEvent = await prisma.metaEvent.create({
@@ -26,6 +27,7 @@ export async function fireCtwaLead(
       eventName: "Lead",
       externalId: contact.externalId,
       phone: contact.phone ?? undefined,
+      firstName: contact.name ?? undefined,
       actionSource: "business_messaging",
       ctwaClid: contact.ctwaClid ?? undefined,
       eventId: contact.externalId,
@@ -38,6 +40,13 @@ export async function fireCtwaLead(
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
+    // Sin pixel del cliente: NO es un fallo de envío, es que falta configurarlo. Lo marcamos
+    // "no_pixel" (no entra a la cola de reintentos) y avisamos al cliente para que lo cargue.
+    if (message.startsWith("SIN_PIXEL")) {
+      await prisma.metaEvent.update({ where: { id: metaEvent.id }, data: { status: "no_pixel", response: { error: message } } });
+      void notifyMissingPixel(userId);
+      return;
+    }
     console.error("[CTWA Lead] error:", message);
     await prisma.metaEvent.update({ where: { id: metaEvent.id }, data: { status: "failed", response: { error: message } } });
   }

@@ -7,6 +7,7 @@ import { emitToUser } from "./io.js";
 import { sendCapiEvent } from "./meta-capi.js";
 import { resolveUserPixel } from "./pixel.js";
 import { consumeDayAndActivate, consumeChatDayAndActivate } from "./access.js";
+import { notifyMissingPixel } from "./capi-guard.js";
 import { getEngine } from "./wa-engine.js";
 import { getPhoneQuality } from "./wa-cloud.js";
 import { decryptSecret } from "./crypto.js";
@@ -97,7 +98,7 @@ export async function retryFailedCapi(opts?: { includeDead?: boolean; max?: numb
     if (!contact) continue;
     const eventName: "Lead" | "Purchase" = ev.eventName === "Purchase" ? "Purchase" : "Lead";
     const creds = await resolveUserPixel(ev.userId, eventName);
-    if (!creds) continue; // sin pixel del cliente no hay a dónde reenviar (no gastamos intentos)
+    if (!creds) { void notifyMissingPixel(ev.userId); continue; } // sin pixel: avisamos y no gastamos intentos
     try {
       const result = await sendCapiEvent({
         eventName,
@@ -105,6 +106,7 @@ export async function retryFailedCapi(opts?: { includeDead?: boolean; max?: numb
         fbp: contact.fbp ?? undefined,
         fbc: contact.fbc ?? undefined,
         phone: contact.phone ?? undefined,
+        firstName: contact.name ?? undefined,
         eventSourceUrl: contact.landingUrl ?? undefined,
         pixelId: creds?.pixelId,
         capiToken: creds?.capiToken,

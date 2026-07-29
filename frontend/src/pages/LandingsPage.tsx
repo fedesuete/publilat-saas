@@ -316,6 +316,7 @@ export default function LandingsPage() {
   const [mode, setMode] = useState<"fields" | "html">("html");
   const [html, setHtml] = useState("");
   const [saving, setSaving] = useState(false);
+  const [dupBusy, setDupBusy] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [showTpl, setShowTpl] = useState(false);
   const [snapshot, setSnapshot] = useState("");
@@ -358,6 +359,20 @@ export default function LandingsPage() {
   const onUploadHtml = (file: File) => { const r = new FileReader(); r.onload = () => { setHtml(String(r.result ?? "")); setMode("html"); }; r.readAsText(file); };
 
   const buildConfig = (): LandingConfig => ({ title: form.title || undefined, headline: form.headline || undefined, subtitle: form.subtitle || undefined, buttonText: form.buttonText || undefined, msg: form.msg || undefined, autoRedirect: form.autoRedirect || undefined, destino: form.destino });
+
+  // Duplica la landing que estás editando: nace DESPUBLICADA y con slug + dominio propios (el server
+  // genera el slug). Ideal para el flujo anti-ban: clonar una creatividad quemada y republicarla limpia.
+  const duplicate = async () => {
+    if (!form.name.trim()) { setError("Guardá o nombrá la landing antes de duplicar."); return; }
+    setDupBusy(true); setError(null);
+    try {
+      const name = `${form.name.trim()} (copia)`;
+      const payload = mode === "html" ? { name, html } : { name, config: buildConfig() };
+      const { data } = await api.post<{ landing: Landing }>("/api/landings", payload);
+      await load();
+      void startEdit(data.landing);
+    } catch (e) { setError(apiError(e)); } finally { setDupBusy(false); }
+  };
 
   const save = async (e?: FormEvent) => {
     e?.preventDefault();
@@ -487,6 +502,7 @@ export default function LandingsPage() {
                 <Button variant="secondary" onClick={() => fileRef.current?.click()}><Upload className="h-4 w-4" /> Subir .html</Button>
                 <input ref={fileRef} type="file" accept=".html,text/html" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onUploadHtml(f); e.target.value = ""; }} />
                 {current && <Button variant="secondary" onClick={() => window.open(campaignUrl, "_blank")}><ExternalLink className="h-4 w-4" /> Ver mi sitio</Button>}
+                {current && <Button variant="secondary" onClick={() => void duplicate()} disabled={dupBusy}><Copy className="h-4 w-4" /> {dupBusy ? "Duplicando…" : "Duplicar"}</Button>}
                 <Button onClick={() => void save()} disabled={saving || !dirty}>{saving ? "Guardando…" : dirty ? "Guardar cambios" : "Sin cambios"}</Button>
                 <span id="lp-publish" className="inline-flex">
                   <Button variant="primary" disabled={busyId === editingId || !editingId} onClick={() => void publish()}>

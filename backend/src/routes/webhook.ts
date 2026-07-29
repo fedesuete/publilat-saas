@@ -350,7 +350,7 @@ webhookRouter.post("/", async (req, res) => {
 
         // Primer mensaje con atribución de anuncio -> disparamos el Lead CTWA por CAPI.
         if (isNewCtwaLead) {
-          void fireCtwaLead(userId, { id: contact.id, externalId: contact.externalId, phone: contact.phone, ctwaClid: contact.ctwaClid });
+          void fireCtwaLead(userId, { id: contact.id, externalId: contact.externalId, phone: contact.phone, ctwaClid: contact.ctwaClid, name: contact.name });
         }
 
         // Si el mensaje trae imagen o documento (PDF), lo bajamos UNA vez (para mostrarlo

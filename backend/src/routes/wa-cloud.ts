@@ -172,8 +172,10 @@ cloudWebhookRouter.post("/", async (req, res) => {
                 // "Nuevo" queda reservado para los clics de /go que todavía no escribieron. Así el
                 // embudo y "chats reales" cuentan a todos los que escribieron, aunque sea 1 sola vez.
                 stage: "CONTACTADO",
+                // referral.source_id es el ID del ANUNCIO, no el de la campaña -> solo adId (como
+                // el path de Baileys en webhook.ts). La campaña/adset reales se resuelven aparte.
                 ...(referral?.ctwa_clid
-                  ? { ctwaClid: referral.ctwa_clid, campaignId: referral.source_id ?? undefined, adId: referral.source_id ?? undefined }
+                  ? { ctwaClid: referral.ctwa_clid, adId: referral.source_id ?? undefined }
                   : {}),
               },
             });
@@ -234,7 +236,7 @@ cloudWebhookRouter.post("/", async (req, res) => {
 
           // 4) Lead CTWA (sólo en el 1er mensaje con referral).
           if (isNewCtwaLead) {
-            void fireCtwaLead(userId, { id: contact.id, externalId: contact.externalId, phone: contact.phone, ctwaClid: contact.ctwaClid });
+            void fireCtwaLead(userId, { id: contact.id, externalId: contact.externalId, phone: contact.phone, ctwaClid: contact.ctwaClid, name: contact.name });
           }
 
           // 4b) Saludo automático con botones al entrar el 1er mensaje de un anuncio (si está prendido).

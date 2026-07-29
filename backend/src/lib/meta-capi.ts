@@ -27,6 +27,7 @@ export interface CapiEventInput {
   clientIp?: string;
   userAgent?: string;
   phone?: string;
+  firstName?: string;          // nombre del contacto -> fn hasheado (sube el Event Match Quality)
   value?: number;              // sólo Purchase
   currency?: string;           // ej "ARS"
   eventId?: string;            // para deduplicar con el Pixel del navegador
@@ -74,6 +75,7 @@ export async function sendCapiEvent(input: CapiEventInput): Promise<CapiResult> 
   if (input.fbp) userData.fbp = input.fbp;          // fbp/fbc NO se hashean
   if (input.fbc) userData.fbc = input.fbc;
   if (input.phone) userData.ph = sha256(input.phone);
+  if (input.firstName) { const fn = input.firstName.trim().split(/\s+/)[0]; if (fn) userData.fn = sha256(fn); } // primer nombre
   if (input.clientIp) userData.client_ip_address = input.clientIp;
   if (input.userAgent) userData.client_user_agent = input.userAgent;
   if (isMessaging && input.ctwaClid) userData.ctwa_clid = input.ctwaClid; // NO se hashea

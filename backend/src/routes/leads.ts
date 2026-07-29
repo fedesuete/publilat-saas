@@ -67,6 +67,44 @@ leadsRouter.get("/", async (req, res) => {
   return res.json({ leads });
 });
 
+// GET /api/leads/export — CSV de los leads del cliente (mismos filtros que el listado, con teléfono).
+// Scopeado al userId de la sesión (requireAuth). Va ANTES de /:id para no matchear "export" como id.
+leadsRouter.get("/export", async (req, res) => {
+  const userId = req.userId!;
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  const filter = String(req.query.filter ?? "todos");
+  const onlyReal = req.query.real === "1" || req.query.real === "true";
+
+  const where: Prisma.ContactWhereInput = { userId };
+  const and: Prisma.ContactWhereInput[] = [];
+  if (filter === "conversiones") where.stage = "COMPRO";
+  else if (filter === "leads") where.stage = { not: "COMPRO" };
+  if (q) and.push({ OR: [{ name: { contains: q, mode: "insensitive" } }, { phone: { contains: q } }, { code: { contains: q, mode: "insensitive" } }] });
+  if (onlyReal) and.push({ OR: [{ messages: { some: { direction: "in" } } }, { stage: { not: "NUEVO" } }] });
+  if (and.length) where.AND = and;
+
+  const rows = await prisma.contact.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    take: 20000, // cota de seguridad
+    select: { name: true, phone: true, stage: true, source: true, campaignId: true, adId: true, code: true, amount: true, purchasedAt: true, createdAt: true },
+  });
+
+  const cell = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`; // RFC 4180
+  const fdate = (d: Date | null) => (d ? d.toISOString().slice(0, 16).replace("T", " ") : "");
+  const header = ["Nombre", "Teléfono", "Etapa", "Origen", "Campaña", "Anuncio", "Código", "Monto", "Compra", "Alta"];
+  const body = rows.map((l) =>
+    [l.name, l.phone, l.stage, l.source, l.campaignId, l.adId, l.code,
+     l.amount != null ? (l.amount / 100).toFixed(2) : "", fdate(l.purchasedAt), fdate(l.createdAt)]
+      .map(cell).join(","),
+  );
+  const csv = "﻿" + [header.map(cell).join(","), ...body].join("\r\n"); // BOM para Excel
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="leads-${new Date().toISOString().slice(0, 10)}.csv"`);
+  return res.send(csv);
+});
+
 // GET /api/leads/:id — ficha de atribución completa (incluye teléfono y línea WA).
 leadsRouter.get("/:id", async (req, res) => {
   const userId = req.userId!;

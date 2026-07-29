@@ -50,7 +50,7 @@ export async function alertCapiFailures(): Promise<void> {
   const dead = await prisma.metaEvent
     .groupBy({
       by: ["userId"],
-      where: { status: "failed", attempts: { gte: 5 }, createdAt: { gte: since } },
+      where: { status: "failed", attempts: { gte: 2 }, createdAt: { gte: since } },
       _count: { _all: true },
     })
     .catch(() => [] as Array<{ userId: string; _count: { _all: number } }>);

@@ -551,17 +551,18 @@ adminRouter.get("/landings", async (req, res) => {
 // ============================ CAPI: eventos fallidos ============================
 // GET /api/admin/capi/failed — resumen de eventos CAPI fallidos (para monitoreo).
 adminRouter.get("/capi/failed", async (_req, res) => {
-  const [total, deadLetter, recent] = await Promise.all([
+  const [total, deadLetter, noPixel, recent] = await Promise.all([
     prisma.metaEvent.count({ where: { status: "failed" } }),
-    prisma.metaEvent.count({ where: { status: "failed", attempts: { gte: 5 } } }),
+    prisma.metaEvent.count({ where: { status: "failed", attempts: { gte: 2 } } }),
+    prisma.metaEvent.count({ where: { status: "no_pixel" } }), // eventos muertos por falta de pixel del cliente
     prisma.metaEvent.findMany({
-      where: { status: "failed" },
+      where: { status: { in: ["failed", "no_pixel"] } },
       orderBy: { createdAt: "desc" },
       take: 50,
-      select: { id: true, userId: true, eventName: true, attempts: true, createdAt: true, response: true },
+      select: { id: true, userId: true, eventName: true, status: true, attempts: true, createdAt: true, response: true },
     }),
   ]);
-  return res.json({ total, deadLetter, recent });
+  return res.json({ total, deadLetter, noPixel, recent });
 });
 
 // POST /api/admin/capi/retry — reintenta los eventos fallidos (incluye dead-letter).

@@ -46,6 +46,17 @@ export default function LeadsPage() {
     setPurchaseFor(null);
   };
 
+  // Descarga los leads (con teléfono) en CSV, respetando el filtro "solo clientes reales".
+  const exportCsv = async () => {
+    try {
+      const { data } = await api.get(`/api/leads/export${onlyReal ? "?real=1" : ""}`, { responseType: "blob" });
+      const url = URL.createObjectURL(data as Blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `leads-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { setError(apiError(e)); }
+  };
+
   return (
     <div className="p-6">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -55,6 +66,9 @@ export default function LeadsPage() {
             <input type="checkbox" checked={onlyReal} onChange={(e) => setOnlyReal(e.target.checked)} className="accent-wa-green" />
             Solo clientes reales
           </label>
+          <Button variant="secondary" onClick={() => void exportCsv()}>
+            Exportar CSV
+          </Button>
           <Button variant="secondary" onClick={() => void load(onlyReal)}>
             Actualizar
           </Button>
