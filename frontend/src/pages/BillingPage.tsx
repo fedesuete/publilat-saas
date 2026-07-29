@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, apiError } from "../lib/api";
 import { fmtDate } from "../lib/format";
 import { Button, Input, Card, ErrorMsg } from "../components/ui";
@@ -57,6 +57,43 @@ export default function BillingPage() {
   const [verifying, setVerifying] = useState(false);
   const [verifyMsg, setVerifyMsg] = useState<string | null>(null);
 
+  // Banner de pago: los días se acreditan por webhook ASÍNCRONO (Pagopar/MP/USDT abren checkout en
+  // otra pestaña). Tras abrir el checkout — o al volver con ?status=success — vigilamos el crédito
+  // y avisamos apenas suben los días. Ver [[fixes-pendientes]] ítem 9.
+  const [payWatch, setPayWatch] = useState(false);
+  const [payDone, setPayDone] = useState<string | null>(null);
+  const pollRef = useRef<number | null>(null);
+  useEffect(() => () => { if (pollRef.current) window.clearInterval(pollRef.current); }, []);
+
+  const watchPayment = (baseline: number) => {
+    if (pollRef.current) window.clearInterval(pollRef.current);
+    setPayWatch(true);
+    setPayDone(null);
+    let tries = 0;
+    pollRef.current = window.setInterval(async () => {
+      tries += 1;
+      try {
+        const { data } = await api.get<CreditResponse>("/api/billing/credit");
+        if (data.days > baseline) {
+          if (pollRef.current) window.clearInterval(pollRef.current);
+          pollRef.current = null;
+          setPayWatch(false);
+          setPayDone(`✅ ¡Pago confirmado! Se acreditaron ${data.days - baseline} día(s).`);
+          setDays(data.days);
+          setLedger(data.ledger);
+          return;
+        }
+      } catch {
+        /* reintenta en el próximo tick */
+      }
+      if (tries >= 60) { // ~5 min: cortamos el poll (el webhook puede tardar)
+        if (pollRef.current) window.clearInterval(pollRef.current);
+        pollRef.current = null;
+        setPayWatch(false);
+      }
+    }, 5000);
+  };
+
   const load = async () => {
     setLoading(true);
     setError(null);
@@ -73,7 +110,27 @@ export default function BillingPage() {
   };
 
   useEffect(() => {
-    void load();
+    void (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const { data } = await api.get<CreditResponse>("/api/billing/credit");
+        setDays(data.days);
+        setLedger(data.ledger);
+        if (data.methods) setMethods(data.methods);
+        // Vuelta del checkout (MP/USDT-tarjeta usan ?status=success): vigilamos la acreditación.
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("status") === "success") {
+          window.history.replaceState({}, "", window.location.pathname); // que un F5 no re-dispare
+          watchPayment(data.days);
+        }
+      } catch (err) {
+        setError(apiError(err));
+      } finally {
+        setLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Cotiza el precio por proveedor cada vez que cambia la cantidad de días.
@@ -126,6 +183,8 @@ export default function BillingPage() {
         window.open(data.url, "_blank");
         setCheckoutMsg(`Te abrimos el checkout de ${PROVIDER_LABEL[provider]} en otra pestaña.`);
         if (provider === "pagopar") { setShowPagopar(false); setPromoMode(false); }
+        // El pago se acredita por webhook: quedamos vigilando para avisar apenas suben los días.
+        watchPayment(days);
       }
     } catch (err) {
       setError(apiError(err));
@@ -169,6 +228,18 @@ export default function BillingPage() {
       {error && (
         <div className="mb-4">
           <ErrorMsg>{error}</ErrorMsg>
+        </div>
+      )}
+
+      {payWatch && (
+        <div className="mb-4 flex items-center gap-2 rounded-md border border-amber-800 bg-amber-900/30 px-3 py-2 text-sm text-amber-200">
+          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-amber-400 border-t-transparent" />
+          Estamos confirmando tu pago… los días se acreditan apenas el medio de pago confirme (puede tardar unos minutos). Podés dejar esta pestaña abierta.
+        </div>
+      )}
+      {payDone && (
+        <div className="mb-4 rounded-md border border-emerald-800 bg-emerald-900/40 px-3 py-2 text-sm font-semibold text-emerald-200">
+          {payDone}
         </div>
       )}
 

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { slugify } from "./auth.js";
 import { signPayload } from "./integrations.js";
 import { priceFor } from "./payments.js";
-import { renderTrackedLanding } from "./landing-template.js";
+import { renderTrackedLanding, injectCurrentPixel } from "./landing-template.js";
 import { textSignalsPayment } from "./payment-detect.js";
 import { parseInboundAmount, normalizeRef } from "../routes/integrations.js";
 
@@ -109,6 +109,29 @@ describe("renderTrackedLanding", () => {
   it("escapa HTML en el contenido (anti-XSS)", () => {
     expect(html).toContain("Hola &lt;b&gt;");
     expect(html).not.toContain("Hola <b>");
+  });
+});
+
+describe("injectCurrentPixel (pixel vigente al servir /p/:slug)", () => {
+  it("reemplaza el pixel horneado por el vigente (init + noscript)", () => {
+    const baked = renderTrackedLanding({
+      pixelId: "111111", userSlug: "d", goBase: "", title: "T",
+      headline: "H", subtitle: "S", buttonText: "B", msg: "m",
+    });
+    const out = injectCurrentPixel(baked, "999999");
+    expect(out).toContain("fbq('init', '999999')");
+    expect(out).not.toContain("111111");
+    expect(out).toContain("facebook.com/tr?id=999999");
+  });
+  it("inyecta el snippet si el HTML no tenía pixel", () => {
+    const out = injectCurrentPixel("<html><head></head><body>hola</body></html>", "555");
+    expect(out).toContain("fbq('init','555')");
+    expect(out).toContain("connect.facebook.net/en_US/fbevents.js");
+  });
+  it("no toca nada si no hay pixel vigente o el id no es numérico", () => {
+    const src = "<html><head></head><body>x</body></html>";
+    expect(injectCurrentPixel(src, "")).toBe(src);
+    expect(injectCurrentPixel(src, "abc")).toBe(src);
   });
 });
 

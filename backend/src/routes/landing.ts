@@ -4,7 +4,7 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma.js";
 import { resolveUserPixel } from "../lib/pixel.js";
-import { renderTrackedLanding, injectGoTracking } from "../lib/landing-template.js";
+import { renderTrackedLanding, injectGoTracking, injectCurrentPixel } from "../lib/landing-template.js";
 
 export const landingRouter = Router();
 
@@ -39,7 +39,16 @@ landingRouter.get("/p/:slug", async (req, res) => {
   const landing = await prisma.landing.findUnique({ where: { slug: req.params.slug } });
   if (!landing) return res.status(404).send("Landing no encontrada");
   res.set("Content-Type", "text/html; charset=utf-8");
+  // Pixel DINÁMICO: reemplaza el pixel horneado por el VIGENTE del dueño (Mi Pixel), así un cambio
+  // de pixel se toma sin re-publicar. Best-effort: si no hay pixel vigente, deja el HTML como está.
+  let html = landing.html;
+  try {
+    const creds = await resolveUserPixel(landing.userId, "Lead");
+    if (creds?.pixelId) html = injectCurrentPixel(html, creds.pixelId);
+  } catch {
+    /* sin pixel vigente: se sirve el HTML tal cual */
+  }
   // Inyecta el tracking (idempotente): enriquece los links a /go con eventID + fbclid/fbc/fbp,
   // y fuerza el origen del /go al backend (APP_BASE_URL).
-  return res.send(injectGoTracking(landing.html, process.env.APP_BASE_URL ?? ""));
+  return res.send(injectGoTracking(html, process.env.APP_BASE_URL ?? ""));
 });

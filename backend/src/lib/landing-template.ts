@@ -46,6 +46,39 @@ export function injectGoTracking(html: string, goBase = ""): string {
   return idx >= 0 ? html.slice(0, idx) + tag + html.slice(idx) : html + tag;
 }
 
+// Pixel DINÁMICO al servir /p/:slug: reemplaza el pixel HORNEADO en el HTML por el pixel VIGENTE
+// del dueño (Mi Pixel), para que un cambio de pixel se refleje sin re-guardar/re-publicar la landing.
+// Si el HTML no tiene pixel y hay uno vigente, lo inyecta en el <head>. Idempotente respecto del id.
+// (Solo aplica a landings servidas por /p/:slug; las publicadas en S3/CloudFront son estáticas.)
+export function injectCurrentPixel(html: string, pixelId: string): string {
+  if (!html || !pixelId) return html;
+  const id = pixelId.replace(/[^0-9]/g, ""); // el pixel de Meta es numérico
+  if (!id) return html;
+  let hadInit = false;
+  let out = html
+    // fbq('init','XXXX')  ->  fbq('init','<vigente>')  (comillas simples o dobles)
+    .replace(/(fbq\(\s*['"]init['"]\s*,\s*['"])\d+(['"])/g, (_m, a, b) => {
+      hadInit = true;
+      return a + id + b;
+    })
+    // noscript / img del pixel:  facebook.com/tr?id=XXXX
+    .replace(/(facebook\.com\/tr\?id=)\d+/g, (_m, a) => a + id);
+  if (!hadInit) {
+    const snippet =
+      `<!-- Meta Pixel (vigente) -->\n<script>\n!function(f,b,e,v,n,t,s){if(f.fbq)return;` +
+      `n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};` +
+      `if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);` +
+      `t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}` +
+      `(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');` +
+      `fbq('init','${id}');fbq('track','PageView');\n</script>\n` +
+      `<noscript><img height="1" width="1" style="display:none" ` +
+      `src="https://www.facebook.com/tr?id=${id}&ev=PageView&noscript=1"/></noscript>\n<!-- End Meta Pixel -->`;
+    const idx = out.toLowerCase().indexOf("</head>");
+    out = idx >= 0 ? out.slice(0, idx) + snippet + out.slice(idx) : snippet + out;
+  }
+  return out;
+}
+
 export function renderTrackedLanding(cfg: LandingConfig): string {
   const isChat = cfg.destino === "chatapp";
   // El JSON va dentro de <script>; escapamos "<" para no cerrar el tag.
