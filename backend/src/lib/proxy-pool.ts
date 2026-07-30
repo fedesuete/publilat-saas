@@ -84,13 +84,13 @@ export async function alertAdminProxy(
 
 // Asigna a la línea el proxy active+healthy con MENOS líneas (least-loaded, respeta maxLines) y le
 // genera su sesión sticky única. Si el pool está lleno, avisa al admin y devuelve pool_full.
-export async function assignProxy(lineId: string): Promise<{ ok: boolean; proxyId?: string; reason?: string }> {
+export async function assignProxy(lineId: string, excludeProxyId?: string): Promise<{ ok: boolean; proxyId?: string; reason?: string }> {
   const line = await prisma.waLine.findUnique({ where: { id: lineId }, select: { id: true, provider: true, label: true } });
   if (!line) return { ok: false, reason: "line_not_found" };
   if (line.provider === "cloud") return { ok: false, reason: "cloud_no_proxy" };
 
   const proxies = await prisma.proxy.findMany({
-    where: { active: true, healthy: true },
+    where: { active: true, healthy: true, ...(excludeProxyId ? { id: { not: excludeProxyId } } : {}) },
     select: { id: true, maxLines: true, _count: { select: { lines: true } } },
   });
   const withCap = proxies
@@ -124,19 +124,29 @@ export async function rotateProxy(lineId: string): Promise<{ ok: boolean; proxyI
   if (line.provider === "cloud") return { ok: false, reason: "cloud_no_proxy" };
 
   let keepProxyId = line.proxyId;
+  let curSticky = false;
   if (keepProxyId) {
     const cur = await prisma.proxy.findUnique({
       where: { id: keepProxyId },
-      select: { active: true, healthy: true, maxLines: true, _count: { select: { lines: true } } },
+      select: { active: true, healthy: true, sticky: true, maxLines: true, _count: { select: { lines: true } } },
     });
+    curSticky = cur?.sticky ?? false;
     // El actual sirve si está activo, sano y con cupo (se cuenta a sí mismo → usamos >).
     if (!cur || !cur.active || !cur.healthy || cur._count.lines > cur.maxLines) keepProxyId = null;
+  }
+  // Proxy de IP FIJA por entrada (sticky=false, ej. Webshare: la IP está en el username): rotar la
+  // "sesión" no cambia la IP → hay que MOVER la línea a OTRA entrada del pool (otra IP).
+  if (keepProxyId && !curSticky) {
+    const r = await assignProxy(lineId, keepProxyId); // excluye el proxy actual
+    if (r.ok) { await logProxyEvent(lineId, r.proxyId, "rotated", "movido a otra IP (proxy de IP fija)"); return r; }
+    return { ok: true, proxyId: keepProxyId }; // no hay otro con cupo: se queda con el actual
   }
   if (!keepProxyId) {
     const r = await assignProxy(lineId);
     if (r.ok) await logProxyEvent(lineId, r.proxyId, "rotated", "re-asignado a proxy sano");
     return r;
   }
+  // Proxy sticky (DataImpulse): nueva sesión = nueva IP de la misma cuenta.
   const session = newSession();
   await prisma.waLine.update({ where: { id: lineId }, data: { proxySession: session, lastProxyRotateAt: new Date() } });
   await logProxyEvent(lineId, keepProxyId, "rotated", `sessid=${session} (nueva IP)`);

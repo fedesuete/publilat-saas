@@ -6,7 +6,7 @@ import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
 import { encryptSecret, decryptSecret, maskSecret } from "../lib/crypto.js";
 import { getAvailableDays, consumeDayAndActivate } from "../lib/access.js";
-import { applyLineProxy } from "../lib/proxy-pool.js";
+import { applyLineProxy, assignProxy } from "../lib/proxy-pool.js";
 import { getEngine } from "../lib/wa-engine.js";
 import { warmupState } from "../lib/warmup.js";
 import axios from "axios";
@@ -172,7 +172,9 @@ waRouter.post("/lines", async (req, res) => {
   try {
     const qr = await getEngine().createInstance(instanceName);
     const updated = await prisma.waLine.update({ where: { id: line.id }, data: { sessionId: instanceName } });
-    // Si la línea ya tiene proxy asignado del pool (o uno manual), lo aplica a la instancia nueva.
+    // Anti-ban: toda línea Baileys NUEVA sale por un proxy del pool (least-loaded) si hay cupo.
+    // Best-effort: sin pool/cupo, conecta como antes (y assignProxy avisa al admin).
+    await assignProxy(line.id).catch(() => undefined);
     await applyLineProxy(instanceName, line.id);
     if (qr.base64) emitToUser(req.userId!, "wa:qr", { lineId: line.id, qr: qr.base64 });
     return res.status(201).json({ line: toPublicLine(updated), qr: qr.base64 ?? null });
