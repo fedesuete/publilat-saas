@@ -25,6 +25,7 @@ import AdminLayout from "./components/AdminLayout";
 import AdminOverview from "./pages/admin/AdminOverview";
 import AdminClients from "./pages/admin/AdminClients";
 import AdminLines from "./pages/admin/AdminLines";
+import AdminProxies from "./pages/admin/AdminProxies";
 import AdminLandings from "./pages/admin/AdminLandings";
 import AdminRevenue from "./pages/admin/AdminRevenue";
 import AdminDemos from "./pages/admin/AdminDemos";
@@ -74,6 +75,7 @@ export default function App() {
             <Route path="/admin" element={<AdminOverview />} />
             <Route path="/admin/clientes" element={<AdminClients />} />
             <Route path="/admin/lineas" element={<AdminLines />} />
+            <Route path="/admin/proxies" element={<AdminProxies />} />
             <Route path="/admin/landings" element={<AdminLandings />} />
             <Route path="/admin/ingresos" element={<AdminRevenue />} />
             <Route path="/admin/demos" element={<AdminDemos />} />

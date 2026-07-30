@@ -170,9 +170,7 @@ export default function WhatsappPage() {
   const [registerMsg, setRegisterMsg] = useState<{ id: string; ok: boolean; text: string } | null>(null);
   const [subscribingId, setSubscribingId] = useState<string | null>(null);
   const [subscribeMsg, setSubscribeMsg] = useState<{ id: string; ok: boolean; text: string } | null>(null);
-  // Anti-ban por línea: proxy de salida + rampa de calentamiento.
-  const [proxyInputs, setProxyInputs] = useState<Record<string, string>>({});
-  const [proxyBusyId, setProxyBusyId] = useState<string | null>(null);
+  // Rampa de calentamiento por línea (los proxies son 100% del admin, no se ven acá).
   const [warmupBusyId, setWarmupBusyId] = useState<string | null>(null);
   const [showAntiBan, setShowAntiBan] = useState<Record<string, boolean>>({});
   const [engine, setEngine] = useState<string>("evolution");
@@ -510,29 +508,6 @@ export default function WhatsappPage() {
     }
   };
 
-  // Setea o quita el proxy de salida de la línea (Evolution lo valida en vivo).
-  const saveProxy = async (id: string, url: string) => {
-    setProxyBusyId(id);
-    setError(null);
-    try {
-      const { data } = await api.post<{ ok: boolean; proxyLabel: string | null; line?: Line }>(
-        `/api/wa/lines/${id}/proxy`,
-        { url },
-      );
-      setLines((prev) => prev.map((l) => (l.id === id ? { ...l, proxyLabel: data.proxyLabel } : l)));
-      setProxyInputs((p) => ({ ...p, [id]: "" }));
-      setNotice({
-        id,
-        text: data.proxyLabel
-          ? `Proxy configurado (${data.proxyLabel}). La línea se reinicia para salir por la IP nueva.`
-          : "Proxy quitado. La línea vuelve a salir por la IP del servidor.",
-      });
-    } catch (err) {
-      setError(apiError(err));
-    } finally {
-      setProxyBusyId(null);
-    }
-  };
 
   // Activa/desactiva la rampa de calentamiento de la línea.
   const toggleWarmup = async (line: Line) => {
@@ -979,42 +954,6 @@ export default function WhatsappPage() {
                           >
                             {warmupBusyId === line.id ? "…" : (line.warmupEnabled ?? true) ? "Desactivar" : "Activar"}
                           </Button>
-                        </div>
-                        {/* Proxy de salida */}
-                        <div className="border-t border-slate-800 pt-2">
-                          <div className="font-semibold text-slate-200">Proxy de salida</div>
-                          <div className="mb-2 text-slate-500">
-                            {line.proxyLabel
-                              ? <>Activo: <code className="text-slate-300">{line.proxyLabel}</code></>
-                              : "Sin proxy: la línea sale a WhatsApp desde la IP del servidor. Un proxy residencial del país del número baja el riesgo antispam."}
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Input
-                              value={proxyInputs[line.id] ?? ""}
-                              onChange={(e) => setProxyInputs((p) => ({ ...p, [line.id]: e.target.value }))}
-                              placeholder="socks5://usuario:clave@host:puerto"
-                              className="max-w-[280px]"
-                            />
-                            <Button
-                              variant="secondary"
-                              disabled={proxyBusyId === line.id || !(proxyInputs[line.id] ?? "").trim()}
-                              onClick={() => void saveProxy(line.id, (proxyInputs[line.id] ?? "").trim())}
-                            >
-                              {proxyBusyId === line.id ? "Probando…" : "Guardar proxy"}
-                            </Button>
-                            {line.proxyLabel && (
-                              <Button
-                                variant="ghost"
-                                disabled={proxyBusyId === line.id}
-                                onClick={() => void saveProxy(line.id, "")}
-                              >
-                                Quitar
-                              </Button>
-                            )}
-                          </div>
-                          <p className="mt-1 text-slate-600">
-                            Se valida en vivo y la línea se reinicia para aplicar el cambio (sin re-escanear QR).
-                          </p>
                         </div>
                       </div>
                     )}

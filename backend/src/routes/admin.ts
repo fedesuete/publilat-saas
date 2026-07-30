@@ -7,8 +7,11 @@ import crypto from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
-import { retryFailedCapi } from "../lib/queue.js";
+import { retryFailedCapi, enqueueProxyRecover } from "../lib/queue.js";
 import { hashPassword } from "../lib/auth.js";
+import { encryptSecret } from "../lib/crypto.js";
+import { assignProxy, rotateProxy, applyLineProxy, logProxyEvent } from "../lib/proxy-pool.js";
+import { getEngine } from "../lib/wa-engine.js";
 import { uniqueSlug } from "./auth.js";
 
 export const adminRouter = Router();
@@ -570,6 +573,156 @@ adminRouter.post("/capi/retry", async (req, res) => {
   const retried = await retryFailedCapi({ includeDead: true, max: 200 });
   await adminLog(req.userId!, "capi_retry", undefined, { retried });
   return res.json({ ok: true, retried });
+});
+
+// ============================ PROXIES (pool anti-ban, SOLO admin) ============================
+// Vista de un proxy para el ADMIN (el admin gestiona el pool): NUNCA la password en claro.
+function toAdminProxy(p: {
+  id: string; label: string; provider: string; host: string; port: number; username: string;
+  protocol: string; country: string | null; sticky: boolean; sessTime: number; maxLines: number;
+  active: boolean; healthy: boolean; lastCheckAt: Date | null; createdAt: Date; _count?: { lines: number };
+}) {
+  return {
+    id: p.id, label: p.label, provider: p.provider, host: p.host, port: p.port, username: p.username,
+    protocol: p.protocol, country: p.country, sticky: p.sticky, sessTime: p.sessTime, maxLines: p.maxLines,
+    active: p.active, healthy: p.healthy, lastCheckAt: p.lastCheckAt, createdAt: p.createdAt,
+    lineCount: p._count?.lines ?? 0,
+  };
+}
+
+const proxyCreateSchema = z.object({
+  label: z.string().min(1).max(80),
+  provider: z.string().max(40).default("dataimpulse"),
+  host: z.string().min(1).max(200),
+  port: z.number().int().min(1).max(65535),
+  username: z.string().min(1).max(200),
+  password: z.string().min(1).max(400),
+  protocol: z.enum(["http", "socks5"]).default("http"),
+  country: z.string().max(8).optional(),
+  sticky: z.boolean().default(true),
+  sessTime: z.number().int().min(1).max(1440).default(120),
+  maxLines: z.number().int().min(1).max(100).default(4),
+  active: z.boolean().default(true),
+});
+
+// GET /api/admin/proxies — pool con conteo de líneas y salud.
+adminRouter.get("/proxies", async (_req, res) => {
+  const proxies = await prisma.proxy.findMany({ orderBy: { createdAt: "asc" }, include: { _count: { select: { lines: true } } } });
+  return res.json({ proxies: proxies.map(toAdminProxy) });
+});
+
+// POST /api/admin/proxies — crea un proxy (password cifrada en reposo).
+adminRouter.post("/proxies", async (req, res) => {
+  const parsed = proxyCreateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
+  const d = parsed.data;
+  const p = await prisma.proxy.create({ data: { ...d, password: encryptSecret(d.password), country: d.country ?? null } });
+  await adminLog(req.userId!, "proxy_create", undefined, { proxyId: p.id, label: p.label });
+  return res.status(201).json({ proxy: toAdminProxy({ ...p, _count: { lines: 0 } }) });
+});
+
+// PATCH /api/admin/proxies/:id — edita (si viene password, se re-cifra).
+adminRouter.patch("/proxies/:id", async (req, res) => {
+  const parsed = proxyCreateSchema.partial().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const d = parsed.data;
+  const data: Record<string, unknown> = { ...d };
+  if (d.password) data.password = encryptSecret(d.password);
+  if ("country" in d) data.country = d.country ?? null;
+  const p = await prisma.proxy
+    .update({ where: { id: req.params.id }, data, include: { _count: { select: { lines: true } } } })
+    .catch(() => null);
+  if (!p) return res.status(404).json({ error: "Proxy no encontrado" });
+  await adminLog(req.userId!, "proxy_update", undefined, { proxyId: p.id });
+  return res.json({ proxy: toAdminProxy(p) });
+});
+
+// DELETE /api/admin/proxies/:id — las líneas asignadas quedan sin proxy (onDelete SetNull).
+adminRouter.delete("/proxies/:id", async (req, res) => {
+  await prisma.proxy.delete({ where: { id: req.params.id } }).catch(() => undefined);
+  await adminLog(req.userId!, "proxy_delete", undefined, { proxyId: req.params.id });
+  return res.json({ ok: true });
+});
+
+// GET /api/admin/proxies/lines — todas las líneas Baileys con su proxy asignado y estado.
+adminRouter.get("/proxies/lines", async (_req, res) => {
+  const lines = await prisma.waLine.findMany({
+    where: { provider: { not: "cloud" } },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true, phone: true, label: true, status: true, connected: true, banned: true,
+      proxyId: true, proxySession: true, lastProxyRotateAt: true,
+      user: { select: { slug: true, email: true } },
+      proxy: { select: { id: true, label: true, host: true, port: true, country: true, healthy: true } },
+    },
+  });
+  return res.json({ lines });
+});
+
+// GET /api/admin/proxies/events — auditoría (últimos 100 eventos).
+adminRouter.get("/proxies/events", async (_req, res) => {
+  const events = await prisma.proxyEvent.findMany({ orderBy: { createdAt: "desc" }, take: 100 });
+  return res.json({ events });
+});
+
+// POST /api/admin/lines/:id/proxy — asigna/cambia el proxy. body { proxyId? } (sin proxyId = auto
+// least-loaded). Aplica al motor y reinicia para salir por la IP nueva.
+adminRouter.post("/lines/:id/proxy", async (req, res) => {
+  const id = req.params.id;
+  const line = await prisma.waLine.findUnique({ where: { id }, select: { id: true, provider: true, sessionId: true } });
+  if (!line) return res.status(404).json({ error: "Línea no encontrada" });
+  if (line.provider === "cloud") return res.status(400).json({ error: "Las líneas Cloud API no usan proxy" });
+  const proxyId = typeof req.body?.proxyId === "string" ? req.body.proxyId : null;
+  let result: { ok: boolean; proxyId?: string; reason?: string };
+  if (proxyId) {
+    const proxy = await prisma.proxy.findUnique({ where: { id: proxyId }, select: { active: true } });
+    if (!proxy || !proxy.active) return res.status(400).json({ error: "Proxy inexistente o inactivo" });
+    const session = crypto.randomBytes(6).toString("hex");
+    await prisma.waLine.update({ where: { id }, data: { proxyId, proxySession: session, proxyAssignedAt: new Date() } });
+    await logProxyEvent(id, proxyId, "assigned", "asignado por admin");
+    result = { ok: true, proxyId };
+  } else {
+    result = await assignProxy(id);
+  }
+  if (result.ok) {
+    const inst = line.sessionId ?? `line_${id}`;
+    await applyLineProxy(inst, id);
+    await getEngine().restartInstance(inst).catch(() => undefined);
+  }
+  await adminLog(req.userId!, "proxy_assign", undefined, { lineId: id, ...result });
+  return res.json(result);
+});
+
+// POST /api/admin/lines/:id/rotate — rota la IP (nueva sesión sticky) y reinicia.
+adminRouter.post("/lines/:id/rotate", async (req, res) => {
+  const id = req.params.id;
+  const line = await prisma.waLine.findUnique({ where: { id }, select: { sessionId: true, provider: true } });
+  if (!line) return res.status(404).json({ error: "Línea no encontrada" });
+  const r = await rotateProxy(id);
+  if (r.ok) {
+    const inst = line.sessionId ?? `line_${id}`;
+    await applyLineProxy(inst, id);
+    await getEngine().restartInstance(inst).catch(() => undefined);
+  }
+  await adminLog(req.userId!, "proxy_rotate", undefined, { lineId: id, ...r });
+  return res.json(r);
+});
+
+// POST /api/admin/lines/:id/retry — reintenta reconectar (limpia banned, re-asigna si hace falta,
+// reinicia y lanza la recuperación con backoff).
+adminRouter.post("/lines/:id/retry", async (req, res) => {
+  const id = req.params.id;
+  const line = await prisma.waLine.findUnique({ where: { id }, select: { id: true, sessionId: true, provider: true, proxyId: true } });
+  if (!line) return res.status(404).json({ error: "Línea no encontrada" });
+  if (line.provider === "cloud") return res.status(400).json({ error: "No aplica a Cloud API" });
+  await prisma.waLine.update({ where: { id }, data: { banned: false } });
+  if (!line.proxyId) await assignProxy(id);
+  const inst = line.sessionId ?? `line_${id}`;
+  await applyLineProxy(inst, id);
+  await getEngine().restartInstance(inst).catch(() => undefined);
+  enqueueProxyRecover(id);
+  await adminLog(req.userId!, "proxy_retry", undefined, { lineId: id });
+  return res.json({ ok: true });
 });
 
 export { emitToAdmins };
