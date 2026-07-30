@@ -355,15 +355,61 @@ model WaLine {
   proxyUrl        String?    // proxy de salida por línea (URL completa, cifrada en reposo)
   warmupEnabled   Boolean   @default(false)  // rampa de calentamiento OFF por default (se activa por línea en Admin)
   warmupStartedAt DateTime?  // arranca al primer emparejamiento; se resetea si cambia el número
+  // --- Proxies GESTIONADOS (pool admin) — OCULTO al cliente: estos campos NUNCA se exponen a un
+  //     endpoint del cliente. Solo Baileys; las líneas Cloud API no usan proxy. Aditivo. ---
+  proxyId           String?    // proxy del pool asignado a esta línea (relación a Proxy)
+  proxySession      String?    // sesión sticky ÚNICA de esta línea (una IP fija por línea)
+  proxyAssignedAt   DateTime?
+  banned            Boolean    @default(false) // el NÚMERO quedó baneado (logout/ban del motor)
+  lastProxyRotateAt DateTime?
   expiresAt   DateTime? // se desactiva al vencer (consumo de días)
   lastUsedAt  DateTime? // para rotación LRU de clics entre líneas activas
   createdAt   DateTime  @default(now())
   user        User      @relation(fields: [userId], references: [id])
+  proxy       Proxy?    @relation(fields: [proxyId], references: [id])
   contacts    Contact[]
   messages    Message[]
 
   @@index([sessionId]) // lookup por instancia en cada evento del webhook
   @@index([userId])
+  @@index([proxyId])
+}
+
+// Pool de proxies de salida para líneas Baileys (anti-ban). GESTIÓN 100% ADMIN: las credenciales son
+// SECRETAS — NINGÚN endpoint del cliente devuelve datos del proxy. `password` cifrada en reposo
+// (lib/crypto.ts encryptSecret) y NUNCA se loguea en claro.
+model Proxy {
+  id          String    @id @default(cuid())
+  label       String
+  provider    String    @default("dataimpulse")
+  host        String
+  port        Int
+  username    String
+  password    String    // cifrada en reposo (encryptSecret) — NUNCA loguear ni exponer al cliente
+  protocol    String    @default("http")   // http | socks5
+  country     String?
+  sticky      Boolean   @default(true)
+  sessTime    Int       @default(120)       // duración de la sesión sticky (según el proveedor)
+  maxLines    Int       @default(4)         // tope de líneas por IP/cuenta del proxy
+  active      Boolean   @default(true)
+  healthy     Boolean   @default(true)
+  lastCheckAt DateTime?
+  createdAt   DateTime  @default(now())
+  lines       WaLine[]
+}
+
+// Auditoría del sistema de proxies (SOLO admin): asignaciones, rotaciones, caídas, baneos, salud.
+// Sin FK a WaLine/Proxy a propósito: el evento sobrevive aunque se borre la línea o el proxy.
+model ProxyEvent {
+  id        String   @id @default(cuid())
+  lineId    String
+  proxyId   String?
+  type      String   // assigned | rotated | line_down | reconnected | banned | proxy_unhealthy
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([lineId])
+  @@index([createdAt])
 }
 
 // Crédito prepago: "días disponibles" (1 día = 1 línea activa 24h).
