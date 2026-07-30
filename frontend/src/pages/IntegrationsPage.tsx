@@ -227,10 +227,13 @@ export default function IntegrationsPage() {
           </div>
           <p className="mb-3 text-xs text-slate-400">
             Pegá esta URL en un <b>Salesbot de Kommo</b> que se dispare cuando la venta pasa a
-            “ganada”. Enviá un <span className="font-mono">POST</span> con{" "}
-            <span className="font-mono">{`{ ref, amount }`}</span> (el <span className="font-mono">ref</span> es el
-            código que llegó en el primer mensaje, ej. <span className="font-mono">ref: 28C4B…</span>). Publi.lat
-            matchea el contacto y dispara el <b>Purchase</b> a Meta con el mismo identificador.
+            “ganada”, y enviá un <span className="font-mono">POST</span>. Tenés dos formas de
+            identificar la venta:
+            <br />• <b>Simple (recomendado):</b> por <span className="font-mono">phone</span> (el
+            teléfono del cliente) — casi todos los CRM lo tienen a mano.
+            <br />• <b>Preciso:</b> por <span className="font-mono">ref</span> (el código que llegó
+            en el primer mensaje, ej. <span className="font-mono">ref: 28C4B…</span>).
+            <br />Publi.lat matchea el contacto y dispara el <b>Purchase</b> a Meta con el mismo identificador.
           </p>
           <div className="flex items-center gap-2">
             <code className="flex-1 break-all rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs text-slate-200">
@@ -249,8 +252,9 @@ export default function IntegrationsPage() {
             </Button>
           </div>
           <p className="mt-2 text-[11px] text-slate-500">
-            Cuerpo de ejemplo: <span className="font-mono">{`{"ref":"28C4B1A2","amount":15000,"currency":"PYG"}`}</span>.
-            La URL lleva tu token secreto — no la compartas.
+            Ejemplo simple: <span className="font-mono">{`{"phone":"5491112345678","amount":15000}`}</span>{" "}
+            · o por código: <span className="font-mono">{`{"ref":"28C4B1A2","amount":15000}`}</span>.
+            La moneda es <span className="font-mono">ARS</span> por defecto. La URL lleva tu token secreto — no la compartas.
           </p>
         </Card>
       )}

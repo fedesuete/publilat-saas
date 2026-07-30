@@ -110,6 +110,11 @@ const inboundSchema = z.object({
   code: z.union([z.string(), z.number()]).optional(),
   external_id: z.string().optional(),
   externalId: z.string().optional(),
+  // Teléfono: la forma SIMPLE de vincular Kommo (casi todos los CRM tienen el número a mano,
+  // pero no el código). Si no viene ref/code, matcheamos por teléfono.
+  phone: z.union([z.string(), z.number()]).optional(),
+  telefono: z.union([z.string(), z.number()]).optional(),
+  tel: z.union([z.string(), z.number()]).optional(),
   amount: z.union([z.string(), z.number()]).optional(),
   value: z.union([z.string(), z.number()]).optional(),
   monto: z.union([z.string(), z.number()]).optional(),
@@ -118,8 +123,9 @@ const inboundSchema = z.object({
 });
 
 // POST /api/integrations/inbound/purchase?token=... — el CRM externo (Kommo) avisa una venta
-// cerrada. Matcheamos el contacto por el `ref` (código que viajó en el mensaje) y disparamos
-// el Purchase a Meta con el MISMO external_id/fbp/fbc + monto. Idempotente por contacto.
+// cerrada. Matcheamos el contacto por `ref` (código, lo más preciso) O por `phone` (lo más simple
+// para Kommo: casi todos tienen el número), y disparamos el Purchase a Meta con el mismo
+// external_id/fbp/fbc + monto. Idempotente por contacto (si ya es COMPRO, no re-dispara).
 inboundIntegrationsRouter.post("/purchase", async (req, res) => {
   const token = String(req.query.token ?? req.headers["x-publilat-token"] ?? "").trim();
   if (!token) return res.status(401).json({ error: "Falta el token." });
@@ -131,21 +137,31 @@ inboundIntegrationsRouter.post("/purchase", async (req, res) => {
   const b = parsed.data;
 
   const ref = normalizeRef(b.ref ?? b.code ?? b.external_id ?? b.externalId);
-  if (!ref) return res.status(400).json({ error: "Falta el ref/code de la venta." });
+  const phoneDigits = String(b.phone ?? b.telefono ?? b.tel ?? "").replace(/\D/g, "");
+  if (!ref && !phoneDigits) return res.status(400).json({ error: "Falta el ref/code o el teléfono de la venta." });
   const amount = parseInboundAmount(b.amount ?? b.value ?? b.monto);
   if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ error: "Monto inválido." });
   const currency = String(b.currency ?? b.moneda ?? "ARS").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3) || "ARS";
 
-  // Buscamos el contacto por el código dentro de la cuenta del token. Si el ref viene con el
-  // external_id completo (UUID), también probamos por externalId.
-  let contact = await prisma.contact.findFirst({
-    where: { userId: integ.userId, code: ref },
-    orderBy: { createdAt: "desc" },
-  });
+  // Buscamos el contacto dentro de la cuenta del token, en este orden de PRECISIÓN:
+  //   1) por el código (ref) — el más preciso (ata la venta al clic del anuncio).
+  //   2) por external_id completo (UUID), si vino.
+  //   3) por TELÉFONO — la forma simple para Kommo: exacto, y si no, por los últimos 8 dígitos
+  //      (tolera que Kommo mande el número con/sin el 9, país o área). Agarra el más reciente.
+  let contact = ref
+    ? await prisma.contact.findFirst({ where: { userId: integ.userId, code: ref }, orderBy: { createdAt: "desc" } })
+    : null;
   if (!contact && (b.external_id || b.externalId)) {
     contact = await prisma.contact.findFirst({ where: { userId: integ.userId, externalId: String(b.external_id ?? b.externalId) } });
   }
-  if (!contact) return res.status(404).json({ error: "No se encontró un contacto con ese ref.", ref });
+  if (!contact && phoneDigits) {
+    contact = await prisma.contact.findFirst({ where: { userId: integ.userId, phone: phoneDigits }, orderBy: { createdAt: "desc" } });
+    if (!contact && phoneDigits.length >= 8) {
+      const tail = phoneDigits.slice(-8);
+      contact = await prisma.contact.findFirst({ where: { userId: integ.userId, phone: { endsWith: tail } }, orderBy: { createdAt: "desc" } });
+    }
+  }
+  if (!contact) return res.status(404).json({ error: "No se encontró un contacto con ese ref/teléfono.", ...(ref ? { ref } : {}), ...(phoneDigits ? { phone: phoneDigits } : {}) });
 
   // Idempotencia: si ya se marcó la compra, no re-disparamos (Meta igual deduplica por eventId).
   if (contact.stage === "COMPRO") {
