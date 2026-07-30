@@ -1,6 +1,7 @@
 // Colas/jobs con BullMQ + Redis. Dos jobs repetibles:
 //  - line-expiry: desactiva líneas vencidas (status -> inactive).
 //  - capi-retry: reintenta los MetaEvent fallidos (reenvía el evento a Meta).
+import net from "node:net";
 import { Queue, Worker, type Job } from "bullmq";
 import { prisma } from "./prisma.js";
 import { emitToUser } from "./io.js";
@@ -16,6 +17,7 @@ import { sendAdminMail } from "./mailer.js";
 import { checkWaWebVersion } from "./wa-version.js";
 import { alertLineDown, alertLowBalance } from "./line-alert.js";
 import { alertCapiFailures } from "./capi-guard.js";
+import { rotateProxy, releaseProxy, applyLineProxy, logProxyEvent, alertAdminProxy } from "./proxy-pool.js";
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const parsed = new URL(REDIS_URL);
@@ -183,8 +185,15 @@ export async function checkLineHealth(): Promise<void> {
             connected = (await getEngine().connectionState(inst)) === "open";
           }
           if (!connected) {
-            // Campana + email al dueño y admin (dedupe 6 h en el helper compartido).
-            await alertLineDown(line);
+            // Línea con proxy gestionado (y que el cliente NO pausó): auto-recuperación
+            // (backoff → rotar IP → detectar ban → liberar proxy → avisar admin). Las líneas SIN
+            // proxy siguen con el aviso al dueño de siempre (backward-compatible).
+            if (line.proxyId && line.status !== "paused" && !line.banned) {
+              enqueueProxyRecover(line.id);
+            } else {
+              // Campana + email al dueño y admin (dedupe 6 h en el helper compartido).
+              await alertLineDown(line);
+            }
           }
         }
         // Caída SILENCIOSA: la sesión reporta "conectada" pero no entrega mensajes (WAHA a veces
@@ -295,6 +304,110 @@ export async function checkLowBalance(): Promise<void> {
   }
 }
 
+// ============================ AUTO-RECUPERACIÓN DE PROXIES (Fase 4) ============================
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const RECOVER_BACKOFFS = [5_000, 15_000, 45_000, 120_000]; // ms entre intentos (spec)
+
+// Alcance del proxy: TCP connect al gateway. No valida la IP upstream, pero si el gateway no
+// responde, todas sus líneas están muertas. Best-effort con timeout.
+function tcpReachable(host: string, port: number, timeoutMs = 6000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const sock = new net.Socket();
+    const done = (ok: boolean) => { try { sock.destroy(); } catch { /* noop */ } resolve(ok); };
+    sock.setTimeout(timeoutMs);
+    sock.once("connect", () => done(true));
+    sock.once("timeout", () => done(false));
+    sock.once("error", () => done(false));
+    try { sock.connect(port, host); } catch { done(false); }
+  });
+}
+
+// Recupera una línea con proxy que se cayó (no pausada, no baneada). Backoff (5s/15s/45s/2m):
+// intenta reconectar; desde el 2º intento ROTA la IP; si reconecta, listo; si tras rotar la IP el
+// motor indica LOGOUT/ban o se agotan los intentos: marca banned, LIBERA el proxy y AVISA al admin.
+// Un solo job por línea (jobId dedup). Best-effort: NUNCA frena el resto.
+export async function recoverProxyLine(lineId: string): Promise<void> {
+  for (let attempt = 1; attempt <= RECOVER_BACKOFFS.length; attempt++) {
+    const line = await prisma.waLine.findUnique({
+      where: { id: lineId },
+      select: { id: true, provider: true, proxyId: true, status: true, banned: true, sessionId: true },
+    });
+    if (!line || line.provider === "cloud" || !line.proxyId) return; // solo Baileys con proxy del pool
+    if (line.status === "paused" || line.banned) return;             // el cliente la pausó / ya baneada
+    const inst = line.sessionId ?? `line_${line.id}`;
+
+    await sleep(RECOVER_BACKOFFS[attempt - 1]); // backoff antes del intento
+    if ((await getEngine().connectionState(inst).catch(() => "unknown")) === "open") {
+      await logProxyEvent(lineId, line.proxyId, "reconnected", `reconectó sola (intento ${attempt})`);
+      return;
+    }
+    if (attempt >= 2) {
+      await rotateProxy(lineId).catch(() => undefined);        // nueva IP sticky
+      await applyLineProxy(inst, lineId).catch(() => undefined);
+      await logProxyEvent(lineId, line.proxyId, "rotated", `roto IP y reintento (intento ${attempt})`);
+    } else {
+      await logProxyEvent(lineId, line.proxyId, "line_down", `reintento de reconexión ${attempt}`);
+    }
+    await getEngine().restartInstance(inst).catch(() => undefined);
+    await sleep(12_000);
+    const state = await getEngine().connectionState(inst).catch(() => "unknown");
+    if (state === "open") {
+      await logProxyEvent(lineId, line.proxyId, "reconnected", `intento ${attempt}`);
+      return;
+    }
+    if (/logout|logged|failed|banned|401|403|unpaired/i.test(state)) break; // ban inequívoco: cortar
+  }
+
+  // Agotó los intentos (o ban inequívoco): confirmar que sigue caída y marcar baneada.
+  const line = await prisma.waLine.findUnique({
+    where: { id: lineId },
+    select: { proxyId: true, label: true, phone: true, banned: true, status: true, provider: true, sessionId: true },
+  });
+  if (!line || line.provider === "cloud" || line.banned || line.status === "paused") return;
+  const inst = line.sessionId ?? `line_${lineId}`;
+  if ((await getEngine().connectionState(inst).catch(() => "")) === "open") return; // reconectó en el ínterin
+  await prisma.waLine.update({ where: { id: lineId }, data: { banned: true, connected: false, status: "inactive" } }).catch(() => undefined);
+  await logProxyEvent(lineId, line.proxyId, "banned", "no reconectó tras rotar la IP");
+  await releaseProxy(lineId); // libera el cupo del proxy para otra línea
+  await alertAdminProxy(
+    "Número baneado",
+    `La línea "${line.label ?? line.phone}" no reconectó ni rotando la IP. Se marcó BANEADA y se liberó su proxy.`,
+    "banned",
+    { lineId },
+  );
+}
+
+// Encola la recuperación de una línea (dedup por jobId: una recuperación por línea a la vez).
+export function enqueueProxyRecover(lineId: string): void {
+  if (queue) {
+    void queue.add("proxy-recover", { lineId }, { jobId: `precover-${lineId}`, removeOnComplete: true, removeOnFail: 20 });
+  } else {
+    void recoverProxyLine(lineId).catch(() => undefined);
+  }
+}
+
+// Salud del POOL: chequea cada proxy activo (alcance TCP). Si uno cae, lo marca unhealthy (deja de
+// asignarle líneas nuevas) y rota sus líneas a otro proxy sano. Best-effort.
+export async function checkProxyHealth(): Promise<void> {
+  const proxies = await prisma.proxy.findMany({ where: { active: true } });
+  for (const p of proxies) {
+    const reachable = await tcpReachable(p.host, p.port);
+    const wasHealthy = p.healthy;
+    await prisma.proxy.update({ where: { id: p.id }, data: { healthy: reachable, lastCheckAt: new Date() } }).catch(() => undefined);
+    if (wasHealthy && !reachable) {
+      await logProxyEvent("", p.id, "proxy_unhealthy", `${p.host}:${p.port} inalcanzable`);
+      await alertAdminProxy("Proxy caído", `El proxy "${p.label}" no responde. Roto sus líneas a otro proxy sano.`, "proxy_unhealthy", { proxyId: p.id });
+      const lines = await prisma.waLine.findMany({ where: { proxyId: p.id }, select: { id: true, sessionId: true } });
+      for (const l of lines) {
+        await rotateProxy(l.id).catch(() => undefined); // re-asigna a otro sano (o pool_full → avisa)
+        const inst = l.sessionId ?? `line_${l.id}`;
+        await applyLineProxy(inst, l.id).catch(() => undefined);
+        await getEngine().restartInstance(inst).catch(() => undefined);
+      }
+    }
+  }
+}
+
 // Programa la reanudación de una secuencia tras un delay (para el motor de automatizaciones).
 export function scheduleFlowResume(runId: string, delaySec: number): void {
   if (queue) {
@@ -317,6 +430,8 @@ export async function initQueues(): Promise<void> {
         if (job.name === "line-health") return checkLineHealth();
         if (job.name === "low-balance") return checkLowBalance();
         if (job.name === "wa-version-check") return checkWaVersionJob();
+        if (job.name === "proxy-health") return checkProxyHealth();
+        if (job.name === "proxy-recover") return recoverProxyLine(job.data.lineId as string);
         if (job.name === "flow-resume") {
           const { resumeFlowRun } = await import("./flow-engine.js");
           return resumeFlowRun(job.data.runId as string);
@@ -334,7 +449,8 @@ export async function initQueues(): Promise<void> {
     await queue.add("line-health", {}, { repeat: { every: 300_000 }, jobId: "line-health-repeat", removeOnComplete: true, removeOnFail: 50 });
     await queue.add("low-balance", {}, { repeat: { every: 1_800_000 }, jobId: "low-balance-repeat", removeOnComplete: true, removeOnFail: 50 });
     await queue.add("wa-version-check", {}, { repeat: { every: 43_200_000 }, jobId: "wa-version-check-repeat", removeOnComplete: true, removeOnFail: 50 });
-    console.log("[queue] BullMQ listo (vencimiento 60s + CAPI 5min + salud 5min + saldo 30min + versión WA Web 12h)");
+    await queue.add("proxy-health", {}, { repeat: { every: 360_000 }, jobId: "proxy-health-repeat", removeOnComplete: true, removeOnFail: 50 });
+    console.log("[queue] BullMQ listo (vencimiento 60s + CAPI 5min + salud 5min + saldo 30min + versión WA Web 12h + proxies 6min)");
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[queue] no se pudo iniciar BullMQ (¿Redis arriba?):", msg);
