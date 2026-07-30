@@ -208,9 +208,15 @@ demos, soporte en vivo, tutoriales, exportar.
    PROHÍBE apuestas: al intentar Cloud API con casino, Meta **desactivó permanentemente una WABA**. No
    reintentar; casino en cuentas Meta separadas/descartables. El Chat App (canal propio) existe para
    esto: operar sin WhatsApp = sin baneo.
-2. **NO acreditar plata solo por una imagen/comprobante subido. Eso es fraude.** La acreditación la
-   habilita SOLO: (a) el operador aprobando manualmente, o (b) un webhook de gateway REAL confirmado
-   (recaudadora/Pagopar). El Purchase CAPI se dispara **únicamente** al acreditar de verdad.
+2. **NO acreditar plata (dar fichas al jugador) solo por una imagen/comprobante subido. Eso es fraude.**
+   La **acreditación de fichas** la habilita SOLO: (a) el operador aprobando manualmente, o (b) un webhook
+   de gateway REAL confirmado (recaudadora/Pagopar). ESTO NO CAMBIA.
+   **Excepción sólo para el Purchase CAPI (2026-07-29, decisión del dueño):** el **Purchase a Meta**
+   (señal de *marketing*, NO da fichas) SÍ se dispara al **leer el comprobante con IA** cuando confirma
+   que es un pago real, para cerrar el loop del pixel (como ScaleOS). **Mandar el Purchase ≠ acreditar
+   fichas** — son cosas distintas. Idempotente por carga (`ChatDeposit.purchaseFiredAt`) y por contacto
+   (eventId). Riesgo asumido: un comprobante trucho/no-completado puede mandar un Purchase de más
+   (mitigado por el gate de la IA `isReceipt`+confianza).
 3. **Tono neutro** en app/landing/textos de Publi. Nunca casino/apuestas/+18 en NUESTRO producto; el
    contenido del cliente es del cliente.
 4. **Verificar la ruta correcta ANTES** de guiar flujos externos/irreversibles (Meta Ads, IAM, pagos).
