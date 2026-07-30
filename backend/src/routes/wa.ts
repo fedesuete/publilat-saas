@@ -7,6 +7,7 @@ import { emitToUser } from "../lib/io.js";
 import { encryptSecret, decryptSecret, maskSecret } from "../lib/crypto.js";
 import { getAvailableDays, consumeDayAndActivate } from "../lib/access.js";
 import { parseProxyUrl } from "../lib/evolution.js";
+import { applyLineProxy } from "../lib/proxy-pool.js";
 import { getEngine } from "../lib/wa-engine.js";
 import { warmupState } from "../lib/warmup.js";
 import { assertPublicHost } from "../lib/ssrf.js";
@@ -184,6 +185,8 @@ waRouter.post("/lines", async (req, res) => {
   try {
     const qr = await getEngine().createInstance(instanceName);
     const updated = await prisma.waLine.update({ where: { id: line.id }, data: { sessionId: instanceName } });
+    // Si la línea ya tiene proxy asignado del pool (o uno manual), lo aplica a la instancia nueva.
+    await applyLineProxy(instanceName, line.id);
     if (qr.base64) emitToUser(req.userId!, "wa:qr", { lineId: line.id, qr: qr.base64 });
     return res.status(201).json({ line: toPublicLine(updated), qr: qr.base64 ?? null });
   } catch (e) {
@@ -430,6 +433,8 @@ waRouter.post("/lines/:id/connect", async (req, res) => {
   const number = typeof req.body?.number === "string" ? req.body.number.replace(/\D/g, "") : "";
 
   try {
+    // Aplica el proxy (pool o manual) ANTES de conectar → la sesión sale por la IP del proxy.
+    await applyLineProxy(instanceName, line.id);
     const qr = await getEngine().connectInstance(instanceName, number || undefined);
     if (qr.base64) emitToUser(req.userId!, "wa:qr", { lineId: line.id, qr: qr.base64 });
     return res.json({ qr: qr.base64 ?? null, pairingCode: qr.pairingCode ?? null });
@@ -450,12 +455,8 @@ waRouter.post("/lines/:id/reset", async (req, res) => {
     await getEngine().logoutInstance(instanceName);
     await getEngine().deleteInstance(instanceName);
     const qr = await getEngine().createInstance(instanceName);
-    // La instancia recreada pierde la config de proxy de Evolution: se re-aplica.
-    if (line.proxyUrl) {
-      const proxy = parseProxyUrl(decryptSecret(line.proxyUrl));
-      if (proxy) await getEngine().setProxy(instanceName, proxy).catch((e) =>
-        console.warn(`[wa/lines/reset] no se pudo re-aplicar el proxy:`, e instanceof Error ? e.message : String(e)));
-    }
+    // La instancia recreada pierde la config de proxy: se re-aplica (pool gestionado o manual).
+    await applyLineProxy(instanceName, line.id);
     await prisma.waLine.update({
       where: { id: line.id },
       data: { sessionId: instanceName, connected: false, status: "inactive" },

@@ -8,7 +8,8 @@ import crypto from "node:crypto";
 import type { Proxy } from "@prisma/client";
 import { prisma } from "./prisma.js";
 import { decryptSecret } from "./crypto.js";
-import type { ProxyConfig } from "./evolution.js";
+import { parseProxyUrl, type ProxyConfig } from "./evolution.js";
+import { getEngine } from "./wa-engine.js";
 import { notify } from "./notifications.js";
 import { emitToUser } from "./io.js";
 
@@ -140,6 +141,28 @@ export async function rotateProxy(lineId: string): Promise<{ ok: boolean; proxyI
   await prisma.waLine.update({ where: { id: lineId }, data: { proxySession: session, lastProxyRotateAt: new Date() } });
   await logProxyEvent(lineId, keepProxyId, "rotated", `sessid=${session} (nueva IP)`);
   return { ok: true, proxyId: keepProxyId };
+}
+
+// Aplica el proxy de una línea a su instancia del motor (Evolution/WAHA) ANTES de conectar.
+// Prioridad: proxy del POOL gestionado > proxyUrl manual (compat) > sin proxy (conecta como hoy).
+// Cloud API: nunca (resolveLineProxy devuelve null). Best-effort: si falla, la línea conecta SIN
+// proxy en vez de trabarse. Se llama al crear/conectar/reiniciar la instancia y tras rotar.
+export async function applyLineProxy(instanceName: string, lineId: string): Promise<void> {
+  try {
+    const managed = await resolveLineProxy(lineId);
+    if (managed) {
+      await getEngine().setProxy(instanceName, managed);
+      return;
+    }
+    // Compat: proxy manual viejo (proxyUrl cifrado en la línea).
+    const line = await prisma.waLine.findUnique({ where: { id: lineId }, select: { proxyUrl: true, provider: true } });
+    if (line && line.provider !== "cloud" && line.proxyUrl) {
+      const p = parseProxyUrl(decryptSecret(line.proxyUrl));
+      if (p) await getEngine().setProxy(instanceName, p);
+    }
+  } catch (e) {
+    console.warn("[proxy] applyLineProxy falló (conecta sin proxy):", e instanceof Error ? e.message : String(e));
+  }
 }
 
 // Libera el proxy de una línea (al banear el número): el cupo queda para otra línea.
