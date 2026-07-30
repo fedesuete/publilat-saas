@@ -4,6 +4,8 @@ import { slugify } from "./auth.js";
 import { signPayload } from "./integrations.js";
 import { priceFor } from "./payments.js";
 import { renderTrackedLanding, injectCurrentPixel, injectInAppEscape } from "./landing-template.js";
+import { buildProxyConfig } from "./proxy-pool.js";
+import type { Proxy } from "@prisma/client";
 import { textSignalsPayment } from "./payment-detect.js";
 import { parseInboundAmount, normalizeRef } from "../routes/integrations.js";
 
@@ -132,6 +134,27 @@ describe("injectCurrentPixel (pixel vigente al servir /p/:slug)", () => {
     const src = "<html><head></head><body>x</body></html>";
     expect(injectCurrentPixel(src, "")).toBe(src);
     expect(injectCurrentPixel(src, "abc")).toBe(src);
+  });
+});
+
+describe("buildProxyConfig (username sticky por proveedor)", () => {
+  const base: Proxy = {
+    id: "p1", label: "x", provider: "dataimpulse", host: "gw.dataimpulse.com", port: 823,
+    username: "USER", password: "PASS", protocol: "http", country: "ar", sticky: true,
+    sessTime: 120, maxLines: 4, active: true, healthy: true, lastCheckAt: null, createdAt: new Date(),
+  };
+  it("DataImpulse: username con país + sessid + sesstime (misma IP por sesión)", () => {
+    const cfg = buildProxyConfig(base, "abc123");
+    expect(cfg.username).toBe("USER__cr.ar;sessid.abc123;sesstime.120");
+    expect(cfg.host).toBe("gw.dataimpulse.com");
+    expect(cfg.port).toBe("823"); // el motor pide string
+    expect(cfg.password).toBe("PASS");
+  });
+  it("sin sesión: solo el país (no sticky)", () => {
+    expect(buildProxyConfig(base, null).username).toBe("USER__cr.ar");
+  });
+  it("proveedor genérico: sufijo de sesión en el usuario", () => {
+    expect(buildProxyConfig({ ...base, provider: "otro", country: null }, "s1").username).toBe("USER-session-s1");
   });
 });
 
