@@ -172,6 +172,8 @@ model ChatDeposit {
   comprobanteData Bytes?    // bytes del comprobante — NO acredita por sí solo
   gatewayRef      String?   // referencia si vino por webhook de gateway real
   status          String    @default("pending") // pending | verified | credited | rejected
+  purchaseFiredAt DateTime?  // cuándo se disparó el Purchase a Meta (idempotencia: 1 por carga).
+                             // OJO: marketing a Meta ≠ acreditar fichas (eso sigue en approve/webhook).
   createdAt       DateTime  @default(now())
   resolvedAt      DateTime?
   user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)

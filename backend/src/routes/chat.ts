@@ -10,6 +10,7 @@ import { signChatClientToken, requireChatClient } from "../middleware/requireCha
 import { hashPassword, verifyPassword } from "../lib/auth.js";
 import { sendCapiEvent } from "../lib/meta-capi.js"; // reuso el CAPI existente, NO reimplemento
 import { resolveUserPixel } from "../lib/pixel.js";
+import { analyzeReceipt, aiEnabled } from "../lib/ai-receipt.js"; // lectura de comprobante con IA
 import { emitChat, playerHasLiveSocket } from "../lib/io.js";
 import { pushEnabled, publicVapidKey, enqueuePlayerPush, enqueueAccountBroadcast } from "../lib/chat-push.js";
 import { s3Enabled } from "../lib/s3.js";
@@ -1126,16 +1127,65 @@ const MIN_DEPOSIT = 2000;      // carga mínima ARS
 const MIN_WITHDRAWAL = 5000;   // retiro mínimo ARS
 const ars = (n: number) => `$${n.toLocaleString("es-AR")}`;
 
-// Purchase por CAPI al ACREDITAR una carga. external_id = usuario (matchea el CompleteRegistration
-// de Fase C → cierra el loop registro↔compra). eventId por depósito (dedup). Best-effort.
-async function firePlayerPurchase(userId: string, username: string, amount: number, currency: string, depositId: string) {
+// Purchase por CAPI de una carga. external_id = usuario (matchea el CompleteRegistration de Fase C
+// → cierra el loop registro↔compra). eventId por depósito (dedup en Meta). IDEMPOTENTE: se dispara
+// UNA sola vez por carga (marca purchaseFiredAt antes de mandar; el que llega primero gana).
+// Se llama al LEER el comprobante con IA (auto) o al APROBAR la carga — lo que ocurra primero.
+// OJO: esto es SOLO la señal de marketing a Meta. NO acredita fichas (eso sigue en approve/webhook, §9.2).
+async function firePlayerPurchaseOnce(
+  deposit: { id: string; userId: string; amount: number; currency: string; purchaseFiredAt: Date | null },
+  username: string,
+): Promise<boolean> {
+  if (deposit.purchaseFiredAt) return false; // ya se disparó
+  // Claim atómico: solo un proceso setea purchaseFiredAt (evita doble disparo upload/approve en carrera).
+  const claim = await prisma.chatDeposit.updateMany({
+    where: { id: deposit.id, purchaseFiredAt: null },
+    data: { purchaseFiredAt: new Date() },
+  });
+  if (claim.count !== 1) return false;
+
+  // Log en MetaEvent para que la venta sea VISIBLE en analytics/admin (como markPurchase).
+  const creds = await resolveUserPixel(deposit.userId, "Purchase");
+  const metaEvent = await prisma.metaEvent.create({
+    data: { userId: deposit.userId, eventName: "Purchase", pixelId: creds?.pixelId ?? "", payload: {}, status: "pending" },
+  });
   try {
-    const creds = await resolveUserPixel(userId, "Purchase");
-    await sendCapiEvent({
-      eventName: "Purchase", externalId: username, eventId: `${depositId}:purchase`,
-      value: amount, currency, actionSource: "chat", pixelId: creds?.pixelId, capiToken: creds?.capiToken,
+    const result = await sendCapiEvent({
+      eventName: "Purchase", externalId: username, eventId: `${deposit.id}:purchase`,
+      value: deposit.amount, currency: deposit.currency, actionSource: "chat",
+      pixelId: creds?.pixelId, capiToken: creds?.capiToken,
     });
-  } catch (e) { console.error("[chat] Purchase CAPI (carga) falló:", e instanceof Error ? e.message : String(e)); }
+    await prisma.metaEvent.update({ where: { id: metaEvent.id }, data: { status: "sent", pixelId: result.pixelId, payload: result.payload as object, response: result.response as object } });
+    return true;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[chat] Purchase CAPI (carga) falló:", msg);
+    await prisma.metaEvent.update({ where: { id: metaEvent.id }, data: { status: "failed", response: { error: msg } } });
+    return false;
+  }
+}
+
+// Lee el comprobante de una carga con IA y, si es un comprobante real, dispara el Purchase a Meta
+// (una sola vez). Best-effort, aislado del flujo del jugador. NO acredita fichas.
+// Exportada para reuso desde el script de backfill (mandar comprobantes históricos a Meta).
+export async function readReceiptAndFirePurchase(depositId: string) {
+  try {
+    const dep = await prisma.chatDeposit.findUnique({
+      where: { id: depositId },
+      select: { id: true, userId: true, playerId: true, amount: true, currency: true, purchaseFiredAt: true, comprobanteType: true, comprobanteData: true },
+    });
+    if (!dep || dep.purchaseFiredAt || !dep.comprobanteData) return;
+    // Con IA: confirmamos que la imagen ES un comprobante antes de mandar el evento (evita ensuciar
+    // el pixel con fotos que no son pagos). Sin IA: confiamos en la carga estructurada del jugador.
+    if (aiEnabled() && /image|pdf/i.test(dep.comprobanteType ?? "")) {
+      const a = await analyzeReceipt(Buffer.from(dep.comprobanteData).toString("base64"), dep.comprobanteType ?? undefined);
+      if (a && (!a.isReceipt || a.confidence < 0.5)) return; // la IA dice que no es un comprobante
+    }
+    const player = await prisma.chatPlayer.findUnique({ where: { id: dep.playerId }, select: { casinoUsername: true } });
+    if (player) await firePlayerPurchaseOnce(dep, player.casinoUsername);
+  } catch (e) {
+    console.error("[chat] lectura de comprobante falló:", e instanceof Error ? e.message : String(e));
+  }
 }
 
 // Deja un mensaje del sistema en la conversación del jugador (aviso de carga/retiro) + emite en vivo.
@@ -1201,6 +1251,9 @@ chatPublicRouter.post("/me/deposit", requireChatClient, async (req, res) => {
   // Aviso al operador (en vivo, para la sección Cajero) — NO acredita.
   emitChat(`chat:${req.accountId}`, "chat:cashier", { type: "deposit", id: dep.id });
   await postCashierMsg(req.accountId!, req.chatPlayerId!, `🧾 Registraste una carga de ${ars(dep.amount)} (${dep.method}). La estamos verificando.`, "player").catch(() => undefined);
+  // Si subió comprobante: la IA lo lee y, si es un pago real, manda el Purchase a Meta (una sola vez).
+  // Cierra el loop del pixel al toque. NO acredita fichas (eso sigue esperando al operador/webhook).
+  if (comprobanteData) void readReceiptAndFirePurchase(dep.id);
   return res.status(201).json({ deposit: dep });
 });
 
@@ -1262,7 +1315,8 @@ chatRouter.post("/cashier/deposit/:id/approve", async (req, res) => {
   });
   await prisma.chatDeposit.update({ where: { id: dep.id }, data: { status: "credited", resolvedAt: new Date() } });
   const player = await prisma.chatPlayer.findUnique({ where: { id: dep.playerId }, select: { casinoUsername: true } });
-  if (player) void firePlayerPurchase(req.userId!, player.casinoUsername, dep.amount, dep.currency, dep.id); // SOLO acá
+  // Purchase idempotente: si la IA ya lo disparó al leer el comprobante, este approve NO lo repite.
+  if (player) void firePlayerPurchaseOnce(dep, player.casinoUsername);
   await postCashierMsg(req.userId!, dep.playerId, `✅ ¡Carga acreditada! ${ars(dep.amount)}. Tu saldo: ${ars(wallet.balance)}.`);
   emitChat(`chat:${req.userId}:player:${dep.playerId}`, "chat:wallet", { balance: wallet.balance });
   return res.json({ ok: true, balance: wallet.balance });
