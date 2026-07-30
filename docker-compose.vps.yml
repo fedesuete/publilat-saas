@@ -10,6 +10,11 @@ services:
       args:
         VITE_API_URL: ""
     restart: unless-stopped
+    # DNS público: el resolver del VPS no resuelve algunos hosts de proxy (ej. p.webshare.io) → el
+    # health-check del pool los marcaría caídos. 8.8.8.8/1.1.1.1 los resuelven bien.
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     depends_on:
       postgres:
         condition: service_healthy
@@ -110,6 +115,9 @@ services:
     # (las líneas caen a pedir QR). Cambiar de imagen SOLO con backup de la DB evolution.
     image: evoapicloud/evolution-api:2.4.0-rc2
     restart: unless-stopped
+    dns:  # resolver público para los hosts de proxy (ver nota en el servicio app)
+      - 8.8.8.8
+      - 1.1.1.1
     depends_on:
       postgres:
         condition: service_healthy
@@ -151,6 +159,9 @@ services:
     #   -> anotar el digest nuevo acá. Síntoma: mensajes entrantes no llegan + parseMessageIdSerialized.
     image: ${WAHA_IMAGE:-devlikeapro/waha@sha256:dc134637dfa0bd65202010a65e4ff8176101791699176c75bb37d5aa9daf487c}
     restart: unless-stopped
+    dns:  # resolver público para los hosts de proxy (ver nota en el servicio app)
+      - 8.8.8.8
+      - 1.1.1.1
     environment:
       - WAHA_API_KEY=${WAHA_API_KEY}
       - WAHA_DASHBOARD_USERNAME=${WAHA_DASHBOARD_USERNAME:-admin}
