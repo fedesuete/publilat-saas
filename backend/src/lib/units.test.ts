@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { slugify } from "./auth.js";
 import { signPayload } from "./integrations.js";
 import { priceFor } from "./payments.js";
-import { renderTrackedLanding, injectCurrentPixel } from "./landing-template.js";
+import { renderTrackedLanding, injectCurrentPixel, injectInAppEscape } from "./landing-template.js";
 import { textSignalsPayment } from "./payment-detect.js";
 import { parseInboundAmount, normalizeRef } from "../routes/integrations.js";
 
@@ -132,6 +132,17 @@ describe("injectCurrentPixel (pixel vigente al servir /p/:slug)", () => {
     const src = "<html><head></head><body>x</body></html>";
     expect(injectCurrentPixel(src, "")).toBe(src);
     expect(injectCurrentPixel(src, "abc")).toBe(src);
+  });
+});
+
+describe("injectInAppEscape (recupera tráfico CTWA del webview)", () => {
+  it("inyecta el escape una sola vez (idempotente) con la detección de in-app", () => {
+    const src = "<html><head></head><body>hola</body></html>";
+    const once = injectInAppEscape(src);
+    expect(once).toContain("pl-inapp-escape");
+    expect(once).toContain("FBAN|FBAV");
+    // idempotente: no lo duplica
+    expect(injectInAppEscape(once)).toBe(once);
   });
 });
 

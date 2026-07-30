@@ -8,7 +8,7 @@ import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
 import { getCloudMediaBase64, sendCloudButtons, sendCloudCtaUrl } from "../lib/wa-cloud.js";
 import { fireCtwaLead } from "../lib/ctwa.js";
-import { detectPayment } from "../lib/payment-detect.js";
+import { detectPayment, textSignalsPayment } from "../lib/payment-detect.js";
 import { notify } from "../lib/notifications.js";
 import { onInboundFlow } from "../lib/flow-engine.js";
 
@@ -244,7 +244,11 @@ cloudWebhookRouter.post("/", async (req, res) => {
           // 4b) Auto-responder con botón CTA (link). Best-effort y AISLADO. Bienvenida en el 1er
           //     mensaje del contacto + follow-up en cada mensaje siguiente, con un botón que abre un
           //     URL (funnel neutro). El texto lo pone el cliente (que sea NEUTRO en la Cloud API).
-          if (owner?.waAutoEnabled && owner.waAutoBtnUrl?.trim()) {
+          //     NO responde cuando la persona manda un COMPROBANTE (imagen), una NOTA DE VOZ (audio)
+          //     u otra media, ni cuando avisa de un pago por texto: ahí interviene el lector + el
+          //     humano, no el bot rígido (caso lauraolea: el canned pisaba el comprobante).
+          const isMediaOrPayment = !!mediaData || textSignalsPayment(text);
+          if (owner?.waAutoEnabled && owner.waAutoBtnUrl?.trim() && !isMediaOrPayment) {
             const label = owner.waAutoBtnLabel?.trim() || "Abrir";
             const url = owner.waAutoBtnUrl.trim();
             const body = isNewContact ? owner.waAutoWelcome?.trim() : owner.waAutoFollowup?.trim();
@@ -252,7 +256,7 @@ cloudWebhookRouter.post("/", async (req, res) => {
               void sendCloudCtaUrl(line, phone, body, label, url)
                 .catch((e) => console.error("[wa-cloud] auto-reply falló:", e instanceof Error ? e.message : String(e)));
             }
-          } else if (isNewCtwaLead && owner?.waWelcomeEnabled && owner.waWelcomeText?.trim()) {
+          } else if (isNewCtwaLead && owner?.waWelcomeEnabled && owner.waWelcomeText?.trim() && !isMediaOrPayment) {
             // Compat: saludo viejo con reply buttons (solo si NO está el auto-responder nuevo).
             const buttons = (owner.waWelcomeButtons ?? "").split("|").map((b) => b.trim()).filter(Boolean);
             void sendCloudButtons(line, phone, owner.waWelcomeText.trim(), buttons)

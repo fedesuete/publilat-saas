@@ -79,6 +79,27 @@ export function injectCurrentPixel(html: string, pixelId: string): string {
   return out;
 }
 
+// Escape de navegador IN-APP (webview de Facebook/Instagram/TikTok): adentro de esas apps el link a
+// WhatsApp (wa.me) suele NO abrir y las cookies _fbp/_fbc no persisten → se pierde casi todo el
+// tráfico CTWA (victor: 2681 clics → 45 chats). Muestra una barra "abrí en tu navegador"; en Android
+// intenta el escape con intent://. Idempotente. (Solo /p/:slug servidas por nosotros o al re-publicar.)
+const IN_APP_MARK = "pl-inapp-escape";
+export function injectInAppEscape(html: string): string {
+  if (!html || html.indexOf(IN_APP_MARK) >= 0) return html;
+  const js =
+    "(function(){var ua=navigator.userAgent||'';" +
+    "if(!/FBAN|FBAV|FB_IAB|FBIOS|Instagram|musical_ly|Bytedance|TikTok|Snapchat|Line\\//i.test(ua))return;" +
+    "var and=/Android/i.test(ua);var bar=document.createElement('div');" +
+    "bar.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99999;background:#111b21;color:#e9edef;padding:12px 14px;font:600 14px system-ui,sans-serif;display:flex;gap:10px;align-items:center;justify-content:space-between;box-shadow:0 2px 12px rgba(0,0,0,.4)';" +
+    "var sp=document.createElement('span');sp.textContent='\\uD83D\\uDC49 Abr\\u00ED esta p\\u00E1gina en tu navegador para continuar'+(and?'':' (toc\\u00E1 \\u2022\\u2022\\u2022 \\u2192 \\\"Abrir en el navegador\\\")');bar.appendChild(sp);" +
+    "if(and){var b=document.createElement('button');b.textContent='Abrir';b.style.cssText='background:#25d366;color:#03301a;border:0;border-radius:8px;padding:8px 14px;font:700 14px system-ui;white-space:nowrap';" +
+    "b.onclick=function(){var c=location.href.replace(/^https?:\\/\\//,'');location.href='intent://'+c+'#Intent;scheme=https;end';};bar.appendChild(b);}" +
+    "document.body.appendChild(bar);document.body.style.paddingTop='56px';})();";
+  const tag = `<script data-${IN_APP_MARK}>${js}</script>`;
+  const idx = html.toLowerCase().lastIndexOf("</body>");
+  return idx >= 0 ? html.slice(0, idx) + tag + html.slice(idx) : html + tag;
+}
+
 export function renderTrackedLanding(cfg: LandingConfig): string {
   const isChat = cfg.destino === "chatapp";
   // El JSON va dentro de <script>; escapamos "<" para no cerrar el tag.

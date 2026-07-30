@@ -9,8 +9,10 @@ import { analyzeReceipt, aiEnabled } from "./ai-receipt.js";
 import { getMediaBase64 } from "./evolution.js";
 import { markPurchase } from "./purchase.js";
 
-// Moneda por defecto cuando la IA no la identifica (Paraguay -> PYG).
-const DEFAULT_CURRENCY = process.env.DEFAULT_CURRENCY ?? "PYG";
+// Moneda de las ventas. TODAS las líneas son ARS (confirmado por el dueño 2026-07-29): forzamos ARS
+// e IGNORAMOS la moneda que adivina la IA del comprobante (leía "PYG" en recibos que eran ARS y
+// ensuciaba la optimización por valor de Meta). Si algún día hay un cliente PYG, se hace por-usuario.
+const DEFAULT_CURRENCY = process.env.DEFAULT_CURRENCY ?? "ARS";
 // Umbral de confianza para disparar el Purchase automáticamente (modo auto).
 const AUTO_MIN_CONFIDENCE = Number(process.env.PAYMENT_AUTO_MIN_CONFIDENCE ?? "0.7");
 // Máximo de análisis de comprobante por IA por contacto por hora (anti cost-DoS).
@@ -109,7 +111,7 @@ export async function detectPayment(args: DetectPaymentArgs): Promise<void> {
     // Modo automático: dispara el Purchase sólo con monto leído y confianza alta.
     // (Nunca mandamos un Purchase con value 0: eso corrompería la optimización de Meta.)
     if (mode === "auto" && amount && amount > 0 && confidence >= AUTO_MIN_CONFIDENCE) {
-      await markPurchase(userId, contact.id, amount, currency ?? DEFAULT_CURRENCY);
+      await markPurchase(userId, contact.id, amount, DEFAULT_CURRENCY); // ARS forzado (ver arriba)
       return;
     }
 

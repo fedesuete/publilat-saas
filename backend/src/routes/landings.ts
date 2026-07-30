@@ -4,7 +4,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { resolveUserPixel } from "../lib/pixel.js";
-import { renderTrackedLanding, injectGoTracking, type LandingConfig } from "../lib/landing-template.js";
+import { renderTrackedLanding, injectGoTracking, injectInAppEscape, type LandingConfig } from "../lib/landing-template.js";
 import { publishToS3, uploadHtml, s3Enabled } from "../lib/s3.js";
 import { ensureClientCdn, reprovisionClientDomain, invalidate } from "../lib/cloudfront.js";
 import { slugify } from "../lib/auth.js";
@@ -50,7 +50,8 @@ async function buildHtml(userId: string, userSlug: string, cfg: Cfg): Promise<st
     destino: cfg.destino ?? "whatsapp",
     chatBase: process.env.CHAT_PWA_URL ?? "https://chat.publi.lat",
   };
-  return renderTrackedLanding(full);
+  // Escape de webview in-app horneado (recupera tráfico CTWA que se pierde en el navegador de FB/IG).
+  return injectInAppEscape(renderTrackedLanding(full));
 }
 
 // GET /api/landings — lista las landings del usuario.

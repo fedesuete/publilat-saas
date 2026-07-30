@@ -40,9 +40,9 @@ async function backfillWhatsApp(user: { id: string; slug: string }, apply: boole
     const a = await analyzeReceipt(m.mediaData as string, m.mediaType ?? undefined);
     if (!a?.isReceipt || !(a.amount && a.amount > 0) || a.confidence < MIN_CONF) continue;
     comprobantes++;
-    console.log(`  [WA] contacto ${contactId}: comprobante $${a.amount} ${a.currency ?? CURRENCY} (conf ${a.confidence}) → ${apply ? "ENVIANDO" : "SE ENVIARÍA"}`);
+    console.log(`  [WA] contacto ${contactId}: comprobante $${a.amount} ${CURRENCY} (conf ${a.confidence}) → ${apply ? "ENVIANDO" : "SE ENVIARÍA"}`);
     if (apply) {
-      const r = await markPurchase(user.id, contactId, a.amount, a.currency ?? CURRENCY);
+      const r = await markPurchase(user.id, contactId, a.amount, CURRENCY); // ARS (todas las líneas)
       if (r?.ok) enviados++; else fail++;
     }
   }
