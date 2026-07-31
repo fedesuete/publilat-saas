@@ -7,6 +7,7 @@ import { emitToUser } from "../lib/io.js";
 import { encryptSecret, decryptSecret, maskSecret } from "../lib/crypto.js";
 import { getAvailableDays, consumeDayAndActivate } from "../lib/access.js";
 import { applyLineProxy, autoAssignEnabled, assignProxyPreferred, setLineWaitingProxy } from "../lib/proxy-pool.js";
+import { enqueueProxyWatch } from "../lib/queue.js";
 import { getEngine } from "../lib/wa-engine.js";
 import { warmupState } from "../lib/warmup.js";
 import axios from "axios";
@@ -204,8 +205,10 @@ waRouter.post("/lines", async (req, res) => {
     let qrBase64: string | null = qr.base64 ?? null;
     if (autoProxy) {
       // El QR inicial salió por la IP del VPS y quedó viejo tras el reinicio con proxy → el panel recibe
-      // el QR ya por el proxy vía socket en unos segundos.
+      // el QR ya por el proxy vía socket en unos segundos. El watchdog (Fase 4) verifica que llegó al
+      // QR/WORKING por el proxy; si falla, rota proxy/proveedor o la deja en waiting_proxy (nunca VPS).
       emitProxyQrSoon(req.userId!, instanceName, line.id);
+      enqueueProxyWatch(line.id);
       qrBase64 = null;
     }
     if (qrBase64) emitToUser(req.userId!, "wa:qr", { lineId: line.id, qr: qrBase64 });

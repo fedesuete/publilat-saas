@@ -17,7 +17,7 @@ import { sendAdminMail } from "./mailer.js";
 import { checkWaWebVersion } from "./wa-version.js";
 import { alertLineDown, alertLowBalance } from "./line-alert.js";
 import { alertCapiFailures } from "./capi-guard.js";
-import { rotateProxy, releaseProxy, applyLineProxy, logProxyEvent, alertAdminProxy, probeProxy } from "./proxy-pool.js";
+import { rotateProxy, releaseProxy, applyLineProxy, logProxyEvent, alertAdminProxy, probeProxy, assignFallback, assignProxyPreferred, setLineWaitingProxy } from "./proxy-pool.js";
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const parsed = new URL(REDIS_URL);
@@ -430,6 +430,77 @@ export async function checkProxyHealth(): Promise<void> {
   }
 }
 
+// ===================== WATCHDOG DE REGISTRO + waiting_proxy (Fase 4) =====================
+const WATCH_DELAY_MS = 50_000;   // margen para que la línea llegue al QR/WORKING por el proxy
+const WATCH_MAX_ATTEMPTS = 3;    // intentos de fallback (rota proxy/proveedor) antes de waiting_proxy
+
+// Vigila una línea NUEVA que arrancó con proxy: ¿llegó al QR/WORKING por el proxy? Si sí, listo. Si el
+// túnel de ese proxy falló (FAILED), rota siguiendo la jerarquía (otra IP → contingencia → cualquiera)
+// y reintenta; tras N intentos sin éxito, la deja en waiting_proxy (NUNCA la conecta por la IP del VPS).
+export async function watchProxyRegistration(lineId: string, attempt = 1): Promise<void> {
+  const line = await prisma.waLine.findUnique({
+    where: { id: lineId },
+    select: { id: true, userId: true, provider: true, proxyId: true, status: true, banned: true, proxyWait: true, sessionId: true },
+  });
+  if (!line || line.provider === "cloud") return;
+  if (line.status === "paused" || line.banned || line.proxyWait) return; // pausada/baneada/ya esperando
+  if (!line.proxyId) return; // sin proxy (flag off o resuelta): nada que vigilar
+  const inst = line.sessionId ?? `line_${line.id}`;
+
+  const state = await getEngine().connectionState(inst).catch(() => "unknown");
+  // "open" = WORKING; "connecting" = SCAN_QR_CODE (QR ya visible POR el proxy) → el túnel sale OK.
+  if (state === "open" || state === "connecting") {
+    await logProxyEvent(lineId, line.proxyId, "reconnected", `registro OK por el proxy (${state}, intento ${attempt})`);
+    return;
+  }
+  // "close"/"unknown" = FAILED tras aplicar el proxy → el túnel de ESTE proxy falló en el registro.
+  if (attempt >= WATCH_MAX_ATTEMPTS) {
+    await setLineWaitingProxy(lineId, `no llegó al QR por el proxy tras ${attempt} intentos`);
+    return; // la sesión queda FAILED (no conectada por ninguna IP); la reconecta recoverWaitingProxyLines
+  }
+  const r = await assignFallback(lineId, line.proxyId); // jerarquía; NUNCA "sin proxy"
+  if (!r.ok) {
+    await setLineWaitingProxy(lineId, "sin proxy sano para el fallback del registro");
+    return;
+  }
+  await applyLineProxy(inst, lineId).catch(() => undefined);
+  await getEngine().restartInstance(inst).catch(() => undefined);
+  await logProxyEvent(lineId, r.proxyId, "rotated", `fallback de registro (intento ${attempt}→${attempt + 1})`);
+  const fresh = await getEngine().connectInstance(inst).catch(() => ({} as { base64?: string }));
+  if (fresh.base64) emitToUser(line.userId, "wa:qr", { lineId, qr: fresh.base64 });
+  enqueueProxyWatch(lineId, attempt + 1);
+}
+
+// Encola el watchdog de una línea con delay (dedup por jobId línea+intento).
+export function enqueueProxyWatch(lineId: string, attempt = 1): void {
+  if (queue) {
+    void queue.add("proxy-watch", { lineId, attempt }, { delay: WATCH_DELAY_MS, jobId: `pwatch-${lineId}-${attempt}`, removeOnComplete: true, removeOnFail: 20 });
+  } else {
+    setTimeout(() => void watchProxyRegistration(lineId, attempt).catch(() => undefined), WATCH_DELAY_MS);
+  }
+}
+
+// AUTO-RECUPERACIÓN de líneas en waiting_proxy: cuando el pool se recupera, les asigna un proxy sano y
+// las conecta (por la IP residencial). Así una línea nunca queda muerta ni toca la IP del VPS.
+export async function recoverWaitingProxyLines(): Promise<void> {
+  const lines = await prisma.waLine.findMany({
+    where: { proxyWait: true, provider: { not: "cloud" }, banned: false, status: { not: "paused" } },
+    select: { id: true, userId: true, sessionId: true },
+  });
+  for (const l of lines) {
+    const a = await assignProxyPreferred(l.id);
+    if (!a.ok) continue; // el pool sigue sin cupo sano: la línea sigue esperando
+    const inst = l.sessionId ?? `line_${l.id}`;
+    await getEngine().createInstance(inst).catch(() => undefined); // crea o reusa la sesión
+    await applyLineProxy(inst, l.id).catch(() => undefined);
+    await prisma.waLine.update({ where: { id: l.id }, data: { proxyWait: false } }).catch(() => undefined);
+    await logProxyEvent(l.id, a.proxyId, "reconnected", "waiting_proxy → proxy asignado, reconectando");
+    const fresh = await getEngine().connectInstance(inst).catch(() => ({} as { base64?: string }));
+    if (fresh.base64) emitToUser(l.userId, "wa:qr", { lineId: l.id, qr: fresh.base64 });
+    enqueueProxyWatch(l.id);
+  }
+}
+
 // Programa la reanudación de una secuencia tras un delay (para el motor de automatizaciones).
 export function scheduleFlowResume(runId: string, delaySec: number): void {
   if (queue) {
@@ -454,6 +525,8 @@ export async function initQueues(): Promise<void> {
         if (job.name === "wa-version-check") return checkWaVersionJob();
         if (job.name === "proxy-health") return checkProxyHealth();
         if (job.name === "proxy-recover") return recoverProxyLine(job.data.lineId as string);
+        if (job.name === "proxy-watch") return watchProxyRegistration(job.data.lineId as string, (job.data.attempt as number) ?? 1);
+        if (job.name === "proxy-waiting") return recoverWaitingProxyLines();
         if (job.name === "flow-resume") {
           const { resumeFlowRun } = await import("./flow-engine.js");
           return resumeFlowRun(job.data.runId as string);
@@ -472,7 +545,8 @@ export async function initQueues(): Promise<void> {
     await queue.add("low-balance", {}, { repeat: { every: 1_800_000 }, jobId: "low-balance-repeat", removeOnComplete: true, removeOnFail: 50 });
     await queue.add("wa-version-check", {}, { repeat: { every: 43_200_000 }, jobId: "wa-version-check-repeat", removeOnComplete: true, removeOnFail: 50 });
     await queue.add("proxy-health", {}, { repeat: { every: 360_000 }, jobId: "proxy-health-repeat", removeOnComplete: true, removeOnFail: 50 });
-    console.log("[queue] BullMQ listo (vencimiento 60s + CAPI 5min + salud 5min + saldo 30min + versión WA Web 12h + proxies 6min)");
+    await queue.add("proxy-waiting", {}, { repeat: { every: 120_000 }, jobId: "proxy-waiting-repeat", removeOnComplete: true, removeOnFail: 50 });
+    console.log("[queue] BullMQ listo (vencimiento 60s + CAPI 5min + salud 5min + saldo 30min + versión WA Web 12h + proxies 6min + waiting_proxy 2min)");
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[queue] no se pudo iniciar BullMQ (¿Redis arriba?):", msg);
