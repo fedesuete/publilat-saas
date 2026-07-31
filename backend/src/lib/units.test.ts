@@ -5,6 +5,7 @@ import { signPayload } from "./integrations.js";
 import { priceFor } from "./payments.js";
 import { renderTrackedLanding, injectCurrentPixel, injectInAppEscape } from "./landing-template.js";
 import { buildProxyConfig } from "./proxy-pool.js";
+import { credentialsSignal } from "./funnel-detect.js";
 import type { Proxy } from "@prisma/client";
 import { textSignalsPayment } from "./payment-detect.js";
 import { parseInboundAmount, normalizeRef } from "../routes/integrations.js";
@@ -134,6 +135,20 @@ describe("injectCurrentPixel (pixel vigente al servir /p/:slug)", () => {
     const src = "<html><head></head><body>x</body></html>";
     expect(injectCurrentPixel(src, "")).toBe(src);
     expect(injectCurrentPixel(src, "abc")).toBe(src);
+  });
+});
+
+describe("credentialsSignal (patrón: operador entrega usuario+clave)", () => {
+  it("detecta usuario + clave en el mismo mensaje", () => {
+    expect(credentialsSignal("Tu usuario: juan123 y la clave: 4567")).toBe(true);
+    expect(credentialsSignal("user: pedro pass: abcd")).toBe(true);
+    expect(credentialsSignal("ingreso con contraseña 9999")).toBe(true);
+  });
+  it("NO dispara con solo uno de los dos (ni texto suelto)", () => {
+    expect(credentialsSignal("hola, tu usuario está listo")).toBe(false);
+    expect(credentialsSignal("mandame la clave")).toBe(false);
+    expect(credentialsSignal("gracias por escribir")).toBe(false);
+    expect(credentialsSignal("")).toBe(false);
   });
 });
 

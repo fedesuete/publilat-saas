@@ -116,6 +116,52 @@ async function rawAnthropic(base64: string, mediaType?: string): Promise<string>
   return block && block.type === "text" ? block.text : "";
 }
 
+// ---- Clasificador de texto liviano (SI/NO), reusa el proveedor de IA. Best-effort + timeout 6s. ----
+// Devuelve true/false, o null si la IA no está / falla / no responde claro (el caller cae al patrón).
+export async function classifyYesNo(text: string, question: string): Promise<boolean | null> {
+  const p = provider();
+  if (!p || !text.trim()) return null;
+  const prompt = `${question}\n\nMensaje:\n"""${text.slice(0, 600)}"""\n\nRespondé SOLO con SI o NO.`;
+  try {
+    const raw = await Promise.race([
+      p === "openai" ? rawOpenAIText(prompt) : rawAnthropicText(prompt),
+      new Promise<string>((_, rej) => setTimeout(() => rej(new Error("timeout")), 6000)),
+    ]);
+    const r = (raw ?? "").trim().toUpperCase();
+    if (r.startsWith("SI") || r.startsWith("SÍ") || r.startsWith("YES")) return true;
+    if (r.startsWith("NO")) return false;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function rawOpenAIText(prompt: string): Promise<string> {
+  if (!openaiClient) openaiClient = new OpenAI();
+  const resp = await openaiClient.chat.completions.create({
+    model: OPENAI_MODEL,
+    max_tokens: 5,
+    messages: [{ role: "user", content: prompt }],
+  });
+  return resp.choices[0]?.message?.content ?? "";
+}
+
+async function rawAnthropicText(prompt: string): Promise<string> {
+  if (!anthropicClient) {
+    const authToken = process.env.ANTHROPIC_AUTH_TOKEN;
+    anthropicClient = authToken
+      ? new Anthropic({ authToken, apiKey: null, defaultHeaders: { "anthropic-beta": "oauth-2025-04-20" } })
+      : new Anthropic();
+  }
+  const resp = await anthropicClient.messages.create({
+    model: ANTHROPIC_MODEL,
+    max_tokens: 5,
+    messages: [{ role: "user", content: prompt }],
+  });
+  const block = resp.content.find((b) => b.type === "text");
+  return block && block.type === "text" ? block.text : "";
+}
+
 /**
  * Analiza una imagen (base64) y devuelve si es un comprobante + monto + moneda.
  * Devuelve null si la IA no está configurada o si la llamada falla (no rompe el flujo).
