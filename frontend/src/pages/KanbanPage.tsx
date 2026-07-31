@@ -299,6 +299,23 @@ function LeadDrawer({
     }
   };
 
+  // 1-toque: acredita con el monto que leyó la IA del comprobante → marca COMPRO y dispara Purchase.
+  // Es el OPERADOR el que confirma (no se disparó solo al leer la imagen): así el pixel no se ensucia.
+  const acreditarDetected = async () => {
+    if (!detail?.paymentDetectedAmount) return;
+    setSaving(true); setError(null);
+    try {
+      const { data } = await api.post<{ ok: boolean; lead: Lead }>(`/api/leads/${leadId}/purchase`, {
+        amount: detail.paymentDetectedAmount / 100, currency: "ARS",
+      });
+      onSaved(data.lead);
+    } catch (e) {
+      setError(apiError(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
       <div
@@ -354,6 +371,18 @@ function LeadDrawer({
                 </Button>
                 <p className="mt-1 text-[11px] text-slate-500">Manda “Registro completo” a Meta (respaldo por si el auto no lo detectó).</p>
               </div>
+
+              {/* Comprobante leído por IA: acreditar en 1 toque (dispara Purchase). El operador
+                  confirma — NO se dispara solo al leer la imagen (evita comprobantes falsos). */}
+              {detail.paymentDetected && detail.paymentDetectedAmount != null && !isCompro && (
+                <div className="rounded-lg border border-wa-green/40 bg-wa-green/10 p-3">
+                  <div className="text-sm text-slate-100">💰 La IA leyó un comprobante de <b>{fmtAmount(detail.paymentDetectedAmount)}</b>.</div>
+                  <div className="mt-0.5 text-[11px] text-slate-400">Verificá el comprobante y acreditá si es correcto (la IA puede equivocarse).</div>
+                  <Button className="mt-2" disabled={saving} onClick={() => void acreditarDetected()}>
+                    {saving ? "…" : `✅ Acreditar ${fmtAmount(detail.paymentDetectedAmount)}`}
+                  </Button>
+                </div>
+              )}
 
               {/* Monto de compra */}
               {(wantsCompro || isCompro) && (
