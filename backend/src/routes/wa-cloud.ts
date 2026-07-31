@@ -9,6 +9,7 @@ import { emitToUser } from "../lib/io.js";
 import { getCloudMediaBase64, sendCloudButtons, sendCloudCtaUrl } from "../lib/wa-cloud.js";
 import { fireCtwaLead } from "../lib/ctwa.js";
 import { detectPayment, textSignalsPayment } from "../lib/payment-detect.js";
+import { fireMetaEvent } from "../lib/meta-events.js";
 import { notify } from "../lib/notifications.js";
 import { onInboundFlow } from "../lib/flow-engine.js";
 
@@ -119,7 +120,7 @@ cloudWebhookRouter.post("/", async (req, res) => {
 
         const owner = await prisma.user.findUnique({
           where: { id: userId },
-          select: { paymentDetection: true, waWelcomeEnabled: true, waWelcomeText: true, waWelcomeButtons: true, waAutoEnabled: true, waAutoWelcome: true, waAutoFollowup: true, waAutoBtnLabel: true, waAutoBtnUrl: true },
+          select: { paymentDetection: true, leadOnInbound: true, waWelcomeEnabled: true, waWelcomeText: true, waWelcomeButtons: true, waAutoEnabled: true, waAutoWelcome: true, waAutoFollowup: true, waAutoBtnLabel: true, waAutoBtnUrl: true },
         });
         const paymentMode = owner?.paymentDetection ?? "off";
 
@@ -239,6 +240,13 @@ cloudWebhookRouter.post("/", async (req, res) => {
           // 4) Lead CTWA (sólo en el 1er mensaje con referral).
           if (isNewCtwaLead) {
             void fireCtwaLead(userId, { id: contact.id, externalId: contact.externalId, phone: contact.phone, ctwaClid: contact.ctwaClid, name: contact.name });
+          }
+
+          // 4c) Lead en el INBOUND (cuentas con leadOnInbound): dispara el Lead cuando la persona
+          // ESCRIBE (no en el clic), UNA vez por contacto. Los CTWA ya lo disparan en fireCtwaLead
+          // (arriba) → no duplicar. Best-effort.
+          if (owner?.leadOnInbound && !isNewCtwaLead) {
+            void fireMetaEvent(contact, "Lead", { oncePerContact: true }).catch(() => undefined);
           }
 
           // 4b) Auto-responder con botón CTA (link). Best-effort y AISLADO. Bienvenida en el 1er

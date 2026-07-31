@@ -23,6 +23,9 @@ model User {
   name      String?
   phone     String?                    // WhatsApp del usuario (registro)
   paymentDetection String @default("auto") // off | assisted | auto — lector de comprobantes (default auto)
+  // Embudo de eventos a Meta: si true, el Lead se dispara en el 1er INBOUND real (no en el clic).
+  // Default false = comportamiento de hoy (Lead en el clic). Se prende por cuenta (ON para victor).
+  leadOnInbound    Boolean @default(false)
   // --- Panel maestro (super-admin) ---
   role          Role      @default(USER)
   suspended     Boolean   @default(false)

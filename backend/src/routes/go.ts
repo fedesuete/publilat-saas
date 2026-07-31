@@ -240,18 +240,23 @@ goRouter.get("/go", async (req: Request, res: Response) => {
       createdAt: contact.createdAt,
     });
 
-    // Dispara Lead + loguea MetaEvent en background; no demora la redirección.
-    void fireLead({
-      userId: user.id,
-      contactId: contact.id,
-      externalId,
-      eventId,
-      fbp,
-      fbc,
-      clientIp: req.ip,
-      userAgent: req.get("user-agent") ?? undefined,
-      eventSourceUrl: req.get("referer") ?? undefined,
-    });
+    // Lead de OPTIMIZACIÓN: por default se dispara acá (en el clic), como hoy. Si la cuenta tiene
+    // leadOnInbound, el Lead NO se dispara en el clic — se dispara cuando la persona ESCRIBE (en el
+    // webhook), para no optimizar por clics baratos. El contacto y la atribución YA quedaron guardados
+    // igual, y el clic se sigue trackeando para analytics. (Backward-compatible: default false.)
+    if (!user.leadOnInbound) {
+      void fireLead({
+        userId: user.id,
+        contactId: contact.id,
+        externalId,
+        eventId,
+        fbp,
+        fbc,
+        clientIp: req.ip,
+        userAgent: req.get("user-agent") ?? undefined,
+        eventSourceUrl: req.get("referer") ?? undefined,
+      });
+    }
 
     // Sin línea de WhatsApp configurada: NO mandamos a un número ajeno. El lead ya quedó
     // registrado y el evento disparado; mostramos un aviso simple.

@@ -12,6 +12,7 @@ import { consumeDayAndActivate } from "../lib/access.js";
 import { notify } from "../lib/notifications.js";
 import { onInboundFlow } from "../lib/flow-engine.js";
 import { fireCtwaLead, extractCtwaFromBaileys } from "../lib/ctwa.js";
+import { fireMetaEvent } from "../lib/meta-events.js";
 import { alertLineDown } from "../lib/line-alert.js";
 
 export const webhookRouter = Router();
@@ -182,10 +183,10 @@ webhookRouter.post("/", async (req, res) => {
       const raw = body.data;
       const items: any[] = Array.isArray(raw) ? raw : raw?.messages ?? [raw];
 
-      // Modo de detección de pago del usuario (off | assisted | auto).
+      // Modo de detección de pago del usuario (off | assisted | auto) + flag de Lead en el inbound.
       const owner = await prisma.user.findUnique({
         where: { id: userId },
-        select: { paymentDetection: true },
+        select: { paymentDetection: true, leadOnInbound: true },
       });
       const paymentMode = owner?.paymentDetection ?? "off";
 
@@ -351,6 +352,12 @@ webhookRouter.post("/", async (req, res) => {
         // Primer mensaje con atribución de anuncio -> disparamos el Lead CTWA por CAPI.
         if (isNewCtwaLead) {
           void fireCtwaLead(userId, { id: contact.id, externalId: contact.externalId, phone: contact.phone, ctwaClid: contact.ctwaClid, name: contact.name });
+        }
+
+        // Lead en el INBOUND (cuentas con leadOnInbound): dispara cuando la persona ESCRIBE (no en el
+        // clic), UNA vez por contacto. Los CTWA ya lo disparan arriba → no duplicar. Best-effort.
+        if (owner?.leadOnInbound && !isNewCtwaLead) {
+          void fireMetaEvent(contact, "Lead", { oncePerContact: true }).catch(() => undefined);
         }
 
         // Si el mensaje trae imagen o documento (PDF), lo bajamos UNA vez (para mostrarlo
