@@ -10,6 +10,7 @@ import { prisma } from "./prisma.js";
 import { decryptSecret } from "./crypto.js";
 import { parseProxyUrl, type ProxyConfig } from "./evolution.js";
 import { getEngine } from "./wa-engine.js";
+import { ensureLocalProxy } from "./proxy-local.js";
 import { notify } from "./notifications.js";
 import { emitToUser } from "./io.js";
 
@@ -157,18 +158,35 @@ export async function rotateProxy(lineId: string): Promise<{ ok: boolean; proxyI
 // Prioridad: proxy del POOL gestionado > proxyUrl manual (compat) > sin proxy (conecta como hoy).
 // Cloud API: nunca (resolveLineProxy devuelve null). Best-effort: si falla, la línea conecta SIN
 // proxy en vez de trabarse. Se llama al crear/conectar/reiniciar la instancia y tras rotar.
+// Adapta un ProxyConfig al motor antes de aplicarlo. WAHA/Chromium NO autentica proxies con
+// usuario/clave (ERR_TUNNEL) → lo envolvemos en un proxy LOCAL sin auth (proxy-local.ts) que le
+// agrega la auth y reenvía al upstream. Evolution/Baileys SÍ autentica (como curl) → va directo.
+// Proxy sin credenciales (ej. IP whitelist) → directo en cualquier motor.
+async function toEngineProxy(p: ProxyConfig): Promise<ProxyConfig | null> {
+  if (getEngine().name !== "waha" || !p.username) return p;
+  const scheme = p.protocol === "https" ? "https" : p.protocol === "socks5" ? "socks5" : p.protocol === "socks4" ? "socks4" : "http";
+  const upstream = `${scheme}://${encodeURIComponent(p.username)}:${encodeURIComponent(p.password ?? "")}@${p.host}:${p.port}`;
+  const local = await ensureLocalProxy(upstream);
+  if (!local) return null; // no se pudo levantar el local: mejor conectar SIN proxy que trabar la línea
+  return { host: local.host, port: String(local.port), protocol: "http" }; // local, SIN auth
+}
+
 export async function applyLineProxy(instanceName: string, lineId: string): Promise<void> {
   try {
     const managed = await resolveLineProxy(lineId);
     if (managed) {
-      await getEngine().setProxy(instanceName, managed);
+      const cfg = await toEngineProxy(managed);
+      if (cfg) await getEngine().setProxy(instanceName, cfg);
       return;
     }
     // Compat: proxy manual viejo (proxyUrl cifrado en la línea).
     const line = await prisma.waLine.findUnique({ where: { id: lineId }, select: { proxyUrl: true, provider: true } });
     if (line && line.provider !== "cloud" && line.proxyUrl) {
       const p = parseProxyUrl(decryptSecret(line.proxyUrl));
-      if (p) await getEngine().setProxy(instanceName, p);
+      if (p) {
+        const cfg = await toEngineProxy(p);
+        if (cfg) await getEngine().setProxy(instanceName, cfg);
+      }
     }
   } catch (e) {
     console.warn("[proxy] applyLineProxy falló (conecta sin proxy):", e instanceof Error ? e.message : String(e));
