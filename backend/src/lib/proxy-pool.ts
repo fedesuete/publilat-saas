@@ -87,15 +87,34 @@ export async function alertAdminProxy(
   }
 }
 
+// ¿Auto-asignar proxy a las líneas NUEVAS? (Fase 3). Flag env, apagado por default: con el flag OFF
+// el flujo de creación de líneas es idéntico al de siempre (no se asigna proxy).
+export function autoAssignEnabled(): boolean {
+  return ["on", "1", "true", "yes"].includes((process.env.AUTO_ASSIGN_PROXY ?? "").trim().toLowerCase());
+}
+// Proveedor PRIMARIO preferido para el auto-asignar (el resto queda como contingencia). Env, default webshare.
+export function primaryProvider(): string {
+  return (process.env.PROXY_PRIMARY_PROVIDER ?? "webshare").trim().toLowerCase();
+}
+
+export interface AssignOpts { excludeProxyId?: string; provider?: string; excludeProvider?: string }
+
 // Asigna a la línea el proxy active+healthy con MENOS líneas (least-loaded, respeta maxLines) y le
-// genera su sesión sticky única. Si el pool está lleno, avisa al admin y devuelve pool_full.
-export async function assignProxy(lineId: string, excludeProxyId?: string): Promise<{ ok: boolean; proxyId?: string; reason?: string }> {
+// genera su sesión sticky única. Filtros opcionales: excluir un proxy, exigir/excluir un proveedor
+// (para la jerarquía de fallback: mismo proveedor → contingencia). Si no hay cupo, avisa y da pool_full.
+export async function assignProxy(lineId: string, opts: AssignOpts = {}): Promise<{ ok: boolean; proxyId?: string; reason?: string }> {
   const line = await prisma.waLine.findUnique({ where: { id: lineId }, select: { id: true, provider: true, label: true } });
   if (!line) return { ok: false, reason: "line_not_found" };
   if (line.provider === "cloud") return { ok: false, reason: "cloud_no_proxy" };
 
   const proxies = await prisma.proxy.findMany({
-    where: { active: true, healthy: true, ...(excludeProxyId ? { id: { not: excludeProxyId } } : {}) },
+    where: {
+      active: true,
+      healthy: true,
+      ...(opts.excludeProxyId ? { id: { not: opts.excludeProxyId } } : {}),
+      ...(opts.provider ? { provider: opts.provider } : {}),
+      ...(opts.excludeProvider ? { provider: { not: opts.excludeProvider } } : {}),
+    },
     select: { id: true, maxLines: true, _count: { select: { lines: true } } },
   });
   const withCap = proxies
@@ -121,6 +140,46 @@ export async function assignProxy(lineId: string, excludeProxyId?: string): Prom
   return { ok: true, proxyId: chosen.id };
 }
 
+// Auto-asigna prefiriendo el proveedor PRIMARIO (Webshare); si no hay cupo sano ahí, cae a cualquier
+// sano (contingencia, ej. DataImpulse). Para el alta de líneas nuevas (Fase 3).
+export async function assignProxyPreferred(lineId: string): Promise<{ ok: boolean; proxyId?: string; reason?: string }> {
+  const primary = await assignProxy(lineId, { provider: primaryProvider() });
+  if (primary.ok) return primary;
+  return assignProxy(lineId); // cualquier sano (otro proveedor)
+}
+
+// Fallback JERÁRQUICO (watchdog, Fase 4): 1) otra IP del MISMO proveedor, 2) proveedor de CONTINGENCIA
+// (distinto), 3) cualquier sano excluyendo el actual. NUNCA cae a "sin proxy" (eso lo decide el caller
+// como waiting_proxy). Devuelve ok:false solo si no hay NINGÚN proxy sano con cupo.
+export async function assignFallback(lineId: string, curProxyId: string | null): Promise<{ ok: boolean; proxyId?: string; reason?: string }> {
+  let curProvider: string | undefined;
+  if (curProxyId) {
+    const cur = await prisma.proxy.findUnique({ where: { id: curProxyId }, select: { provider: true } });
+    curProvider = cur?.provider ?? undefined;
+  }
+  if (curProvider) {
+    const same = await assignProxy(lineId, { excludeProxyId: curProxyId ?? undefined, provider: curProvider });
+    if (same.ok) return same;
+    const other = await assignProxy(lineId, { excludeProvider: curProvider });
+    if (other.ok) return other;
+  }
+  return assignProxy(lineId, { excludeProxyId: curProxyId ?? undefined });
+}
+
+// Marca una línea "esperando proxy": sin proxy sano NO conecta (NUNCA por la IP del VPS). Libera el
+// proxy actual y avisa al admin. Un job (queue.ts) la conecta cuando el pool se recupere.
+export async function setLineWaitingProxy(lineId: string, reason: string): Promise<void> {
+  await prisma.waLine.update({ where: { id: lineId }, data: { proxyWait: true, proxyId: null, proxySession: null } }).catch(() => undefined);
+  await logProxyEvent(lineId, null, "proxy_unhealthy", `waiting_proxy: ${reason}`);
+  const line = await prisma.waLine.findUnique({ where: { id: lineId }, select: { label: true, phone: true } });
+  await alertAdminProxy(
+    "Línea esperando proxy",
+    `La línea "${line?.label ?? line?.phone ?? lineId}" no tiene proxy sano; NO se conectó por la IP del VPS. Se reconecta sola cuando el pool se recupere.`,
+    "waiting_proxy",
+    { lineId },
+  );
+}
+
 // Rota la IP de una línea: nueva sesión sticky. Si el proxy actual está inactive/unhealthy o sin cupo,
 // re-asigna otro del pool. Registra "rotated".
 export async function rotateProxy(lineId: string): Promise<{ ok: boolean; proxyId?: string; reason?: string }> {
@@ -142,7 +201,7 @@ export async function rotateProxy(lineId: string): Promise<{ ok: boolean; proxyI
   // Proxy de IP FIJA por entrada (sticky=false, ej. Webshare: la IP está en el username): rotar la
   // "sesión" no cambia la IP → hay que MOVER la línea a OTRA entrada del pool (otra IP).
   if (keepProxyId && !curSticky) {
-    const r = await assignProxy(lineId, keepProxyId); // excluye el proxy actual
+    const r = await assignProxy(lineId, { excludeProxyId: keepProxyId }); // excluye el proxy actual
     if (r.ok) { await logProxyEvent(lineId, r.proxyId, "rotated", "movido a otra IP (proxy de IP fija)"); return r; }
     return { ok: true, proxyId: keepProxyId }; // no hay otro con cupo: se queda con el actual
   }

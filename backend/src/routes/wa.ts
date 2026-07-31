@@ -6,7 +6,7 @@ import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
 import { encryptSecret, decryptSecret, maskSecret } from "../lib/crypto.js";
 import { getAvailableDays, consumeDayAndActivate } from "../lib/access.js";
-import { applyLineProxy } from "../lib/proxy-pool.js";
+import { applyLineProxy, autoAssignEnabled, assignProxyPreferred, setLineWaitingProxy } from "../lib/proxy-pool.js";
 import { getEngine } from "../lib/wa-engine.js";
 import { warmupState } from "../lib/warmup.js";
 import axios from "axios";
@@ -92,6 +92,17 @@ const createSchema = z.object({
   verifyToken: z.string().min(4).max(120).optional(),
 });
 
+// Tras aplicar el proxy (setProxy reinicia la sesión), el QR inicial —generado por la IP del VPS—
+// quedó viejo. Re-pedimos el QR ya por el proxy y lo emitimos por socket (async: no frena el alta).
+function emitProxyQrSoon(userId: string, instanceName: string, lineId: string): void {
+  setTimeout(() => {
+    void getEngine()
+      .connectInstance(instanceName)
+      .then((r) => { if (r.base64) emitToUser(userId, "wa:qr", { lineId, qr: r.base64 }); })
+      .catch(() => undefined);
+  }, 3500);
+}
+
 // POST /api/wa/lines — crea la línea. Baileys: instancia en Evolution + QR.
 // Cloud: guarda credenciales (token cifrado) y queda lista para el webhook de Meta.
 waRouter.post("/lines", async (req, res) => {
@@ -168,16 +179,37 @@ waRouter.post("/lines", async (req, res) => {
     data: { userId: req.userId!, label, phone: phone ?? "", status: "inactive" },
   });
   const instanceName = `line_${line.id}`;
+  await prisma.waLine.update({ where: { id: line.id }, data: { sessionId: instanceName } });
+
+  // AUTO-ASIGNAR PROXY (Fase 3), detrás del flag AUTO_ASSIGN_PROXY (default OFF → alta idéntica a la de
+  // siempre, sin proxy). El pool ya está validado (solo se asignan proxies HEALTHY). Regla dura: una
+  // línea NUEVA de casino NUNCA conecta por la IP del VPS → si no hay proxy sano queda "esperando proxy"
+  // y un job la conecta cuando el pool se recupere (Fase 4). Solo con WAHA (motor que usa el proxy local).
+  const autoProxy = autoAssignEnabled() && getEngine().name === "waha";
+  if (autoProxy) {
+    const a = await assignProxyPreferred(line.id);
+    if (!a.ok) {
+      await setLineWaitingProxy(line.id, "sin proxy sano al crear la línea");
+      const fresh = await prisma.waLine.findUnique({ where: { id: line.id } });
+      return res.status(201).json({ line: toPublicLine(fresh ?? line), qr: null, waiting: true });
+    }
+  }
 
   try {
     const qr = await getEngine().createInstance(instanceName);
-    const updated = await prisma.waLine.update({ where: { id: line.id }, data: { sessionId: instanceName } });
-    // El proxy se asigna EXPLÍCITAMENTE desde el panel admin (NO auto): el motor WAHA/WEBJS (Chromium)
-    // no autentica bien contra proxies con usuario/clave (ERR_TUNNEL_CONNECTION_FAILED) → auto-asignar
-    // rompía la conexión de líneas nuevas. applyLineProxy es no-op si la línea no tiene proxy.
+    // Aplica el proxy asignado (setProxy reinicia la sesión → reconecta por la IP del proxy). Sin proxy
+    // asignado (flag off), applyLineProxy es no-op y la línea conecta como siempre.
     await applyLineProxy(instanceName, line.id);
-    if (qr.base64) emitToUser(req.userId!, "wa:qr", { lineId: line.id, qr: qr.base64 });
-    return res.status(201).json({ line: toPublicLine(updated), qr: qr.base64 ?? null });
+    const updated = await prisma.waLine.findUnique({ where: { id: line.id } });
+    let qrBase64: string | null = qr.base64 ?? null;
+    if (autoProxy) {
+      // El QR inicial salió por la IP del VPS y quedó viejo tras el reinicio con proxy → el panel recibe
+      // el QR ya por el proxy vía socket en unos segundos.
+      emitProxyQrSoon(req.userId!, instanceName, line.id);
+      qrBase64 = null;
+    }
+    if (qrBase64) emitToUser(req.userId!, "wa:qr", { lineId: line.id, qr: qrBase64 });
+    return res.status(201).json({ line: toPublicLine(updated ?? line), qr: qrBase64 });
   } catch (e) {
     // Si Evolution falla, no dejamos la línea huérfana.
     await prisma.waLine.delete({ where: { id: line.id } }).catch(() => undefined);

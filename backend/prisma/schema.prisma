@@ -365,6 +365,8 @@ model WaLine {
   proxyAssignedAt   DateTime?
   banned            Boolean    @default(false) // el NÚMERO quedó baneado (logout/ban del motor)
   lastProxyRotateAt DateTime?
+  proxyWait         Boolean    @default(false) // "esperando proxy": sin proxy sano NO conecta (nunca por
+                                               // la IP del VPS); un job la conecta cuando el pool vuelve
   expiresAt   DateTime? // se desactiva al vencer (consumo de días)
   lastUsedAt  DateTime? // para rotación LRU de clics entre líneas activas
   createdAt   DateTime  @default(now())
