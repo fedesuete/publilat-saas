@@ -5,6 +5,8 @@
 // - releaseProxy: libera el cupo (al banear un número).
 // Best-effort: los errores se tragan, NUNCA frenan la conexión de una línea. Cloud API NO usa proxy.
 import crypto from "node:crypto";
+import http from "node:http";
+import tls from "node:tls";
 import type { Proxy } from "@prisma/client";
 import { prisma } from "./prisma.js";
 import { decryptSecret } from "./crypto.js";
@@ -226,6 +228,49 @@ export async function prewarmProxyPool(): Promise<{ warmed: number; failed: numb
     console.log(`[proxy] pre-warming: ${warmed}/${proxies.length} túneles locales listos${failed ? ` (${failed} fallaron)` : ""}`);
   }
   return { warmed, failed, total: proxies.length };
+}
+
+// CONNECT HTTPS a un checker de IP a través de un proxy HTTP local sin auth (host:port). Devuelve la
+// IP pública vista (la del proxy residencial) o null si el túnel no sale a internet. Timeout duro.
+function connectAndGetIp(host: string, port: number, timeoutMs: number): Promise<string | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (v: string | null) => { if (!settled) { settled = true; resolve(v); } };
+    const req = http.request({ host, port, method: "CONNECT", path: "api.ipify.org:443", timeout: timeoutMs });
+    const timer = setTimeout(() => { try { req.destroy(); } catch { /* noop */ } finish(null); }, timeoutMs);
+    req.on("connect", (res, socket) => {
+      if (res.statusCode !== 200) { clearTimeout(timer); try { socket.destroy(); } catch { /* noop */ } return finish(null); }
+      const t = tls.connect({ socket, servername: "api.ipify.org" }, () => {
+        t.write("GET /?format=json HTTP/1.1\r\nHost: api.ipify.org\r\nConnection: close\r\n\r\n");
+      });
+      let data = "";
+      t.on("data", (d) => (data += d.toString()));
+      t.on("end", () => { clearTimeout(timer); const body = data.split("\r\n\r\n")[1] ?? ""; const m = body.match(/"ip"\s*:\s*"([^"]+)"/); finish(m ? m[1] : null); });
+      t.on("error", () => { clearTimeout(timer); finish(null); });
+    });
+    req.on("timeout", () => { try { req.destroy(); } catch { /* noop */ } finish(null); });
+    req.on("error", () => { clearTimeout(timer); finish(null); });
+    req.end();
+  });
+}
+
+// PRUEBA REAL de un proxy (Fase 2): hace un CONNECT HTTPS a un checker por el MISMO camino que usa
+// la línea. Con WAHA (todos nuestros proxies tienen auth) es por el proxy LOCAL sin auth (proxy-chain
+// agrega la auth y reenvía) → valida auth + upstream + SALIDA a internet, no solo que el gateway
+// responda TCP. Devuelve { ok, ip }. Best-effort: cualquier fallo = { ok:false }.
+export async function probeProxy(proxy: Proxy, timeoutMs = 9_000): Promise<{ ok: boolean; ip?: string }> {
+  try {
+    // Sesión de validación ESTABLE (no random): así el túnel local del probe es único por proxy y se
+    // reutiliza en cada chequeo (sin fuga de servers). Valida la cuenta/salida, no la IP de una línea.
+    const cfg = buildProxyConfig(proxy, "healthcheck");
+    if (!cfg.username) return { ok: false }; // sin auth (IP whitelist): no lo usamos hoy; lo deja unhealthy
+    const local = await ensureLocalProxy(upstreamUrlFor(cfg));
+    if (!local) return { ok: false };
+    const ip = await connectAndGetIp("127.0.0.1", local.port, timeoutMs); // el server local escucha en 0.0.0.0
+    return ip ? { ok: true, ip } : { ok: false };
+  } catch {
+    return { ok: false };
+  }
 }
 
 // Libera el proxy de una línea (al banear el número): el cupo queda para otra línea.

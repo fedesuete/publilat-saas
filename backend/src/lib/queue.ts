@@ -17,7 +17,7 @@ import { sendAdminMail } from "./mailer.js";
 import { checkWaWebVersion } from "./wa-version.js";
 import { alertLineDown, alertLowBalance } from "./line-alert.js";
 import { alertCapiFailures } from "./capi-guard.js";
-import { rotateProxy, releaseProxy, applyLineProxy, logProxyEvent, alertAdminProxy } from "./proxy-pool.js";
+import { rotateProxy, releaseProxy, applyLineProxy, logProxyEvent, alertAdminProxy, probeProxy } from "./proxy-pool.js";
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const parsed = new URL(REDIS_URL);
@@ -386,17 +386,37 @@ export function enqueueProxyRecover(lineId: string): void {
   }
 }
 
-// Salud del POOL: chequea cada proxy activo (alcance TCP). Si uno cae, lo marca unhealthy (deja de
-// asignarle líneas nuevas) y rota sus líneas a otro proxy sano. Best-effort.
+// Corre fn sobre items con un tope de concurrencia (100 proxies × ~9s serían minutos si fuera serial).
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let idx = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (idx < items.length) {
+      const i = idx++;
+      out[i] = await fn(items[i]);
+    }
+  });
+  await Promise.all(runners);
+  return out;
+}
+
+// Salud del POOL (Fase 2): valida cada proxy activo con un CONNECT REAL a un checker de IP por su
+// túnel (no solo TCP: comprueba auth + upstream + SALIDA a internet). Solo los healthy son asignables
+// (assignProxy filtra por healthy). Si uno cae, lo marca unhealthy y rota sus líneas a otro sano.
+// Pre-gate barato: si el gateway ni responde TCP, se saltea el CONNECT completo. Best-effort.
 export async function checkProxyHealth(): Promise<void> {
   const proxies = await prisma.proxy.findMany({ where: { active: true } });
-  for (const p of proxies) {
-    const reachable = await tcpReachable(p.host, p.port);
+  const results = await mapLimit(proxies, 8, async (p) => {
+    if (!(await tcpReachable(p.host, p.port))) return { p, ok: false, ip: undefined as string | undefined };
+    const probe = await probeProxy(p);
+    return { p, ok: probe.ok, ip: probe.ip };
+  });
+  for (const { p, ok, ip } of results) {
     const wasHealthy = p.healthy;
-    await prisma.proxy.update({ where: { id: p.id }, data: { healthy: reachable, lastCheckAt: new Date() } }).catch(() => undefined);
-    if (wasHealthy && !reachable) {
-      await logProxyEvent("", p.id, "proxy_unhealthy", `${p.host}:${p.port} inalcanzable`);
-      await alertAdminProxy("Proxy caído", `El proxy "${p.label}" no responde. Roto sus líneas a otro proxy sano.`, "proxy_unhealthy", { proxyId: p.id });
+    await prisma.proxy.update({ where: { id: p.id }, data: { healthy: ok, lastCheckAt: new Date() } }).catch(() => undefined);
+    if (wasHealthy && !ok) {
+      await logProxyEvent("", p.id, "proxy_unhealthy", `${p.host}:${p.port} no sale a internet (CONNECT falló)`);
+      await alertAdminProxy("Proxy caído", `El proxy "${p.label}" no sale a internet. Roto sus líneas a otro proxy sano.`, "proxy_unhealthy", { proxyId: p.id });
       const lines = await prisma.waLine.findMany({ where: { proxyId: p.id }, select: { id: true, sessionId: true } });
       for (const l of lines) {
         await rotateProxy(l.id).catch(() => undefined); // re-asigna a otro sano (o pool_full → avisa)
@@ -404,6 +424,8 @@ export async function checkProxyHealth(): Promise<void> {
         await applyLineProxy(inst, l.id).catch(() => undefined);
         await getEngine().restartInstance(inst).catch(() => undefined);
       }
+    } else if (!wasHealthy && ok) {
+      await logProxyEvent("", p.id, "reconnected", `${p.label} volvió a salir a internet${ip ? ` (IP ${ip})` : ""}`);
     }
   }
 }

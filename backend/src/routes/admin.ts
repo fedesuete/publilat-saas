@@ -10,7 +10,7 @@ import { emitToUser } from "../lib/io.js";
 import { retryFailedCapi, enqueueProxyRecover } from "../lib/queue.js";
 import { hashPassword } from "../lib/auth.js";
 import { encryptSecret } from "../lib/crypto.js";
-import { assignProxy, rotateProxy, applyLineProxy, logProxyEvent } from "../lib/proxy-pool.js";
+import { assignProxy, rotateProxy, applyLineProxy, logProxyEvent, probeProxy } from "../lib/proxy-pool.js";
 import { getEngine } from "../lib/wa-engine.js";
 import { uniqueSlug } from "./auth.js";
 
@@ -642,6 +642,18 @@ adminRouter.delete("/proxies/:id", async (req, res) => {
   await prisma.proxy.delete({ where: { id: req.params.id } }).catch(() => undefined);
   await adminLog(req.userId!, "proxy_delete", undefined, { proxyId: req.params.id });
   return res.json({ ok: true });
+});
+
+// POST /api/admin/proxies/:id/probe — valida el proxy AHORA (CONNECT real por su túnel) y devuelve la
+// IP pública que ve (debería ser residencial AR). Actualiza healthy/lastCheckAt. Útil al cargar un
+// proveedor nuevo: cargás → probás → confirmás que sale por Argentina antes de asignarlo.
+adminRouter.post("/proxies/:id/probe", async (req, res) => {
+  const proxy = await prisma.proxy.findUnique({ where: { id: req.params.id } });
+  if (!proxy) return res.status(404).json({ error: "Proxy no encontrado" });
+  const r = await probeProxy(proxy);
+  await prisma.proxy.update({ where: { id: proxy.id }, data: { healthy: r.ok, lastCheckAt: new Date() } }).catch(() => undefined);
+  await adminLog(req.userId!, "proxy_probe", undefined, { proxyId: proxy.id, ok: r.ok });
+  return res.json({ ok: r.ok, ip: r.ip ?? null });
 });
 
 // GET /api/admin/proxies/lines — todas las líneas Baileys con su proxy asignado y estado.
