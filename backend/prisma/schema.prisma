@@ -458,6 +458,7 @@ model Contact {
   paymentDetected     Boolean   @default(false) // detección de pago en chat (a confirmar)
   paymentDetectedAmount Int?                     // monto detectado (centavos), si la IA lo leyó
   paymentDetectedAt   DateTime?
+  registeredAt        DateTime?  // registro completo (CompleteRegistration) enviado: auto (credenciales) o manual
   createdAt   DateTime @default(now())
 
   user        User     @relation(fields: [userId], references: [id])

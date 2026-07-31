@@ -8,6 +8,7 @@ import { sendCloudText, sendCloudAudio, isOutsideWindowError, graphErrorMessage,
 import { decryptSecret } from "../lib/crypto.js";
 import { checkWarmupGate } from "../lib/warmup.js";
 import { uniquifyAudio } from "../lib/audio-uniquify.js";
+import { maybeAutoRegister } from "../lib/meta-events.js";
 
 export const inboxRouter = Router();
 
@@ -273,6 +274,9 @@ inboxRouter.post("/:contactId/messages", async (req, res) => {
     contactId: contact.id,
     message: { id: message.id, direction: "out", body: message.body, status: message.status, createdAt: message.createdAt },
   });
+  // AUTO: si el operador mandó las credenciales (usuario/clave), dispara CompleteRegistration a Meta
+  // (cuentas con leadOnInbound). Background best-effort: no demora la respuesta ni frena el envío.
+  void maybeAutoRegister(req.userId!, contact.id, parsed.data.body);
   return res.status(201).json({ message: { id: message.id, direction: "out", body: message.body, status: message.status, createdAt: message.createdAt } });
 });
 

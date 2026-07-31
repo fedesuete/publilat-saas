@@ -5,6 +5,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { markPurchase } from "../lib/purchase.js";
+import { markRegistration } from "../lib/meta-events.js";
 
 export const leadsRouter = Router();
 
@@ -204,4 +205,13 @@ leadsRouter.post("/:id/purchase", async (req, res) => {
   return res
     .status(502)
     .json({ ok: false, error: "Falló el envío del Purchase a Meta", detail: result.error, lead: result.lead });
+});
+
+// POST /api/leads/:id/register — override manual del Registro completo (CompleteRegistration).
+// Respaldo por si la auto-detección de credenciales no lo agarró. Idempotente (una vez por contacto).
+leadsRouter.post("/:id/register", async (req, res) => {
+  const result = await markRegistration(req.userId!, req.params.id);
+  if (result.error === "not_found") return res.status(404).json({ error: "Lead no encontrado" });
+  if (result.ok) return res.json({ ok: true, skipped: result.skipped ?? false });
+  return res.status(502).json({ ok: false, error: "No se pudo enviar el registro a Meta", detail: result.error });
 });

@@ -219,6 +219,7 @@ function LeadDrawer({
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState("ARS");
   const [saving, setSaving] = useState(false);
+  const [registeredOk, setRegisteredOk] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -285,6 +286,19 @@ function LeadDrawer({
     }
   };
 
+  // Override manual del Registro completo (CompleteRegistration a Meta) — respaldo del auto.
+  const markRegistered = async () => {
+    setSaving(true); setError(null);
+    try {
+      await api.post(`/api/leads/${leadId}/register`, {});
+      setRegisteredOk(true);
+    } catch (e) {
+      setError(apiError(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
       <div
@@ -331,6 +345,14 @@ function LeadDrawer({
                   })}
                 </div>
                 {isCompro && <p className="mt-1.5 text-[11px] text-slate-500">Ya está marcado como compra (no se puede revertir).</p>}
+              </div>
+
+              {/* Registro completo (override manual del CompleteRegistration a Meta) */}
+              <div>
+                <Button variant="secondary" disabled={saving || registeredOk} onClick={() => void markRegistered()}>
+                  {registeredOk ? "✅ Registro marcado" : "🧾 Marcó registro / Cuenta creada"}
+                </Button>
+                <p className="mt-1 text-[11px] text-slate-500">Manda “Registro completo” a Meta (respaldo por si el auto no lo detectó).</p>
               </div>
 
               {/* Monto de compra */}

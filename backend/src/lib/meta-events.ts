@@ -11,6 +11,7 @@ import { sendCapiEvent, globalPixelAllowed } from "./meta-capi.js";
 import { resolveUserPixel } from "./pixel.js";
 import { notifyMissingPixel } from "./capi-guard.js";
 import { emitToUser } from "./io.js";
+import { looksLikeCredentials } from "./funnel-detect.js";
 
 export type MetaEventName = "Lead" | "CompleteRegistration" | "Purchase";
 
@@ -104,5 +105,34 @@ export async function fireMetaEvent(
     console.error(`[meta-events] ${eventName} falló:`, msg);
     await prisma.metaEvent.update({ where: { id: metaEvent.id }, data: { status: "failed", response: { error: msg } } });
     return { ok: false, error: msg };
+  }
+}
+
+// Marca el REGISTRO COMPLETO de un contacto: dispara CompleteRegistration (una vez por contacto) y
+// setea el flag registeredAt. Lo usa el override manual Y la auto-detección de credenciales.
+export async function markRegistration(userId: string, contactId: string): Promise<FireMetaResult> {
+  const contact = await prisma.contact.findFirst({ where: { id: contactId, userId } });
+  if (!contact) return { ok: false, error: "not_found" };
+  const r = await fireMetaEvent(contact, "CompleteRegistration", { oncePerContact: true });
+  if (r.ok) {
+    await prisma.contact
+      .update({ where: { id: contact.id }, data: { registeredAt: contact.registeredAt ?? new Date() } })
+      .catch(() => undefined);
+    emitToUser(userId, "lead:registered", { contactId: contact.id });
+  }
+  return r;
+}
+
+// AUTO: si el operador acaba de mandar las CREDENCIALES (cuentas con leadOnInbound), marca el registro.
+// Best-effort en background — NO frena el envío del mensaje. Idempotente (oncePerContact + flag).
+export async function maybeAutoRegister(userId: string, contactId: string, operatorText: string): Promise<void> {
+  try {
+    if (!operatorText?.trim()) return;
+    const owner = await prisma.user.findUnique({ where: { id: userId }, select: { leadOnInbound: true } });
+    if (!owner?.leadOnInbound) return; // piloto: solo cuentas con el flag prendido
+    if (!(await looksLikeCredentials(operatorText))) return; // patrón (gratis) → IA de respaldo
+    await markRegistration(userId, contactId);
+  } catch {
+    /* best-effort: la detección nunca frena el flujo de mensajes */
   }
 }
