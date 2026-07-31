@@ -11,9 +11,10 @@ interface Proxy {
 }
 interface ProxyLine {
   id: string; phone: string; label: string | null; status: string; connected: boolean; banned: boolean;
+  proxyWait: boolean;
   proxyId: string | null; proxySession: string | null; lastProxyRotateAt: string | null;
   user: { slug: string; email: string };
-  proxy: { id: string; label: string; host: string; port: number; country: string | null; healthy: boolean } | null;
+  proxy: { id: string; label: string; host: string; port: number; country: string | null; healthy: boolean; provider: string } | null;
 }
 interface ProxyEvent { id: string; lineId: string; proxyId: string | null; type: string; detail: string | null; createdAt: string; }
 
@@ -31,6 +32,8 @@ export default function AdminProxies() {
   const [error, setError] = useState<string | null>(null);
   const [alert, setAlert] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [probing, setProbing] = useState<string | null>(null);
+  const [probeResult, setProbeResult] = useState<Record<string, string>>({});
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [creating, setCreating] = useState(false);
 
@@ -53,6 +56,7 @@ export default function AdminProxies() {
     const onProxy = (p: { kind?: string }) => {
       const msg = p?.kind === "banned" ? "⚠️ Una línea quedó BANEADA (se liberó su proxy)."
         : p?.kind === "proxy_unhealthy" ? "⚠️ Un proxy se cayó (sus líneas se rotaron)."
+        : p?.kind === "waiting_proxy" ? "⏳ Una línea quedó esperando proxy (se reconecta sola cuando el pool vuelva; nunca sale por la IP del server)."
         : p?.kind === "pool_full" ? "⚠️ El pool de proxies está lleno (sin cupo)." : "Evento de proxy.";
       setAlert(msg);
       void load();
@@ -98,10 +102,24 @@ export default function AdminProxies() {
     try { await api.post(`/api/admin/lines/${id}/proxy`, proxyId ? { proxyId } : {}); await load(); }
     catch (e) { setError(apiError(e)); } finally { setBusy(null); }
   };
+  // Prueba REAL del proxy: CONNECT por su túnel → devuelve la IP pública (debería ser residencial AR).
+  const probe = async (id: string) => {
+    setProbing(id); setError(null);
+    try {
+      const { data } = await api.post<{ ok: boolean; ip: string | null }>(`/api/admin/proxies/${id}/probe`, {});
+      setProbeResult((m) => ({ ...m, [id]: data.ok ? `✓ ${data.ip ?? "OK"}` : "✗ sin salida" }));
+      await load();
+    } catch (e) { setError(apiError(e)); } finally { setProbing(null); }
+  };
 
   const healthy = proxies.filter((p) => p.active && p.healthy).length;
   const down = proxies.filter((p) => p.active && !p.healthy).length;
   const banned = lines.filter((l) => l.banned).length;
+  const waiting = lines.filter((l) => l.proxyWait).length;
+  const byProvider = Array.from(new Set(proxies.map((p) => p.provider))).map((prov) => {
+    const list = proxies.filter((p) => p.provider === prov);
+    return { prov, total: list.length, healthy: list.filter((p) => p.active && p.healthy).length };
+  });
 
   return (
     <div className="p-4 md:p-6">
@@ -124,6 +142,20 @@ export default function AdminProxies() {
         <div className="rounded-lg bg-slate-900 p-3"><div className="text-2xl font-bold text-rose-400">{down}</div><div className="text-xs text-slate-400">proxies caídos</div></div>
         <div className="rounded-lg bg-slate-900 p-3"><div className="text-2xl font-bold">{lines.filter((l) => l.proxyId).length}</div><div className="text-xs text-slate-400">líneas con proxy</div></div>
         <div className="rounded-lg bg-slate-900 p-3"><div className="text-2xl font-bold text-amber-400">{banned}</div><div className="text-xs text-slate-400">líneas baneadas</div></div>
+      </div>
+
+      {/* Salud por proveedor + esperando proxy */}
+      <div className="mb-5 flex flex-wrap items-center gap-2 text-xs">
+        {byProvider.map((b) => (
+          <span key={b.prov} className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-slate-300">
+            {b.prov}: <span className={b.healthy ? "text-wa-green" : "text-rose-400"}>{b.healthy}</span>/{b.total} sanos
+          </span>
+        ))}
+        {waiting > 0 && (
+          <span className="rounded-full border border-amber-800 bg-amber-900/30 px-3 py-1 text-amber-300">
+            ⏳ {waiting} línea(s) esperando proxy (se reconectan solas cuando el pool vuelve)
+          </span>
+        )}
       </div>
 
       {/* Alta de proxy */}
@@ -172,6 +204,8 @@ export default function AdminProxies() {
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right">
+                    {probeResult[p.id] && <span className="mr-3 text-[11px] text-slate-400">{probeResult[p.id]}</span>}
+                    <button disabled={probing === p.id} className="mr-3 text-xs text-sky-400 hover:text-sky-300" onClick={() => void probe(p.id)}>{probing === p.id ? "…" : "Probar"}</button>
                     <button disabled={busy === p.id} className="mr-3 text-xs text-slate-300 hover:text-white" onClick={() => void patchProxy(p.id, { active: !p.active })}>{p.active ? "Pausar" : "Activar"}</button>
                     <button disabled={busy === p.id} className="text-xs text-rose-400 hover:text-rose-300" onClick={() => void delProxy(p.id)}>Borrar</button>
                   </td>
@@ -196,7 +230,8 @@ export default function AdminProxies() {
                 <tr key={l.id} className="border-b border-slate-800/60 last:border-0">
                   <td className="px-3 py-2"><div className="font-medium">{l.label ?? l.phone}</div><div className="text-[11px] text-slate-500">{l.user.slug} · {l.phone}</div></td>
                   <td className="px-3 py-2">
-                    {l.banned ? <span className="rounded-full bg-rose-900/40 px-2 py-0.5 text-[11px] text-rose-300">baneada</span>
+                    {l.proxyWait ? <span className="rounded-full bg-amber-900/40 px-2 py-0.5 text-[11px] text-amber-300">esperando proxy</span>
+                      : l.banned ? <span className="rounded-full bg-rose-900/40 px-2 py-0.5 text-[11px] text-rose-300">baneada</span>
                       : l.connected ? <span className="rounded-full bg-wa-green/15 px-2 py-0.5 text-[11px] text-wa-green">conectada</span>
                       : <span className="rounded-full bg-slate-700 px-2 py-0.5 text-[11px] text-slate-300">caída</span>}
                   </td>

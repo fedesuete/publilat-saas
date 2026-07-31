@@ -10,7 +10,7 @@ import { emitToUser } from "../lib/io.js";
 import { retryFailedCapi, enqueueProxyRecover } from "../lib/queue.js";
 import { hashPassword } from "../lib/auth.js";
 import { encryptSecret } from "../lib/crypto.js";
-import { assignProxy, rotateProxy, applyLineProxy, logProxyEvent, probeProxy } from "../lib/proxy-pool.js";
+import { assignProxy, rotateProxy, applyLineProxy, logProxyEvent, probeProxy, autoAssignEnabled, assignProxyPreferred, setLineWaitingProxy } from "../lib/proxy-pool.js";
 import { getEngine } from "../lib/wa-engine.js";
 import { uniqueSlug } from "./auth.js";
 
@@ -662,10 +662,10 @@ adminRouter.get("/proxies/lines", async (_req, res) => {
     where: { provider: { not: "cloud" } },
     orderBy: { createdAt: "desc" },
     select: {
-      id: true, phone: true, label: true, status: true, connected: true, banned: true,
+      id: true, phone: true, label: true, status: true, connected: true, banned: true, proxyWait: true,
       proxyId: true, proxySession: true, lastProxyRotateAt: true,
       user: { select: { slug: true, email: true } },
-      proxy: { select: { id: true, label: true, host: true, port: true, country: true, healthy: true } },
+      proxy: { select: { id: true, label: true, host: true, port: true, country: true, healthy: true, provider: true } },
     },
   });
   return res.json({ lines });
@@ -727,8 +727,15 @@ adminRouter.post("/lines/:id/retry", async (req, res) => {
   const line = await prisma.waLine.findUnique({ where: { id }, select: { id: true, sessionId: true, provider: true, proxyId: true } });
   if (!line) return res.status(404).json({ error: "Línea no encontrada" });
   if (line.provider === "cloud") return res.status(400).json({ error: "No aplica a Cloud API" });
-  await prisma.waLine.update({ where: { id }, data: { banned: false } });
-  if (!line.proxyId) await assignProxy(id);
+  await prisma.waLine.update({ where: { id }, data: { banned: false, proxyWait: false } });
+  // Si el auto-asignar está activo y la línea no tiene proxy, conseguí uno SANO antes de conectar
+  // (nunca por la IP del VPS): si no hay, la dejamos esperando y el job la levanta cuando el pool vuelva.
+  if (!line.proxyId && autoAssignEnabled()) {
+    const a = await assignProxyPreferred(id);
+    if (!a.ok) { await setLineWaitingProxy(id, "reintento admin sin proxy sano"); return res.json({ ok: false, reason: "waiting_proxy" }); }
+  } else if (!line.proxyId) {
+    await assignProxy(id); // comportamiento previo (best-effort) cuando el auto-asignar está apagado
+  }
   const inst = line.sessionId ?? `line_${id}`;
   await applyLineProxy(inst, id);
   await getEngine().restartInstance(inst).catch(() => undefined);
