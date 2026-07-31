@@ -158,9 +158,11 @@ describe("buildProxyConfig (username sticky por proveedor)", () => {
     username: "USER", password: "PASS", protocol: "http", country: "ar", sticky: true,
     sessTime: 120, maxLines: 4, active: true, healthy: true, lastCheckAt: null, createdAt: new Date(),
   };
-  it("DataImpulse: username con país + sessid + sesstime (misma IP por sesión)", () => {
+  it("DataImpulse: username con país + sessid (misma IP por sesión, SIN sesstime)", () => {
+    // Confirmado en docs.dataimpulse.com: sticky = LOGIN__cr.<país>;sessid.<s> en puerto 823.
+    // NO existe 'sesstime' (la duración es fija ~30 min); mandarlo rompe la auth.
     const cfg = buildProxyConfig(base, "abc123");
-    expect(cfg.username).toBe("USER__cr.ar;sessid.abc123;sesstime.120");
+    expect(cfg.username).toBe("USER__cr.ar;sessid.abc123");
     expect(cfg.host).toBe("gw.dataimpulse.com");
     expect(cfg.port).toBe("823"); // el motor pide string
     expect(cfg.password).toBe("PASS");

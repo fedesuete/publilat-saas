@@ -20,13 +20,15 @@ function newSession(): string {
 }
 
 // Arma el ProxyConfig para el motor (Evolution/WAHA), con el username sticky del proveedor.
-// DataImpulse: LOGIN__cr.<país>;sessid.<sesión>;sesstime.<min> → misma IP mientras dure la sesión.
+// DataImpulse (confirmado en docs.dataimpulse.com): LOGIN__cr.<país>;sessid.<sesión> en el puerto
+// 823 → la MISMA IP ~30 min por sesión. Separador ';'. OJO: NO existe 'sesstime' (la duración es
+// fija; mandarlo rompe la auth). Una sesión ÚNICA por línea ⇒ una IP única por línea.
 export function buildProxyConfig(proxy: Proxy, session: string | null): ProxyConfig {
   let username = proxy.username;
   const sess = session ?? "";
   if (proxy.provider === "dataimpulse") {
     if (proxy.country) username += `__cr.${proxy.country.toLowerCase()}`;
-    if (proxy.sticky && sess) username += `;sessid.${sess};sesstime.${proxy.sessTime}`;
+    if (proxy.sticky && sess) username += `;sessid.${sess}`;
   } else if (proxy.sticky && sess) {
     // Genérico: la mayoría de los proveedores usan un sufijo de sesión en el usuario.
     username += `-session-${sess}`;
@@ -158,15 +160,19 @@ export async function rotateProxy(lineId: string): Promise<{ ok: boolean; proxyI
 // Prioridad: proxy del POOL gestionado > proxyUrl manual (compat) > sin proxy (conecta como hoy).
 // Cloud API: nunca (resolveLineProxy devuelve null). Best-effort: si falla, la línea conecta SIN
 // proxy en vez de trabarse. Se llama al crear/conectar/reiniciar la instancia y tras rotar.
+// URL del upstream CON auth (scheme://user:pass@host:port) para envolver en el proxy local.
+function upstreamUrlFor(p: ProxyConfig): string {
+  const scheme = p.protocol === "https" ? "https" : p.protocol === "socks5" ? "socks5" : p.protocol === "socks4" ? "socks4" : "http";
+  return `${scheme}://${encodeURIComponent(p.username ?? "")}:${encodeURIComponent(p.password ?? "")}@${p.host}:${p.port}`;
+}
+
 // Adapta un ProxyConfig al motor antes de aplicarlo. WAHA/Chromium NO autentica proxies con
 // usuario/clave (ERR_TUNNEL) → lo envolvemos en un proxy LOCAL sin auth (proxy-local.ts) que le
 // agrega la auth y reenvía al upstream. Evolution/Baileys SÍ autentica (como curl) → va directo.
 // Proxy sin credenciales (ej. IP whitelist) → directo en cualquier motor.
 async function toEngineProxy(p: ProxyConfig): Promise<ProxyConfig | null> {
   if (getEngine().name !== "waha" || !p.username) return p;
-  const scheme = p.protocol === "https" ? "https" : p.protocol === "socks5" ? "socks5" : p.protocol === "socks4" ? "socks4" : "http";
-  const upstream = `${scheme}://${encodeURIComponent(p.username)}:${encodeURIComponent(p.password ?? "")}@${p.host}:${p.port}`;
-  const local = await ensureLocalProxy(upstream);
+  const local = await ensureLocalProxy(upstreamUrlFor(p));
   if (!local) return null; // no se pudo levantar el local: mejor conectar SIN proxy que trabar la línea
   return { host: local.host, port: String(local.port), protocol: "http" }; // local, SIN auth
 }
@@ -191,6 +197,35 @@ export async function applyLineProxy(instanceName: string, lineId: string): Prom
   } catch (e) {
     console.warn("[proxy] applyLineProxy falló (conecta sin proxy):", e instanceof Error ? e.message : String(e));
   }
+}
+
+// PRE-WARMING (Fase 1): al bootear, deja un proxy LOCAL escuchando por CADA proxy activo del pool,
+// para que asignar uno a una línea sea instantáneo (sin cold-start del túnel). Solo con WAHA
+// (Chromium necesita el local sin auth); Evolution/Baileys autentica directo y no lo precisa.
+// - Webshare (IP fija en el username): el túnel pre-warmeado es EXACTAMENTE el que usa la línea.
+// - DataImpulse (sesión única por línea): esto calienta el endpoint base y valida que el server
+//   local levanta; el túnel por-sesión se crea al asignar (arranque de ~ms).
+// La VALIDACIÓN real del upstream (CONNECT contra un checker) la hace el health-check (Fase 2).
+// Best-effort: nunca frena el arranque ni lanza.
+export async function prewarmProxyPool(): Promise<{ warmed: number; failed: number; total: number }> {
+  if (getEngine().name !== "waha") return { warmed: 0, failed: 0, total: 0 };
+  const proxies = await prisma.proxy.findMany({ where: { active: true } }).catch(() => [] as Proxy[]);
+  let warmed = 0;
+  let failed = 0;
+  for (const proxy of proxies) {
+    try {
+      if (!proxy.username) continue; // sin credenciales: no necesita proxy local
+      const local = await ensureLocalProxy(upstreamUrlFor(buildProxyConfig(proxy, null)));
+      if (local) warmed++;
+      else failed++;
+    } catch {
+      failed++;
+    }
+  }
+  if (proxies.length) {
+    console.log(`[proxy] pre-warming: ${warmed}/${proxies.length} túneles locales listos${failed ? ` (${failed} fallaron)` : ""}`);
+  }
+  return { warmed, failed, total: proxies.length };
 }
 
 // Libera el proxy de una línea (al banear el número): el cupo queda para otra línea.

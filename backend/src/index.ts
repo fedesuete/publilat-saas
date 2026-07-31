@@ -36,6 +36,7 @@ import { setIo } from "./lib/io.js";
 import { initQueues, closeQueues } from "./lib/queue.js";
 import { initChatPushQueue, closeChatPushQueue } from "./lib/chat-push.js"; // cola aislada del Chat App
 import { warnTestEventCodeAtBoot } from "./lib/capi-guard.js"; // alerta si quedó test_event_code en prod
+import { prewarmProxyPool } from "./lib/proxy-pool.js"; // Proxies: pre-calienta los túneles locales del pool
 import { validateEnv } from "./lib/env.js";
 import { prisma } from "./lib/prisma.js";
 import { getEngine } from "./lib/wa-engine.js";
@@ -331,6 +332,7 @@ server.listen(PORT, () => {
   void initChatPushQueue(); // BullMQ: Web Push del Chat App (cola separada, no-op sin VAPID)
   void warnTestEventCodeAtBoot(); // CAPI: alerta fuerte si quedó META_TEST_EVENT_CODE en prod
   void syncEvolutionWebhooks(); // acks de entrega en instancias pre-existentes
+  void prewarmProxyPool(); // Proxies (Fase 1): deja un túnel local listo por cada proxy del pool
 });
 
 // Apagado limpio: cierra HTTP, colas y Prisma.
