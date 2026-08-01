@@ -170,6 +170,11 @@ describe("buildProxyConfig (username sticky por proveedor)", () => {
   it("sin sesión: solo el país (no sticky)", () => {
     expect(buildProxyConfig(base, null).username).toBe("USER__cr.ar");
   });
+  it("DataImpulse MÓVIL: mismo formato que el residencial (__cr.ar;sessid)", () => {
+    const cfg = buildProxyConfig({ ...base, provider: "dataimpulse_mobile" }, "m1");
+    expect(cfg.username).toBe("USER__cr.ar;sessid.m1");
+    expect(cfg.port).toBe("823");
+  });
   it("proveedor genérico: sufijo de sesión en el usuario", () => {
     expect(buildProxyConfig({ ...base, provider: "otro", country: null }, "s1").username).toBe("USER-session-s1");
   });

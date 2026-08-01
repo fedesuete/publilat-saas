@@ -21,6 +21,12 @@ function newSession(): string {
   return crypto.randomBytes(6).toString("hex");
 }
 
+// Proveedor MÓVIL de DataImpulse: pool CHICO (~80 IPs AR) = tier PREMIUM, NO pool de masa. El
+// auto-asignar general NUNCA lo usa; se reserva para líneas de alto valor (asignación manual admin).
+export const MOBILE_PROVIDER = "dataimpulse_mobile";
+// Ambos planes de DataImpulse (residencial y móvil) usan el MISMO formato de username sticky.
+const isDataImpulse = (provider: string) => provider === "dataimpulse" || provider === MOBILE_PROVIDER;
+
 // Arma el ProxyConfig para el motor (Evolution/WAHA), con el username sticky del proveedor.
 // DataImpulse (confirmado en docs.dataimpulse.com): LOGIN__cr.<país>;sessid.<sesión> en el puerto
 // 823 → la MISMA IP ~30 min por sesión. Separador ';'. OJO: NO existe 'sesstime' (la duración es
@@ -28,7 +34,7 @@ function newSession(): string {
 export function buildProxyConfig(proxy: Proxy, session: string | null): ProxyConfig {
   let username = proxy.username;
   const sess = session ?? "";
-  if (proxy.provider === "dataimpulse") {
+  if (isDataImpulse(proxy.provider)) {
     if (proxy.country) username += `__cr.${proxy.country.toLowerCase()}`;
     if (proxy.sticky && sess) username += `;sessid.${sess}`;
   } else if (proxy.sticky && sess) {
@@ -141,11 +147,12 @@ export async function assignProxy(lineId: string, opts: AssignOpts = {}): Promis
 }
 
 // Auto-asigna prefiriendo el proveedor PRIMARIO (Webshare); si no hay cupo sano ahí, cae a cualquier
-// sano (contingencia, ej. DataImpulse). Para el alta de líneas nuevas (Fase 3).
+// sano de VOLUMEN (contingencia, ej. DataImpulse residencial). Para el alta/reconexión de líneas.
+// NUNCA usa el pool MÓVIL (chico/premium): ese se reserva para asignación manual del admin.
 export async function assignProxyPreferred(lineId: string): Promise<{ ok: boolean; proxyId?: string; reason?: string }> {
   const primary = await assignProxy(lineId, { provider: primaryProvider() });
   if (primary.ok) return primary;
-  return assignProxy(lineId); // cualquier sano (otro proveedor)
+  return assignProxy(lineId, { excludeProvider: MOBILE_PROVIDER }); // cualquier sano de volumen, nunca el móvil
 }
 
 // Fallback JERÁRQUICO (watchdog, Fase 4): 1) otra IP del MISMO proveedor, 2) proveedor de CONTINGENCIA
@@ -157,13 +164,18 @@ export async function assignFallback(lineId: string, curProxyId: string | null):
     const cur = await prisma.proxy.findUnique({ where: { id: curProxyId }, select: { provider: true } });
     curProvider = cur?.provider ?? undefined;
   }
+  const onMobile = curProvider === MOBILE_PROVIDER;
+  const exclude = curProxyId ?? undefined;
+  // Una línea de VOLUMEN nunca cae al pool MÓVIL (chico/premium). Una que YA está en móvil sí puede
+  // caer a volumen como último recurso (mejor conectada por otra IP que esperando).
+  const volumeOnly = onMobile ? {} : { excludeProvider: MOBILE_PROVIDER };
   if (curProvider) {
-    const same = await assignProxy(lineId, { excludeProxyId: curProxyId ?? undefined, provider: curProvider });
+    const same = await assignProxy(lineId, { excludeProxyId: exclude, provider: curProvider });
     if (same.ok) return same;
-    const other = await assignProxy(lineId, { excludeProvider: curProvider });
+    const other = await assignProxy(lineId, { excludeProxyId: exclude, ...volumeOnly });
     if (other.ok) return other;
   }
-  return assignProxy(lineId, { excludeProxyId: curProxyId ?? undefined });
+  return assignProxy(lineId, { excludeProxyId: exclude, ...volumeOnly });
 }
 
 // Marca una línea "esperando proxy": sin proxy sano NO conecta (NUNCA por la IP del VPS). Libera el
