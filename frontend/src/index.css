@@ -32,3 +32,9 @@ input[type='search'], input[type='url'], input[type='tel'], textarea, [contented
 @media (hover: none) and (pointer: coarse) {
   * { cursor: auto; }
 }
+
+/* iOS hace auto-zoom al enfocar un input con font-size < 16px (el "zoom que hay que acomodar a
+   mano"). Forzamos 16px en pantallas táctiles → nunca zoomea, mantiene la medida del celular. */
+@media (pointer: coarse) {
+  input, select, textarea { font-size: 16px !important; }
+}

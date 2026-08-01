@@ -50,3 +50,9 @@ html, body, #root {
 }
 .btn-glow { animation: brandGlow 1.9s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .btn-glow { animation: none; } }
+
+/* iOS hace auto-zoom al enfocar un input con font-size < 16px (el "zoom que hay que acomodar a
+   mano"). Forzamos 16px en pantallas táctiles → nunca zoomea, mantiene la medida del celular. */
+@media (pointer: coarse) {
+  input, select, textarea { font-size: 16px !important; }
+}
