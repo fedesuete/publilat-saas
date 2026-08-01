@@ -132,11 +132,20 @@ chatRouter.post("/access", async (req, res) => {
   return res.json({ accountSlug: acc?.slug ?? "", username, password, reset: !!existing });
 });
 
+// Loguea un evento CAPI del Chat App en MetaEvent → se VE en el panel/Métricas (el Chat App usa
+// ChatPlayer, no Contact, así que contactId queda null). status: sent / no_pixel / failed. Best-effort.
+async function logChatMetaEvent(userId: string, eventName: string, pixelId: string | undefined, ok: boolean): Promise<void> {
+  await prisma.metaEvent
+    .create({ data: { userId, contactId: null, eventName, pixelId: pixelId ?? "", payload: {}, status: ok ? "sent" : pixelId ? "failed" : "no_pixel" } })
+    .catch(() => undefined);
+}
+
 // Dispara el Lead por CAPI al registrarse un jugador que vino de un anuncio (fbclid).
 // Reusa sendCapiEvent (lib/meta-capi.ts) — NO toca go.ts ni reimplementa la CAPI. Best-effort.
 async function fireChatLead(userId: string, playerId: string, at: { fbclid?: string; fbp?: string; fbc?: string }) {
+  const creds = await resolveUserPixel(userId, "Lead");
+  if (!creds) { await logChatMetaEvent(userId, "Lead", undefined, false); return; } // sin pixel: log no_pixel, sin gastar CAPI
   try {
-    const creds = await resolveUserPixel(userId, "Lead");
     const fbc = at.fbc ?? (at.fbclid ? `fb.1.${Date.now()}.${at.fbclid}` : undefined);
     await sendCapiEvent({
       eventName: "Lead",
@@ -145,10 +154,12 @@ async function fireChatLead(userId: string, playerId: string, at: { fbclid?: str
       fbp: at.fbp,
       fbc,
       actionSource: "chat",       // lead de conversación (canal chat), no web
-      pixelId: creds?.pixelId,
-      capiToken: creds?.capiToken,
+      pixelId: creds.pixelId,
+      capiToken: creds.capiToken,
     });
+    await logChatMetaEvent(userId, "Lead", creds.pixelId, true);
   } catch (e) {
+    await logChatMetaEvent(userId, "Lead", creds.pixelId, false);
     console.error("[chat] Lead CAPI falló:", e instanceof Error ? e.message : String(e));
   }
 }
@@ -158,11 +169,13 @@ async function fireChatLead(userId: string, playerId: string, at: { fbclid?: str
 // con compra. `eventId` dedup con el pixel del navegador (que dispara la PWA con el mismo id).
 // Recibe los creds ya resueltos (para no volver a pegarle a la DB). Best-effort.
 async function fireChatRegistration(
+  userId: string,
   creds: { pixelId: string; capiToken: string } | undefined,
   username: string,
   eventId: string,
   at: { fbclid?: string; fbp?: string; fbc?: string },
 ) {
+  if (!creds) { await logChatMetaEvent(userId, "CompleteRegistration", undefined, false); return; } // sin pixel: log no_pixel
   try {
     const fbc = at.fbc ?? (at.fbclid ? `fb.1.${Date.now()}.${at.fbclid}` : undefined);
     await sendCapiEvent({
@@ -172,10 +185,12 @@ async function fireChatRegistration(
       fbp: at.fbp,
       fbc,
       actionSource: "chat",
-      pixelId: creds?.pixelId,
-      capiToken: creds?.capiToken,
+      pixelId: creds.pixelId,
+      capiToken: creds.capiToken,
     });
+    await logChatMetaEvent(userId, "CompleteRegistration", creds.pixelId, true);
   } catch (e) {
+    await logChatMetaEvent(userId, "CompleteRegistration", creds.pixelId, false);
     console.error("[chat] CompleteRegistration CAPI falló:", e instanceof Error ? e.message : String(e));
   }
 }
@@ -926,7 +941,7 @@ chatPublicRouter.post("/register", async (req, res) => {
     regEventId = `${player.casinoUsername}:register`;
     const creds = await resolveUserPixel(invite.userId, "CompleteRegistration");
     regPixel = creds?.pixelId ?? null;
-    void fireChatRegistration(creds, player.casinoUsername, regEventId, { fbclid, fbp, fbc });
+    void fireChatRegistration(invite.userId, creds, player.casinoUsername, regEventId, { fbclid, fbp, fbc });
   } else if (fbclid || fbc) {
     void fireChatLead(invite.userId, player.id, { fbclid, fbp, fbc });
   }
@@ -1076,7 +1091,7 @@ chatPublicRouter.post("/start", async (req, res) => {
     await postWelcomeCreds(acc.id, conv.id, acc.welcomeMsgText ?? null, np.casinoUsername, plainPassword, acc.chatPlatformUrl ?? null);
     const eventId = `${np.casinoUsername}:register`;
     const creds = await resolveUserPixel(acc.id, "CompleteRegistration");
-    void fireChatRegistration(creds, np.casinoUsername, eventId, { fbclid, fbp, fbc });
+    void fireChatRegistration(acc.id, creds, np.casinoUsername, eventId, { fbclid, fbp, fbc });
     const token = signChatClientToken(acc.id, np.id);
     return res.status(201).json({ token, player: np, conversationId: conv.id, username: np.casinoUsername, password: plainPassword, pixel: creds?.pixelId ?? null, eventId });
   }
