@@ -281,6 +281,23 @@ export default function BillingPage() {
                 </span>
               )}
             </div>
+            {/* Atajos: 7 días es el paquete recomendado (semana de línea activa). */}
+            <div className="mb-3 flex flex-wrap gap-2">
+              {[7, 15, 30].map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setBuyDays(String(d))}
+                  className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                    parseInt(buyDays, 10) === d
+                      ? "border-wa-green bg-wa-green/15 text-wa-green"
+                      : "border-slate-700 text-slate-300 hover:border-slate-500"
+                  }`}
+                >
+                  {d} días
+                </button>
+              ))}
+            </div>
             {ALL_PROVIDERS.filter((p) => methods[p]).length > 0 ? (
               <>
                 <div className="flex flex-wrap gap-2">
