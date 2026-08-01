@@ -744,4 +744,73 @@ adminRouter.post("/lines/:id/retry", async (req, res) => {
   return res.json({ ok: true });
 });
 
+// GET /api/admin/metrics — panel de métricas: salud del pool de proxies, supervivencia de líneas,
+// eventos de proxy (7d) y embudo Meta por día (14d). Solo lectura.
+adminRouter.get("/metrics", async (_req, res) => {
+  // Pool de proxies + salud por proveedor.
+  const proxies = await prisma.proxy.findMany({ select: { provider: true, active: true, healthy: true } });
+  const provMap = new Map<string, { total: number; healthy: number }>();
+  for (const p of proxies) {
+    const e = provMap.get(p.provider) ?? { total: 0, healthy: 0 };
+    e.total++;
+    if (p.active && p.healthy) e.healthy++;
+    provMap.set(p.provider, e);
+  }
+  const proxyPool = {
+    total: proxies.length,
+    healthy: proxies.filter((p) => p.active && p.healthy).length,
+    byProvider: [...provMap.entries()].map(([provider, v]) => ({ provider, ...v })),
+  };
+
+  // Supervivencia de líneas Baileys.
+  const lines = await prisma.waLine.findMany({
+    where: { provider: { not: "cloud" } },
+    select: { proxyId: true, connected: true, banned: true, proxyWait: true },
+  });
+  const lineStats = {
+    total: lines.length,
+    conProxy: lines.filter((l) => l.proxyId).length,
+    conectadas: lines.filter((l) => l.connected).length,
+    baneadas: lines.filter((l) => l.banned).length,
+    waitingProxy: lines.filter((l) => l.proxyWait).length,
+  };
+
+  // Eventos de proxy por tipo (últimos 7 días).
+  const pe = await prisma.proxyEvent.groupBy({
+    by: ["type"],
+    where: { createdAt: { gt: new Date(Date.now() - 7 * 86_400_000) } },
+    _count: { _all: true },
+  });
+  const proxyEvents = pe.map((e) => ({ type: e.type, n: e._count._all })).sort((a, b) => b.n - a.n);
+
+  // Embudo Meta por día (últimos 14 días, solo enviados).
+  const rows = await prisma.$queryRaw<Array<{ day: string; eventname: string; n: number }>>`
+    SELECT to_char("createdAt", 'YYYY-MM-DD') AS day, "eventName" AS eventname, count(*)::int AS n
+    FROM "MetaEvent"
+    WHERE "createdAt" > now() - interval '14 days' AND status = 'sent'
+    GROUP BY day, "eventName" ORDER BY day`;
+  const dayMap = new Map<string, Record<string, number>>();
+  for (const r of rows) {
+    const e = dayMap.get(r.day) ?? {};
+    e[r.eventname] = Number(r.n);
+    dayMap.set(r.day, e);
+  }
+  const metaByDay = [...dayMap.entries()].map(([day, ev]) => ({
+    day,
+    Lead: ev.Lead ?? 0,
+    Purchase: ev.Purchase ?? 0,
+    CompleteRegistration: ev.CompleteRegistration ?? 0,
+  }));
+
+  // Embudo Meta por tipo/estado (últimos 30 días) — visibilidad de fallos/no_pixel.
+  const es = await prisma.metaEvent.groupBy({
+    by: ["eventName", "status"],
+    where: { createdAt: { gt: new Date(Date.now() - 30 * 86_400_000) } },
+    _count: { _all: true },
+  });
+  const metaByStatus = es.map((e) => ({ eventName: e.eventName, status: e.status, n: e._count._all }));
+
+  return res.json({ proxyPool, lineStats, proxyEvents, metaByDay, metaByStatus });
+});
+
 export { emitToAdmins };
