@@ -180,11 +180,18 @@ export default function BillingPage() {
       } else if ("stub" in data && data.stub) {
         setCheckoutMsg(`${data.message} (${data.amount} ${data.currency})`);
       } else if ("url" in data) {
-        window.open(data.url, "_blank");
-        setCheckoutMsg(`Te abrimos el checkout de ${PROVIDER_LABEL[provider]} en otra pestaña.`);
-        if (provider === "pagopar") { setShowPagopar(false); setPromoMode(false); }
-        // El pago se acredita por webhook: quedamos vigilando para avisar apenas suben los días.
-        watchPayment(days);
+        // window.open tras un await lo BLOQUEA el navegador móvil (no es "gesto directo") → los botones
+        // no hacían nada en el celu. Si no abre la pestaña, navegamos en la MISMA (siempre funciona).
+        const win = window.open(data.url, "_blank");
+        if (win) {
+          setCheckoutMsg(`Te abrimos el checkout de ${PROVIDER_LABEL[provider]} en otra pestaña.`);
+          if (provider === "pagopar") { setShowPagopar(false); setPromoMode(false); }
+          // El pago se acredita por webhook: quedamos vigilando para avisar apenas suben los días.
+          watchPayment(days);
+        } else {
+          // Móvil / popup bloqueado: vamos derecho al checkout en esta pestaña.
+          window.location.href = data.url;
+        }
       }
     } catch (err) {
       setError(apiError(err));
