@@ -271,12 +271,12 @@ cloudWebhookRouter.post("/", async (req, res) => {
               .catch((e) => console.error("[wa-cloud] saludo automático falló:", e instanceof Error ? e.message : String(e)));
           }
 
-          // 5) Detección de pago (texto + comprobante por imagen/PDF con IA). Para el piloto del embudo
-          //    (leadOnInbound), el comprobante SÓLO pre-carga el monto (assisted): NO dispara Purchase
-          //    solo. La acreditación de 1 toque del operador es lo que dispara el evento → así el pixel
-          //    no se ensucia con comprobantes falsos (regla de seguridad de la Fase 5).
+          // 5) Detección de pago (texto + comprobante por imagen/PDF con IA). Cuentas del embudo
+          //    (leadOnInbound): modo "auto" → la IA lee el comprobante y, si confirma pago real con
+          //    monto + confianza alta, dispara el Purchase a Meta SOLO (§9.2: señal de marketing, NO
+          //    acredita fichas). Baja confianza → pre-carga el monto para confirmar a 1 toque.
           void detectPayment({
-            mode: owner?.leadOnInbound ? "assisted" : paymentMode,
+            mode: owner?.leadOnInbound ? "auto" : paymentMode,
             userId,
             contact: { id: contact.id, externalId: contact.externalId, stage: contact.stage, name: contact.name },
             instance: line.sessionId ?? "",

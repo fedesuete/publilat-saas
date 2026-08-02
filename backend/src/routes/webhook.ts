@@ -409,11 +409,12 @@ webhookRouter.post("/", async (req, res) => {
           stage: contact.stage,
         });
 
-        // Detección de pago (texto + comprobante por imagen con IA). Best-effort. Para el piloto del
-        // embudo (leadOnInbound), el comprobante SÓLO pre-carga el monto (assisted): la acreditación
-        // de 1 toque del operador dispara el Purchase — no la lectura de la imagen (evita falsos).
+        // Detección de pago (texto + comprobante por imagen con IA). Best-effort. Cuentas del embudo
+        // (leadOnInbound): modo "auto" → la IA lee el comprobante y, si confirma pago real con monto
+        // + confianza alta, dispara el Purchase a Meta SOLO (§9.2: es señal de MARKETING, NO acredita
+        // fichas). Si la confianza es baja, cae a pre-cargar el monto para confirmar a 1 toque.
         void detectPayment({
-          mode: owner?.leadOnInbound ? "assisted" : paymentMode,
+          mode: owner?.leadOnInbound ? "auto" : paymentMode,
           userId,
           contact: {
             id: contact.id,
