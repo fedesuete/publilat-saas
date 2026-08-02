@@ -12,6 +12,7 @@ import {
   nowpaymentsEnabled, usdtDirectEnabled, usdtAddress, verifyUsdtPayment,
   pagoparEnabled, createPagoparOrder, verifyPagoparWebhook, getPagoparOrder,
 } from "../lib/payments.js";
+import { sendAdminMail } from "../lib/mailer.js";
 
 export const billingRouter = Router();
 // Webhooks públicos (los monta index.ts sin requireAuth).
@@ -48,6 +49,16 @@ async function approvePayment(paymentId: string, providerLabel: string): Promise
     },
   });
   console.log(`[billing] ${providerLabel}: +${payment.days} días a user ${payment.userId}`);
+  // Aviso por email al equipo (ADMIN_ALERT_EMAIL: publilat.meta@gmail.com + federicobogado1997@gmail.com).
+  // Best-effort: no frena la acreditación.
+  void (async () => {
+    const u = await prisma.user.findUnique({ where: { id: payment.userId }, select: { slug: true, email: true } });
+    const monto = ((payment.amount ?? 0) / 100).toLocaleString("es-AR");
+    await sendAdminMail(
+      `💰 Pago acreditado — ${u?.slug ?? payment.userId} (${providerLabel})`,
+      `Cliente: ${u?.slug ?? ""} (${u?.email ?? ""})\nProveedor: ${providerLabel}\nDías: ${payment.days}\nMonto: ${monto} ${payment.currency}`,
+    );
+  })().catch(() => undefined);
 }
 
 // GET /api/billing/credit — días disponibles + últimos movimientos + métodos habilitados.
