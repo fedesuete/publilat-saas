@@ -60,6 +60,7 @@ leadsRouter.get("/", async (req, res) => {
       landingUrl: true,
       amount: true,
       purchasedAt: true,
+      registeredAt: true, // milestone del embudo: se registró (Kanban muestra badge "Registrado")
       paymentDetected: true,
       paymentDetectedAmount: true,
       createdAt: true,

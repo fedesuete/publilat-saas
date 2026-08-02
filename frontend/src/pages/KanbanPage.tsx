@@ -173,6 +173,11 @@ export default function KanbanPage() {
                                 💰 pago detectado
                               </span>
                             )}
+                            {lead.registeredAt && lead.stage !== "COMPRO" && (
+                              <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[11px] font-semibold text-sky-300" title="Se registró (creó su cuenta)">
+                                ✅ Registrado
+                              </span>
+                            )}
                             {(lead.stage === "COMPRO" || lead.paymentDetected) && (
                               <span title="Tiene comprobante">🧾</span>
                             )}

@@ -23,6 +23,7 @@ export interface Lead {
   landingUrl: string | null;
   amount: number | null;
   purchasedAt: string | null;
+  registeredAt?: string | null; // se registró (creó cuenta) — hito del embudo
   paymentDetected?: boolean;
   paymentDetectedAmount?: number | null; // centavos
   createdAt: string;
