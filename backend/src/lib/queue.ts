@@ -10,6 +10,7 @@ import { resolveUserPixel } from "./pixel.js";
 import { consumeDayAndActivate, consumeChatDayAndActivate } from "./access.js";
 import { notifyMissingPixel } from "./capi-guard.js";
 import { getEngine } from "./wa-engine.js";
+import { listSessions as wahaListSessions } from "./waha.js"; // limpieza de sesiones WAHA huérfanas (RAM)
 import { getPhoneQuality } from "./wa-cloud.js";
 import { decryptSecret } from "./crypto.js";
 import { notify } from "./notifications.js";
@@ -501,6 +502,29 @@ export async function recoverWaitingProxyLines(): Promise<void> {
   }
 }
 
+// Limpieza de sesiones WAHA HUÉRFANAS (Chromium sin línea asociada) — cada una es un navegador que
+// come RAM al pedo; acumuladas ahogan el server y tumban las líneas en cadena. Borra solo las que NO
+// están WORKING (jamás corta una línea conectada, aunque parezca huérfana). Solo con WAHA. Best-effort.
+export async function cleanupOrphanWahaSessions(): Promise<void> {
+  if (getEngine().name !== "waha") return;
+  const lines = await prisma.waLine.findMany({ where: { provider: { not: "cloud" } }, select: { id: true, sessionId: true } });
+  const valid = new Set<string>();
+  for (const l of lines) {
+    if (l.sessionId) valid.add(l.sessionId);
+    valid.add(`line_${l.id}`);
+  }
+  const sessions = await wahaListSessions();
+  let deleted = 0;
+  for (const s of sessions) {
+    if (!s.name || valid.has(s.name)) continue;
+    if (s.status === "WORKING") continue; // NUNCA borrar una sesión conectada
+    await getEngine().logoutInstance(s.name).catch(() => undefined);
+    await getEngine().deleteInstance(s.name).catch(() => undefined);
+    deleted++;
+  }
+  if (deleted) console.log(`[waha-cleanup] ${deleted} sesión(es) huérfana(s) borrada(s) (de ${sessions.length})`);
+}
+
 // Programa la reanudación de una secuencia tras un delay (para el motor de automatizaciones).
 export function scheduleFlowResume(runId: string, delaySec: number): void {
   if (queue) {
@@ -527,6 +551,7 @@ export async function initQueues(): Promise<void> {
         if (job.name === "proxy-recover") return recoverProxyLine(job.data.lineId as string);
         if (job.name === "proxy-watch") return watchProxyRegistration(job.data.lineId as string, (job.data.attempt as number) ?? 1);
         if (job.name === "proxy-waiting") return recoverWaitingProxyLines();
+        if (job.name === "waha-cleanup") return cleanupOrphanWahaSessions();
         if (job.name === "flow-resume") {
           const { resumeFlowRun } = await import("./flow-engine.js");
           return resumeFlowRun(job.data.runId as string);
@@ -546,7 +571,8 @@ export async function initQueues(): Promise<void> {
     await queue.add("wa-version-check", {}, { repeat: { every: 43_200_000 }, jobId: "wa-version-check-repeat", removeOnComplete: true, removeOnFail: 50 });
     await queue.add("proxy-health", {}, { repeat: { every: 360_000 }, jobId: "proxy-health-repeat", removeOnComplete: true, removeOnFail: 50 });
     await queue.add("proxy-waiting", {}, { repeat: { every: 120_000 }, jobId: "proxy-waiting-repeat", removeOnComplete: true, removeOnFail: 50 });
-    console.log("[queue] BullMQ listo (vencimiento 60s + CAPI 5min + salud 5min + saldo 30min + versión WA Web 12h + proxies 6min + waiting_proxy 2min)");
+    await queue.add("waha-cleanup", {}, { repeat: { every: 1_800_000 }, jobId: "waha-cleanup-repeat", removeOnComplete: true, removeOnFail: 50 });
+    console.log("[queue] BullMQ listo (vencimiento 60s + CAPI 5min + salud 5min + saldo 30min + versión WA Web 12h + proxies 6min + waiting_proxy 2min + limpieza WAHA 30min)");
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[queue] no se pudo iniciar BullMQ (¿Redis arriba?):", msg);

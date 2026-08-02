@@ -266,6 +266,19 @@ export async function deleteInstance(instanceName: string): Promise<void> {
   await client().delete(`/api/sessions/${instanceName}`).catch(() => undefined);
 }
 
+// Lista las sesiones actuales (nombre + status). Para la limpieza de sesiones HUÉRFANAS (queue.ts):
+// Chromium que quedó sin línea come RAM. Best-effort: si falla, devuelve [].
+export async function listSessions(): Promise<Array<{ name: string; status: string }>> {
+  try {
+    const { data } = await client().get("/api/sessions?all=true");
+    return Array.isArray(data)
+      ? data.map((s: { name?: string; status?: string }) => ({ name: String(s?.name ?? ""), status: String(s?.status ?? "") }))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 // El proxy va en la config de la sesión; rige al reiniciarla (el caller ya reinicia).
 export async function setProxy(instanceName: string, proxy: ProxyConfig | null): Promise<void> {
   await client().put(`/api/sessions/${instanceName}`, { config: sessionConfig(proxy) });
