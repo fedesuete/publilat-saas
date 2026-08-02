@@ -979,12 +979,14 @@ export default function WhatsappPage() {
                       onClick={() => void activate(line.id)}
                       disabled={activatingId === line.id}
                     >
-                      {activatingId === line.id ? "…" : "Extender +días"}
+                      {activatingId === line.id
+                        ? "…"
+                        : `Activar +${parseInt(activateDays[line.id] ?? "1", 10) || 1} día${(parseInt(activateDays[line.id] ?? "1", 10) || 1) === 1 ? "" : "s"}`}
                     </Button>
                   </div>
                   <p className="mt-1 text-xs text-slate-500">
-                    La línea <b>ya consume 1 día al conectarse</b>. Esto le <b>suma</b> los días
-                    que elijas a su vencimiento (1 día = 24 h). No hace falta usarlo para que ande.
+                    Cada día que agregás <b>usa 1 día de tu crédito</b> y mantiene la línea prendida
+                    24 h más. Ej: <b>+7 = la línea anda una semana y usás 7 días de tu crédito.</b>
                   </p>
                   {notice && notice.id === line.id && (
                     <p className="mt-1 text-xs text-wa-green">{notice.text}</p>
