@@ -515,15 +515,19 @@ export async function recoverWaitingProxyLines(): Promise<void> {
 // VENCIDAS (sin día vigente: su navegador no debería estar corriendo). SIEMPRE protege: sesiones
 // WORKING (nunca cortamos un número conectado), líneas con día vigente, y líneas que aún no tienen día
 // (día null = recién creada / registrándose → puede estar mostrando su QR). Solo con WAHA. Best-effort.
+const FRESH_NODAY_MS = 24 * 60 * 60 * 1000; // línea sin día recién creada: puede estar registrándose
 export async function cleanupOrphanWahaSessions(): Promise<void> {
   if (getEngine().name !== "waha") return;
   const now = new Date();
-  const lines = await prisma.waLine.findMany({ where: { provider: { not: "cloud" } }, select: { id: true, sessionId: true, expiresAt: true } });
+  const lines = await prisma.waLine.findMany({ where: { provider: { not: "cloud" } }, select: { id: true, sessionId: true, expiresAt: true, createdAt: true } });
   const valid = new Set<string>();
   for (const l of lines) {
-    // Vencida = tenía día y ya pasó. Esas NO son válidas (a limpiar si no están WORKING). Las de día
-    // null (registrándose) o con día vigente sí quedan protegidas.
-    if (l.expiresAt && l.expiresAt <= now) continue;
+    // NO válidas (a limpiar si no están WORKING): (a) VENCIDAS (tenían día y ya pasó) y (b) sin día y
+    // VIEJAS (>24h = registro abandonado). Protegidas: día vigente, y sin día pero recién creada (<24h,
+    // puede estar mostrando su QR ahora).
+    const expired = l.expiresAt && l.expiresAt <= now;
+    const staleNoDay = !l.expiresAt && now.getTime() - l.createdAt.getTime() > FRESH_NODAY_MS;
+    if (expired || staleNoDay) continue;
     if (l.sessionId) valid.add(l.sessionId);
     valid.add(`line_${l.id}`);
   }
