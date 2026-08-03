@@ -307,7 +307,9 @@ export async function checkLowBalance(): Promise<void> {
 
 // ============================ AUTO-RECUPERACIÓN DE PROXIES (Fase 4) ============================
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const RECOVER_BACKOFFS = [5_000, 15_000, 45_000, 120_000]; // ms entre intentos (spec)
+// 30s / 2m / 5m / 15m — MUY espaciado a propósito. Saltar entre IPs en pocos minutos es en sí una
+// señal fea para WhatsApp; y una caída transitoria (428/503) se resuelve sola con tiempo.
+const RECOVER_BACKOFFS = [30_000, 120_000, 300_000, 900_000];
 
 // Alcance del proxy: TCP connect al gateway. No valida la IP upstream, pero si el gateway no
 // responde, todas sus líneas están muertas. Best-effort con timeout.
@@ -323,11 +325,13 @@ function tcpReachable(host: string, port: number, timeoutMs = 6000): Promise<boo
   });
 }
 
-// Recupera una línea con proxy que se cayó (no pausada, no baneada). Backoff (5s/15s/45s/2m):
-// intenta reconectar; desde el 2º intento ROTA la IP; si reconecta, listo; si tras rotar la IP el
-// motor indica LOGOUT/ban o se agotan los intentos: marca banned, LIBERA el proxy y AVISA al admin.
-// Un solo job por línea (jobId dedup). Best-effort: NUNCA frena el resto.
+// Recupera una línea con proxy que se cayó (no pausada, no baneada). Backoff MUY espaciado; re-crea la
+// sesión si desapareció (404, p.ej. borrada por un cleanup); rota la IP UNA sola vez (último intento).
+// Marca `banned` SOLO si WhatsApp dio una señal INEQUÍVOCA (logout/401/403/unpaired) — un 404 o un
+// "no reconectó" NO es baneo (marcarlo por error le corta el servicio a un cliente sano y le libera el
+// proxy). Un solo job por línea (jobId dedup). Best-effort: NUNCA frena el resto.
 export async function recoverProxyLine(lineId: string): Promise<void> {
+  let sawRealBan = false;
   for (let attempt = 1; attempt <= RECOVER_BACKOFFS.length; attempt++) {
     const line = await prisma.waLine.findUnique({
       where: { id: lineId },
@@ -342,27 +346,29 @@ export async function recoverProxyLine(lineId: string): Promise<void> {
       await logProxyEvent(lineId, line.proxyId, "reconnected", `reconectó sola (intento ${attempt})`);
       return;
     }
-    // Rotamos la IP recién desde el 3er intento (antes era el 2º). Una caída de WhatsApp de segundos
-    // (428/503, reconexión normal ~cada hora) se resuelve sola en la MISMA IP; rotar antes gastaba
-    // ancho de banda re-sincronizando de gusto. Los intentos 1-2 reintentan la misma IP sticky.
-    if (attempt >= 3) {
-      await rotateProxy(lineId).catch(() => undefined);        // nueva IP sticky
-      await applyLineProxy(inst, lineId).catch(() => undefined);
-      await logProxyEvent(lineId, line.proxyId, "rotated", `roto IP y reintento (intento ${attempt})`);
+    // La sesión puede haber sido BORRADA (404 — p.ej. por el waha-cleanup si la vio no-WORKING). La
+    // re-creamos en vez de contarlo como "no reconecta". Idempotente: si existe, no la toca.
+    await getEngine().createInstance(inst).catch(() => undefined);
+    // Rotamos la IP UNA sola vez, en el ÚLTIMO intento. Saltar entre varias IPs en minutos es señal fea
+    // para WA; y con proxy nativo rotar = re-sync completo (banda). Los otros intentos van con la misma IP.
+    if (attempt === RECOVER_BACKOFFS.length) {
+      await rotateProxy(lineId).catch(() => undefined);
+      await logProxyEvent(lineId, line.proxyId, "rotated", `roto IP (último intento ${attempt})`);
     } else {
-      await logProxyEvent(lineId, line.proxyId, "line_down", `reintento de reconexión ${attempt} (misma IP)`);
+      await logProxyEvent(lineId, line.proxyId, "line_down", `reintento ${attempt} (misma IP)`);
     }
-    await getEngine().restartInstance(inst).catch(() => undefined);
+    await applyLineProxy(inst, lineId).catch(() => undefined); // (re)aplica el proxy nativo — reinicia la sesión
     await sleep(12_000);
     const state = await getEngine().connectionState(inst).catch(() => "unknown");
     if (state === "open") {
       await logProxyEvent(lineId, line.proxyId, "reconnected", `intento ${attempt}`);
       return;
     }
-    if (/logout|logged|failed|banned|401|403|unpaired/i.test(state)) break; // ban inequívoco: cortar
+    // Ban INEQUÍVOCO = WhatsApp lo dijo. "close"/"unknown"/"failed" NO son ban (transitorios o 404 de la
+    // API de WAHA) → no marcamos baneado por eso.
+    if (/logout|logged.?out|401|403|unpaired/i.test(state)) { sawRealBan = true; break; }
   }
 
-  // Agotó los intentos (o ban inequívoco): confirmar que sigue caída y marcar baneada.
   const line = await prisma.waLine.findUnique({
     where: { id: lineId },
     select: { proxyId: true, label: true, phone: true, banned: true, status: true, provider: true, sessionId: true },
@@ -370,15 +376,20 @@ export async function recoverProxyLine(lineId: string): Promise<void> {
   if (!line || line.provider === "cloud" || line.banned || line.status === "paused") return;
   const inst = line.sessionId ?? `line_${lineId}`;
   if ((await getEngine().connectionState(inst).catch(() => "")) === "open") return; // reconectó en el ínterin
-  await prisma.waLine.update({ where: { id: lineId }, data: { banned: true, connected: false, status: "inactive" } }).catch(() => undefined);
-  await logProxyEvent(lineId, line.proxyId, "banned", "no reconectó tras rotar la IP");
-  await releaseProxy(lineId); // libera el cupo del proxy para otra línea
-  await alertAdminProxy(
-    "Número baneado",
-    `La línea "${line.label ?? line.phone}" no reconectó ni rotando la IP. Se marcó BANEADA y se liberó su proxy.`,
-    "banned",
-    { lineId },
-  );
+
+  if (sawRealBan) {
+    // SOLO acá marcamos baneado: WhatsApp dio una señal inequívoca (logout/401/403/unpaired).
+    await prisma.waLine.update({ where: { id: lineId }, data: { banned: true, connected: false, status: "inactive" } }).catch(() => undefined);
+    await logProxyEvent(lineId, line.proxyId, "banned", "WhatsApp dio logout/401/403");
+    await releaseProxy(lineId); // libera el cupo del proxy para otra línea
+    await alertAdminProxy("Número baneado", `La línea "${line.label ?? line.phone}" recibió logout/ban de WhatsApp. Se marcó BANEADA y se liberó su proxy.`, "banned", { lineId });
+  } else {
+    // No reconectó en la ventana, pero WhatsApp NUNCA dijo ban → NO la marcamos baneada (falsa baja =
+    // corta servicio a un cliente sano) ni tocamos su proxy. Queda caída para reintento/reconexión manual.
+    await prisma.waLine.update({ where: { id: lineId }, data: { connected: false } }).catch(() => undefined);
+    await logProxyEvent(lineId, line.proxyId, "line_down", "no reconectó (SIN ban de WhatsApp)");
+    await alertAdminProxy("Línea caída", `La línea "${line.label ?? line.phone}" no reconectó sola. NO es baneo (WhatsApp no dio señal). Reconectá desde el panel si sigue caída.`, "line_down", { lineId });
+  }
 }
 
 // Encola la recuperación de una línea (dedup por jobId: una recuperación por línea a la vez).
@@ -520,37 +531,31 @@ export async function recoverWaitingProxyLines(): Promise<void> {
   }
 }
 
-// Limpieza de sesiones WAHA que comen RAM al pedo — cada Chromium sin trabajo real ahoga el server y
-// tumba líneas en cadena. Borra dos clases: (1) HUÉRFANAS (sin línea asociada) y (2) de líneas
-// VENCIDAS (sin día vigente: su navegador no debería estar corriendo). SIEMPRE protege: sesiones
-// WORKING (nunca cortamos un número conectado), líneas con día vigente, y líneas que aún no tienen día
-// (día null = recién creada / registrándose → puede estar mostrando su QR). Solo con WAHA. Best-effort.
-const FRESH_NODAY_MS = 24 * 60 * 60 * 1000; // línea sin día recién creada: puede estar registrándose
+// Limpieza de sesiones WAHA HUÉRFANAS: las que NO corresponden a NINGUNA WaLine (por sessionId o
+// line_<id>). NUNCA toca la sesión de una línea que EXISTE, aunque esté vencida o momentáneamente
+// no-WORKING. [Corrección tras diagnóstico del socio, 2026-08-03] Antes borraba también las de líneas
+// vencidas → si una línea activa se caía un instante, este job la borraba y recoverProxyLine la intentaba
+// revivir → 404 → la marcaba BANEADA por error (falsa baja, le corta el servicio a un cliente sano). El
+// costo de RAM de una sesión NOWEB (~100 MB, sin Chromium) es chico; la falsa baja es mucho peor. Solo
+// con WAHA. Best-effort.
 export async function cleanupOrphanWahaSessions(): Promise<void> {
   if (getEngine().name !== "waha") return;
-  const now = new Date();
-  const lines = await prisma.waLine.findMany({ where: { provider: { not: "cloud" } }, select: { id: true, sessionId: true, expiresAt: true, createdAt: true } });
+  const lines = await prisma.waLine.findMany({ where: { provider: { not: "cloud" } }, select: { id: true, sessionId: true } });
   const valid = new Set<string>();
   for (const l of lines) {
-    // NO válidas (a limpiar si no están WORKING): (a) VENCIDAS (tenían día y ya pasó) y (b) sin día y
-    // VIEJAS (>24h = registro abandonado). Protegidas: día vigente, y sin día pero recién creada (<24h,
-    // puede estar mostrando su QR ahora).
-    const expired = l.expiresAt && l.expiresAt <= now;
-    const staleNoDay = !l.expiresAt && now.getTime() - l.createdAt.getTime() > FRESH_NODAY_MS;
-    if (expired || staleNoDay) continue;
     if (l.sessionId) valid.add(l.sessionId);
     valid.add(`line_${l.id}`);
   }
   const sessions = await wahaListSessions();
   let deleted = 0;
   for (const s of sessions) {
-    if (!s.name || valid.has(s.name)) continue;
-    if (s.status === "WORKING") continue; // NUNCA borrar una sesión conectada
+    if (!s.name || valid.has(s.name)) continue; // toda sesión de una línea existente = PROTEGIDA
+    if (s.status === "WORKING") continue;        // y jamás una conectada
     await getEngine().logoutInstance(s.name).catch(() => undefined);
     await getEngine().deleteInstance(s.name).catch(() => undefined);
     deleted++;
   }
-  if (deleted) console.log(`[waha-cleanup] ${deleted} sesión(es) sin trabajo (huérfana/vencida, no-WORKING) borrada(s) (de ${sessions.length})`);
+  if (deleted) console.log(`[waha-cleanup] ${deleted} sesión(es) HUÉRFANA(s) sin línea borrada(s) (de ${sessions.length})`);
 }
 
 // Programa la reanudación de una secuencia tras un delay (para el motor de automatizaciones).
