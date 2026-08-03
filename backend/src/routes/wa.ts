@@ -467,6 +467,15 @@ waRouter.post("/lines/:id/connect", async (req, res) => {
   const instanceName = line.sessionId ?? `line_${line.id}`;
   const number = typeof req.body?.number === "string" ? req.body.number.replace(/\D/g, "") : "";
 
+  // CANDADO (2026-08-03): si la línea YA está conectada, NO la tocamos. Aplicar proxy (que reinicia la
+  // sesión) o pedir un código de pareo sobre una sesión ABIERTA la DESVINCULA — es una re-registración
+  // y WhatsApp la toma como conflicto de identidad → logout. Un cliente que tocaba "conectar" o ponía su
+  // número en una línea que ya andaba se auto-deslogueaba (pasó con freydis). Reconectar de verdad = reset.
+  const currentState = await getEngine().connectionState(instanceName).catch(() => "unknown");
+  if (currentState === "open") {
+    return res.json({ qr: null, pairingCode: null, alreadyConnected: true });
+  }
+
   try {
     // Auto-asigna proxy si el flag está ON y la línea no tiene (líneas existentes que reconectan).
     await ensureProxyOnReconnect(line.id);
