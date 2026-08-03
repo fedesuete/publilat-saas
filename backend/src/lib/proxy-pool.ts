@@ -245,6 +245,12 @@ function upstreamUrlFor(p: ProxyConfig): string {
 // Proxy sin credenciales (ej. IP whitelist) → directo en cualquier motor.
 async function toEngineProxy(p: ProxyConfig): Promise<ProxyConfig | null> {
   if (getEngine().name !== "waha" || !p.username) return p;
+  // NOWEB (Baileys) autentica el proxy de forma NATIVA (como Evolution/curl) → va DIRECTO, sin el
+  // túnel local. El túnel vivía dentro del proceso de la app y se moría en cada reinicio/deploy,
+  // tirando la línea proxied. Solo WEBJS/Chromium precisa el local sin auth (no manda credenciales
+  // en el CONNECT HTTPS). Con NOWEB nativo, el proxy queda en la config de la sesión WAHA y sobrevive
+  // los reinicios de la app.
+  if ((process.env.WAHA_ENGINE ?? "WEBJS").toUpperCase() === "NOWEB") return p;
   const local = await ensureLocalProxy(upstreamUrlFor(p));
   if (!local) return null; // no se pudo levantar el local: mejor conectar SIN proxy que trabar la línea
   return { host: local.host, port: String(local.port), protocol: "http" }; // local, SIN auth
