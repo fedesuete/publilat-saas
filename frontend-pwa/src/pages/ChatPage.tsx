@@ -333,15 +333,17 @@ export default function ChatPage() {
         </div>
       ) : null}
 
-      {/* Barra del cajero: cargar / retirar / soporte (E3). */}
+      {/* Barra del cajero: cargar / retirar / soporte (E3). Botones full-width "fichas" (estilo maqueta). */}
       {wallet && (
-        <div className="flex gap-2 px-3 pt-2.5" style={{ background: "var(--c-surface)" }}>
+        <div className="flex flex-col gap-2 px-3 pt-3 pb-1" style={{ background: "var(--c-bg)" }}>
           <button onClick={() => void openDeposit()}
-            className="flex-1 rounded-md py-2 text-sm font-bold" style={{ background: "var(--c-accent)", color: "var(--c-accent-text)" }}>CARGAR</button>
+            className="flex w-full items-center justify-center gap-2 rounded-lg py-3 text-sm font-extrabold shadow-sm"
+            style={{ background: "var(--c-surface)", color: "var(--c-accent)" }}>💰 Cargar fichas</button>
           <button onClick={() => { setCashier("withdrawal"); setCashMsg(null); setAmount(""); }}
-            className="flex-1 rounded-md border py-2 text-sm font-bold" style={{ borderColor: "var(--c-accent)", color: "var(--c-accent)" }}>RETIRAR</button>
+            className="flex w-full items-center justify-center gap-2 rounded-lg py-3 text-sm font-extrabold shadow-sm"
+            style={{ background: "var(--c-surface)", color: "var(--c-accent)" }}>💸 Retirar</button>
           <button onClick={() => inputRef.current?.focus()}
-            className="flex-1 rounded-md border py-2 text-sm font-bold" style={{ borderColor: "var(--c-accent)", color: "var(--c-accent)" }}>SOPORTE</button>
+            className="w-full py-0.5 text-center text-xs font-medium" style={{ color: "var(--c-muted)" }}>💬 ¿Ayuda? Escribinos</button>
         </div>
       )}
 

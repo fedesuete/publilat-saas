@@ -58,11 +58,9 @@ export async function runChatBot(accountId: string, convId: string, playerId: st
     const name = rawText.trim().slice(0, 40);
     if (name) await prisma.chatPlayer.update({ where: { id: playerId }, data: { nombre: name } }).catch(() => undefined);
     await prisma.chatConversation.update({ where: { id: convId }, data: { botStep: null } });
-    const a = await prisma.user.findUnique({ where: { id: accountId }, select: { botEnabled: true } });
-    const greet = name
-      ? `¡Genial, ${name}! 🙌 Tocá un botón de abajo para *cargar* o *retirar* 👇`
-      : "¡Genial! 🙌 Tocá un botón de abajo para *cargar* o *retirar* 👇";
-    await botSay(accountId, convId, playerId, greet, a?.botEnabled ? MENU : undefined);
+    // Los botones "💰 Cargar fichas" / "💸 Retirar" salen solos en la barra del cajero (abajo).
+    const greet = name ? `¡Genial, ${name}! ¿Qué querés hacer? 👇` : "¿Qué querés hacer? 👇";
+    await botSay(accountId, convId, playerId, greet);
     return;
   }
 
