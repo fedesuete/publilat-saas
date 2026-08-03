@@ -487,9 +487,9 @@ chatRouter.get("/broadcasts", async (req, res) => {
 
 // Solo estos campos del User son "branding" del Chat App. El PATCH NUNCA toca otra cosa
 // (nada de plan, tokenVersion, líneas de WhatsApp, etc.).
-const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "chatTheme", "welcomeText", "welcomeMsgText", "welcomeMsgImage", "chatWaLink", "chatPlatformUrl", "chatPayCbu", "chatPayAlias", "chatPayTitular", "chatInstallMsg1", "chatInstallMsg2", "chatInstallMsg3", "chatTutIosImg", "chatTutAndroidImg", "chatDirectWelcome"] as const;
+const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "chatTheme", "welcomeText", "welcomeMsgText", "welcomeMsgImage", "chatWaLink", "chatPlatformUrl", "chatPayCbu", "chatPayAlias", "chatPayTitular", "chatInstallMsg1", "chatInstallMsg2", "chatInstallMsg3", "chatTutIosImg", "chatTutAndroidImg", "chatDirectWelcome", "chatInstallPromptEnabled"] as const;
 // Select del branding del OPERADOR (incluye los campos de instalación; NO se exponen al jugador).
-const BRANDING_SELECT = { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true, chatPayCbu: true, chatPayAlias: true, chatPayTitular: true, chatInstallMsg1: true, chatInstallMsg2: true, chatInstallMsg3: true, chatTutIosImg: true, chatTutAndroidImg: true, chatDirectWelcome: true } as const;
+const BRANDING_SELECT = { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true, chatPayCbu: true, chatPayAlias: true, chatPayTitular: true, chatInstallMsg1: true, chatInstallMsg2: true, chatInstallMsg3: true, chatTutIosImg: true, chatTutAndroidImg: true, chatDirectWelcome: true, chatInstallPromptEnabled: true } as const;
 
 // GET /api/chat/branding — branding actual de la cuenta (para poblar el formulario del panel).
 chatRouter.get("/branding", async (req, res) => {
@@ -522,6 +522,7 @@ const brandingSchema = z.object({
   chatTutIosImg: z.string().url().max(600).nullish(),
   chatTutAndroidImg: z.string().url().max(600).nullish(),
   chatDirectWelcome: z.string().max(1000).nullish(),
+  chatInstallPromptEnabled: z.boolean().optional(),
 });
 
 // PATCH /api/chat/branding — actualiza SOLO los campos de branding del User del token.
@@ -529,10 +530,10 @@ chatRouter.patch("/branding", async (req, res) => {
   const parsed = brandingSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
   // Whitelist estricta: sólo BRANDING_FIELDS que vinieron en el body (undefined = no tocar).
-  const data: Record<string, string | null> = {};
+  const data: Record<string, string | null | boolean> = {};
   for (const k of BRANDING_FIELDS) {
     const v = (parsed.data as Record<string, unknown>)[k];
-    if (v !== undefined) data[k] = (v as string | null);
+    if (v !== undefined) data[k] = (v as string | null | boolean);
   }
   if (Object.keys(data).length === 0) return res.status(400).json({ error: "Nada para actualizar" });
   const acc = await prisma.user.update({
@@ -1025,7 +1026,7 @@ chatPublicRouter.post("/login", async (req, res) => {
 chatPublicRouter.get("/public/:slug", async (req, res) => {
   const acc = await prisma.user.findUnique({
     where: { slug: req.params.slug },
-    select: { id: true, slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, chatWaLink: true, chatPlatformUrl: true },
+    select: { id: true, slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, chatWaLink: true, chatPlatformUrl: true, chatInstallPromptEnabled: true },
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   return res.json({
@@ -1034,6 +1035,7 @@ chatPublicRouter.get("/public/:slug", async (req, res) => {
     branding: {
       brandName: acc.brandName, logoUrl: acc.logoUrl,
       primaryColor: acc.primaryColor, accentColor: acc.accentColor, welcomeText: acc.welcomeText, chatWaLink: acc.chatWaLink, chatPlatformUrl: acc.chatPlatformUrl,
+      chatInstallPromptEnabled: acc.chatInstallPromptEnabled,
     },
   });
 });

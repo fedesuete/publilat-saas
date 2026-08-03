@@ -369,8 +369,9 @@ interface Brand {
   chatPayCbu: string | null; chatPayAlias: string | null; chatPayTitular: string | null;
   chatInstallMsg1: string | null; chatInstallMsg2: string | null; chatInstallMsg3: string | null; chatTutIosImg: string | null; chatTutAndroidImg: string | null;
   chatDirectWelcome: string | null;
+  chatInstallPromptEnabled: boolean;
 }
-const EMPTY_BRAND: Brand = { brandName: null, logoUrl: null, primaryColor: null, accentColor: null, chatTheme: "whatsapp", welcomeText: null, welcomeMsgText: null, welcomeMsgImage: null, chatWaLink: null, chatPlatformUrl: null, chatPayCbu: null, chatPayAlias: null, chatPayTitular: null, chatInstallMsg1: null, chatInstallMsg2: null, chatInstallMsg3: null, chatTutIosImg: null, chatTutAndroidImg: null, chatDirectWelcome: null };
+const EMPTY_BRAND: Brand = { brandName: null, logoUrl: null, primaryColor: null, accentColor: null, chatTheme: "whatsapp", welcomeText: null, welcomeMsgText: null, welcomeMsgImage: null, chatWaLink: null, chatPlatformUrl: null, chatPayCbu: null, chatPayAlias: null, chatPayTitular: null, chatInstallMsg1: null, chatInstallMsg2: null, chatInstallMsg3: null, chatTutIosImg: null, chatTutAndroidImg: null, chatDirectWelcome: null, chatInstallPromptEnabled: false };
 
 // Diseños disponibles del chat (mini-preview en el selector). "brand" = usa el color del cliente.
 const CHAT_THEMES = [
@@ -395,7 +396,7 @@ function BrandingTab() {
       .finally(() => setLoading(false));
   }, []);
 
-  const set = (k: keyof Brand, v: string | null) => { setForm((f) => ({ ...f, [k]: v })); setOk(false); };
+  const set = (k: keyof Brand, v: string | null | boolean) => { setForm((f) => ({ ...f, [k]: v })); setOk(false); };
 
   // Lee el archivo como data URL y lo sube; el backend devuelve la URL (CDN si hay S3, si no el data URL).
   const upload = async (file: File, field: "logoUrl" | "welcomeMsgImage" | "chatTutIosImg" | "chatTutAndroidImg", which: "logo" | "welcome" | "tut_ios" | "tut_android") => {
@@ -566,7 +567,14 @@ function BrandingTab() {
 
         <Card>
           <div className="mb-1 text-sm font-semibold text-slate-100">Secuencia de instalación</div>
-          <p className="mb-3 text-xs text-slate-400">Mensajes guardados que enviás desde el chat (botón 📲) después de una carga. El mensaje 2 le muestra al jugador un botón <b>INSTALAR APP</b>.</p>
+
+          <label className="mb-3 flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2.5">
+            <input type="checkbox" checked={form.chatInstallPromptEnabled} onChange={(e) => set("chatInstallPromptEnabled", e.target.checked)} className="h-5 w-5 accent-wa-green" />
+            <span className="text-sm text-slate-200">{form.chatInstallPromptEnabled ? "Cartel “Instalá la app” ACTIVADO en el chat 🟢" : "Cartel “Instalá la app” apagado"}</span>
+          </label>
+          <p className="mb-3 text-xs text-slate-500">Es el cartel automático “📲 Instalá la app” que aparece dentro del chat del jugador. Apagado por defecto.</p>
+
+          <p className="mb-3 text-xs text-slate-400">Abajo, los mensajes guardados que enviás a mano desde el chat (botón 📲) después de una carga. El mensaje 2 le muestra al jugador un botón <b>INSTALAR APP</b>.</p>
 
           <label className="mb-1 block text-xs text-slate-400">Mensaje 1 (avisar que instale)</label>
           <textarea value={form.chatInstallMsg1 ?? ""} onChange={(e) => set("chatInstallMsg1", e.target.value || null)} rows={2}

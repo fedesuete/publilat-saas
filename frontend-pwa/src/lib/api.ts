@@ -36,6 +36,7 @@ export interface Branding {
   welcomeText: string | null;
   chatWaLink?: string | null; // CTA "Escribinos por WhatsApp" (registro un-tap)
   chatPlatformUrl?: string | null; // botón "Entrar a la plataforma"
+  chatInstallPromptEnabled?: boolean; // muestra el cartel "Instalá la app" dentro del chat
 }
 
 export function saveBranding(accountSlug: string, b: Branding) {

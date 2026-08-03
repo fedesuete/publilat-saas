@@ -219,8 +219,9 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* Instalar la app (post-registro, ya con sesión) -> al abrir la app instalada entra directo. */}
-      <InstallPrompt />
+      {/* Instalar la app (post-registro, ya con sesión) -> al abrir la app instalada entra directo.
+          Solo si el operador lo activó en el panel (apagado por defecto). */}
+      {branding?.chatInstallPromptEnabled && <InstallPrompt />}
 
       {/* Aviso: activar notificaciones (solo si el navegador las soporta y aún no decidió). */}
       {push === "default" && (

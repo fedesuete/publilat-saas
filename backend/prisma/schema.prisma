@@ -64,6 +64,7 @@ model User {
   chatTutIosImg     String? // foto tutorial de instalación iPhone (URL /branding/asset/:id)
   chatTutAndroidImg String? // foto tutorial de instalación Android
   chatDirectWelcome String? // 1er mensaje del "chat directo" (/c/:slug, sin registro): pide el nombre
+  chatInstallPromptEnabled Boolean @default(false) // muestra el cartel "Instalá la app" dentro del chat
   // Día de Chat App INDEPENDIENTE de WhatsApp: el cliente que no quiere/puede usar WhatsApp gasta
   // 1 día del saldo (mismo pool) y opera por el canal propio. Se auto-renueva 24h mientras esté
   // prendido y haya saldo (igual que las líneas). El Chat App se prende si hay línea WA con día
