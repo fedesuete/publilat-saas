@@ -440,6 +440,22 @@ export default function WhatsappPage() {
     }
   };
 
+  // Auto-refresco del QR: el QR de Baileys/NOWEB se cicla cada ~20s; si el panel no lo refresca, se
+  // vence antes de que el cliente lo escanee. Mientras una línea baileys muestra QR y sigue
+  // desconectada, pedimos un QR fresco cada 18s. Refs para no re-crear el intervalo en cada render.
+  const qrsRef = useRef(qrs); qrsRef.current = qrs;
+  const linesRef = useRef(lines); linesRef.current = lines;
+  useEffect(() => {
+    const iv = window.setInterval(() => {
+      for (const id of Object.keys(qrsRef.current)) {
+        const l = linesRef.current.find((x) => x.id === id);
+        if (l && !l.connected && l.provider === "baileys") void connect(id);
+      }
+    }, 18000);
+    return () => window.clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const linkByNumber = async (id: string) => {
     const raw = (numberInputs[id] ?? "").replace(/\D/g, "");
     if (raw.length < 8) {
