@@ -403,8 +403,17 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
 
 // Salud del POOL (Fase 2): valida cada proxy activo con un CONNECT REAL a un checker de IP por su
 // túnel (no solo TCP: comprueba auth + upstream + SALIDA a internet). Solo los healthy son asignables
-// (assignProxy filtra por healthy). Si uno cae, lo marca unhealthy y rota sus líneas a otro sano.
-// Pre-gate barato: si el gateway ni responde TCP, se saltea el CONNECT completo. Best-effort.
+// (assignProxy filtra por healthy). El flag `healthy` decide a quién se le ASIGNA un proxy nuevo — NO
+// se usa para reiniciar líneas que ya están conectadas (ver abajo).
+//
+// ANTI-FLAPPING (2026-08-02): los proxies residenciales tienen fallos transitorios normales. Antes,
+// UN solo chequeo fallido marcaba el proxy "caído" y REINICIABA todas sus líneas (setProxy/restart
+// tira la sesión de WhatsApp). Eso causaba cientos de reconexiones por día y tumbaba líneas sanas.
+// Ahora: (a) hace falta HYSTERESIS_FAILS fallos SEGUIDOS para marcar "caído" (un blip no cuenta), y
+// (b) NUNCA reiniciamos una línea por un chequeo — si una línea REALMENTE se cae, la reconecta
+// line-health / recoverProxyLine (que ahí sí rota a un proxy sano). Best-effort.
+const HYSTERESIS_FAILS = 3;              // fallos de chequeo SEGUIDOS antes de marcar un proxy "caído"
+const proxyFailStreak = new Map<string, number>(); // en memoria: racha de fallos por proxy
 export async function checkProxyHealth(): Promise<void> {
   const proxies = await prisma.proxy.findMany({ where: { active: true } });
   const results = await mapLimit(proxies, 8, async (p) => {
@@ -413,19 +422,18 @@ export async function checkProxyHealth(): Promise<void> {
     return { p, ok: probe.ok, ip: probe.ip };
   });
   for (const { p, ok, ip } of results) {
+    const streak = ok ? 0 : (proxyFailStreak.get(p.id) ?? 0) + 1;
+    proxyFailStreak.set(p.id, streak);
+    // "sano" hasta acumular HYSTERESIS_FAILS fallos seguidos; un OK lo revive al instante.
+    const shouldBeHealthy = ok || streak < HYSTERESIS_FAILS;
     const wasHealthy = p.healthy;
-    await prisma.proxy.update({ where: { id: p.id }, data: { healthy: ok, lastCheckAt: new Date() } }).catch(() => undefined);
-    if (wasHealthy && !ok) {
-      await logProxyEvent("", p.id, "proxy_unhealthy", `${p.host}:${p.port} no sale a internet (CONNECT falló)`);
-      await alertAdminProxy("Proxy caído", `El proxy "${p.label}" no sale a internet. Roto sus líneas a otro proxy sano.`, "proxy_unhealthy", { proxyId: p.id });
-      const lines = await prisma.waLine.findMany({ where: { proxyId: p.id }, select: { id: true, sessionId: true } });
-      for (const l of lines) {
-        await rotateProxy(l.id).catch(() => undefined); // re-asigna a otro sano (o pool_full → avisa)
-        const inst = l.sessionId ?? `line_${l.id}`;
-        await applyLineProxy(inst, l.id).catch(() => undefined);
-        await getEngine().restartInstance(inst).catch(() => undefined);
-      }
-    } else if (!wasHealthy && ok) {
+    await prisma.proxy.update({ where: { id: p.id }, data: { ...(shouldBeHealthy !== wasHealthy ? { healthy: shouldBeHealthy } : {}), lastCheckAt: new Date() } }).catch(() => undefined);
+    if (wasHealthy && !shouldBeHealthy) {
+      // Proxy CONFIRMADO caído. NO tocamos las líneas conectadas: el flag ya evita asignárselo a
+      // líneas nuevas; si alguna línea se cae de verdad por esto, la reconecta line-health/recover.
+      await logProxyEvent("", p.id, "proxy_unhealthy", `${p.host}:${p.port} no sale a internet (${HYSTERESIS_FAILS} fallos seguidos)`);
+      await alertAdminProxy("Proxy caído", `El proxy "${p.label}" no sale a internet tras ${HYSTERESIS_FAILS} chequeos. No corté ninguna línea conectada; si alguna cae, se reconecta sola por otro proxy sano.`, "proxy_unhealthy", { proxyId: p.id });
+    } else if (!wasHealthy && shouldBeHealthy) {
       await logProxyEvent("", p.id, "reconnected", `${p.label} volvió a salir a internet${ip ? ` (IP ${ip})` : ""}`);
     }
   }
@@ -502,14 +510,20 @@ export async function recoverWaitingProxyLines(): Promise<void> {
   }
 }
 
-// Limpieza de sesiones WAHA HUÉRFANAS (Chromium sin línea asociada) — cada una es un navegador que
-// come RAM al pedo; acumuladas ahogan el server y tumban las líneas en cadena. Borra solo las que NO
-// están WORKING (jamás corta una línea conectada, aunque parezca huérfana). Solo con WAHA. Best-effort.
+// Limpieza de sesiones WAHA que comen RAM al pedo — cada Chromium sin trabajo real ahoga el server y
+// tumba líneas en cadena. Borra dos clases: (1) HUÉRFANAS (sin línea asociada) y (2) de líneas
+// VENCIDAS (sin día vigente: su navegador no debería estar corriendo). SIEMPRE protege: sesiones
+// WORKING (nunca cortamos un número conectado), líneas con día vigente, y líneas que aún no tienen día
+// (día null = recién creada / registrándose → puede estar mostrando su QR). Solo con WAHA. Best-effort.
 export async function cleanupOrphanWahaSessions(): Promise<void> {
   if (getEngine().name !== "waha") return;
-  const lines = await prisma.waLine.findMany({ where: { provider: { not: "cloud" } }, select: { id: true, sessionId: true } });
+  const now = new Date();
+  const lines = await prisma.waLine.findMany({ where: { provider: { not: "cloud" } }, select: { id: true, sessionId: true, expiresAt: true } });
   const valid = new Set<string>();
   for (const l of lines) {
+    // Vencida = tenía día y ya pasó. Esas NO son válidas (a limpiar si no están WORKING). Las de día
+    // null (registrándose) o con día vigente sí quedan protegidas.
+    if (l.expiresAt && l.expiresAt <= now) continue;
     if (l.sessionId) valid.add(l.sessionId);
     valid.add(`line_${l.id}`);
   }
@@ -522,7 +536,7 @@ export async function cleanupOrphanWahaSessions(): Promise<void> {
     await getEngine().deleteInstance(s.name).catch(() => undefined);
     deleted++;
   }
-  if (deleted) console.log(`[waha-cleanup] ${deleted} sesión(es) huérfana(s) borrada(s) (de ${sessions.length})`);
+  if (deleted) console.log(`[waha-cleanup] ${deleted} sesión(es) sin trabajo (huérfana/vencida, no-WORKING) borrada(s) (de ${sessions.length})`);
 }
 
 // Programa la reanudación de una secuencia tras un delay (para el motor de automatizaciones).
