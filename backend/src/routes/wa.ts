@@ -9,6 +9,7 @@ import { getAvailableDays, consumeDayAndActivate } from "../lib/access.js";
 import { applyLineProxy, autoAssignEnabled, assignProxyPreferred, setLineWaitingProxy } from "../lib/proxy-pool.js";
 import { enqueueProxyWatch } from "../lib/queue.js";
 import { getEngine } from "../lib/wa-engine.js";
+import { dedupeSameNumberLines } from "../lib/dedupe-lines.js";
 import { warmupState } from "../lib/warmup.js";
 import axios from "axios";
 import crypto from "node:crypto";
@@ -546,6 +547,11 @@ waRouter.get("/lines/:id/status", async (req, res) => {
     where: { id: line.id },
     data: { connected, status: connected ? "active" : line.status, ...(phone ? { phone } : {}) },
   });
+  // Auto-dedup inmediato: si quedó conectada con número, limpiá duplicados del mismo número (mismo
+  // cliente) que hayan quedado de un re-pareo (2 sesiones = conflicto en WhatsApp). Best-effort.
+  if (connected && updated.phone) {
+    await dedupeSameNumberLines(req.userId!, updated.phone, updated.id).catch(() => {});
+  }
   return res.json({
     state,
     connected,

@@ -17,6 +17,7 @@ import { notify } from "./notifications.js";
 import { sendAdminMail } from "./mailer.js";
 import { checkWaWebVersion } from "./wa-version.js";
 import { alertLineDown, alertLowBalance } from "./line-alert.js";
+import { dedupeSameNumberLines } from "./dedupe-lines.js";
 import { alertCapiFailures } from "./capi-guard.js";
 import { rotateProxy, releaseProxy, applyLineProxy, logProxyEvent, alertAdminProxy, probeProxy, assignFallback, assignProxyPreferred, setLineWaitingProxy } from "./proxy-pool.js";
 
@@ -231,6 +232,16 @@ export async function checkLineHealth(): Promise<void> {
       }
       await prisma.waLine.update({ where: { id: line.id }, data: { connected, qualityRating: quality ?? null, phone, lastCheckedAt: new Date() } });
       emitToUser(line.userId, "wa:health", { lineId: line.id, connected, qualityRating: quality ?? null });
+      // Auto-dedup: si esta línea quedó conectada con número, borrá otras líneas del mismo cliente
+      // con el MISMO número que NO estén conectadas (registros duplicados que pelean la identidad en
+      // WhatsApp -> conflict/device_removed y caen en loop). Ver lib/dedupe-lines.ts.
+      if (connected && phone) {
+        const n = await dedupeSameNumberLines(line.userId, phone, line.id).catch((e) => {
+          console.error("[dedupe-lines] error en línea", line.id, e instanceof Error ? e.message : String(e));
+          return 0;
+        });
+        if (n > 0) console.warn(`[line-health] línea ${line.id}: limpié ${n} línea(s) duplicada(s) del número ${phone}`);
+      }
     } catch (e) {
       console.error("[line-health] error en línea", line.id, e instanceof Error ? e.message : String(e));
     }
