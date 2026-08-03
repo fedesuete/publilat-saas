@@ -4,10 +4,11 @@
 // Evolution sigue siendo el motor y se puede volver atrás con solo tocar el env.
 import * as evolution from "./evolution.js";
 import * as waha from "./waha.js";
+import * as luckygw from "./luckygw.js";
 import type { QrResult, MediaBase64, ProxyConfig } from "./evolution.js";
 
 export interface WhatsAppEngine {
-  name: "evolution" | "waha";
+  name: "evolution" | "waha" | "luckygw";
   createInstance(instanceName: string): Promise<QrResult>;
   setWebhook(instanceName: string): Promise<void>;
   connectInstance(instanceName: string, number?: string): Promise<QrResult>;
@@ -55,6 +56,25 @@ const wahaEngine: WhatsAppEngine = {
   setProxy: waha.setProxy,
 };
 
+const luckygwEngine: WhatsAppEngine = {
+  name: "luckygw",
+  createInstance: luckygw.createInstance,
+  setWebhook: luckygw.setWebhook,
+  connectInstance: luckygw.connectInstance,
+  fetchOwnerNumber: luckygw.fetchOwnerNumber,
+  connectionState: luckygw.connectionState,
+  sendText: luckygw.sendText,
+  sendWhatsAppAudio: luckygw.sendWhatsAppAudio,
+  getMediaBase64: luckygw.getMediaBase64,
+  restartInstance: luckygw.restartInstance,
+  logoutInstance: luckygw.logoutInstance,
+  deleteInstance: luckygw.deleteInstance,
+  setProxy: luckygw.setProxy,
+};
+
 export function getEngine(): WhatsAppEngine {
-  return (process.env.WA_ENGINE ?? "evolution").trim().toLowerCase() === "waha" ? wahaEngine : evolutionEngine;
+  const eng = (process.env.WA_ENGINE ?? "evolution").trim().toLowerCase();
+  if (eng === "waha") return wahaEngine;
+  if (eng === "luckygw") return luckygwEngine;
+  return evolutionEngine;
 }

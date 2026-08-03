@@ -342,12 +342,15 @@ export async function recoverProxyLine(lineId: string): Promise<void> {
       await logProxyEvent(lineId, line.proxyId, "reconnected", `reconectó sola (intento ${attempt})`);
       return;
     }
-    if (attempt >= 2) {
+    // Rotamos la IP recién desde el 3er intento (antes era el 2º). Una caída de WhatsApp de segundos
+    // (428/503, reconexión normal ~cada hora) se resuelve sola en la MISMA IP; rotar antes gastaba
+    // ancho de banda re-sincronizando de gusto. Los intentos 1-2 reintentan la misma IP sticky.
+    if (attempt >= 3) {
       await rotateProxy(lineId).catch(() => undefined);        // nueva IP sticky
       await applyLineProxy(inst, lineId).catch(() => undefined);
       await logProxyEvent(lineId, line.proxyId, "rotated", `roto IP y reintento (intento ${attempt})`);
     } else {
-      await logProxyEvent(lineId, line.proxyId, "line_down", `reintento de reconexión ${attempt}`);
+      await logProxyEvent(lineId, line.proxyId, "line_down", `reintento de reconexión ${attempt} (misma IP)`);
     }
     await getEngine().restartInstance(inst).catch(() => undefined);
     await sleep(12_000);
@@ -415,7 +418,14 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
 const HYSTERESIS_FAILS = 3;              // fallos de chequeo SEGUIDOS antes de marcar un proxy "caído"
 const proxyFailStreak = new Map<string, number>(); // en memoria: racha de fallos por proxy
 export async function checkProxyHealth(): Promise<void> {
-  const proxies = await prisma.proxy.findMany({ where: { active: true } });
+  // CONSUMO (2026-08-03): solo sondeamos proxies ASIGNADOS a alguna línea. Sondear los ~100 del pool
+  // ocioso quemaba ancho de banda residencial (metered) al pedo — cada sonda hace un CONNECT que SALE
+  // por el proxio. Un proxy sin asignar se valida recién cuando se le da a una línea (lo cubre el
+  // watchdog de registro watchProxyRegistration). Baja el gasto de ~100 sondas/ciclo a ~las activas.
+  const assigned = await prisma.waLine.findMany({ where: { proxyId: { not: null } }, select: { proxyId: true }, distinct: ["proxyId"] });
+  const ids = assigned.map((a) => a.proxyId).filter((x): x is string => !!x);
+  if (ids.length === 0) return;
+  const proxies = await prisma.proxy.findMany({ where: { active: true, id: { in: ids } } });
   const results = await mapLimit(proxies, 8, async (p) => {
     if (!(await tcpReachable(p.host, p.port))) return { p, ok: false, ip: undefined as string | undefined };
     const probe = await probeProxy(p);
