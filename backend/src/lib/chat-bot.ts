@@ -45,13 +45,29 @@ const has = (t: string, ...words: string[]): boolean => words.some((w) => t.incl
 // Procesa el mensaje del jugador y (si corresponde) responde el bot. Se llama best-effort desde
 // /api/chat/me/messages DESPUÉS de guardar/emitir el mensaje del jugador.
 export async function runChatBot(accountId: string, convId: string, playerId: string, rawText: string): Promise<void> {
-  const acc = await prisma.user.findUnique({ where: { id: accountId }, select: { botEnabled: true, botPaymentInfo: true, botWelcome: true } });
-  if (!acc?.botEnabled) return;
   const conv = await prisma.chatConversation.findUnique({
     where: { id: convId },
-    select: { botStep: true, botAmount: true, player: { select: { casinoUsername: true } } },
+    select: { botStep: true, botAmount: true, player: { select: { casinoUsername: true, nombre: true } } },
   });
   if (!conv || conv.botStep === "human") return; // ya lo maneja un cajero
+
+  // ---------- CHAT DIRECTO (entrada sin registro): el PRIMER mensaje del jugador es su NOMBRE ----------
+  // Corre AUNQUE el bot general esté apagado: deja el nombre guardado, saluda y (si el bot está
+  // prendido) muestra el menú. Los botones de cargar/retirar salen solos en la app (barra del cajero).
+  if (conv.botStep === "ask_name") {
+    const name = rawText.trim().slice(0, 40);
+    if (name) await prisma.chatPlayer.update({ where: { id: playerId }, data: { nombre: name } }).catch(() => undefined);
+    await prisma.chatConversation.update({ where: { id: convId }, data: { botStep: null } });
+    const a = await prisma.user.findUnique({ where: { id: accountId }, select: { botEnabled: true } });
+    const greet = name
+      ? `¡Genial, ${name}! 🙌 Tocá un botón de abajo para *cargar* o *retirar* 👇`
+      : "¡Genial! 🙌 Tocá un botón de abajo para *cargar* o *retirar* 👇";
+    await botSay(accountId, convId, playerId, greet, a?.botEnabled ? MENU : undefined);
+    return;
+  }
+
+  const acc = await prisma.user.findUnique({ where: { id: accountId }, select: { botEnabled: true, botPaymentInfo: true, botWelcome: true } });
+  if (!acc?.botEnabled) return;
 
   const t = rawText.trim().toLowerCase();
   const playerName = conv.player?.casinoUsername ?? "jugador";

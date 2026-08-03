@@ -368,8 +368,9 @@ interface Brand {
   welcomeText: string | null; welcomeMsgText: string | null; welcomeMsgImage: string | null; chatWaLink: string | null; chatPlatformUrl: string | null;
   chatPayCbu: string | null; chatPayAlias: string | null; chatPayTitular: string | null;
   chatInstallMsg1: string | null; chatInstallMsg2: string | null; chatInstallMsg3: string | null; chatTutIosImg: string | null; chatTutAndroidImg: string | null;
+  chatDirectWelcome: string | null;
 }
-const EMPTY_BRAND: Brand = { brandName: null, logoUrl: null, primaryColor: null, accentColor: null, chatTheme: "whatsapp", welcomeText: null, welcomeMsgText: null, welcomeMsgImage: null, chatWaLink: null, chatPlatformUrl: null, chatPayCbu: null, chatPayAlias: null, chatPayTitular: null, chatInstallMsg1: null, chatInstallMsg2: null, chatInstallMsg3: null, chatTutIosImg: null, chatTutAndroidImg: null };
+const EMPTY_BRAND: Brand = { brandName: null, logoUrl: null, primaryColor: null, accentColor: null, chatTheme: "whatsapp", welcomeText: null, welcomeMsgText: null, welcomeMsgImage: null, chatWaLink: null, chatPlatformUrl: null, chatPayCbu: null, chatPayAlias: null, chatPayTitular: null, chatInstallMsg1: null, chatInstallMsg2: null, chatInstallMsg3: null, chatTutIosImg: null, chatTutAndroidImg: null, chatDirectWelcome: null };
 
 // Diseños disponibles del chat (mini-preview en el selector). "brand" = usa el color del cliente.
 const CHAT_THEMES = [
@@ -384,10 +385,12 @@ function BrandingTab() {
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
   const [uploading, setUploading] = useState<"logo" | "welcome" | "tut_ios" | "tut_android" | null>(null);
+  const [slug, setSlug] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   useEffect(() => {
-    api.get<{ branding: Brand }>("/api/chat/branding")
-      .then(({ data }) => setForm({ ...EMPTY_BRAND, ...data.branding }))
+    api.get<{ accountSlug: string; branding: Brand }>("/api/chat/branding")
+      .then(({ data }) => { setForm({ ...EMPTY_BRAND, ...data.branding }); setSlug(data.accountSlug ?? null); })
       .catch((e) => setError(apiError(e)))
       .finally(() => setLoading(false));
   }, []);
@@ -421,6 +424,44 @@ function BrandingTab() {
       {/* Formulario */}
       <div className="space-y-5">
         {error && <ErrorMsg>{error}</ErrorMsg>}
+
+        <Card>
+          <div className="mb-1 text-sm font-semibold text-slate-100">💬 Chat directo (sin registro)</div>
+          <p className="mb-3 text-xs text-slate-400">
+            El jugador entra por este link y cae <b>directo al chat</b>, sin pantalla de registro. Le llega tu
+            primer mensaje, escribe su nombre y ya puede cargar/retirar con los botones. Es la tercera forma de
+            entrar (además del acceso con usuario/clave y la landing de registro).
+          </p>
+
+          {/* Foto de perfil = logoUrl: es la foto que se ve arriba en el chat del jugador. */}
+          <label className="mb-1 block text-xs text-slate-400">Foto de perfil del chat</label>
+          <div className="mb-4 flex items-center gap-3">
+            {form.logoUrl
+              ? <img src={form.logoUrl} alt="foto" className="h-12 w-12 rounded-full object-cover" />
+              : <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-700 text-lg font-bold text-slate-200">{(form.brandName || "C").charAt(0).toUpperCase()}</div>}
+            <label className="cursor-pointer rounded-md border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-slate-800">
+              {uploading === "logo" ? "Subiendo…" : form.logoUrl ? "Cambiar foto" : "Subir foto"}
+              <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f, "logoUrl", "logo"); e.target.value = ""; }} />
+            </label>
+            {form.logoUrl && <button onClick={() => set("logoUrl", null)} className="text-xs text-rose-400 hover:underline">Quitar</button>}
+          </div>
+
+          <label className="mb-1 block text-xs text-slate-400">Primer mensaje (lo mandás vos — le pide el nombre)</label>
+          <textarea value={form.chatDirectWelcome ?? ""} onChange={(e) => set("chatDirectWelcome", e.target.value || null)}
+            placeholder="¡Hola! 🎉 Bienvenido. Para empezar, decime tu nombre 👇" rows={2}
+            className="mb-4 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
+
+          <label className="mb-1 block text-xs text-slate-400">Link del chat directo (compartilo)</label>
+          <div className="flex items-center gap-2">
+            <Input readOnly value={slug ? `${CHAT_PWA_URL}/c/${slug}` : "…"} className="flex-1" onFocus={(e) => e.currentTarget.select()} />
+            <Button variant="secondary" className="shrink-0" disabled={!slug}
+              onClick={() => { if (slug) { void navigator.clipboard.writeText(`${CHAT_PWA_URL}/c/${slug}`); setLinkCopied(true); window.setTimeout(() => setLinkCopied(false), 1500); } }}>
+              {linkCopied ? "✓ Copiado" : "Copiar"}
+            </Button>
+          </div>
+          <p className="mt-1 text-[11px] text-slate-500">Acordate de <b>Guardar cambios</b> antes de compartir. Cada persona que entra crea su propio chat.</p>
+        </Card>
 
         <Card>
           <div className="mb-1 text-sm font-semibold text-slate-100">Diseño del chat</div>

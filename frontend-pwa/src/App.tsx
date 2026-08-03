@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import OnboardingPage from "./pages/OnboardingPage";
 import LoginPage from "./pages/LoginPage";
 import ChatPage from "./pages/ChatPage";
+import DirectChatPage from "./pages/DirectChatPage";
 import { getToken } from "./lib/api";
 
 // El token se lee en el render de CADA ruta, NO en el de App. App no se re-renderiza al navegar
@@ -21,6 +22,7 @@ export default function App() {
     <Routes>
       <Route path="/i/:code" element={<OnboardingPage />} />
       <Route path="/r/:slug" element={<OnboardingPage />} />
+      <Route path="/c/:slug" element={<DirectChatPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/chat" element={<ChatRoute />} />
       <Route path="/" element={<IndexRoute />} />

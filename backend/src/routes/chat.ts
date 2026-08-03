@@ -487,9 +487,9 @@ chatRouter.get("/broadcasts", async (req, res) => {
 
 // Solo estos campos del User son "branding" del Chat App. El PATCH NUNCA toca otra cosa
 // (nada de plan, tokenVersion, líneas de WhatsApp, etc.).
-const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "chatTheme", "welcomeText", "welcomeMsgText", "welcomeMsgImage", "chatWaLink", "chatPlatformUrl", "chatPayCbu", "chatPayAlias", "chatPayTitular", "chatInstallMsg1", "chatInstallMsg2", "chatInstallMsg3", "chatTutIosImg", "chatTutAndroidImg"] as const;
+const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "chatTheme", "welcomeText", "welcomeMsgText", "welcomeMsgImage", "chatWaLink", "chatPlatformUrl", "chatPayCbu", "chatPayAlias", "chatPayTitular", "chatInstallMsg1", "chatInstallMsg2", "chatInstallMsg3", "chatTutIosImg", "chatTutAndroidImg", "chatDirectWelcome"] as const;
 // Select del branding del OPERADOR (incluye los campos de instalación; NO se exponen al jugador).
-const BRANDING_SELECT = { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true, chatPayCbu: true, chatPayAlias: true, chatPayTitular: true, chatInstallMsg1: true, chatInstallMsg2: true, chatInstallMsg3: true, chatTutIosImg: true, chatTutAndroidImg: true } as const;
+const BRANDING_SELECT = { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true, chatPayCbu: true, chatPayAlias: true, chatPayTitular: true, chatInstallMsg1: true, chatInstallMsg2: true, chatInstallMsg3: true, chatTutIosImg: true, chatTutAndroidImg: true, chatDirectWelcome: true } as const;
 
 // GET /api/chat/branding — branding actual de la cuenta (para poblar el formulario del panel).
 chatRouter.get("/branding", async (req, res) => {
@@ -521,6 +521,7 @@ const brandingSchema = z.object({
   chatInstallMsg3: z.string().max(1000).nullish(),
   chatTutIosImg: z.string().url().max(600).nullish(),
   chatTutAndroidImg: z.string().url().max(600).nullish(),
+  chatDirectWelcome: z.string().max(1000).nullish(),
 });
 
 // PATCH /api/chat/branding — actualiza SOLO los campos de branding del User del token.
@@ -1133,6 +1134,60 @@ chatPublicRouter.post("/start", async (req, res) => {
 
   const token = signChatClientToken(acc.id, player.id);
   return res.status(player ? 200 : 201).json({ token, player, conversationId });
+});
+
+const DEFAULT_DIRECT_WELCOME = "¡Hola! 🎉 Bienvenido. Para empezar, decime tu nombre 👇";
+const directSchema = z.object({ accountSlug: z.string().min(1).max(60) });
+
+// POST /api/chat/direct — CHAT DIRECTO (3ª opción de entrada, SIN registro): el jugador cae derecho
+// en el chat. Crea un jugador anónimo (usuario + clave autogenerados por atrás, para que la carga al
+// casino funcione después) y abre la conversación con el PRIMER MENSAJE nuestro (configurable:
+// chatDirectWelcome) que le pide el nombre. Marca la conversación con botStep="ask_name": el primer
+// mensaje del jugador se guarda como su nombre (lo hace runChatBot, aun con el bot general apagado).
+// Los botones de cargar/retirar salen solos en la app (barra del cajero). GATEADO por días.
+chatPublicRouter.post("/direct", async (req, res) => {
+  const parsed = directSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const acc = await prisma.user.findUnique({
+    where: { slug: parsed.data.accountSlug },
+    select: { id: true, chatDirectWelcome: true },
+  });
+  if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
+  if (!(await canOperateChat(acc.id))) {
+    return res.status(403).json({ error: "El chat no está disponible en este momento. Probá más tarde.", code: "line_required" });
+  }
+
+  const plainPassword = PLAYER_PASSWORD;
+  const hash = await hashPassword(plainPassword);
+  let np: { id: string; casinoUsername: string } | undefined;
+  for (let i = 0; i < 8 && !np; i++) {
+    try {
+      np = await prisma.chatPlayer.create({
+        data: { userId: acc.id, casinoUsername: `web${randDigits(6)}`, password: hash, estatus: "active" },
+        select: { id: true, casinoUsername: true },
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") continue; // usuario chocó -> reintenta
+      throw e;
+    }
+  }
+  if (!np) return res.status(500).json({ error: "No se pudo iniciar el chat, probá de nuevo." });
+
+  const conv = await prisma.chatConversation.create({
+    data: { userId: acc.id, playerId: np.id, status: "open", botStep: "ask_name" },
+    select: { id: true },
+  });
+  const welcome = acc.chatDirectWelcome?.trim() || DEFAULT_DIRECT_WELCOME;
+  await prisma.chatMessage.create({
+    data: { userId: acc.id, conversationId: conv.id, senderType: "system", body: welcome, metadata: {} },
+  });
+  await prisma.chatConversation.update({
+    where: { id: conv.id },
+    data: { lastMessageAt: new Date(), lastMessagePreview: welcome.slice(0, 118), unreadPlayer: 1 },
+  });
+
+  const token = signChatClientToken(acc.id, np.id);
+  return res.status(201).json({ token, player: np, conversationId: conv.id });
 });
 
 // ============================ CAJERO SELF-SERVICE (Fase E) ============================
