@@ -8,18 +8,23 @@ import { validatePixelCreds } from "../lib/meta-capi.js";
 
 export const pixelRouter = Router();
 
+// El Pixel ID (Dataset ID) de Meta es SIEMPRE numérico (ej 1336441748202974). El error más común
+// del cliente es pegar un email o texto ahí -> lo rebotamos con un mensaje claro (no "Input inválido").
+const PIXEL_ID = z.string().trim().regex(/^\d{6,20}$/, "El Pixel ID (Dataset ID) tiene que ser el NÚMERO que te da Meta (ej: 1336441748202974) — no un email ni texto. Lo sacás de Meta → Administrador de eventos.");
+const CAPI_TOKEN = z.string().trim().min(20, "El Token de Conversions API está incompleto. Copiá el token COMPLETO (es largo) desde Meta → Administrador de eventos → API de conversiones → Generar token.");
+
 const createSchema = z.object({
-  pixelId: z.string().trim().min(5).max(40),
-  capiToken: z.string().trim().min(10),
+  pixelId: PIXEL_ID,
+  capiToken: CAPI_TOKEN,
   eventType: z.enum(["Lead", "Purchase"]).default("Lead"),
-  siteUrl: z.string().url().optional().or(z.literal("")),
+  siteUrl: z.string().url("La URL del sitio no es válida (dejala vacía si no tenés).").optional().or(z.literal("")),
 });
 
 const updateSchema = z.object({
-  pixelId: z.string().trim().min(5).max(40).optional(),
-  capiToken: z.string().trim().min(10).optional(), // si llega, reemplaza el cifrado
+  pixelId: PIXEL_ID.optional(),
+  capiToken: CAPI_TOKEN.optional(), // si llega, reemplaza el cifrado
   eventType: z.enum(["Lead", "Purchase"]).optional(),
-  siteUrl: z.string().url().optional().or(z.literal("")),
+  siteUrl: z.string().url("La URL del sitio no es válida (dejala vacía si no tenés).").optional().or(z.literal("")),
 });
 
 // Forma pública: sin el token entero, con la máscara.
@@ -68,7 +73,7 @@ pixelRouter.get("/health", async (req, res) => {
 pixelRouter.post("/", async (req, res) => {
   const parsed = createSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
+    return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Input inválido", details: parsed.error.flatten() });
   }
   const { pixelId, capiToken, eventType, siteUrl } = parsed.data;
   // Validar contra Meta ANTES de guardar: si el token/pixel están mal, avisamos en el acto.
@@ -90,7 +95,7 @@ pixelRouter.post("/", async (req, res) => {
 pixelRouter.put("/:id", async (req, res) => {
   const parsed = updateSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
+    return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Input inválido", details: parsed.error.flatten() });
   }
   const existing = await prisma.pixel.findFirst({ where: { id: req.params.id, userId: req.userId! } });
   if (!existing) return res.status(404).json({ error: "Pixel no encontrado" });
