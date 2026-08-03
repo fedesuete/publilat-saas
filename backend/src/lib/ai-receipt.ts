@@ -55,7 +55,10 @@ const PROMPT =
   'Respondé SOLO con JSON, sin texto adicional, con esta forma exacta: ' +
   '{"is_receipt": true|false, "amount": numero_o_null, "currency": "PYG"|"ARS"|"USD"|null, ' +
   '"confidence": 0.0_a_1.0}. ' +
-  "amount es el total pagado como número sin separadores de miles ni símbolo (ej 150000). " +
+  "amount es el TOTAL pagado como número REAL en la unidad mayor (pesos/guaraníes), sin símbolo. " +
+  "OJO con el formato latino: el '.' separa MILES y la ',' es el DECIMAL. NUNCA concatenes los " +
+  "centavos como si fueran más dígitos enteros. Ejemplos: '$150.000' -> 150000 · '48.887,88' -> 48887.88 · " +
+  "'1.500,50' -> 1500.5 · '$ 20.000' -> 20000. (Un error típico: leer '48.887,88' como 4888788 — MAL.) " +
   "confidence refleja qué tan seguro estás de que es un pago real y exitoso. " +
   "Si no es un comprobante, is_receipt=false y amount=null.";
 

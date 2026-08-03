@@ -623,6 +623,10 @@ export default function WhatsappPage() {
           </button>
         </div>
 
+        <div className="rounded-lg border border-sky-800/50 bg-sky-500/10 px-3 py-2 text-xs text-sky-200">
+          📶 Podés tener hasta <b>5 líneas</b>. ¿Necesitás más? <b>Escribinos a soporte</b> y te lo ampliamos.
+        </div>
+
         <form onSubmit={createLine} className="space-y-2">
           <Input
             placeholder="Etiqueta de la línea (ej: Ventas)"

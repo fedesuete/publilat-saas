@@ -34,7 +34,7 @@ model User {
   source        String?                    // cómo llegó la cuenta (demo, referido, etc.)
   lastLoginAt   DateTime?
   // --- Límites de plan (configurables por cliente desde el panel) ---
-  maxLines      Int       @default(1)        // líneas de WhatsApp permitidas
+  maxLines      Int       @default(5)        // líneas de WhatsApp permitidas (5 por defecto; más = soporte)
   maxLandings   Int       @default(50)       // landings permitidas
   maxAudioClips Int       @default(2)        // audios en la biblioteca (el admin no tiene tope)
   tokenVersion  Int       @default(0)        // revocación de sesiones: al subir, invalida los JWT viejos

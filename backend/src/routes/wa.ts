@@ -136,9 +136,9 @@ waRouter.post("/lines", async (req, res) => {
   // Límite de líneas del plan (configurable por cliente desde el panel).
   const me = await prisma.user.findUnique({ where: { id: userId }, select: { maxLines: true } });
   const lineCount = await prisma.waLine.count({ where: { userId } });
-  if (lineCount >= (me?.maxLines ?? 1)) {
+  if (lineCount >= (me?.maxLines ?? 5)) {
     return res.status(403).json({
-      error: `Alcanzaste el límite de líneas de tu plan (${me?.maxLines ?? 1}). Escribinos para ampliarlo.`,
+      error: `Alcanzaste el límite de líneas de tu plan (${me?.maxLines ?? 5}). Escribinos para ampliarlo.`,
       code: "LINE_LIMIT",
     });
   }
@@ -317,9 +317,9 @@ waRouter.post("/cloud/connect", async (req, res) => {
   }
   const meLimit = await prisma.user.findUnique({ where: { id: req.userId! }, select: { maxLines: true } });
   const lineCount = await prisma.waLine.count({ where: { userId: req.userId! } });
-  if (lineCount >= (meLimit?.maxLines ?? 1)) {
+  if (lineCount >= (meLimit?.maxLines ?? 5)) {
     return res.status(403).json({
-      error: `Alcanzaste el límite de líneas de tu plan (${meLimit?.maxLines ?? 1}). Escribinos para ampliarlo.`,
+      error: `Alcanzaste el límite de líneas de tu plan (${meLimit?.maxLines ?? 5}). Escribinos para ampliarlo.`,
       code: "LINE_LIMIT",
     });
   }
