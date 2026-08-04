@@ -6,6 +6,7 @@
 import { prisma } from "./prisma.js";
 import { notify } from "./notifications.js";
 import { sendMail, sendAdminMail } from "./mailer.js";
+import { getEngine } from "./wa-engine.js";
 
 export async function alertLineDown(line: { id: string; userId: string; label: string | null; phone: string }): Promise<void> {
   const name = line.label || line.phone || "tu línea";
@@ -27,6 +28,29 @@ export async function alertLineDown(line: { id: string; userId: string; label: s
     `Línea caída: "${name}" (${owner?.email ?? line.userId})`,
     `La línea ${line.id} ("${name}") de ${owner?.email ?? line.userId} se desconectó y necesita reconexión.`,
   );
+}
+
+// Gracia anti-flapping: una línea puede caer y VOLVER SOLA en segundos (reconexión del motor). En vez
+// de avisar al instante en el evento de desconexión, esperamos un rato y RE-VERIFICAMOS: si ya volvió,
+// no avisamos; si sigue caída (o la borraron), recién ahí disparamos alertLineDown. Corta los falsos
+// "se desconectó" cuando en realidad está conectada (reclamo típico de cuentas con varias líneas).
+const LINE_DOWN_GRACE_MS = 4 * 60 * 1000; // 4 minutos
+
+export function scheduleLineDownAlert(line: { id: string; userId: string; label: string | null; phone: string }): void {
+  const t = setTimeout(() => {
+    void (async () => {
+      const fresh = await prisma.waLine
+        .findUnique({ where: { id: line.id }, select: { connected: true, sessionId: true } })
+        .catch(() => null);
+      if (!fresh) return; // la borraron: no es una "caída" que avisar
+      if (fresh.connected) return; // volvió sola (flapping) -> no avisamos
+      // Chequeo final contra el motor por si la DB todavía no reflejó la reconexión.
+      const state = await getEngine().connectionState(fresh.sessionId ?? `line_${line.id}`).catch(() => "");
+      if (state === "open") return; // reconectada
+      await alertLineDown(line);
+    })();
+  }, LINE_DOWN_GRACE_MS);
+  t.unref?.();
 }
 
 // Aviso de SALDO por agotarse: el servicio del cliente se va a apagar en ~N horas y no tiene

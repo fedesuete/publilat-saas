@@ -13,7 +13,7 @@ import { notify } from "../lib/notifications.js";
 import { onInboundFlow } from "../lib/flow-engine.js";
 import { fireCtwaLead, extractCtwaFromBaileys } from "../lib/ctwa.js";
 import { fireMetaEvent } from "../lib/meta-events.js";
-import { alertLineDown } from "../lib/line-alert.js";
+import { scheduleLineDownAlert } from "../lib/line-alert.js";
 
 export const webhookRouter = Router();
 
@@ -115,13 +115,12 @@ webhookRouter.post("/", async (req, res) => {
         const activated = await consumeDayAndActivate(userId, line.id, line.label);
         if (!activated) emitToUser(userId, "wa:status", { lineId: line.id, state: "no_credits", connected });
       }
-      // Transición conectada -> CAÍDA: avisamos al dueño (campana + email) apenas el motor
-      // lo reporta, sin esperar al job de salud (que antes era el único que mandaba el mail).
-      // Incluye SCAN_QR_CODE (perdió la sesión, como Ganamos). El logout del dueño NO dispara
-      // porque ese camino setea connected=false en la DB antes (line.connected ya es false).
-      // El dedupe de 6 h del helper evita el spam si la línea flapea.
+      // Transición conectada -> CAÍDA: avisamos al dueño (campana + email). NO al instante: dejamos
+      // un período de gracia y RE-VERIFICAMOS, porque la línea suele caer y volver sola en segundos
+      // (flapping) -> si avisáramos ya, el cliente recibe "se desconectó" con la línea conectada.
+      // Incluye SCAN_QR_CODE (perdió la sesión). El logout del dueño NO dispara (line.connected ya es false).
       if (line.connected && !connected) {
-        void alertLineDown(line);
+        scheduleLineDownAlert(line);
       }
       emitToUser(userId, "wa:status", { lineId: line.id, state, connected });
       return;
