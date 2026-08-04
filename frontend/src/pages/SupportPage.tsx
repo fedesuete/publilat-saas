@@ -50,7 +50,7 @@ export default function SupportPage() {
             <div key={m.id} className={`flex ${m.fromAdmin ? "justify-start" : "justify-end"}`}>
               <div className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${m.fromAdmin ? "bg-slate-700 text-slate-100" : "bg-wa-green text-slate-900"}`}>
                 {m.fromAdmin && <div className="mb-0.5 text-[10px] font-semibold text-wa-green/90">Soporte Publi</div>}
-                <div>{m.body}</div>
+                <div className="whitespace-pre-line break-words">{m.body}</div>
                 <div className={`mt-1 text-[10px] ${m.fromAdmin ? "text-slate-400" : "text-slate-800/70"}`}>{fmtDate(m.createdAt)}</div>
               </div>
             </div>

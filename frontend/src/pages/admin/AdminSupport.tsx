@@ -80,7 +80,7 @@ export default function AdminSupport() {
               {messages.map((m) => (
                 <div key={m.id} className={`flex ${m.fromAdmin ? "justify-end" : "justify-start"}`}>
                   <div className={`max-w-[70%] rounded-lg px-3 py-2 text-sm ${m.fromAdmin ? "bg-wa-green text-slate-900" : "bg-slate-700 text-slate-100"}`}>
-                    <div>{m.body}</div>
+                    <div className="whitespace-pre-line break-words">{m.body}</div>
                     <div className={`mt-1 text-[10px] ${m.fromAdmin ? "text-slate-800/70" : "text-slate-400"}`}>{fmtDate(m.createdAt)}</div>
                   </div>
                 </div>
