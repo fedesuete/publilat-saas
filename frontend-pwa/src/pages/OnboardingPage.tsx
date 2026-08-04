@@ -82,9 +82,11 @@ export default function OnboardingPage() {
     const common = {
       nickname: nickname.trim() || undefined,
       autogenerate: true,
+      // fbclid/fbp/fbc: primero de la URL (los reenvía la landing, porque las cookies del pixel
+      // NO cruzan de dominio landing->chat), y si no, de las cookies propias de chat.publi.lat.
       fbclid: params.get("fbclid") || undefined,
-      fbp: cookie("_fbp") || undefined,
-      fbc: cookie("_fbc") || undefined,
+      fbp: params.get("fbp") || cookie("_fbp") || undefined,
+      fbc: params.get("fbc") || cookie("_fbc") || undefined,
     };
     try {
       const [{ data }] = await Promise.all([
