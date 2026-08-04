@@ -240,7 +240,8 @@ export default function BillingPage() {
       <h1 className="mb-2 text-xl font-bold">Créditos</h1>
       <p className="mb-5 text-sm text-slate-400">
         1 día = 1 línea activa por 24 h. Activá líneas consumiendo días del crédito.
-        Al vencer, la línea sale de rotación automáticamente.
+        Al vencer, la línea sale de rotación automáticamente.{" "}
+        <b className="text-slate-300">Las landings y los links son gratis</b> — no consumen días, usan tu línea activa como destino.
       </p>
 
       {error && (

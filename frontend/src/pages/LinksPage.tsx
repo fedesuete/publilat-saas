@@ -63,10 +63,14 @@ export default function LinksPage() {
   return (
     <div className="p-6">
       <h1 className="mb-2 text-xl font-bold">Generador de links</h1>
-      <p className="mb-5 text-sm text-slate-400">
+      <p className="mb-3 text-sm text-slate-400">
         Usá estos links en tus anuncios de Meta. Disparan el evento Lead y redirigen
         a WhatsApp con tu mensaje.
       </p>
+      <div className="mb-5 rounded-lg border border-wa-green/30 bg-wa-green/5 px-4 py-3 text-sm text-slate-300">
+        💡 <b className="text-wa-green">Los links y las landings son gratis.</b> No consumen días: los días son solo para
+        tener una línea de WhatsApp activa. El link usa tu línea activa como destino — no necesitás un día aparte.
+      </div>
 
       <Card className="mb-6 max-w-lg">
         <div className="space-y-3">

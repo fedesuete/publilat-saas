@@ -463,6 +463,12 @@ export default function LandingsPage() {
         </div>
       </div>
 
+      <div className="mb-4 rounded-lg border border-wa-green/30 bg-wa-green/5 px-4 py-3 text-sm text-slate-300">
+        💡 <b className="text-wa-green">Las landings son gratis.</b> No consumen días: los días son solo para tener una
+        línea de WhatsApp activa. Tu landing usa la línea que ya tenés activa como destino, así que
+        <b> no necesitás guardar ni comprar un día aparte</b> para publicarla.
+      </div>
+
       {error && <div className="mb-4"><ErrorMsg>{error}</ErrorMsg></div>}
 
       <div id="lp-guide"><LandingGuide slug={slug} goBase={API_BASE} /></div>
