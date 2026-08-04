@@ -26,9 +26,12 @@ import {
   Menu,
   X,
   Zap,
+  Sun,
+  Moon,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
+import { getTheme, toggleTheme, type Theme } from "../lib/theme";
 import { Button } from "./ui";
 import SupportBubble from "./SupportBubble";
 import OnboardingTour, { type TourStep } from "./OnboardingTour";
@@ -145,6 +148,9 @@ export default function AppLayout() {
   // Ídem para el Chat App (no-leídos del operador en el canal propio).
   const [chatUnread, setChatUnread] = useState(0);
   const chatUnreadTimer = useRef<number | undefined>(undefined);
+  // Tema del panel (oscuro por default; el claro es blanco+verde).
+  const [theme, setThemeState] = useState<Theme>(() => getTheme());
+  const onToggleTheme = () => setThemeState(toggleTheme());
   // Menú lateral en MÓVIL: cajón deslizable (en desktop es fijo, siempre visible).
   const [menuOpen, setMenuOpen] = useState(false);
   // Recorrido guiado de bienvenida (se dispara al crear la cuenta o desde "Empezá acá").
@@ -309,6 +315,13 @@ export default function AppLayout() {
         <div className="border-t border-slate-800 p-4 text-xs text-slate-400">
           <div className="truncate font-medium text-slate-200">{user?.email}</div>
           <div className="mb-3 truncate">slug: {user?.slug}</div>
+          <button
+            onClick={onToggleTheme}
+            className="mb-2 flex w-full items-center justify-center gap-2 rounded-md border border-slate-700 px-3 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800 hover:text-white"
+          >
+            {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+            {theme === "light" ? "Modo oscuro" : "Modo claro"}
+          </button>
           <Button variant="ghost" className="w-full" onClick={handleLogout}>
             Cerrar sesión
           </Button>

@@ -2,6 +2,50 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ===== Tema del panel: OSCURO (negro+verde, default) vs CLARO (blanco+verde) =====
+   La escala `slate` de Tailwind está mapeada a estas variables (ver tailwind.config.js). En claro
+   se invierte: los tonos oscuros (fondos 900/950/800) pasan a claros y los claros (textos 100-400)
+   a oscuros. Así toda la UI cambia con un solo atributo data-theme, sin tocar cada componente. */
+:root {
+  color-scheme: dark;
+  --c-slate-50: 248 250 252;
+  --c-slate-100: 241 245 249;
+  --c-slate-200: 226 232 240;
+  --c-slate-300: 203 213 225;
+  --c-slate-400: 148 163 184;
+  --c-slate-500: 100 116 139;
+  --c-slate-600: 71 85 105;
+  --c-slate-700: 51 65 85;
+  --c-slate-800: 30 41 59;
+  --c-slate-900: 15 23 42;
+  --c-slate-950: 2 6 23;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  /* textos (100-500): oscuros y legibles sobre blanco (más prominente = más oscuro) */
+  --c-slate-50: 15 23 42;
+  --c-slate-100: 15 23 42;
+  --c-slate-200: 30 41 59;
+  --c-slate-300: 51 65 85;
+  --c-slate-400: 71 85 105;
+  --c-slate-500: 100 116 139;
+  /* 600 mixto (texto/borde/fondo): gris medio */
+  --c-slate-600: 148 163 184;
+  /* bordes y superficies (700/800): grises claros; fondos (900/950): blanco */
+  --c-slate-700: 203 213 225;
+  --c-slate-800: 241 245 249;
+  --c-slate-900: 255 255 255;
+  --c-slate-950: 255 255 255;
+}
+/* Excepción: `text-slate-900`/`800` es tinta OSCURA sobre superficies claras/verdes (botones "Compró",
+   CTAs, badges). Debe seguir OSCURA en el tema claro — si se invirtiera quedaría texto casi blanco
+   sobre verde, ilegible. Forzamos el COLOR DE TEXTO (no toca bg-slate-*, que sí debe ser claro). */
+:root[data-theme="light"] .text-slate-900,
+:root[data-theme="light"] .text-slate-800,
+:root[data-theme="light"] .text-slate-800\/70 {
+  color: rgb(11 20 26);
+}
+
 html,
 body,
 #root {
