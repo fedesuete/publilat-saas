@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { getSocket, type InboxMessagePayload } from "../lib/socket";
+import { io, type Socket } from "socket.io-client";
+import { API_BASE } from "../lib/config";
 import { api } from "../lib/api";
 import NotificationBell from "./NotificationBell";
 import {
@@ -140,6 +142,9 @@ export default function AppLayout() {
   // Total de mensajes sin leer (para el globito del menú Inbox).
   const [unread, setUnread] = useState(0);
   const unreadTimer = useRef<number | undefined>(undefined);
+  // Ídem para el Chat App (no-leídos del operador en el canal propio).
+  const [chatUnread, setChatUnread] = useState(0);
+  const chatUnreadTimer = useRef<number | undefined>(undefined);
   // Menú lateral en MÓVIL: cajón deslizable (en desktop es fijo, siempre visible).
   const [menuOpen, setMenuOpen] = useState(false);
   // Recorrido guiado de bienvenida (se dispara al crear la cuenta o desde "Empezá acá").
@@ -173,6 +178,15 @@ export default function AppLayout() {
     }
   };
 
+  const refreshChatUnread = async () => {
+    try {
+      const { data } = await api.get<{ conversations: Array<{ unread: number }> }>("/api/chat/conversations");
+      setChatUnread(data.conversations.reduce((acc, c) => acc + (c.unread || 0), 0));
+    } catch {
+      /* sin Chat App o red caída: el globito no es crítico */
+    }
+  };
+
   // Sonidos + contador de no-leídos, en cualquier pantalla del panel:
   // comprobante (imagen/PDF) = caja registradora 💰; mensaje común = ding.
   useEffect(() => {
@@ -203,6 +217,26 @@ export default function AppLayout() {
       window.clearTimeout(unreadTimer.current);
       window.removeEventListener("pointerdown", unlockAudio);
       window.removeEventListener("keydown", unlockAudio);
+    };
+  }, []);
+
+  // Chat App: sonido + contador de no-leídos del operador, en CUALQUIER pantalla del panel.
+  // Segundo socket al namespace /chat (cookie del operador), igual que ChatAppPage. Solo suena con
+  // mensajes ENTRANTES del jugador (senderType "player") — no el eco de lo que manda el operador/bot.
+  useEffect(() => {
+    void refreshChatUnread();
+    const socket: Socket = io(`${API_BASE}/chat`, { withCredentials: true });
+    const onChat = (p: { message?: { senderType?: string } }) => {
+      if (p?.message?.senderType !== "player") return;
+      playPing();
+      window.clearTimeout(chatUnreadTimer.current);
+      chatUnreadTimer.current = window.setTimeout(() => void refreshChatUnread(), 800);
+    };
+    socket.on("chat:message", onChat);
+    return () => {
+      socket.off("chat:message", onChat);
+      socket.disconnect();
+      window.clearTimeout(chatUnreadTimer.current);
     };
   }, []);
 
@@ -251,6 +285,11 @@ export default function AppLayout() {
               {item.to === "/inbox" && unread > 0 && (
                 <span className="ml-auto flex h-5 min-w-[20px] items-center justify-center rounded-full bg-wa-green px-1.5 text-[11px] font-bold text-slate-900">
                   {unread > 99 ? "99+" : unread}
+                </span>
+              )}
+              {item.to === "/chat" && chatUnread > 0 && (
+                <span className="ml-auto flex h-5 min-w-[20px] items-center justify-center rounded-full bg-wa-green px-1.5 text-[11px] font-bold text-slate-900">
+                  {chatUnread > 99 ? "99+" : chatUnread}
                 </span>
               )}
             </NavLink>
