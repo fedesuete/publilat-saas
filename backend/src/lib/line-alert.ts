@@ -8,10 +8,56 @@ import { notify } from "./notifications.js";
 import { sendMail, sendAdminMail } from "./mailer.js";
 import { getEngine } from "./wa-engine.js";
 
+// Diagnóstico automático de POR QUÉ se cayó una línea: consulta el estado de la sesión (WAHA, con su
+// `me.reachoutTimelock`) + la DB (duplicados / baneo) y devuelve el motivo + la acción concreta. Así
+// el aviso deja de ser genérico y vamos detectando patrones (restricción vs re-vincular vs baneo vs
+// duplicado). Best-effort: si algo falla, devuelve "" y el aviso cae al texto genérico.
+type SessionMe = { reachoutTimelock?: { isActive?: boolean; timeEnforcementEnds?: number } };
+export async function diagnoseLine(line: { id: string; userId: string; phone: string }): Promise<string> {
+  const inst = `line_${line.id}`;
+  let status = "";
+  let me: SessionMe | null = null;
+  const base = process.env.WAHA_BASE_URL, key = process.env.WAHA_API_KEY;
+  if ((process.env.WA_ENGINE ?? "").toLowerCase() === "waha" && base && key) {
+    try {
+      const r = await fetch(`${base}/api/sessions/${inst}`, { headers: { "X-Api-Key": key } });
+      if (r.ok) { const s = (await r.json()) as { status?: string; me?: SessionMe | null }; status = s.status ?? ""; me = s.me ?? null; }
+    } catch { /* seguimos con lo que haya */ }
+  }
+  if (!status) status = await getEngine().connectionState(inst).catch(() => "");
+
+  // 1) Restricción de WhatsApp (bloquea los dispositivos vinculados). Es la más importante y la que
+  //    más confunde: por más que reconecte, WhatsApp la echa hasta que vence.
+  const lock = me?.reachoutTimelock;
+  if (lock?.isActive && lock.timeEnforcementEnds) {
+    const end = new Date(lock.timeEnforcementEnds * 1000).toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit" });
+    return `⛔ WhatsApp RESTRINGIÓ este número (bloquea los dispositivos vinculados) hasta el ${end}. Reconectar NO sirve hasta esa fecha — conviene usar OTRO número mientras tanto. No es un problema de la plataforma.`;
+  }
+  // 2) Duplicado: mismo número en otra línea de la cuenta → dos sesiones peleando.
+  if (line.phone) {
+    const dup = await prisma.waLine.count({ where: { userId: line.userId, phone: line.phone, id: { not: line.id }, provider: { not: "cloud" } } }).catch(() => 0);
+    if (dup > 0) return `⚠️ El número está cargado en OTRA línea de la misma cuenta (duplicado) → las dos sesiones pelean y WhatsApp echa una. Hay que dejar UNA sola.`;
+  }
+  // 3) Baneada (logout/401/403 inequívoco).
+  const db = await prisma.waLine.findUnique({ where: { id: line.id }, select: { banned: true } }).catch(() => null);
+  if (db?.banned) return `⛔ Número BANEADO/deslogueado por WhatsApp. No se recupera: hay que vincular un número NUEVO.`;
+  // 4) Por estado de la sesión.
+  if (status === "open" || status === "WORKING") return `✅ La línea ya se reconectó sola (falsa alarma).`;
+  if (status === "SCAN_QR_CODE") return `📷 Perdió la sesión de WhatsApp → re-escaneá el QR desde el panel (WhatsApp → Conectar).`;
+  if (["FAILED", "STOPPED", "close"].includes(status)) return `🔌 Sesión caída (${status}). Re-vinculá desde el panel (WhatsApp → Conectar / Ver QR). Si se cae seguido, probá con otro número.`;
+  if (status === "STARTING") return `⏳ Reintentando conectar. Si no vuelve en unos minutos, re-vinculá desde el panel o probá con otro número.`;
+  return `❓ Causa no determinada (estado: ${status || "desconocido"}). Re-vinculá desde el panel; si sigue cayendo, avisanos.`;
+}
+
 export async function alertLineDown(line: { id: string; userId: string; label: string | null; phone: string }): Promise<void> {
   const name = line.label || line.phone || "tu línea";
-  const body = `Tu WhatsApp "${name}" se desconectó. Entrá a Publi.lat → WhatsApp y tocá "Conectar / Ver QR" para volver a vincularlo (tus chats no se pierden).`;
-  // Dedupe: si ya avisamos esta misma caída en las últimas 6 h, no repetimos el email.
+  // Testeo automático del motivo de la caída (para el aviso y para detectar bugs recurrentes).
+  const diag = await diagnoseLine(line).catch(() => "");
+  console.warn(`[line-down] ${line.id} ("${name}") user=${line.userId} -> ${diag || "sin diagnóstico"}`);
+  const body = diag
+    ? `Tu WhatsApp "${name}" se desconectó.\n\n${diag}`
+    : `Tu WhatsApp "${name}" se desconectó. Entrá a Publi.lat → WhatsApp y tocá "Conectar / Ver QR" para volver a vincularlo (tus chats no se pierden).`;
+  // Dedupe: si ya avisamos esta misma caída (mismo motivo) en las últimas 6 h, no repetimos el email.
   const recent = await prisma.notification.findFirst({
     where: { userId: line.userId, type: "line_down", body, createdAt: { gte: new Date(Date.now() - 6 * 60 * 60 * 1000) } },
     select: { id: true },
@@ -26,7 +72,7 @@ export async function alertLineDown(line: { id: string; userId: string; label: s
   }
   void sendAdminMail(
     `Línea caída: "${name}" (${owner?.email ?? line.userId})`,
-    `La línea ${line.id} ("${name}") de ${owner?.email ?? line.userId} se desconectó y necesita reconexión.`,
+    `La línea ${line.id} ("${name}", ${line.phone}) de ${owner?.email ?? line.userId} se desconectó.\n\nDIAGNÓSTICO AUTOMÁTICO:\n${diag || "sin diagnóstico"}`,
   );
 }
 
