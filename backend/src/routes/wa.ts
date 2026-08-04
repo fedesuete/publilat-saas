@@ -608,7 +608,7 @@ waRouter.post("/lines/:id/activate", async (req, res) => {
       where: { id: credit.id },
       data: {
         days: { decrement: days },
-        ledger: { create: { delta: -days, reason: `activación línea ${line.label ?? line.id}` } },
+        ledger: { create: { delta: -days, reason: `${days} día${days === 1 ? "" : "s"} activados en tu línea${line.label ? ` «${line.label}»` : ""}` } },
       },
     }),
   ]);

@@ -70,9 +70,17 @@ billingRouter.get("/credit", async (req, res) => {
     take: 30,
     select: { id: true, delta: true, reason: true, createdAt: true },
   });
+  // Líneas con día vigente: para mostrar "hasta qué día está activo tu WhatsApp" (los días que
+  // el cliente ya activó no están "perdidos": viven acá como tiempo activo de la línea).
+  const activeLines = await prisma.waLine.findMany({
+    where: { userId: req.userId!, expiresAt: { gt: new Date() } },
+    orderBy: { expiresAt: "desc" },
+    select: { id: true, label: true, phone: true, expiresAt: true },
+  });
   return res.json({
     days: credit.days,
     ledger,
+    activeLines,
     methods: { mercadopago: mpEnabled(), stripe: stripeEnabled(), usdt: usdtEnabled(), pagopar: pagoparEnabled() },
   });
 });

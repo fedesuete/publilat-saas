@@ -35,7 +35,7 @@ export async function consumeDayAndActivate(userId: string, lineId: string, labe
     await prisma.waLine.update({ where: { id: lineId }, data: { status: "inactive", expiresAt: null } }).catch(() => undefined);
     return false;
   }
-  await prisma.creditLedger.create({ data: { creditId: credit!.id, delta: -1, reason: `línea activa 24h ${label ?? lineId}` } });
+  await prisma.creditLedger.create({ data: { creditId: credit!.id, delta: -1, reason: `1 día de línea activa${label ? ` «${label}»` : ""}` } });
   return true;
 }
 

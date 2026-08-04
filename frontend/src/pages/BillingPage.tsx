@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, apiError } from "../lib/api";
-import { fmtDate } from "../lib/format";
+import { fmtDate, fmtRemaining } from "../lib/format";
 import { Button, Input, Card, ErrorMsg } from "../components/ui";
 
 interface LedgerEntry {
@@ -17,9 +17,16 @@ interface Methods {
   usdt: boolean;
   pagopar: boolean;
 }
+interface ActiveLine {
+  id: string;
+  label: string | null;
+  phone: string | null;
+  expiresAt: string | null;
+}
 interface CreditResponse {
   days: number;
   ledger: LedgerEntry[];
+  activeLines?: ActiveLine[];
   methods: Methods;
 }
 
@@ -35,6 +42,7 @@ const ALL_PROVIDERS: Provider[] = ["mercadopago", "stripe", "usdt", "pagopar"];
 export default function BillingPage() {
   const [days, setDays] = useState(0);
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
+  const [activeLines, setActiveLines] = useState<ActiveLine[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -81,6 +89,7 @@ export default function BillingPage() {
           setPayDone(`✅ ¡Pago confirmado! Se acreditaron ${data.days - baseline} día(s).`);
           setDays(data.days);
           setLedger(data.ledger);
+          setActiveLines(data.activeLines ?? []);
           return;
         }
       } catch {
@@ -101,6 +110,7 @@ export default function BillingPage() {
       const { data } = await api.get<CreditResponse>("/api/billing/credit");
       setDays(data.days);
       setLedger(data.ledger);
+      setActiveLines(data.activeLines ?? []);
       if (data.methods) setMethods(data.methods);
     } catch (err) {
       setError(apiError(err));
@@ -117,6 +127,7 @@ export default function BillingPage() {
         const { data } = await api.get<CreditResponse>("/api/billing/credit");
         setDays(data.days);
         setLedger(data.ledger);
+        setActiveLines(data.activeLines ?? []);
         if (data.methods) setMethods(data.methods);
         // Vuelta del checkout (MP/USDT-tarjeta usan ?status=success): vigilamos la acreditación.
         const params = new URLSearchParams(window.location.search);
@@ -255,12 +266,36 @@ export default function BillingPage() {
       ) : (
         <div className="grid gap-6 md:grid-cols-2">
           <Card className="md:col-span-2">
-            <div className="text-sm text-slate-400">Días disponibles</div>
+            <div className="text-sm text-slate-400">Días disponibles para activar</div>
             <div className="mt-1 text-5xl font-bold text-wa-green">{days}</div>
             <div className="mt-1 text-xs text-slate-500">
-              {days === 1 ? "1 día de línea activa" : `${days} días de línea activa`}
+              {days === 1 ? "1 día sin usar (para activar una línea)" : `${days} días sin usar (para activar tus líneas)`}
             </div>
           </Card>
+
+          {/* Líneas con día vigente: aclara que los días YA activados no se perdieron — son el tiempo
+              que la línea queda prendida — y responde "hasta qué día está activo mi WhatsApp". */}
+          {activeLines.length > 0 && (
+            <Card className="md:col-span-2">
+              <div className="mb-1 text-sm font-semibold text-slate-200">📶 Tu WhatsApp activo</div>
+              <p className="mb-3 text-xs text-slate-500">
+                Los días que ya activaste no se pierden: son el tiempo que tu línea queda prendida. Acá ves hasta cuándo.
+              </p>
+              <div className="space-y-2">
+                {activeLines.map((l) => (
+                  <div key={l.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2">
+                    <span className="min-w-0 truncate text-sm text-slate-200">
+                      🟢 {l.label || (l.phone ? `Línea ${l.phone}` : "Tu línea de WhatsApp")}
+                    </span>
+                    <span className="shrink-0 text-right">
+                      <span className="block text-sm font-semibold text-wa-green">activa hasta {fmtDate(l.expiresAt)}</span>
+                      <span className="block text-xs text-slate-500">{fmtRemaining(l.expiresAt)}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
 
           <Card className="md:col-span-2">
             <div className="mb-2 text-sm font-semibold">Comprar días</div>
