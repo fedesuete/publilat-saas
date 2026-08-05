@@ -212,7 +212,7 @@ export default function ChatAppPage() {
                     return (
                       <div key={m.id} className={`flex ${m.senderType === "operator" ? "justify-end" : m.senderType === "system" ? "justify-center" : "justify-start"}`}>
                         <div className={`max-w-[70%] rounded-lg px-3 py-2 text-sm ${m.senderType === "operator" ? "bg-wa-green text-slate-900" : m.senderType === "system" ? "bg-slate-800 text-slate-400 text-xs italic" : "bg-slate-700 text-slate-100"}`}>
-                          {img && <a href={img} target="_blank" rel="noreferrer"><img src={img} alt="" className="mb-1 max-h-60 rounded-lg object-cover" /></a>}
+                          {img && <a href={img} target="_blank" rel="noreferrer"><img src={img} alt="" className="mb-1 max-h-96 max-w-full rounded-lg object-contain" /></a>}
                           {m.body}
                           {(m.metadata?.install as boolean) && <div className="mt-1 text-[11px] opacity-70">📲 (con botón INSTALAR APP)</div>}
                         </div>

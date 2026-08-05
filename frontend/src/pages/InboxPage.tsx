@@ -420,7 +420,7 @@ export default function InboxPage() {
                     )}
                     {m.mediaUrl && m.mediaUrl.startsWith("data:image") && (
                       <a href={m.mediaUrl} target="_blank" rel="noopener noreferrer">
-                        <img src={m.mediaUrl} alt="Imagen" className="mb-1 max-h-64 w-full rounded-md object-cover" />
+                        <img src={m.mediaUrl} alt="Imagen" className="mb-1 max-h-96 max-w-full rounded-md object-contain" />
                       </a>
                     )}
                     {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
