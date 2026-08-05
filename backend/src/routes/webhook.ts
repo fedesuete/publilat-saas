@@ -14,6 +14,7 @@ import { onInboundFlow } from "../lib/flow-engine.js";
 import { fireCtwaLead, extractCtwaFromBaileys } from "../lib/ctwa.js";
 import { fireMetaEvent } from "../lib/meta-events.js";
 import { scheduleLineDownAlert } from "../lib/line-alert.js";
+import { recordProxyFlap } from "../lib/proxy-flap.js";
 
 export const webhookRouter = Router();
 
@@ -122,6 +123,9 @@ webhookRouter.post("/", async (req, res) => {
       if (line.connected && !connected) {
         scheduleLineDownAlert(line);
       }
+      // Auto-detección de proxy inestable: cada vez que NO queda conectada, contamos la reconexión.
+      // Si el proxy corta el WebSocket sin parar (aunque el probe HTTP pase), se auto-rota. Ver proxy-flap.ts.
+      if (!connected) recordProxyFlap(line);
       emitToUser(userId, "wa:status", { lineId: line.id, state, connected });
       return;
     }
