@@ -360,15 +360,12 @@ export async function recoverProxyLine(lineId: string): Promise<void> {
     // La sesión puede haber sido BORRADA (404 — p.ej. por el waha-cleanup si la vio no-WORKING). La
     // re-creamos en vez de contarlo como "no reconecta". Idempotente: si existe, no la toca.
     await getEngine().createInstance(inst).catch(() => undefined);
-    // Rotamos la IP UNA sola vez, en el ÚLTIMO intento. Saltar entre varias IPs en minutos es señal fea
-    // para WA; y con proxy nativo rotar = re-sync completo (banda). Los otros intentos van con la misma IP.
-    if (attempt === RECOVER_BACKOFFS.length) {
-      await rotateProxy(lineId).catch(() => undefined);
-      await logProxyEvent(lineId, line.proxyId, "rotated", `roto IP (último intento ${attempt})`);
-    } else {
-      await logProxyEvent(lineId, line.proxyId, "line_down", `reintento ${attempt} (misma IP)`);
-    }
-    await applyLineProxy(inst, lineId).catch(() => undefined); // (re)aplica el proxy nativo — reinicia la sesión
+    // NUNCA rotamos la IP: WhatsApp RESTRINGE los números cuando detecta cambios de IP en el
+    // dispositivo vinculado (cada salto de IP = "el número saltó de lugar" -> chequeo de seguridad ->
+    // restricción). Confirmado en prod (victoria-laca: 3 cambios de IP -> 2 números restringidos).
+    // Mantenemos SIEMPRE la misma IP sticky, aunque la línea flapee; la reconexión reintenta con la MISMA.
+    await logProxyEvent(lineId, line.proxyId, "line_down", `reintento ${attempt} (misma IP, sin rotar)`);
+    await applyLineProxy(inst, lineId).catch(() => undefined); // (re)aplica el MISMO proxy nativo — reinicia la sesión
     await sleep(12_000);
     const state = await getEngine().connectionState(inst).catch(() => "unknown");
     if (state === "open") {
