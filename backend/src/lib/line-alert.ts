@@ -7,6 +7,7 @@ import { prisma } from "./prisma.js";
 import { notify } from "./notifications.js";
 import { sendMail, sendAdminMail } from "./mailer.js";
 import { getEngine } from "./wa-engine.js";
+import { emitToUser } from "./io.js";
 
 // Diagnóstico automático de POR QUÉ se cayó una línea: consulta el estado de la sesión (WAHA, con su
 // `me.reachoutTimelock`) + la DB (duplicados / baneo) y devuelve el motivo + la acción concreta. Así
@@ -76,26 +77,56 @@ export async function alertLineDown(line: { id: string; userId: string; label: s
   );
 }
 
-// Gracia anti-flapping: una línea puede caer y VOLVER SOLA en segundos (reconexión del motor). En vez
-// de avisar al instante en el evento de desconexión, esperamos un rato y RE-VERIFICAMOS: si ya volvió,
-// no avisamos; si sigue caída (o la borraron), recién ahí disparamos alertLineDown. Corta los falsos
-// "se desconectó" cuando en realidad está conectada (reclamo típico de cuentas con varias líneas).
-const LINE_DOWN_GRACE_MS = 4 * 60 * 1000; // 4 minutos
+// Gracia anti-flapping + RECUPERACIÓN AUTOMÁTICA: una línea puede caer y VOLVER SOLA en segundos
+// (el motor reconecta con las credenciales guardadas). En vez de avisar al instante:
+//   1) esperamos FAST_RECOVER_MS y re-verificamos: si ya volvió (flapping) -> nada.
+//   2) si sigue caída, la REINICIAMOS nosotros (restart SIN QR, misma IP/credenciales) en vez de
+//      esperar el poll de salud (cada 5 min). Así el cliente NO tiene que reconectar a mano.
+//   3) solo si tras eso sigue caída, recién avisamos al dueño (con diagnóstico).
+// (Reclamo típico de casino: "micro-caídas y después tengo que volver a conectar".)
+const FAST_RECOVER_MS = 45 * 1000; // 1er re-chequeo + intento de reconexión automática
+const RECHECK_MS = 25 * 1000; // margen para que levante tras el restart
+const ALERT_GRACE_MS = 3 * 60 * 1000; // si aún así no vuelve, recién avisamos (~4 min total)
+
+// ¿La línea sigue caída de verdad? Devuelve null si la borraron (no es una "caída" que avisar).
+async function stillDown(lineId: string): Promise<{ inst: string; banned: boolean; paused: boolean } | null> {
+  const fresh = await prisma.waLine
+    .findUnique({ where: { id: lineId }, select: { connected: true, sessionId: true, banned: true, status: true } })
+    .catch(() => null);
+  if (!fresh) return null; // la borraron
+  const inst = fresh.sessionId ?? `line_${lineId}`;
+  if (fresh.connected) return null; // volvió sola
+  const state = await getEngine().connectionState(inst).catch(() => "");
+  if (state === "open") return null; // reconectada (la DB todavía no lo reflejó)
+  return { inst, banned: fresh.banned, paused: fresh.status === "paused" };
+}
 
 export function scheduleLineDownAlert(line: { id: string; userId: string; label: string | null; phone: string }): void {
   const t = setTimeout(() => {
     void (async () => {
-      const fresh = await prisma.waLine
-        .findUnique({ where: { id: line.id }, select: { connected: true, sessionId: true } })
-        .catch(() => null);
-      if (!fresh) return; // la borraron: no es una "caída" que avisar
-      if (fresh.connected) return; // volvió sola (flapping) -> no avisamos
-      // Chequeo final contra el motor por si la DB todavía no reflejó la reconexión.
-      const state = await getEngine().connectionState(fresh.sessionId ?? `line_${line.id}`).catch(() => "");
-      if (state === "open") return; // reconectada
+      // 1) ¿ya volvió sola? (flapping típico)
+      let s = await stillDown(line.id);
+      if (!s) return;
+
+      // 2) Recuperación automática sin QR (salvo baneada o pausada a propósito por el cliente).
+      if (!s.banned && !s.paused) {
+        console.log(`[line-recover] ${line.id}: sigue caída ${Math.round(FAST_RECOVER_MS / 1000)}s -> restart automático (sin QR)`);
+        emitToUser(line.userId, "wa:status", { lineId: line.id, state: "recovering", connected: false, recovering: true });
+        await getEngine().restartInstance(s.inst).catch(() => undefined);
+        await new Promise((r) => setTimeout(r, RECHECK_MS));
+        if (!(await stillDown(line.id))) {
+          console.log(`[line-recover] ${line.id}: reconectó sola tras el restart ✓`);
+          return;
+        }
+      }
+
+      // 3) Sigue caída: gracia final y aviso al dueño (con diagnóstico).
+      await new Promise((r) => setTimeout(r, ALERT_GRACE_MS));
+      if (!(await stillDown(line.id))) return;
+      emitToUser(line.userId, "wa:status", { lineId: line.id, state: "disconnected", connected: false, recovering: false });
       await alertLineDown(line);
     })();
-  }, LINE_DOWN_GRACE_MS);
+  }, FAST_RECOVER_MS);
   t.unref?.();
 }
 

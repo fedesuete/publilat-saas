@@ -792,12 +792,20 @@ export default function WhatsappPage() {
                           className={
                             line.status === "active"
                               ? "font-semibold text-wa-green"
-                              : line.status === "paused"
-                                ? "font-semibold text-amber-400"
-                                : "text-slate-500"
+                              : line.status === "recovering"
+                                ? "font-semibold text-sky-400"
+                                : line.status === "paused"
+                                  ? "font-semibold text-amber-400"
+                                  : "text-slate-500"
                           }
                         >
-                          {line.status === "active" ? "activa" : line.status === "paused" ? "pausada" : line.status}
+                          {line.status === "active"
+                            ? "activa"
+                            : line.status === "recovering"
+                              ? "🔄 reconectando sola…"
+                              : line.status === "paused"
+                                ? "pausada"
+                                : line.status}
                         </span>
                       </div>
                     </div>
@@ -880,6 +888,10 @@ export default function WhatsappPage() {
                 ) : line.connected ? (
                   <div className="mb-3 rounded-md border border-wa-green/40 bg-wa-green/10 px-3 py-2 text-sm text-wa-green">
                     Línea conectada
+                  </div>
+                ) : line.status === "recovering" ? (
+                  <div className="mb-3 rounded-md border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-sm text-sky-200">
+                    🔄 Se cayó un momento — el sistema la está <b>reconectando sola</b>. No hace falta que hagas nada.
                   </div>
                 ) : qr ? (
                   <div className="mb-3 flex justify-center rounded-md bg-white p-2">
