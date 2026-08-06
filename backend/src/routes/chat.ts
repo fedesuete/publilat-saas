@@ -16,6 +16,7 @@ import { pushEnabled, publicVapidKey, enqueuePlayerPush, enqueueAccountBroadcast
 import { s3Enabled } from "../lib/s3.js";
 import { runChatBot } from "../lib/chat-bot.js";
 import { canOperateChat, consumeChatDayAndActivate, getAvailableDays } from "../lib/access.js";
+import { creditDepositInCasino, debitWithdrawalInCasino } from "../lib/casino-cashier.js"; // puente ganamos (flag)
 
 // Router del OPERADOR (se monta bajo requireAuth): gestión de links de invitación.
 export const chatRouter = Router();
@@ -1389,6 +1390,9 @@ chatRouter.post("/cashier/deposit/:id/approve", async (req, res) => {
   const player = await prisma.chatPlayer.findUnique({ where: { id: dep.playerId }, select: { casinoUsername: true } });
   // Purchase idempotente: si la IA ya lo disparó al leer el comprobante, este approve NO lo repite.
   if (player) void firePlayerPurchaseOnce(dep, player.casinoUsername);
+  // Casino (socio ganamos, detrás del flag CASINO_API_*): acredita las fichas EN ganamos además del
+  // wallet interno. Apagado = no-op. Idempotente por CasinoTx `dep-<id>`; si falla, avisa al operador.
+  if (player) void creditDepositInCasino(dep, player.casinoUsername);
   await postCashierMsg(req.userId!, dep.playerId, `✅ ¡Carga acreditada! ${ars(dep.amount)}. Tu saldo: ${ars(wallet.balance)}.`);
   emitChat(`chat:${req.userId}:player:${dep.playerId}`, "chat:wallet", { balance: wallet.balance });
   return res.json({ ok: true, balance: wallet.balance });
@@ -1413,6 +1417,9 @@ chatRouter.post("/cashier/withdrawal/:id/approve", async (req, res) => {
   const debited = await prisma.chatWallet.updateMany({ where: { playerId: w.playerId, balance: { gte: w.amount } }, data: { balance: { decrement: w.amount } } });
   if (debited.count !== 1) return res.status(400).json({ error: "Saldo insuficiente del jugador para pagar el retiro." });
   await prisma.chatWithdrawal.update({ where: { id: w.id }, data: { status: "paid", resolvedAt: new Date() } });
+  // Casino (socio ganamos, detrás del flag): debita las fichas EN ganamos. Apagado = no-op.
+  const wPlayer = await prisma.chatPlayer.findUnique({ where: { id: w.playerId }, select: { casinoUsername: true } });
+  if (wPlayer) void debitWithdrawalInCasino(w, wPlayer.casinoUsername);
   const wallet = await prisma.chatWallet.findUnique({ where: { playerId: w.playerId }, select: { balance: true } });
   await postCashierMsg(req.userId!, w.playerId, `✅ Retiro pagado: ${ars(w.amount)} a ${w.destino}. Saldo: ${ars(wallet?.balance ?? 0)}.`);
   emitChat(`chat:${req.userId}:player:${w.playerId}`, "chat:wallet", { balance: wallet?.balance ?? 0 });
