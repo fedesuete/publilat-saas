@@ -16,7 +16,7 @@ import { decryptSecret } from "./crypto.js";
 import { notify } from "./notifications.js";
 import { sendAdminMail } from "./mailer.js";
 import { checkWaWebVersion } from "./wa-version.js";
-import { alertLineDown, alertLowBalance } from "./line-alert.js";
+import { alertLineDown, alertLowBalance, lineRestrictedUntil } from "./line-alert.js";
 import { dedupeSameNumberLines } from "./dedupe-lines.js";
 import { alertCapiFailures } from "./capi-guard.js";
 import { rotateProxy, releaseProxy, applyLineProxy, logProxyEvent, alertAdminProxy, probeProxy, assignFallback, assignProxyPreferred, setLineWaitingProxy } from "./proxy-pool.js";
@@ -178,6 +178,14 @@ export async function checkLineHealth(): Promise<void> {
         const state = await getEngine().connectionState(inst);
         connected = state === "open";
         if (line.connected && !connected) {
+          // BACKOFF de restricción: si WhatsApp restringió el número, reintentar NO lo recupera hasta que
+          // venza y solo genera ruido (515/428 en loop) → NO reiniciamos ni encolamos recuperación, solo
+          // avisamos (el diagnóstico ya dice "usá otro número hasta tal fecha").
+          const restrictedUntil = await lineRestrictedUntil(inst);
+          if (restrictedUntil) {
+            console.log(`[line-health] línea ${line.id} RESTRINGIDA por WhatsApp hasta ${new Date(restrictedUntil * 1000).toISOString().slice(0, 10)} -> no reintento`);
+            await alertLineDown(line);
+          } else {
           // Auto-recuperación: sesiones que quedan trabadas en close/connecting suelen
           // volver con un restart de la instancia, SIN re-escanear el QR (flapping 428).
           console.log(`[line-health] línea ${line.id} en "${state}": intento restart automático`);
@@ -196,6 +204,7 @@ export async function checkLineHealth(): Promise<void> {
               // Campana + email al dueño y admin (dedupe 6 h en el helper compartido).
               await alertLineDown(line);
             }
+          }
           }
         }
         // Caída SILENCIOSA: la sesión reporta "conectada" pero no entrega mensajes (WAHA a veces
@@ -342,6 +351,16 @@ function tcpReachable(host: string, port: number, timeoutMs = 6000): Promise<boo
 // "no reconectó" NO es baneo (marcarlo por error le corta el servicio a un cliente sano y le libera el
 // proxy). Un solo job por línea (jobId dedup). Best-effort: NUNCA frena el resto.
 export async function recoverProxyLine(lineId: string): Promise<void> {
+  // BACKOFF de restricción: si WhatsApp restringió el número, reintentar NO lo recupera hasta que venza
+  // y solo genera ruido/desgaste (515/428 en loop) → no reintentamos. checkLineHealth ya avisó al dueño.
+  {
+    const l0 = await prisma.waLine.findUnique({ where: { id: lineId }, select: { sessionId: true, proxyId: true } });
+    const until = l0 ? await lineRestrictedUntil(l0.sessionId ?? `line_${lineId}`) : null;
+    if (until) {
+      await logProxyEvent(lineId, l0?.proxyId ?? null, "line_down", `restringida por WhatsApp hasta ${new Date(until * 1000).toISOString().slice(0, 10)} — no reintento (backoff)`);
+      return;
+    }
+  }
   let sawRealBan = false;
   for (let attempt = 1; attempt <= RECOVER_BACKOFFS.length; attempt++) {
     const line = await prisma.waLine.findUnique({

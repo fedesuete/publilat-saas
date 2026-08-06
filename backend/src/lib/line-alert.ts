@@ -50,6 +50,24 @@ export async function diagnoseLine(line: { id: string; userId: string; phone: st
   return `❓ Causa no determinada (estado: ${status || "desconocido"}). Re-vinculá desde el panel; si sigue cayendo, avisanos.`;
 }
 
+// Fecha (unix seg) hasta la que WhatsApp restringió el número (reachoutTimelock activo), o null si no
+// está restringido. BACKOFF de restricción: reintentar reconectar un número restringido NO sirve
+// (WhatsApp lo echa igual) y solo genera ruido/desgaste (515/428 en loop) → cuando esto devuelve algo,
+// los caminos de recuperación NO reintentan hasta que venza. Best-effort (una llamada a WAHA).
+export async function lineRestrictedUntil(instanceName: string): Promise<number | null> {
+  const base = process.env.WAHA_BASE_URL, key = process.env.WAHA_API_KEY;
+  if ((process.env.WA_ENGINE ?? "").toLowerCase() !== "waha" || !base || !key) return null;
+  try {
+    const r = await fetch(`${base}/api/sessions/${instanceName}`, { headers: { "X-Api-Key": key } });
+    if (!r.ok) return null;
+    const s = (await r.json()) as { me?: SessionMe | null };
+    const t = s.me?.reachoutTimelock;
+    return t?.isActive && t.timeEnforcementEnds ? t.timeEnforcementEnds : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function alertLineDown(line: { id: string; userId: string; label: string | null; phone: string }): Promise<void> {
   const name = line.label || line.phone || "tu línea";
   // Testeo automático del motivo de la caída (para el aviso y para detectar bugs recurrentes).
@@ -108,8 +126,10 @@ export function scheduleLineDownAlert(line: { id: string; userId: string; label:
       let s = await stillDown(line.id);
       if (!s) return;
 
-      // 2) Recuperación automática sin QR (salvo baneada o pausada a propósito por el cliente).
-      if (!s.banned && !s.paused) {
+      // 2) Recuperación automática sin QR (salvo baneada, pausada, o RESTRINGIDA por WhatsApp: en ese
+      //    caso reintentar no sirve hasta que venza → no la martillamos, vamos directo al aviso).
+      const restrictedUntil = await lineRestrictedUntil(s.inst);
+      if (!s.banned && !s.paused && !restrictedUntil) {
         console.log(`[line-recover] ${line.id}: sigue caída ${Math.round(FAST_RECOVER_MS / 1000)}s -> restart automático (sin QR)`);
         emitToUser(line.userId, "wa:status", { lineId: line.id, state: "recovering", connected: false, recovering: true });
         await getEngine().restartInstance(s.inst).catch(() => undefined);
