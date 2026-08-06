@@ -208,30 +208,42 @@ waRouter.post("/lines", async (req, res) => {
     }
   }
 
+  // Dos pasos con manejo de error DISTINTO (fix 2026-08-05: un cliente perdió su línea por un hipo del
+  // proxy al crearla):
+  //   1) Si falla CREAR la sesión en WhatsApp → borramos la línea (no dejar huérfana en la DB).
+  //   2) Si la sesión SÍ se creó pero falla APLICAR el proxy → NUNCA borramos la línea: la dejamos
+  //      esperando proxy (un job la reintenta). Perder una línea recién creada por un proxy caído es peor.
+  let qr;
   try {
-    const qr = await getEngine().createInstance(instanceName);
+    qr = await getEngine().createInstance(instanceName);
+  } catch (e) {
+    await prisma.waLine.delete({ where: { id: line.id } }).catch(() => undefined);
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("[wa/lines create] createInstance error:", message);
+    return res.status(502).json({ error: "No se pudo crear la instancia de WhatsApp", detail: message });
+  }
+  try {
     // Aplica el proxy asignado (setProxy reinicia la sesión → reconecta por la IP del proxy). Sin proxy
     // asignado (flag off), applyLineProxy es no-op y la línea conecta como siempre.
     await applyLineProxy(instanceName, line.id);
-    const updated = await prisma.waLine.findUnique({ where: { id: line.id } });
-    let qrBase64: string | null = qr.base64 ?? null;
-    if (autoProxy) {
-      // El QR inicial salió por la IP del VPS y quedó viejo tras el reinicio con proxy → el panel recibe
-      // el QR ya por el proxy vía socket en unos segundos. El watchdog (Fase 4) verifica que llegó al
-      // QR/WORKING por el proxy; si falla, rota proxy/proveedor o la deja en waiting_proxy (nunca VPS).
-      emitProxyQrSoon(req.userId!, instanceName, line.id);
-      enqueueProxyWatch(line.id);
-      qrBase64 = null;
-    }
-    if (qrBase64) emitToUser(req.userId!, "wa:qr", { lineId: line.id, qr: qrBase64 });
-    return res.status(201).json({ line: toPublicLine(updated ?? line), qr: qrBase64 });
   } catch (e) {
-    // Si Evolution falla, no dejamos la línea huérfana.
-    await prisma.waLine.delete({ where: { id: line.id } }).catch(() => undefined);
     const message = e instanceof Error ? e.message : String(e);
-    console.error("[wa/lines create] error:", message);
-    return res.status(502).json({ error: "No se pudo crear la instancia en Evolution", detail: message });
+    console.error("[wa/lines create] applyLineProxy falló (CONSERVO la línea, la dejo esperando proxy):", message);
+    // La sesión ya existe → nunca la borramos por un fallo de proxy; el watchdog reintenta el proxy.
+    await setLineWaitingProxy(line.id, "falló aplicar proxy al crear la línea").catch(() => undefined);
   }
+  const updated = await prisma.waLine.findUnique({ where: { id: line.id } });
+  let qrBase64: string | null = qr.base64 ?? null;
+  if (autoProxy) {
+    // El QR inicial salió por la IP del VPS y quedó viejo tras el reinicio con proxy → el panel recibe
+    // el QR ya por el proxy vía socket en unos segundos. El watchdog (Fase 4) verifica que llegó al
+    // QR/WORKING por el proxy; si falla, rota proxy/proveedor o la deja en waiting_proxy (nunca VPS).
+    emitProxyQrSoon(req.userId!, instanceName, line.id);
+    enqueueProxyWatch(line.id);
+    qrBase64 = null;
+  }
+  if (qrBase64) emitToUser(req.userId!, "wa:qr", { lineId: line.id, qr: qrBase64 });
+  return res.status(201).json({ line: toPublicLine(updated ?? line), qr: qrBase64 });
 });
 
 // GET /api/wa/cloud/config — datos públicos para lanzar el Embedded Signup en el front.
