@@ -16,6 +16,9 @@ import { notify } from "./notifications.js";
 const REGISTER_PASSWORD = process.env.CASINO_DEFAULT_PLAYER_PASSWORD ?? "123456";
 const ars = (n: number) => "$" + n.toLocaleString("es-AR");
 
+// Clave del jugador en ganamos (la que le mostramos para que entre a jugar). Misma que usa el alta.
+export const casinoPlayerPassword = (): string => REGISTER_PASSWORD;
+
 type Op = { id: string; userId: string; playerId: string; amount: number; currency: string };
 
 // MODELO B (auto-carga desde la transferencia): activo cuando hay API del socio Y secreto del callback.

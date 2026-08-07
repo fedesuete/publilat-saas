@@ -68,10 +68,12 @@ export default function ChatPage() {
   };
   const submitDeposit = async () => {
     const amt = parseInt(amount.replace(/\D/g, ""), 10);
-    if (!amt) { setCashMsg("Poné un monto."); return; }
+    // El monto es OPCIONAL: alcanza con subir el comprobante (el server lee el monto con IA). Sin monto
+    // y sin comprobante no hay nada que mandar.
+    if (!amt && !comprobante) { setCashMsg("Subí el comprobante (o poné el monto)."); return; }
     setCashBusy(true); setCashMsg(null);
     try {
-      await api.post("/api/chat/me/deposit", { amount: amt, method: "Transferencia", comprobante: comprobante || undefined });
+      await api.post("/api/chat/me/deposit", { amount: amt || undefined, method: "Transferencia", comprobante: comprobante || undefined });
       // El card de datos QUEDA en el chat (no se achica). El backend deja el mensaje "🧾 Registraste una carga…".
       setAmount(""); setComprobante(null); setCashMsg(null);
       void loadWallet();
@@ -298,7 +300,7 @@ export default function ChatPage() {
                     ) : null}
                     {showForm && wallet && (
                       <div className="mt-2">
-                        <input inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={`Monto a cargar (mín ${money(wallet.minDeposit)})`}
+                        <input inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Monto (opcional, lo leemos del comprobante)"
                           className="w-full rounded-lg border px-3 py-2.5 text-base outline-none placeholder:opacity-50" style={{ background: "var(--c-input)", color: "var(--c-surface-text)", borderColor: "var(--c-border)" }} />
                         <label className="mt-2 flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-bold" style={{ background: "var(--c-accent)", color: "var(--c-accent-text)" }}>
                           {comprobante ? "✓ Comprobante listo" : "📎 SUBIR COMPROBANTE"}

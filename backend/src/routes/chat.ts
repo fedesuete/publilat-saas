@@ -1266,7 +1266,7 @@ async function firePlayerPurchaseOnce(
 // Lee el comprobante de una carga con IA y, si es un comprobante real, dispara el Purchase a Meta
 // (una sola vez). Best-effort, aislado del flujo del jugador. NO acredita fichas.
 // Exportada para reuso desde el script de backfill (mandar comprobantes históricos a Meta).
-export async function readReceiptAndFirePurchase(depositId: string, opts?: { sendIntent?: boolean }) {
+export async function readReceiptAndFirePurchase(depositId: string, opts?: { sendIntent?: boolean; receipt?: Awaited<ReturnType<typeof analyzeReceipt>> }) {
   try {
     const dep = await prisma.chatDeposit.findUnique({
       where: { id: depositId },
@@ -1276,11 +1276,12 @@ export async function readReceiptAndFirePurchase(depositId: string, opts?: { sen
     if (dep.purchaseFiredAt && !opts?.sendIntent) return; // ya se disparó el Purchase y no hay intent que mandar
     // Con IA: confirmamos que la imagen ES un comprobante antes de mandar el evento (evita ensuciar
     // el pixel con fotos que no son pagos). Sin IA: confiamos en la carga estructurada del jugador.
-    let receipt: Awaited<ReturnType<typeof analyzeReceipt>> = null;
-    if (aiEnabled() && /image|pdf/i.test(dep.comprobanteType ?? "")) {
+    // Reusa el OCR que ya hizo el caller (/me/deposit para leer el monto); si no vino, lo lee acá.
+    let receipt = opts?.receipt ?? null;
+    if (!receipt && aiEnabled() && /image|pdf/i.test(dep.comprobanteType ?? "")) {
       receipt = await analyzeReceipt(Buffer.from(dep.comprobanteData).toString("base64"), dep.comprobanteType ?? undefined);
-      if (receipt && (!receipt.isReceipt || receipt.confidence < 0.5)) return; // la IA dice que no es un comprobante
     }
+    if (receipt && (!receipt.isReceipt || receipt.confidence < 0.5)) return; // la IA dice que no es un comprobante
     const player = await prisma.chatPlayer.findUnique({ where: { id: dep.playerId }, select: { casinoUsername: true } });
     if (!player) return;
     // Purchase a Meta (marketing, una sola vez) — idempotente por purchaseFiredAt.
@@ -1338,8 +1339,8 @@ chatPublicRouter.get("/me/wallet", requireChatClient, async (req, res) => {
 });
 
 const depositSchema = z.object({
-  amount: z.number().int().positive(),
-  method: z.string().min(1).max(60),
+  amount: z.number().int().positive().optional(), // OPCIONAL: si no viene, lo lee la IA del comprobante
+  method: z.string().min(1).max(60).optional(),
   comprobante: z.string().regex(/^data:image\/(png|jpeg|jpg|webp);base64,/, "Imagen inválida").optional(),
 });
 
@@ -1347,7 +1348,6 @@ const depositSchema = z.object({
 chatPublicRouter.post("/me/deposit", requireChatClient, async (req, res) => {
   const parsed = depositSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
-  if (parsed.data.amount < MIN_DEPOSIT) return res.status(400).json({ error: `La carga mínima es ${ars(MIN_DEPOSIT)}.` });
   let comprobanteType: string | null = null, comprobanteData: Buffer | null = null;
   if (parsed.data.comprobante) {
     const d = parsed.data.comprobante;
@@ -1355,8 +1355,20 @@ chatPublicRouter.post("/me/deposit", requireChatClient, async (req, res) => {
     comprobanteData = Buffer.from(d.slice(d.indexOf(",") + 1), "base64");
     if (comprobanteData.length > 700 * 1024) return res.status(413).json({ error: "El comprobante supera 700 KB. Sacá una foto más liviana." });
   }
+  // Monto: si el jugador NO lo escribió, lo LEE la IA del comprobante → sube el comprobante y pasa
+  // directo, sin poner el monto a mano. SIN mínimo. Guardamos el OCR para no leerlo dos veces (el
+  // Purchase + el intent reusan este mismo `receipt`).
+  let receipt: Awaited<ReturnType<typeof analyzeReceipt>> = null;
+  let amount = parsed.data.amount ?? 0;
+  if ((!amount || amount <= 0) && comprobanteData && aiEnabled() && /image/i.test(comprobanteType ?? "")) {
+    receipt = await analyzeReceipt(comprobanteData.toString("base64"), comprobanteType ?? undefined);
+    if (receipt?.amount && receipt.amount > 0) amount = Math.round(receipt.amount);
+  }
+  if (!amount || amount <= 0) {
+    return res.status(400).json({ error: "No pudimos leer el monto del comprobante. Escribí el monto o subí una foto más clara." });
+  }
   const dep = await prisma.chatDeposit.create({
-    data: { userId: req.accountId!, playerId: req.chatPlayerId!, amount: parsed.data.amount, method: parsed.data.method, comprobanteType, comprobanteData, status: "pending" },
+    data: { userId: req.accountId!, playerId: req.chatPlayerId!, amount, method: parsed.data.method ?? "Transferencia", comprobanteType, comprobanteData, status: "pending" },
     select: { id: true, amount: true, method: true, status: true, createdAt: true },
   });
   // Aviso al operador (en vivo, para la sección Cajero) — NO acredita.
@@ -1365,7 +1377,7 @@ chatPublicRouter.post("/me/deposit", requireChatClient, async (req, res) => {
   // Si subió comprobante: la IA lo lee y (1) manda el Purchase a Meta una sola vez (cierra el loop del
   // pixel) y (2) con modelo B, avisa la INTENCIÓN de carga a ganamos con el CBU/CUIT del remitente.
   // NUNCA acredita fichas acá: eso lo dispara el callback firmado de ganamos (o el operador en modelo A).
-  if (comprobanteData) void readReceiptAndFirePurchase(dep.id, { sendIntent: true });
+  if (comprobanteData) void readReceiptAndFirePurchase(dep.id, { sendIntent: true, receipt: receipt ?? undefined });
   return res.status(201).json({ deposit: dep });
 });
 

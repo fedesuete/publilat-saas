@@ -6,13 +6,15 @@
 // no-op. No toca WhatsApp, ni el flujo actual del Chat App, ni la atribución.
 import { prisma } from "./prisma.js";
 import { emitChat } from "./io.js";
-import { casinoLiveForAccount, ensureCasinoUser } from "./casino-cashier.js"; // modelo B (auto-carga ganamos)
+import { casinoLiveForAccount, ensureCasinoUser, casinoPlayerPassword } from "./casino-cashier.js"; // modelo B (auto-carga ganamos)
 import { casinoCvu } from "./casino-partner.js";
 
 // Mensaje del BOT hacia el jugador (se ve como mensaje entrante en su app). `buttons` = chips que el
 // jugador puede tocar (cada uno manda su texto como si lo hubiera escrito).
-async function botSay(accountId: string, convId: string, playerId: string, body: string, buttons?: string[]): Promise<void> {
-  const meta = buttons?.length ? { bot: true, buttons } : { bot: true };
+async function botSay(accountId: string, convId: string, playerId: string, body: string, buttons?: string[], link?: { label: string; url: string }): Promise<void> {
+  const meta: { bot: boolean; buttons?: string[]; link?: { label: string; url: string } } = { bot: true };
+  if (buttons?.length) meta.buttons = buttons;
+  if (link) meta.link = link;
   const msg = await prisma.chatMessage.create({
     data: { userId: accountId, conversationId: convId, senderType: "operator", senderId: null, body, metadata: meta },
     select: { id: true, senderType: true, body: true, createdAt: true },
@@ -21,7 +23,7 @@ async function botSay(accountId: string, convId: string, playerId: string, body:
     where: { id: convId },
     data: { lastMessageAt: new Date(), lastMessagePreview: body.slice(0, 120), unreadPlayer: { increment: 1 } },
   });
-  const payload = { conversationId: convId, message: { ...msg, image: null, buttons: buttons ?? null } };
+  const payload = { conversationId: convId, message: { ...msg, image: null, buttons: buttons ?? null, link: link ?? null } };
   emitChat(`chat:${accountId}:player:${playerId}`, "chat:message", payload); // al jugador
   emitChat(`chat:${accountId}`, "chat:message", payload);                    // al operador (para verlo en el inbox)
 }
@@ -60,6 +62,17 @@ export async function runChatBot(accountId: string, convId: string, playerId: st
     const name = rawText.trim().slice(0, 40);
     if (name) await prisma.chatPlayer.update({ where: { id: playerId }, data: { nombre: name } }).catch(() => undefined);
     await prisma.chatConversation.update({ where: { id: convId }, data: { botStep: null } });
+    // MODELO B: al poner el nombre, CREAMOS el usuario en ganamos y le devolvemos usuario + clave + link
+    // para entrar a jugar (el chat directo antes solo saludaba, sin credenciales).
+    if (casinoLiveForAccount(accountId) && conv.player?.casinoUsername) {
+      await ensureCasinoUser(conv.player.casinoUsername).catch(() => undefined);
+      const acc2 = await prisma.user.findUnique({ where: { id: accountId }, select: { chatPlatformUrl: true } });
+      const url = acc2?.chatPlatformUrl?.trim();
+      const link = url ? { label: "🎮 Entrar a jugar", url } : undefined;
+      const body = `¡Listo${name ? `, ${name}` : ""}! 🎉 Tu cuenta para jugar:\n\n👤 Usuario: *${conv.player.casinoUsername}*\n🔑 Clave: *${casinoPlayerPassword()}*\n\n¿Qué querés hacer? 👇`;
+      await botSay(accountId, convId, playerId, body, undefined, link);
+      return;
+    }
     // Los botones "💰 Cargar fichas" / "💸 Retirar" salen solos en la barra del cajero (abajo).
     const greet = name ? `¡Genial, ${name}! ¿Qué querés hacer? 👇` : "¿Qué querés hacer? 👇";
     await botSay(accountId, convId, playerId, greet);
