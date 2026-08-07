@@ -47,7 +47,15 @@ if ("serviceWorker" in navigator) {
   });
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js")
-      .then((reg) => { void reg.update(); }) // fuerza chequeo de update al abrir
+      .then((reg) => {
+        void reg.update().catch(() => undefined); // chequeo al abrir
+        // Chequeo periódico + al volver a la pestaña: si hay un deploy nuevo mientras la app está
+        // ABIERTA, lo toma en ~1min y recarga sola (no hace falta cerrar/abrir ni F5).
+        setInterval(() => { void reg.update().catch(() => undefined); }, 60_000);
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "visible") void reg.update().catch(() => undefined);
+        });
+      })
       .catch(() => undefined);
   });
 }
