@@ -25,6 +25,19 @@ export function casinoModelBEnabled(): boolean {
   return casinoPartnerEnabled() && Boolean(process.env.CHAT_PAY_WEBHOOK_SECRET);
 }
 
+// ROLLOUT ESCALONADO por cuenta: env `CASINO_MODEL_B_ACCOUNTS` = lista de userIds separados por coma.
+// VACÍO = NADIE (seguro por default). Así se prende una cuenta a la vez (empezando por victor) antes de
+// abrir el modelo B a todo el Chat App.
+function modelBAccounts(): string[] {
+  return (process.env.CASINO_MODEL_B_ACCOUNTS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+// ¿El modelo B (auto-carga) está activo para ESTA cuenta? Requiere API del socio + secreto del callback
+// + que la cuenta esté en la lista. Es lo que gatea el envío del intent (la plata a ganamos).
+export function casinoLiveForAccount(userId: string): boolean {
+  return casinoModelBEnabled() && modelBAccounts().includes(userId);
+}
+
 const callbackUrl = (): string =>
   `${(process.env.APP_BASE_URL ?? "https://app.publi.lat").replace(/\/$/, "")}/api/chat/pay/webhook`;
 
@@ -36,7 +49,7 @@ export async function sendDepositIntent(
   casinoUsername: string,
   receipt: { senderCbu: string | null; senderCuit: string | null; senderName: string | null },
 ): Promise<void> {
-  if (!casinoModelBEnabled()) return;
+  if (!casinoLiveForAccount(dep.userId)) return; // solo cuentas habilitadas (rollout escalonado)
   try {
     const referencia = `dep-${dep.id}`;
     if (await prisma.casinoTx.findUnique({ where: { referencia }, select: { id: true } })) return; // intent ya mandado
