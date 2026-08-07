@@ -1453,7 +1453,7 @@ chatRouter.post("/cashier/withdrawal/:id/reject", async (req, res) => {
 
 // Aplica localmente una carga que ganamos YA acreditó (callback "credited"). Idempotente por el estado
 // del ChatDeposit (Eduardo reintenta hasta 3x). Acredita el wallet interno + dispara el Purchase.
-async function applyCasinoCallbackCredit(depositId: string, referencia: string, saldo: number | null) {
+async function applyCasinoCallbackCredit(depositId: string, referencia: string, movementId: string | null) {
   const dep = await prisma.chatDeposit.findUnique({
     where: { id: depositId },
     select: { id: true, userId: true, playerId: true, amount: true, currency: true, status: true, purchaseFiredAt: true },
@@ -1469,7 +1469,7 @@ async function applyCasinoCallbackCredit(depositId: string, referencia: string, 
     update: { balance: { increment: dep.amount } },
     select: { balance: true },
   });
-  await prisma.casinoTx.updateMany({ where: { referencia }, data: { status: "completed", txId: typeof saldo === "number" ? `saldo:${saldo}` : null, errorCode: null } });
+  await prisma.casinoTx.updateMany({ where: { referencia }, data: { status: "completed", txId: movementId, errorCode: null } }); // movementId = id de la transacción en ganamos (auditoría)
   const player = await prisma.chatPlayer.findUnique({ where: { id: dep.playerId }, select: { casinoUsername: true } });
   if (player) await firePlayerPurchaseOnce(dep, player.casinoUsername); // idempotente por purchaseFiredAt
   await postCashierMsg(dep.userId, dep.playerId, `✅ ¡Carga acreditada! ${ars(dep.amount)}. Tu saldo: ${ars(wallet.balance)}.`);
@@ -1507,12 +1507,14 @@ chatPublicRouter.post("/pay/webhook", async (req, res) => {
   const depositId = referencia.slice(4);
   try {
     if (status === "credited") {
-      await applyCasinoCallbackCredit(depositId, referencia, typeof b.saldo === "number" ? b.saldo : null);
+      await applyCasinoCallbackCredit(depositId, referencia, typeof b.movementId === "string" ? b.movementId : null);
     } else if (status === "failed" || status === "expired") {
       await failCasinoCallbackDeposit(depositId, referencia, status, typeof b.error === "string" ? b.error : null);
-    } else if (status === "unknown") {
-      // ganamos no sabe si aplicó (timeout/proxy). NO acreditamos; queda para revisión (GET /intent).
-      console.warn(`[pay/webhook] status "unknown" para ${referencia} — no acredito, queda en revisión`);
+    } else if (status === "unknown" || status === "queued") {
+      // queued = ganamos aún no aplicó; unknown = no sabe si aplicó (timeout/proxy). NO acreditamos y NO
+      // reemitimos con otra referencia (cargaría dos veces). Esperamos el callback FINAL (credited/failed/
+      // expired) o se consulta GET /intent?referencia=X. Ackeamos 200 para no reintentar el intermedio.
+      console.warn(`[pay/webhook] status "${status}" para ${referencia} — no acredito, espero el estado final`);
     }
     return res.json({ ok: true }); // 2xx = procesado (idempotente). Si devolvemos != 2xx, Eduardo reintenta.
   } catch (e) {
