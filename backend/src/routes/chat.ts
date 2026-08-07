@@ -16,7 +16,7 @@ import { pushEnabled, publicVapidKey, enqueuePlayerPush, enqueueAccountBroadcast
 import { s3Enabled } from "../lib/s3.js";
 import { runChatBot } from "../lib/chat-bot.js";
 import { canOperateChat, consumeChatDayAndActivate, getAvailableDays } from "../lib/access.js";
-import { creditDepositInCasino, debitWithdrawalInCasino, sendDepositIntent, casinoLiveForAccount, ensureCasinoUser } from "../lib/casino-cashier.js"; // puente ganamos (flag)
+import { creditDepositInCasino, debitWithdrawalInCasino, sendDepositIntent, casinoLiveForAccount, ensureCasinoUser, casinoPlayerPassword } from "../lib/casino-cashier.js"; // puente ganamos (flag)
 import { verifyPartnerSignature, isCallbackTimestampFresh } from "../lib/casino-callback.js"; // firma del callback (modelo B)
 import { casinoCvu } from "../lib/casino-partner.js"; // CVU de la recaudadora (modelo B)
 
@@ -644,7 +644,7 @@ chatPublicRouter.get("/me/conversation", requireChatClient, async (req, res) => 
     select: { id: true, senderType: true, body: true, metadata: true, createdAt: true },
   });
   await prisma.chatConversation.update({ where: { id: conv.id }, data: { unreadPlayer: 0 } });
-  const messages = rows.map((m) => ({ id: m.id, senderType: m.senderType, body: m.body, image: (m.metadata as { image?: string })?.image ?? null, buttons: (m.metadata as { buttons?: string[] })?.buttons ?? null, link: (m.metadata as { link?: { label: string; url: string } })?.link ?? null, pay: (m.metadata as { pay?: { cbu: string | null; alias: string | null; titular: string | null } })?.pay ?? null, install: (m.metadata as { install?: boolean })?.install ?? false, createdAt: m.createdAt }));
+  const messages = rows.map((m) => ({ id: m.id, senderType: m.senderType, body: m.body, image: (m.metadata as { image?: string })?.image ?? null, buttons: (m.metadata as { buttons?: string[] })?.buttons ?? null, link: (m.metadata as { link?: { label: string; url: string } })?.link ?? null, copy: (m.metadata as { copy?: { label: string; value: string } })?.copy ?? null, pay: (m.metadata as { pay?: { cbu: string | null; alias: string | null; titular: string | null } })?.pay ?? null, install: (m.metadata as { install?: boolean })?.install ?? false, createdAt: m.createdAt }));
   return res.json({ conversationId: conv.id, messages });
 });
 
@@ -1315,6 +1315,32 @@ async function postCashierMsg(userId: string, playerId: string, body: string, se
   emitChat(`chat:${userId}`, "chat:message", payload);
 }
 
+// Tras acreditar una carga, le RE-mandamos al jugador sus credenciales + link a la plataforma, con un
+// botón para COPIAR el usuario (lo pega directo al loguear). La clave sólo se muestra en cuentas modelo
+// B (ganamos), donde es la clave por defecto conocida; en el resto no la tenemos en claro (bcrypt).
+async function postCargaCreds(userId: string, playerId: string) {
+  const [player, acc, conv] = await Promise.all([
+    prisma.chatPlayer.findUnique({ where: { id: playerId }, select: { casinoUsername: true } }),
+    prisma.user.findUnique({ where: { id: userId }, select: { chatPlatformUrl: true } }),
+    prisma.chatConversation.findFirst({ where: { userId, playerId }, select: { id: true } }),
+  ]);
+  if (!player || !conv) return;
+  const username = player.casinoUsername;
+  const clave = casinoLiveForAccount(userId) ? casinoPlayerPassword() : null;
+  const url = acc?.chatPlatformUrl?.trim() || null;
+  const lines = ["¡Listo, ya podés jugar! 🎰 Tus datos para entrar:", "", `👤 Usuario: ${username}`];
+  if (clave) lines.push(`🔑 Clave: ${clave}`);
+  const body = lines.join("\n");
+  const link = url ? { label: "🎮 Entrar a la plataforma", url } : undefined;
+  const copy = { label: "📋 Copiar usuario", value: username };
+  const metadata: { copy: { label: string; value: string }; link?: { label: string; url: string } } = link ? { copy, link } : { copy };
+  const msg = await prisma.chatMessage.create({ data: { userId, conversationId: conv.id, senderType: "system", body, metadata }, select: { id: true, senderType: true, body: true, createdAt: true } });
+  await prisma.chatConversation.update({ where: { id: conv.id }, data: { lastMessageAt: new Date(), lastMessagePreview: body.slice(0, 120), unreadPlayer: { increment: 1 } } });
+  const payload = { conversationId: conv.id, message: { id: msg.id, senderType: msg.senderType, body: msg.body, image: null, buttons: null, link: link ?? null, copy, createdAt: msg.createdAt } };
+  emitChat(`chat:${userId}:player:${playerId}`, "chat:message", payload);
+  emitChat(`chat:${userId}`, "chat:message", payload);
+}
+
 // ---- JUGADOR (requireChatClient) ----
 
 // GET /api/chat/me/wallet — saldo + historial de cargas/retiros.
@@ -1445,6 +1471,7 @@ chatRouter.post("/cashier/deposit/:id/approve", async (req, res) => {
   // wallet interno. Apagado = no-op. Idempotente por CasinoTx `dep-<id>`; si falla, avisa al operador.
   if (player) void creditDepositInCasino(dep, player.casinoUsername);
   await postCashierMsg(req.userId!, dep.playerId, `✅ ¡Carga acreditada! ${ars(dep.amount)}. Tu saldo: ${ars(wallet.balance)}.`);
+  await postCargaCreds(req.userId!, dep.playerId); // re-envía usuario + clave + link + botón "Copiar usuario"
   emitChat(`chat:${req.userId}:player:${dep.playerId}`, "chat:wallet", { balance: wallet.balance });
   return res.json({ ok: true, balance: wallet.balance });
 });
@@ -1509,6 +1536,7 @@ async function applyCasinoCallbackCredit(depositId: string, referencia: string, 
   const player = await prisma.chatPlayer.findUnique({ where: { id: dep.playerId }, select: { casinoUsername: true } });
   if (player) await firePlayerPurchaseOnce(dep, player.casinoUsername); // idempotente por purchaseFiredAt
   await postCashierMsg(dep.userId, dep.playerId, `✅ ¡Carga acreditada! ${ars(dep.amount)}. Tu saldo: ${ars(wallet.balance)}.`);
+  await postCargaCreds(dep.userId, dep.playerId); // re-envía usuario + clave + link + botón "Copiar usuario"
   emitChat(`chat:${dep.userId}:player:${dep.playerId}`, "chat:wallet", { balance: wallet.balance });
 }
 

@@ -6,7 +6,7 @@ import InstallPrompt, { InstallGuide } from "../components/InstallPrompt";
 import { promptInstall, onInstallAvailable, bakeSessionIntoUrl, pointManifestToSession } from "../lib/install";
 
 interface Pay { cbu: string | null; alias: string | null; titular: string | null }
-interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; image?: string | null; buttons?: string[] | null; link?: { label: string; url: string } | null; pay?: Pay | null; install?: boolean; createdAt: string }
+interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; image?: string | null; buttons?: string[] | null; link?: { label: string; url: string } | null; copy?: { label: string; value: string } | null; pay?: Pay | null; install?: boolean; createdAt: string }
 interface Popup { title?: string | null; text?: string | null; image?: string | null; link?: string | null; version: string }
 interface Wallet { balance: number; minDeposit: number; minWithdrawal: number; paymentInfo: string | null; pay?: { cbu: string | null; alias: string | null; titular: string | null } }
 const POPUP_SEEN_KEY = "publilat_popup_seen";
@@ -257,6 +257,14 @@ export default function ChatPage() {
               {m.link.label}
             </a>
           );
+          // Botón "Copiar usuario" (mensaje post-carga con credenciales): copia el nombre al portapapeles.
+          const copyBtn = m.copy && (
+            <button onClick={() => void copy("user", m.copy!.value)}
+              className="mt-2 flex w-full items-center justify-center gap-1 rounded-lg border py-2.5 text-sm font-bold"
+              style={copied === "user" ? { background: "var(--c-accent)", color: "var(--c-accent-text)", borderColor: "var(--c-accent)" } : { color: "var(--c-accent)", borderColor: "var(--c-accent)" }}>
+              {copied === "user" ? "✓ Copiado" : m.copy.label}
+            </button>
+          );
           // Botón "INSTALAR APP" (mensaje 2 de la secuencia de instalación): dispara el instalador
           // (Android) o la guía de iPhone.
           const installBtn = m.install && (
@@ -272,13 +280,14 @@ export default function ChatPage() {
           const showForm = m.id === lastPayId;  // el form persiste en el último mensaje de datos (no se achica al enviar)
           // Cards con botón (bienvenida con link + datos de pago + instalar) usan el MISMO ancho, para
           // que todos los botones tengan las mismas proporciones y el chat no se "descuadre".
-          const isWide = hasPay || !!m.pay || !!m.link || !!m.install;
+          const isWide = hasPay || !!m.pay || !!m.link || !!m.install || !!m.copy;
           return (
             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
               <div className={`px-2.5 py-1.5 text-sm shadow-sm ${isWide ? "w-[88%] max-w-[88%]" : "max-w-[82%]"} ${mine ? "rounded-lg rounded-tr-sm" : "rounded-lg rounded-tl-sm"}`}
                 style={mine ? { background: "var(--c-me)", color: "var(--c-me-text)" } : { background: "var(--c-surface)", color: "var(--c-surface-text)" }}>
                 {img}
                 {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
+                {copyBtn}
                 {linkBtn}
                 {installBtn}
                 {(hasPay || showForm) && (
