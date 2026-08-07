@@ -253,7 +253,7 @@ export default function ChatPage() {
           const linkBtn = m.link && (
             <a href={m.link.url} target="_blank" rel="noopener noreferrer"
               className="btn-glow mt-2 flex w-full items-center justify-center gap-1 rounded-lg py-2.5 text-sm font-extrabold text-white"
-              style={{ background: "var(--brand-primary, #7c2fd6)" }}>
+              style={{ background: "#7c2fd6" }}>
               {m.link.label}
             </a>
           );

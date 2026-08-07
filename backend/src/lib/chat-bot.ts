@@ -4,10 +4,15 @@
 //
 // 100% AISLADO y ADITIVO: solo actúa si la cuenta tiene el bot PRENDIDO (botEnabled). Sin bot es
 // no-op. No toca WhatsApp, ni el flujo actual del Chat App, ni la atribución.
+import crypto from "node:crypto";
 import { prisma } from "./prisma.js";
 import { emitChat } from "./io.js";
 import { casinoLiveForAccount, ensureCasinoUser, casinoPlayerPassword } from "./casino-cashier.js"; // modelo B (auto-carga ganamos)
 import { casinoCvu } from "./casino-partner.js";
+
+// Usuario del jugador a partir de su nombre (apodo + dígitos), igual que el registro un-tap.
+const nickSlug = (s: string) => s.toLowerCase().normalize("NFD").replace(/[^a-z0-9]/g, "").slice(0, 12);
+const randDigits = (n: number) => { let s = ""; for (let i = 0; i < n; i++) s += crypto.randomInt(0, 10); return s; };
 
 // Mensaje del BOT hacia el jugador (se ve como mensaje entrante en su app). `buttons` = chips que el
 // jugador puede tocar (cada uno manda su texto como si lo hubiera escrito).
@@ -62,14 +67,24 @@ export async function runChatBot(accountId: string, convId: string, playerId: st
     const name = rawText.trim().slice(0, 40);
     if (name) await prisma.chatPlayer.update({ where: { id: playerId }, data: { nombre: name } }).catch(() => undefined);
     await prisma.chatConversation.update({ where: { id: convId }, data: { botStep: null } });
-    // MODELO B: al poner el nombre, CREAMOS el usuario en ganamos y le devolvemos usuario + clave + link
-    // para entrar a jugar (el chat directo antes solo saludaba, sin credenciales).
+    // MODELO B: usamos el NOMBRE que escribió como base del usuario de ganamos (apodo + dígitos, en vez
+    // del web###### random), lo creamos en ganamos y le devolvemos usuario + clave + link para jugar.
     if (casinoLiveForAccount(accountId) && conv.player?.casinoUsername) {
-      await ensureCasinoUser(conv.player.casinoUsername).catch(() => undefined);
+      const base = nickSlug(name) || "user";
+      let username = conv.player.casinoUsername;
+      for (let i = 0; i < 6; i++) {
+        const candidate = `${base}${randDigits(5)}`;
+        try {
+          await prisma.chatPlayer.update({ where: { id: playerId }, data: { casinoUsername: candidate, ...(name ? { nombre: name } : {}) } });
+          username = candidate;
+          break;
+        } catch { /* choque userId+casinoUsername → reintentamos con otros dígitos */ }
+      }
+      await ensureCasinoUser(username).catch(() => undefined);
       const acc2 = await prisma.user.findUnique({ where: { id: accountId }, select: { chatPlatformUrl: true } });
       const url = acc2?.chatPlatformUrl?.trim();
       const link = url ? { label: "🎮 Entrar a jugar", url } : undefined;
-      const body = `¡Listo${name ? `, ${name}` : ""}! 🎉 Tu cuenta para jugar:\n\n👤 Usuario: *${conv.player.casinoUsername}*\n🔑 Clave: *${casinoPlayerPassword()}*\n\n¿Qué querés hacer? 👇`;
+      const body = `¡Listo${name ? `, ${name}` : ""}! 🎉 Tu cuenta para jugar:\n\n👤 Usuario: ${username}\n🔑 Clave: ${casinoPlayerPassword()}\n\n¿Qué querés hacer? 👇`;
       await botSay(accountId, convId, playerId, body, undefined, link);
       return;
     }
