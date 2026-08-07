@@ -16,7 +16,8 @@ import { pushEnabled, publicVapidKey, enqueuePlayerPush, enqueueAccountBroadcast
 import { s3Enabled } from "../lib/s3.js";
 import { runChatBot } from "../lib/chat-bot.js";
 import { canOperateChat, consumeChatDayAndActivate, getAvailableDays } from "../lib/access.js";
-import { creditDepositInCasino, debitWithdrawalInCasino } from "../lib/casino-cashier.js"; // puente ganamos (flag)
+import { creditDepositInCasino, debitWithdrawalInCasino, sendDepositIntent } from "../lib/casino-cashier.js"; // puente ganamos (flag)
+import { verifyPartnerSignature, isCallbackTimestampFresh } from "../lib/casino-callback.js"; // firma del callback (modelo B)
 
 // Router del OPERADOR (se monta bajo requireAuth): gestión de links de invitación.
 export const chatRouter = Router();
@@ -1241,21 +1242,34 @@ async function firePlayerPurchaseOnce(
 // Lee el comprobante de una carga con IA y, si es un comprobante real, dispara el Purchase a Meta
 // (una sola vez). Best-effort, aislado del flujo del jugador. NO acredita fichas.
 // Exportada para reuso desde el script de backfill (mandar comprobantes históricos a Meta).
-export async function readReceiptAndFirePurchase(depositId: string) {
+export async function readReceiptAndFirePurchase(depositId: string, opts?: { sendIntent?: boolean }) {
   try {
     const dep = await prisma.chatDeposit.findUnique({
       where: { id: depositId },
       select: { id: true, userId: true, playerId: true, amount: true, currency: true, purchaseFiredAt: true, comprobanteType: true, comprobanteData: true },
     });
-    if (!dep || dep.purchaseFiredAt || !dep.comprobanteData) return;
+    if (!dep || !dep.comprobanteData) return;
+    if (dep.purchaseFiredAt && !opts?.sendIntent) return; // ya se disparó el Purchase y no hay intent que mandar
     // Con IA: confirmamos que la imagen ES un comprobante antes de mandar el evento (evita ensuciar
     // el pixel con fotos que no son pagos). Sin IA: confiamos en la carga estructurada del jugador.
+    let receipt: Awaited<ReturnType<typeof analyzeReceipt>> = null;
     if (aiEnabled() && /image|pdf/i.test(dep.comprobanteType ?? "")) {
-      const a = await analyzeReceipt(Buffer.from(dep.comprobanteData).toString("base64"), dep.comprobanteType ?? undefined);
-      if (a && (!a.isReceipt || a.confidence < 0.5)) return; // la IA dice que no es un comprobante
+      receipt = await analyzeReceipt(Buffer.from(dep.comprobanteData).toString("base64"), dep.comprobanteType ?? undefined);
+      if (receipt && (!receipt.isReceipt || receipt.confidence < 0.5)) return; // la IA dice que no es un comprobante
     }
     const player = await prisma.chatPlayer.findUnique({ where: { id: dep.playerId }, select: { casinoUsername: true } });
-    if (player) await firePlayerPurchaseOnce(dep, player.casinoUsername);
+    if (!player) return;
+    // Purchase a Meta (marketing, una sola vez) — idempotente por purchaseFiredAt.
+    if (!dep.purchaseFiredAt) await firePlayerPurchaseOnce(dep, player.casinoUsername);
+    // MODELO B (auto-carga, detrás del flag): avisamos la INTENCIÓN de carga a ganamos con el CBU/CUIT/
+    // nombre del remitente que sacó el OCR. NO acredita (eso llega por el callback firmado). Idempotente.
+    if (opts?.sendIntent) {
+      await sendDepositIntent(dep, player.casinoUsername, {
+        senderCbu: receipt?.senderCbu ?? null,
+        senderCuit: receipt?.senderCuit ?? null,
+        senderName: receipt?.senderName ?? null,
+      });
+    }
   } catch (e) {
     console.error("[chat] lectura de comprobante falló:", e instanceof Error ? e.message : String(e));
   }
@@ -1324,9 +1338,10 @@ chatPublicRouter.post("/me/deposit", requireChatClient, async (req, res) => {
   // Aviso al operador (en vivo, para la sección Cajero) — NO acredita.
   emitChat(`chat:${req.accountId}`, "chat:cashier", { type: "deposit", id: dep.id });
   await postCashierMsg(req.accountId!, req.chatPlayerId!, `🧾 Registraste una carga de ${ars(dep.amount)} (${dep.method}). La estamos verificando.`, "player").catch(() => undefined);
-  // Si subió comprobante: la IA lo lee y, si es un pago real, manda el Purchase a Meta (una sola vez).
-  // Cierra el loop del pixel al toque. NO acredita fichas (eso sigue esperando al operador/webhook).
-  if (comprobanteData) void readReceiptAndFirePurchase(dep.id);
+  // Si subió comprobante: la IA lo lee y (1) manda el Purchase a Meta una sola vez (cierra el loop del
+  // pixel) y (2) con modelo B, avisa la INTENCIÓN de carga a ganamos con el CBU/CUIT del remitente.
+  // NUNCA acredita fichas acá: eso lo dispara el callback firmado de ganamos (o el operador en modelo A).
+  if (comprobanteData) void readReceiptAndFirePurchase(dep.id, { sendIntent: true });
   return res.status(201).json({ deposit: dep });
 });
 
@@ -1436,12 +1451,72 @@ chatRouter.post("/cashier/withdrawal/:id/reject", async (req, res) => {
   return res.json({ ok: true });
 });
 
-// POST /api/chat/pay/webhook — gateway REAL (recaudadora/Pagopar). PREPARADO pero APAGADO sin claves.
-// Es el ÚNICO camino de acreditación AUTOMÁTICA seguro: al confirmar un pago real (firma HMAC válida),
-// busca el ChatDeposit por gatewayRef, lo pasa a verified→credited, acredita el wallet y dispara el
-// Purchase CAPI (igual que el approve manual). NUNCA se acredita por la imagen del comprobante.
-// TODO: implementar la validación de firma + la acreditación cuando estén las claves del gateway.
-chatPublicRouter.post("/pay/webhook", async (_req, res) => {
-  if (!process.env.CHAT_PAY_WEBHOOK_SECRET) return res.status(503).json({ error: "Gateway de pagos no configurado" });
-  return res.status(501).json({ error: "Webhook de gateway pendiente de implementación (faltan claves)" });
+// Aplica localmente una carga que ganamos YA acreditó (callback "credited"). Idempotente por el estado
+// del ChatDeposit (Eduardo reintenta hasta 3x). Acredita el wallet interno + dispara el Purchase.
+async function applyCasinoCallbackCredit(depositId: string, referencia: string, saldo: number | null) {
+  const dep = await prisma.chatDeposit.findUnique({
+    where: { id: depositId },
+    select: { id: true, userId: true, playerId: true, amount: true, currency: true, status: true, purchaseFiredAt: true },
+  });
+  if (!dep) { console.warn(`[pay/webhook] credited sin ChatDeposit ${depositId}`); return; }
+  if (dep.status === "credited") return; // ya acreditado (idempotente)
+  // Claim atómico: solo UN callback acredita, aunque lleguen reintentos en paralelo.
+  const claim = await prisma.chatDeposit.updateMany({ where: { id: depositId, status: { not: "credited" } }, data: { status: "credited", resolvedAt: new Date() } });
+  if (claim.count !== 1) return;
+  const wallet = await prisma.chatWallet.upsert({
+    where: { playerId: dep.playerId },
+    create: { userId: dep.userId, playerId: dep.playerId, balance: dep.amount, currency: dep.currency },
+    update: { balance: { increment: dep.amount } },
+    select: { balance: true },
+  });
+  await prisma.casinoTx.updateMany({ where: { referencia }, data: { status: "completed", txId: typeof saldo === "number" ? `saldo:${saldo}` : null, errorCode: null } });
+  const player = await prisma.chatPlayer.findUnique({ where: { id: dep.playerId }, select: { casinoUsername: true } });
+  if (player) await firePlayerPurchaseOnce(dep, player.casinoUsername); // idempotente por purchaseFiredAt
+  await postCashierMsg(dep.userId, dep.playerId, `✅ ¡Carga acreditada! ${ars(dep.amount)}. Tu saldo: ${ars(wallet.balance)}.`);
+  emitChat(`chat:${dep.userId}:player:${dep.playerId}`, "chat:wallet", { balance: wallet.balance });
+}
+
+// Callback "failed" / "expired": no se pudo confirmar la transferencia (o venció el intent a las 48 h).
+async function failCasinoCallbackDeposit(depositId: string, referencia: string, status: string, error: string | null) {
+  await prisma.casinoTx.updateMany({ where: { referencia }, data: { status: "failed", errorCode: error ?? status } });
+  const claim = await prisma.chatDeposit.updateMany({ where: { id: depositId, status: "pending" }, data: { status: "rejected", resolvedAt: new Date() } });
+  if (claim.count !== 1) return; // ya resuelto o ya acreditado -> no tocamos
+  const dep = await prisma.chatDeposit.findUnique({ where: { id: depositId }, select: { userId: true, playerId: true, amount: true } });
+  if (!dep) return;
+  const motivo = status === "expired" ? "no recibimos la transferencia dentro de las 48 h" : "no pudimos confirmar el pago";
+  await postCashierMsg(dep.userId, dep.playerId, `⚠️ Tu carga de ${ars(dep.amount)} no se pudo acreditar (${motivo}). Si ya transferiste, escribinos.`);
+}
+
+// POST /api/chat/pay/webhook — CALLBACK del socio (ganamos, modelo B — auto-carga). Firmado
+// HMAC-SHA256 sobre `${X-Partner-Timestamp}.${body crudo}` en el header X-Partner-Signature. Es el
+// ÚNICO camino de acreditación AUTOMÁTICA seguro: con firma válida y pago real confirmado, acredita el
+// wallet + dispara el Purchase. Idempotente por el estado del ChatDeposit. NUNCA se acredita por la imagen.
+chatPublicRouter.post("/pay/webhook", async (req, res) => {
+  const secret = process.env.CHAT_PAY_WEBHOOK_SECRET;
+  if (!secret) return res.status(503).json({ error: "Gateway de pagos no configurado" });
+  const rawBody = (req as unknown as { rawBody?: Buffer }).rawBody;
+  const ts = typeof req.headers["x-partner-timestamp"] === "string" ? req.headers["x-partner-timestamp"] : undefined;
+  const sig = typeof req.headers["x-partner-signature"] === "string" ? req.headers["x-partner-signature"] : undefined;
+  if (!verifyPartnerSignature(secret, ts, sig, rawBody) || !isCallbackTimestampFresh(ts)) {
+    return res.status(401).json({ error: "firma inválida" });
+  }
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const status = String(b.status ?? "");
+  const referencia = String(b.referencia ?? "");
+  if (!referencia.startsWith("dep-")) return res.status(400).json({ error: "referencia inválida" });
+  const depositId = referencia.slice(4);
+  try {
+    if (status === "credited") {
+      await applyCasinoCallbackCredit(depositId, referencia, typeof b.saldo === "number" ? b.saldo : null);
+    } else if (status === "failed" || status === "expired") {
+      await failCasinoCallbackDeposit(depositId, referencia, status, typeof b.error === "string" ? b.error : null);
+    } else if (status === "unknown") {
+      // ganamos no sabe si aplicó (timeout/proxy). NO acreditamos; queda para revisión (GET /intent).
+      console.warn(`[pay/webhook] status "unknown" para ${referencia} — no acredito, queda en revisión`);
+    }
+    return res.json({ ok: true }); // 2xx = procesado (idempotente). Si devolvemos != 2xx, Eduardo reintenta.
+  } catch (e) {
+    console.error("[pay/webhook] error:", e instanceof Error ? e.message : String(e));
+    return res.status(500).json({ error: "error procesando el callback" });
+  }
 });

@@ -28,6 +28,7 @@ export interface PartnerResult {
   referencia?: string;
   playerId?: number; // solo en /register
   existe?: boolean; // solo en /balance
+  intentId?: string; // solo en /intent (modelo B, auto-carga)
   errorCode?: string; // PLAYER_NOT_FOUND | INVALID_AMOUNT | INVALID_REFERENCE | username-taken | ...
   errorMessage?: string;
   httpStatus?: number;
@@ -67,6 +68,7 @@ async function call(path: string, method: "post" | "get", payload: Record<string
         referencia: typeof data.referencia === "string" ? data.referencia : referencia,
         playerId: typeof data.playerId === "number" ? data.playerId : undefined,
         existe: typeof data.existe === "boolean" ? data.existe : undefined,
+        intentId: typeof data.intentId === "string" ? data.intentId : undefined,
         httpStatus: res.status,
         retryable: false,
       };
@@ -109,4 +111,29 @@ export async function casinoDebit(args: { usuario: string; monto: number; refere
 // SALDO del jugador. `existe:false` = el jugador no está dado de alta en ganamos.
 export async function casinoBalance(usuario: string): Promise<PartnerResult> {
   return call("/balance", "get", { usuario });
+}
+
+// INTENT (modelo B — auto-carga desde la transferencia): avisamos la INTENCIÓN de carga. NO acredita:
+// ganamos matchea la transferencia REAL (por monto + CBU/CUIT del remitente, ventana 48h en ambos
+// sentidos) y recién ahí acredita, avisándonos por el callback firmado. El `/intent` NO registra al
+// jugador → mandar casinoRegister antes si es nuevo. `referencia` única por operación (409
+// REFERENCE_CONFLICT si se reusa con otros datos). Devuelve `intentId`.
+export async function casinoIntent(args: {
+  usuario: string;
+  monto: number;
+  referencia: string;
+  callbackUrl: string;
+  cbu?: string | null;
+  cuit?: string | null;
+  remitente?: string | null;
+}): Promise<PartnerResult> {
+  return call("/intent", "post", {
+    usuario: args.usuario,
+    monto: args.monto,
+    referencia: args.referencia,
+    callbackUrl: args.callbackUrl,
+    ...(args.cbu ? { cbu: args.cbu } : {}),
+    ...(args.cuit ? { cuit: args.cuit } : {}),
+    ...(args.remitente ? { remitente: args.remitente } : {}),
+  });
 }
