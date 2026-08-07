@@ -113,6 +113,35 @@ export async function casinoBalance(usuario: string): Promise<PartnerResult> {
   return call("/balance", "get", { usuario });
 }
 
+// CVU de la recaudadora (modelo B): a dónde transfiere el jugador. FIJO y compartido — ganamos matchea
+// por el CBU/CUIT del REMITENTE + monto. Endpoint `GET /cvu` (mismo Bearer, cache 60s del lado de
+// Eduardo). Si la cuenta se saturó (tope mensual) o se desactivó → 503 (NO devuelve un CVU muerto): el
+// bot NO manda al jugador a transferir a una cuenta que no recauda. NO cambia solo de cuenta.
+export interface CvuInfo {
+  ok: boolean;
+  cvu?: string;
+  alias?: string;
+  titular?: string;
+  moneda?: string;
+  errorCode?: string;
+  httpStatus?: number;
+}
+export async function casinoCvu(): Promise<CvuInfo> {
+  if (!casinoPartnerEnabled()) return { ok: false, errorCode: "not_configured" };
+  try {
+    const res = await axios.get(`${BASE}/cvu`, { headers: { Authorization: `Bearer ${KEY}` }, timeout: 10000, validateStatus: () => true });
+    const d = (res.data ?? {}) as Record<string, unknown>;
+    const s = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+    if (res.status === 200 && d.ok === true && s(d.cvu)) {
+      return { ok: true, cvu: s(d.cvu), alias: s(d.alias), titular: s(d.titular), moneda: s(d.moneda), httpStatus: 200 };
+    }
+    // 503 = recaudadora saturada/desactivada (sin CVU vivo). No mostramos un CVU muerto.
+    return { ok: false, errorCode: typeof d.error === "string" ? d.error : `http_${res.status}`, httpStatus: res.status };
+  } catch (e) {
+    return { ok: false, errorCode: e instanceof Error ? e.message : "network_error" };
+  }
+}
+
 // INTENT (modelo B — auto-carga desde la transferencia): avisamos la INTENCIÓN de carga. NO acredita:
 // ganamos matchea la transferencia REAL (por monto + CBU/CUIT del remitente, ventana 48h en ambos
 // sentidos) y recién ahí acredita, avisándonos por el callback firmado. El `/intent` NO registra al

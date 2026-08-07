@@ -6,6 +6,8 @@
 // no-op. No toca WhatsApp, ni el flujo actual del Chat App, ni la atribución.
 import { prisma } from "./prisma.js";
 import { emitChat } from "./io.js";
+import { casinoLiveForAccount, ensureCasinoUser } from "./casino-cashier.js"; // modelo B (auto-carga ganamos)
+import { casinoCvu } from "./casino-partner.js";
 
 // Mensaje del BOT hacia el jugador (se ve como mensaje entrante en su app). `buttons` = chips que el
 // jugador puede tocar (cada uno manda su texto como si lo hubiera escrito).
@@ -86,6 +88,33 @@ export async function runChatBot(accountId: string, convId: string, playerId: st
   if (step === "carga_monto") {
     const amount = num(t);
     if (!amount || amount <= 0) { await botSay(accountId, convId, playerId, "No entendí el monto 🤔. Escribí solo el número, por ejemplo *5000*."); return; }
+    // MODELO B (auto-carga ganamos): 1) crear el usuario en ganamos (si no la carga queda failed),
+    // 2) mostrar el CVU de la recaudadora (del endpoint, no hardcodeado). El crédito lo dispara el
+    // comprobante que sube el jugador (→ intent → callback). No usa "Ya pagué" ni al cajero.
+    if (casinoLiveForAccount(accountId) && conv.player?.casinoUsername) {
+      const u = await ensureCasinoUser(conv.player.casinoUsername);
+      if (!u.ok) {
+        await setStep("human");
+        await botSay(accountId, convId, playerId, "Tuvimos un problema al preparar tu usuario 😔. Un cajero te ayuda en un momento.");
+        await alertCajero(accountId, convId, `⚠️ No se pudo crear el usuario ${conv.player.casinoUsername} en ganamos (${u.errorCode ?? "error"}). Revisar antes de cargar.`);
+        return;
+      }
+      const cvu = await casinoCvu();
+      if (!cvu.ok) {
+        await setStep(null, null);
+        await botSay(accountId, convId, playerId, "En este momento no podemos procesar cargas 😔. Probá de nuevo en unos minutos.");
+        await alertCajero(accountId, convId, `⚠️ La recaudadora no dio CVU (${cvu.errorCode ?? "error"}) — saturada o desactivada. Avisar a ganamos.`);
+        return;
+      }
+      await setStep(null, null);
+      await botSay(
+        accountId, convId, playerId,
+        `Perfecto, cargás *$${amount}* ✅\n\nTransferí desde tu banco a:\n\n💳 CVU: *${cvu.cvu}*\n🏷️ Alias: *${cvu.alias}*\n👤 Titular: ${cvu.titular}\n\nCuando transfieras, subí el *comprobante* 📎 acá y te acreditamos las fichas solo 🚀`,
+        ["Cajero"],
+      );
+      return;
+    }
+    // Semi-automático (sin modelo B): datos de pago manuales (botPaymentInfo) + aviso al cajero.
     await setStep("carga_pago", amount * 100);
     const pay = acc.botPaymentInfo?.trim() || "En un momento un cajero te pasa los datos de pago.";
     await botSay(accountId, convId, playerId, `Perfecto, cargás *$${amount}* ✅\n\nPagá así:\n${pay}\n\nCuando pagues, tocá *Ya pagué* y te acreditamos en minutos 🚀`, ["Ya pagué", "Cajero"]);

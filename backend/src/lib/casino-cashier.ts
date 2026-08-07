@@ -38,6 +38,17 @@ export function casinoLiveForAccount(userId: string): boolean {
   return casinoModelBEnabled() && modelBAccounts().includes(userId);
 }
 
+// Da de alta al jugador en ganamos (idempotente: tolera "ya existe"). Lo usa el bot ANTES de mostrarle
+// el CVU, así el usuario EXISTE cuando ganamos va a acreditar (si no, la carga queda failed). ok=true si
+// quedó listo (creado o ya existía). Usa la clave por defecto (la que ya conoce el jugador de su alta).
+export async function ensureCasinoUser(casinoUsername: string): Promise<{ ok: boolean; errorCode?: string }> {
+  const r = await casinoRegister({ usuario: casinoUsername, password: REGISTER_PASSWORD });
+  if (r.ok) return { ok: true };
+  if (/taken|exist|ya existe|duplicad/i.test(`${r.errorCode} ${r.errorMessage}`)) return { ok: true };
+  console.error("[casino-cashier] ensureCasinoUser falló:", casinoUsername, r.errorCode);
+  return { ok: false, errorCode: r.errorCode };
+}
+
 const callbackUrl = (): string =>
   `${(process.env.APP_BASE_URL ?? "https://app.publi.lat").replace(/\/$/, "")}/api/chat/pay/webhook`;
 
