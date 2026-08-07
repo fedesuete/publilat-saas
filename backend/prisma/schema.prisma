@@ -453,7 +453,7 @@ model Contact {
   fbc         String?                   // cookie _fbc (derivada de fbclid)
   fbclid      String?
   ctwaClid    String?                    // click id de anuncios Click-to-WhatsApp (referral de la Cloud API)
-  code        String?  @unique          // código corto incrustado en el msg de WA
+  code        String?                    // código corto incrustado en el msg de WA (único POR usuario, ver @@unique abajo)
   landingUrl  String?
   lineId      String?
   stage       Stage    @default(NUEVO)
@@ -470,6 +470,8 @@ model Contact {
   messages    Message[]
   flowRuns    FlowRun[]
 
+  @@unique([userId, code]) // el código es único POR usuario (no global): dos clientes pueden generar el
+                           // mismo `ref:` sin que el create explote (P2002) y se pierda el lead.
   @@index([userId, phone])  // match del contacto en cada mensaje entrante
   @@index([userId, stage])  // kanban / listados por etapa
 }

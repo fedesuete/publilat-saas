@@ -312,18 +312,41 @@ webhookRouter.post("/", async (req, res) => {
           });
         }
         if (!contact) {
-          // Mensaje directo (sin link rastreado): igual lo mostramos en el Inbox.
-          contact = await prisma.contact.create({
-            data: {
-              userId,
-              externalId: crypto.randomUUID(),
-              phone,
-              waJid: item.key.remoteJid ?? undefined,
-              lineId: line.id,
-              source: "wa",
-              stage: "NUEVO",
-            },
-          });
+          // Link con `ref:` de un cliente (código propio, no de /go) O mensaje directo. Guardamos el
+          // código que ya parseamos arriba, así CUALQUIER link con ref funciona (no solo los del /go) y
+          // se puede cruzar la carga con la publicidad que la trajo. Sin ref, entra como directo.
+          const code = codeMatch ? codeMatch[1].toUpperCase() : null;
+          try {
+            contact = await prisma.contact.create({
+              data: {
+                userId,
+                externalId: crypto.randomUUID(),
+                phone,
+                waJid: item.key.remoteJid ?? undefined,
+                lineId: line.id,
+                source: "wa",
+                stage: "NUEVO",
+                ...(code ? { code } : {}),
+              },
+            });
+          } catch (e) {
+            // Colisión de código (raro con @@unique([userId,code]); solo en una carrera de dos personas
+            // usando el MISMO ref a la vez). NUNCA perdemos el lead: lo creamos SIN el código (solo se
+            // pierde el cruce con el ad de ese contacto puntual).
+            if ((e as { code?: string })?.code === "P2002" && code) {
+              contact = await prisma.contact.create({
+                data: {
+                  userId,
+                  externalId: crypto.randomUUID(),
+                  phone,
+                  waJid: item.key.remoteJid ?? undefined,
+                  lineId: line.id,
+                  source: "wa",
+                  stage: "NUEVO",
+                },
+              });
+            } else throw e;
+          }
           void notify(userId, "lead", "Nuevo lead 💬", `Te escribió un contacto nuevo (${phone}).`);
         }
 
