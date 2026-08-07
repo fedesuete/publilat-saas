@@ -20,6 +20,9 @@ export interface ReceiptAnalysis {
   senderCbu: string | null; // CBU/CVU (22 díg) o alias del remitente
   senderCuit: string | null; // CUIT/CUIL del remitente
   senderName: string | null; // nombre/titular del remitente
+  // Código de la transferencia / N° de operación (~22 caracteres alfanuméricos). Identifica la
+  // transferencia EXACTA — si aparece, el matcheo del modelo B es inequívoco (mejor que nombre+monto).
+  codigoOperacion: string | null;
 }
 
 type Provider = "openai" | "anthropic";
@@ -59,7 +62,8 @@ const PROMPT =
   "transferencia, depósito, etc.)? Extraé el monto total pagado y la moneda. " +
   'Respondé SOLO con JSON, sin texto adicional, con esta forma exacta: ' +
   '{"is_receipt": true|false, "amount": numero_o_null, "currency": "PYG"|"ARS"|"USD"|null, ' +
-  '"confidence": 0.0_a_1.0, "sender_cbu": "..."|null, "sender_cuit": "..."|null, "sender_name": "..."|null}. ' +
+  '"confidence": 0.0_a_1.0, "sender_cbu": "..."|null, "sender_cuit": "..."|null, "sender_name": "..."|null, ' +
+  '"codigo_operacion": "..."|null}. ' +
   "amount es el TOTAL pagado como número REAL en la unidad mayor (pesos/guaraníes), sin símbolo. " +
   "OJO con el formato latino: el '.' separa MILES y la ',' es el DECIMAL. NUNCA concatenes los " +
   "centavos como si fueran más dígitos enteros. Ejemplos: '$150.000' -> 150000 · '48.887,88' -> 48887.88 · " +
@@ -68,8 +72,10 @@ const PROMPT =
   "sender_cbu / sender_cuit / sender_name son los datos de QUIEN ENVIÓ el dinero (el REMITENTE / ORIGEN / " +
   "cuenta DEBITADA, NUNCA el destinatario/receptor): sender_cbu = su CBU o CVU (22 dígitos) — si no hay " +
   "CBU pero sí un alias, poné el alias; sender_cuit = su CUIT/CUIL; sender_name = su nombre o titular. " +
+  "codigo_operacion es el 'código de transferencia' / 'número de operación' / 'nro de comprobante': un " +
+  "código alfanumérico largo (~22 caracteres, ej '0V1JXON1RRZXKO87NZ64EL'); NO es el CBU ni el monto. " +
   "Si alguno no figura en la imagen, null. " +
-  "Si no es un comprobante, is_receipt=false y amount=null y los tres campos del remitente null.";
+  "Si no es un comprobante, is_receipt=false y amount=null y los campos del remitente null.";
 
 const isPdf = (mediaType?: string): boolean => (mediaType ?? "").toLowerCase().includes("pdf");
 
@@ -208,6 +214,7 @@ export async function analyzeReceipt(
       senderCbu: str(data.sender_cbu),
       senderCuit: str(data.sender_cuit),
       senderName: str(data.sender_name),
+      codigoOperacion: str(data.codigo_operacion),
     };
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

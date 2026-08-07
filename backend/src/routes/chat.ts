@@ -1286,13 +1286,13 @@ export async function readReceiptAndFirePurchase(depositId: string, opts?: { sen
     if (!player) return;
     // Purchase a Meta (marketing, una sola vez) — idempotente por purchaseFiredAt.
     if (!dep.purchaseFiredAt) await firePlayerPurchaseOnce(dep, player.casinoUsername);
-    // MODELO B (auto-carga, detrás del flag): avisamos la INTENCIÓN de carga a ganamos con el CBU/CUIT/
-    // nombre del remitente que sacó el OCR. NO acredita (eso llega por el callback firmado). Idempotente.
+    // MODELO B (auto-carga, detrás del flag): avisamos la INTENCIÓN de carga a ganamos con el NOMBRE del
+    // remitente + el código de operación que sacó el OCR (NO el CBU: el OCR confunde origen/destino). NO
+    // acredita (eso llega por el callback firmado). Idempotente.
     if (opts?.sendIntent) {
       await sendDepositIntent(dep, player.casinoUsername, {
-        senderCbu: receipt?.senderCbu ?? null,
-        senderCuit: receipt?.senderCuit ?? null,
         senderName: receipt?.senderName ?? null,
+        codigoOperacion: receipt?.codigoOperacion ?? null,
       });
     }
   } catch (e) {
@@ -1399,7 +1399,12 @@ chatPublicRouter.post("/me/deposit", requireChatClient, async (req, res) => {
   });
   // Aviso al operador (en vivo, para la sección Cajero) — NO acredita.
   emitChat(`chat:${req.accountId}`, "chat:cashier", { type: "deposit", id: dep.id });
-  await postCashierMsg(req.accountId!, req.chatPlayerId!, `🧾 Registraste una carga de ${ars(dep.amount)} (${dep.method}). La estamos verificando.`, "player").catch(() => undefined);
+  // Con modelo B (auto-carga) seteamos la expectativa de tiempo: la acreditación es automática pero puede
+  // demorar hasta ~1 min (worker frío del socio). Sin B, lo verifica el operador (no prometemos tiempo).
+  const cargaMsg = casinoLiveForAccount(req.accountId!)
+    ? `🧾 Recibimos tu carga de ${ars(dep.amount)}. La estamos acreditando — puede demorar hasta 1 minuto. 🙌`
+    : `🧾 Registraste una carga de ${ars(dep.amount)} (${dep.method}). La estamos verificando.`;
+  await postCashierMsg(req.accountId!, req.chatPlayerId!, cargaMsg, "player").catch(() => undefined);
   // Si subió comprobante: la IA lo lee y (1) manda el Purchase a Meta una sola vez (cierra el loop del
   // pixel) y (2) con modelo B, avisa la INTENCIÓN de carga a ganamos con el CBU/CUIT del remitente.
   // NUNCA acredita fichas acá: eso lo dispara el callback firmado de ganamos (o el operador en modelo A).

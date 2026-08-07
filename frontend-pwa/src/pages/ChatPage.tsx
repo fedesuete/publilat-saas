@@ -62,6 +62,17 @@ export default function ChatPage() {
     api.get<Wallet>("/api/chat/me/wallet").then(({ data }) => setWallet(data)).catch(() => undefined);
   useEffect(() => { void loadWallet(); }, []);
 
+  // Trae la conversación con un GET fresco. Se usa al montar Y para re-sincronizar cuando el jugador
+  // vuelve de la app del banco (la PWA estuvo en segundo plano y el socket se durmió: los mensajes que
+  // el server emitió en vivo — ej. "✅ Carga acreditada" del callback — no llegaron y hay que traerlos).
+  const loadMessages = () =>
+    api.get<{ messages: Msg[] }>("/api/chat/me/conversation")
+      .then(({ data }) => setMessages(data.messages))
+      .catch((e) => {
+        if ((e as { response?: { status?: number } })?.response?.status === 401) { clearToken(); location.href = "/login"; return; }
+        setError(apiError(e));
+      });
+
   const onComprobante = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; if (!f) return;
     const r = new FileReader(); r.onload = () => setComprobante(r.result as string); r.readAsDataURL(f);
@@ -99,14 +110,14 @@ export default function ChatPage() {
     } catch (e) { setCashMsg(apiError(e)); } finally { setCashBusy(false); }
   };
 
+  useEffect(() => { void loadMessages(); }, []);
+
+  // Re-sincroniza al volver a la pestaña (el jugador transfiere en el banco y vuelve): trae los mensajes
+  // y el saldo frescos, así ve "✅ Carga acreditada" aunque el socket se haya dormido en segundo plano.
   useEffect(() => {
-    api.get<{ messages: Msg[] }>("/api/chat/me/conversation")
-      .then(({ data }) => setMessages(data.messages))
-      .catch((e) => {
-        // token vencido/ inválido -> volver al login
-        if ((e as { response?: { status?: number } })?.response?.status === 401) { clearToken(); location.href = "/login"; return; }
-        setError(apiError(e));
-      });
+    const resync = () => { if (document.visibilityState === "visible") { void loadMessages(); void loadWallet(); } };
+    document.addEventListener("visibilitychange", resync);
+    return () => document.removeEventListener("visibilitychange", resync);
   }, []);
 
   // Popup/promo al entrar: se muestra si está activo y su versión no fue vista todavía.
@@ -145,6 +156,9 @@ export default function ChatPage() {
     const onWallet = (p: { balance: number }) => setWallet((w) => (w ? { ...w, balance: p.balance } : w));
     socket.on("chat:message", onMsg);
     socket.on("chat:wallet", onWallet);
+    // Al reconectar (el socket se cayó por segundo plano/red): traigo lo que me perdí mientras estuve
+    // desconectado, porque socket.io NO reenvía los eventos emitidos cuando no había socket vivo.
+    socket.io.on("reconnect", () => { void loadMessages(); void loadWallet(); });
     return () => { socket.off("chat:message", onMsg); socket.off("chat:wallet", onWallet); socket.disconnect(); };
   }, []);
 

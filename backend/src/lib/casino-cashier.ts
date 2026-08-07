@@ -56,17 +56,28 @@ const callbackUrl = (): string =>
   `${(process.env.APP_BASE_URL ?? "https://app.publi.lat").replace(/\/$/, "")}/api/chat/pay/webhook`;
 
 // MODELO B: al leer el comprobante avisamos la INTENCIÓN de carga a ganamos (NO acredita: eso llega por
-// el callback cuando ganamos matchea la transferencia REAL por monto + CBU/CUIT). `receipt` trae los
-// datos del remitente que sacó el OCR. Idempotente por CasinoTx `dep-<id>`. Best-effort: nunca tira.
+// el callback cuando ganamos matchea la transferencia REAL por NOMBRE del remitente + monto, o por el
+// código de operación si el OCR lo leyó). Idempotente por CasinoTx `dep-<id>`. Best-effort: nunca tira.
 export async function sendDepositIntent(
   dep: Op,
   casinoUsername: string,
-  receipt: { senderCbu: string | null; senderCuit: string | null; senderName: string | null },
+  receipt: { senderName: string | null; codigoOperacion: string | null },
 ): Promise<void> {
   if (!casinoLiveForAccount(dep.userId)) return; // solo cuentas habilitadas (rollout escalonado)
   try {
     const referencia = `dep-${dep.id}`;
     if (await prisma.casinoTx.findUnique({ where: { referencia }, select: { id: true } })) return; // intent ya mandado
+    // El matcheo de ganamos es por NOMBRE del remitente + monto (mínimo), o por codigoOperacion (exacto).
+    // Sin ninguno de los dos no hay con qué matchear (ganamos devuelve 400 INVALID_SENDER): lo dejamos
+    // failed y avisamos al operador para que lo cargue a mano.
+    if (!receipt.senderName && !receipt.codigoOperacion) {
+      await prisma.casinoTx.create({
+        data: { userId: dep.userId, playerId: dep.playerId, type: "credit", usuario: casinoUsername, amount: dep.amount, currency: dep.currency, referencia, status: "failed", errorCode: "no_sender", attempts: 1 },
+      }).catch(() => undefined);
+      await notify(dep.userId, "system", "⚠️ Comprobante ilegible",
+        `No pudimos leer el remitente ni el código de operación de una carga de ${ars(dep.amount)}. No se puede matchear la transferencia automáticamente; revisalo y cargá a mano si corresponde.`);
+      return;
+    }
     // ORDEN (confirmado con Eduardo): /register (si es nuevo) → /intent. El /intent NO registra, y si el
     // usuario NO existe cuando ganamos va a acreditar, la carga queda FAILED y la plata no se acredita.
     // Por eso el alta es BLOQUEANTE: si falla (y no es "ya existe"), NO mandamos el intent y avisamos.
@@ -85,9 +96,11 @@ export async function sendDepositIntent(
       monto: dep.amount,
       referencia,
       callbackUrl: callbackUrl(),
-      cbu: receipt.senderCbu,
-      cuit: receipt.senderCuit,
+      // Matcheo por NOMBRE (remitente) + monto, y por codigoOperacion si el OCR lo leyó (exacto). NO
+      // mandamos el CBU: el OCR confunde el de ORIGEN con el de DESTINO (recaudadora) y un CBU de destino
+      // rompe el match, porque TODAS las cargas comparten esa misma cuenta destino.
       remitente: receipt.senderName,
+      codigoOperacion: receipt.codigoOperacion,
     });
     await prisma.casinoTx.create({
       data: {

@@ -155,6 +155,7 @@ export async function casinoIntent(args: {
   cbu?: string | null;
   cuit?: string | null;
   remitente?: string | null;
+  codigoOperacion?: string | null; // código/N° de transferencia (matcheo exacto si el OCR lo lee)
 }): Promise<PartnerResult> {
   return call("/intent", "post", {
     usuario: args.usuario,
@@ -164,5 +165,6 @@ export async function casinoIntent(args: {
     ...(args.cbu ? { cbu: args.cbu } : {}),
     ...(args.cuit ? { cuit: args.cuit } : {}),
     ...(args.remitente ? { remitente: args.remitente } : {}),
+    ...(args.codigoOperacion ? { codigoOperacion: args.codigoOperacion } : {}),
   });
 }
