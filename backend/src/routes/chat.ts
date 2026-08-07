@@ -16,8 +16,9 @@ import { pushEnabled, publicVapidKey, enqueuePlayerPush, enqueueAccountBroadcast
 import { s3Enabled } from "../lib/s3.js";
 import { runChatBot } from "../lib/chat-bot.js";
 import { canOperateChat, consumeChatDayAndActivate, getAvailableDays } from "../lib/access.js";
-import { creditDepositInCasino, debitWithdrawalInCasino, sendDepositIntent } from "../lib/casino-cashier.js"; // puente ganamos (flag)
+import { creditDepositInCasino, debitWithdrawalInCasino, sendDepositIntent, casinoLiveForAccount, ensureCasinoUser } from "../lib/casino-cashier.js"; // puente ganamos (flag)
 import { verifyPartnerSignature, isCallbackTimestampFresh } from "../lib/casino-callback.js"; // firma del callback (modelo B)
+import { casinoCvu } from "../lib/casino-partner.js"; // CVU de la recaudadora (modelo B)
 
 // Router del OPERADOR (se monta bajo requireAuth): gestión de links de invitación.
 export const chatRouter = Router();
@@ -654,13 +655,34 @@ chatPublicRouter.post("/me/deposit/help", requireChatClient, async (req, res) =>
   const conv = await prisma.chatConversation.findFirst({ where: { userId: req.accountId!, playerId: req.chatPlayerId! }, select: { id: true } });
   if (!conv) return res.status(404).json({ error: "Conversación no encontrada" });
   const acc = await prisma.user.findUnique({ where: { id: req.accountId! }, select: { chatPayCbu: true, chatPayAlias: true, chatPayTitular: true, botPaymentInfo: true } });
-  const pay = { cbu: acc?.chatPayCbu ?? null, alias: acc?.chatPayAlias ?? null, titular: acc?.chatPayTitular ?? null };
+  let pay = { cbu: acc?.chatPayCbu ?? null, alias: acc?.chatPayAlias ?? null, titular: acc?.chatPayTitular ?? null };
+  let botInfo = acc?.botPaymentInfo ?? null;
   const last = await prisma.chatMessage.findFirst({ where: { conversationId: conv.id }, orderBy: { createdAt: "desc" }, select: { id: true, senderType: true, body: true, metadata: true, createdAt: true } });
   if (last && (last.metadata as { pay?: unknown })?.pay) {
     const lp = (last.metadata as { pay: typeof pay }).pay;
     return res.json({ message: { id: last.id, senderType: last.senderType, body: last.body, image: null, buttons: null, link: null, pay: lp, createdAt: last.createdAt } });
   }
-  const hasData = pay.cbu || pay.alias || pay.titular || acc?.botPaymentInfo;
+  // MODELO B (auto-carga ganamos): damos de alta al usuario en ganamos y mostramos el CVU de la
+  // recaudadora (del endpoint /cvu, no los datos manuales). El crédito lo dispara el comprobante que
+  // sube el jugador (→ intent → callback). Si el alta o el CVU fallan, avisamos y NO lo mandamos a
+  // transferir a ciegas (a una cuenta muerta o sin usuario en ganamos).
+  if (casinoLiveForAccount(req.accountId!)) {
+    const player = await prisma.chatPlayer.findUnique({ where: { id: req.chatPlayerId! }, select: { casinoUsername: true } });
+    const u = player ? await ensureCasinoUser(player.casinoUsername) : { ok: false, errorCode: "sin_jugador" };
+    const cvu = u.ok ? await casinoCvu() : { ok: false as const, errorCode: u.errorCode };
+    if (!u.ok || !cvu.ok) {
+      const errBody = "En este momento no podemos procesar cargas 😔. Probá de nuevo en unos minutos.";
+      const em = await prisma.chatMessage.create({ data: { userId: req.accountId!, conversationId: conv.id, senderType: "system", body: errBody, metadata: { bot: true, alert: true } }, select: { id: true, senderType: true, body: true, createdAt: true } });
+      await prisma.chatConversation.update({ where: { id: conv.id }, data: { lastMessageAt: new Date(), lastMessagePreview: errBody.slice(0, 120), unreadOperator: { increment: 1 } } });
+      const eo = { id: em.id, senderType: em.senderType, body: em.body, image: null, buttons: null, link: null, pay: null, createdAt: em.createdAt };
+      emitChat(`chat:${req.accountId}:player:${req.chatPlayerId}`, "chat:message", { conversationId: conv.id, message: eo });
+      emitChat(`chat:${req.accountId}`, "chat:message", { conversationId: conv.id, message: eo });
+      return res.json({ message: eo });
+    }
+    pay = { cbu: cvu.cvu ?? null, alias: cvu.alias ?? null, titular: cvu.titular ?? null };
+    botInfo = null;
+  }
+  const hasData = pay.cbu || pay.alias || pay.titular || botInfo;
   const body = hasData ? "Para cargar transferí a estos datos y subí el comprobante por favor 🙏" : "Para cargar, escribinos y te pasamos los datos 🙏";
   const metadata = { pay };
   const msg = await prisma.chatMessage.create({ data: { userId: req.accountId!, conversationId: conv.id, senderType: "system", body, metadata }, select: { id: true, senderType: true, body: true, createdAt: true } });
