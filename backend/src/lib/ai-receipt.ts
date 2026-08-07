@@ -15,6 +15,11 @@ export interface ReceiptAnalysis {
   amount: number | null; // monto en unidad mayor (ej 1500.5), null si no se lee
   currency: string | null; // ISO si se identifica (ej "PYG", "ARS", "USD")
   confidence: number; // 0..1 confianza de que es un pago real
+  // Datos del REMITENTE (quien ENVIÓ el dinero) — para el matcheo del modelo B (auto-carga desde la
+  // transferencia): la recaudadora cruza monto + CBU/CUIT del origen. null si no aparece en la imagen.
+  senderCbu: string | null; // CBU/CVU (22 díg) o alias del remitente
+  senderCuit: string | null; // CUIT/CUIL del remitente
+  senderName: string | null; // nombre/titular del remitente
 }
 
 type Provider = "openai" | "anthropic";
@@ -54,13 +59,17 @@ const PROMPT =
   "transferencia, depósito, etc.)? Extraé el monto total pagado y la moneda. " +
   'Respondé SOLO con JSON, sin texto adicional, con esta forma exacta: ' +
   '{"is_receipt": true|false, "amount": numero_o_null, "currency": "PYG"|"ARS"|"USD"|null, ' +
-  '"confidence": 0.0_a_1.0}. ' +
+  '"confidence": 0.0_a_1.0, "sender_cbu": "..."|null, "sender_cuit": "..."|null, "sender_name": "..."|null}. ' +
   "amount es el TOTAL pagado como número REAL en la unidad mayor (pesos/guaraníes), sin símbolo. " +
   "OJO con el formato latino: el '.' separa MILES y la ',' es el DECIMAL. NUNCA concatenes los " +
   "centavos como si fueran más dígitos enteros. Ejemplos: '$150.000' -> 150000 · '48.887,88' -> 48887.88 · " +
   "'1.500,50' -> 1500.5 · '$ 20.000' -> 20000. (Un error típico: leer '48.887,88' como 4888788 — MAL.) " +
   "confidence refleja qué tan seguro estás de que es un pago real y exitoso. " +
-  "Si no es un comprobante, is_receipt=false y amount=null.";
+  "sender_cbu / sender_cuit / sender_name son los datos de QUIEN ENVIÓ el dinero (el REMITENTE / ORIGEN / " +
+  "cuenta DEBITADA, NUNCA el destinatario/receptor): sender_cbu = su CBU o CVU (22 dígitos) — si no hay " +
+  "CBU pero sí un alias, poné el alias; sender_cuit = su CUIT/CUIL; sender_name = su nombre o titular. " +
+  "Si alguno no figura en la imagen, null. " +
+  "Si no es un comprobante, is_receipt=false y amount=null y los tres campos del remitente null.";
 
 const isPdf = (mediaType?: string): boolean => (mediaType ?? "").toLowerCase().includes("pdf");
 
@@ -187,11 +196,18 @@ export async function analyzeReceipt(
         ? amountRaw
         : null;
 
+    const str = (v: unknown): string | null => {
+      const s = typeof v === "string" ? v.trim() : "";
+      return s && s.toLowerCase() !== "null" ? s : null;
+    };
     return {
       isReceipt: data.is_receipt === true,
       amount,
       currency: typeof data.currency === "string" ? data.currency.toUpperCase() : null,
       confidence: typeof data.confidence === "number" ? data.confidence : 0,
+      senderCbu: str(data.sender_cbu),
+      senderCuit: str(data.sender_cuit),
+      senderName: str(data.sender_name),
     };
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
