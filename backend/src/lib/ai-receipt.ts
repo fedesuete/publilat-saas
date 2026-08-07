@@ -64,10 +64,13 @@ const PROMPT =
   '{"is_receipt": true|false, "amount": numero_o_null, "currency": "PYG"|"ARS"|"USD"|null, ' +
   '"confidence": 0.0_a_1.0, "sender_cbu": "..."|null, "sender_cuit": "..."|null, "sender_name": "..."|null, ' +
   '"codigo_operacion": "..."|null}. ' +
-  "amount es el TOTAL pagado como número REAL en la unidad mayor (pesos/guaraníes), sin símbolo. " +
-  "OJO con el formato latino: el '.' separa MILES y la ',' es el DECIMAL. NUNCA concatenes los " +
-  "centavos como si fueran más dígitos enteros. Ejemplos: '$150.000' -> 150000 · '48.887,88' -> 48887.88 · " +
-  "'1.500,50' -> 1500.5 · '$ 20.000' -> 20000. (Un error típico: leer '48.887,88' como 4888788 — MAL.) " +
+  "amount es el TOTAL pagado en PESOS ENTEROS (la unidad mayor), como número SIN símbolo y SIN centavos. " +
+  "OJO con el formato latino: el '.' separa MILES y la ',' es el DECIMAL (al revés que en inglés): '$1.234' " +
+  "son mil doscientos treinta y cuatro, NO 1,234. Los CENTAVOS —los 2 dígitos después de la coma, O que " +
+  "aparecen en SUPERÍNDICE / más chicos / elevados (típico de Personal Pay: '$1⁰⁰')— NO son parte del monto: " +
+  "DESCARTALOS y devolvé solo la parte entera. Ejemplos: '$1⁰⁰' -> 1 (¡NO 100!) · '$5.000⁰⁰' -> 5000 · " +
+  "'$15.000⁵⁰' -> 15000 · '$150.000' -> 150000 · '48.887,88' -> 48887 · '1.500,50' -> 1500 · '$ 20.000' -> 20000. " +
+  "(Errores típicos, AMBOS MAL: leer '$1⁰⁰' como 100, o '48.887,88' como 4888788.) " +
   "confidence refleja qué tan seguro estás de que es un pago real y exitoso. " +
   "sender_cbu / sender_cuit / sender_name son los datos de QUIEN ENVIÓ el dinero (el REMITENTE / ORIGEN / " +
   "cuenta DEBITADA, NUNCA el destinatario/receptor): sender_cbu = su CBU o CVU (22 dígitos) — si no hay " +
@@ -197,9 +200,12 @@ export async function analyzeReceipt(
     if (!data) return null;
 
     const amountRaw = data.amount;
+    // Devolvemos SIEMPRE pesos ENTEROS: la API de ganamos y el matcheo por monto son enteros, y los
+    // centavos (incluidos los de superíndice tipo Personal Pay) no cuentan. Floor, NO round: si igual se
+    // colara un decimal ('1234,56'), '$1.234,56' -> 1234, nunca 1235 (redondear rompería el matcheo).
     const amount =
       typeof amountRaw === "number" && Number.isFinite(amountRaw) && amountRaw > 0
-        ? amountRaw
+        ? Math.floor(amountRaw)
         : null;
 
     const str = (v: unknown): string | null => {

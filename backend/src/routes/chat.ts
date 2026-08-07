@@ -19,6 +19,7 @@ import { canOperateChat, consumeChatDayAndActivate, getAvailableDays } from "../
 import { creditDepositInCasino, debitWithdrawalInCasino, sendDepositIntent, casinoLiveForAccount, ensureCasinoUser, casinoPlayerPassword } from "../lib/casino-cashier.js"; // puente ganamos (flag)
 import { verifyPartnerSignature, isCallbackTimestampFresh } from "../lib/casino-callback.js"; // firma del callback (modelo B)
 import { casinoCvu } from "../lib/casino-partner.js"; // CVU de la recaudadora (modelo B)
+import { notify } from "../lib/notifications.js"; // aviso al operador (campana) ante montos ambiguos
 
 // Router del OPERADOR (se monta bajo requireAuth): gestión de links de invitación.
 export const chatRouter = Router();
@@ -1434,14 +1435,23 @@ chatPublicRouter.post("/me/deposit", requireChatClient, async (req, res) => {
     comprobanteData = Buffer.from(d.slice(d.indexOf(",") + 1), "base64");
     if (comprobanteData.length > 700 * 1024) return res.status(413).json({ error: "El comprobante supera 700 KB. Sacá una foto más liviana." });
   }
-  // Monto: si el jugador NO lo escribió, lo LEE la IA del comprobante → sube el comprobante y pasa
-  // directo, sin poner el monto a mano. SIN mínimo. Guardamos el OCR para no leerlo dos veces (el
-  // Purchase + el intent reusan este mismo `receipt`).
+  // Monto: el jugador puede NO escribirlo (pase directo → lo lee la IA del comprobante). SIEMPRE leemos
+  // el comprobante (monto + remitente) y reusamos este `receipt` para el Purchase + el intent (un solo OCR).
   let receipt: Awaited<ReturnType<typeof analyzeReceipt>> = null;
-  let amount = parsed.data.amount ?? 0;
-  if ((!amount || amount <= 0) && comprobanteData && aiEnabled() && /image/i.test(comprobanteType ?? "")) {
+  if (comprobanteData && aiEnabled() && /image/i.test(comprobanteType ?? "")) {
     receipt = await analyzeReceipt(comprobanteData.toString("base64"), comprobanteType ?? undefined);
-    if (receipt?.amount && receipt.amount > 0) amount = Math.round(receipt.amount);
+  }
+  const declared = parsed.data.amount && parsed.data.amount > 0 ? parsed.data.amount : null; // lo que tipeó el jugador
+  const ocr = receipt?.amount && receipt.amount > 0 ? receipt.amount : null;                  // lo que leyó la IA (entero)
+  // Control cruzado: ganamos matchea por monto EXACTO, un dígito de más = plata colgada. Si el jugador
+  // declaró Y el OCR difiere, confiamos en el DECLARADO (lo tipeó él) y avisamos al operador. Si el OCR es
+  // ~100× el declarado, es el bug de centavos en superíndice (Personal Pay: '$1⁰⁰' leído como 100).
+  let amount = declared ?? ocr ?? 0;
+  if (declared && ocr && declared !== ocr) {
+    amount = declared;
+    const superscriptBug = ocr === declared * 100;
+    await notify(req.accountId!, "system", "⚠️ Monto: comprobante ≠ declarado",
+      `El jugador declaró ${ars(declared)} pero el comprobante se leyó ${ars(ocr)}${superscriptBug ? " (centavos en superíndice mal leídos)" : ""}. Usamos ${ars(declared)} para la carga; verificá que la transferencia real coincida.`).catch(() => undefined);
   }
   if (!amount || amount <= 0) {
     return res.status(400).json({ error: "No pudimos leer el monto del comprobante. Escribí el monto o subí una foto más clara." });
