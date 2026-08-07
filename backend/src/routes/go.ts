@@ -4,6 +4,7 @@
 import { Router, type Request, type Response } from "express";
 import crypto from "node:crypto";
 import { sendCapiEvent, globalPixelAllowed } from "../lib/meta-capi.js";
+import { leadOnInboundDefault } from "../lib/meta-events.js";
 import { resolveUserPixel } from "../lib/pixel.js";
 import { prisma } from "../lib/prisma.js";
 import { fireIntegration } from "../lib/integrations.js";
@@ -240,11 +241,12 @@ goRouter.get("/go", async (req: Request, res: Response) => {
       createdAt: contact.createdAt,
     });
 
-    // Lead de OPTIMIZACIÓN: por default se dispara acá (en el clic), como hoy. Si la cuenta tiene
-    // leadOnInbound, el Lead NO se dispara en el clic — se dispara cuando la persona ESCRIBE (en el
-    // webhook), para no optimizar por clics baratos. El contacto y la atribución YA quedaron guardados
-    // igual, y el clic se sigue trackeando para analytics. (Backward-compatible: default false.)
-    if (!user.leadOnInbound) {
+    // Lead de OPTIMIZACIÓN: por DEFAULT (BUG 1 fix) el Lead NO se dispara en el clic — se dispara
+    // cuando la persona ESCRIBE (en el webhook), para no optimizar por clics baratos que no convierten.
+    // El contacto y la atribución YA quedaron guardados igual, y el clic se sigue trackeando para
+    // analytics. Se puede volver al comportamiento viejo (Lead en el clic) con LEAD_ON_INBOUND_DEFAULT=off
+    // (global) o dejando la cuenta sin leadOnInbound cuando el default está off.
+    if (!user.leadOnInbound && !leadOnInboundDefault()) {
       void fireLead({
         userId: user.id,
         contactId: contact.id,

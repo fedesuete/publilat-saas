@@ -12,7 +12,7 @@ import { consumeDayAndActivate } from "../lib/access.js";
 import { notify } from "../lib/notifications.js";
 import { onInboundFlow } from "../lib/flow-engine.js";
 import { fireCtwaLead, extractCtwaFromBaileys } from "../lib/ctwa.js";
-import { fireMetaEvent } from "../lib/meta-events.js";
+import { fireMetaEvent, leadOnInboundDefault } from "../lib/meta-events.js";
 import { scheduleLineDownAlert } from "../lib/line-alert.js";
 import { recordProxyFlap } from "../lib/proxy-flap.js";
 
@@ -357,9 +357,10 @@ webhookRouter.post("/", async (req, res) => {
           void fireCtwaLead(userId, { id: contact.id, externalId: contact.externalId, phone: contact.phone, ctwaClid: contact.ctwaClid, name: contact.name });
         }
 
-        // Lead en el INBOUND (cuentas con leadOnInbound): dispara cuando la persona ESCRIBE (no en el
-        // clic), UNA vez por contacto. Los CTWA ya lo disparan arriba → no duplicar. Best-effort.
-        if (owner?.leadOnInbound && !isNewCtwaLead) {
+        // Lead en el INBOUND (BUG 1 fix — por default para TODAS las cuentas): dispara cuando la persona
+        // ESCRIBE (no en el clic), UNA vez por contacto. Así Meta optimiza por gente que convierte, no por
+        // clics baratos. Los CTWA ya lo disparan arriba → no duplicar. Best-effort.
+        if ((owner?.leadOnInbound || leadOnInboundDefault()) && !isNewCtwaLead) {
           void fireMetaEvent(contact, "Lead", { oncePerContact: true }).catch(() => undefined);
         }
 
@@ -424,6 +425,7 @@ webhookRouter.post("/", async (req, res) => {
             externalId: contact.externalId,
             stage: contact.stage,
             name: contact.name,
+            paymentDetectedAt: contact.paymentDetectedAt,
           },
           instance,
           item,

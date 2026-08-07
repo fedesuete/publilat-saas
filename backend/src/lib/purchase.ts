@@ -26,6 +26,10 @@ export async function markPurchase(
   contactId: string,
   amount: number,
   currency = "ARS",
+  // `eventId` opcional: la auto-detección de RECARGAS pasa uno ÚNICO por comprobante (así Meta cuenta
+  // cada recarga y no las deduplica). El "Compró" manual NO lo pasa → usa el estable `${externalId}:purchase`
+  // (idempotente: marcar dos veces la MISMA venta no duplica el Purchase). Ver BUG 2.
+  opts?: { eventId?: string },
 ): Promise<MarkPurchaseResult | null> {
   const contact = await prisma.contact.findFirst({ where: { id: contactId, userId } });
   if (!contact) return null;
@@ -41,6 +45,7 @@ export async function markPurchase(
       amount: Math.round(amount * 100),
       purchasedAt: contact.purchasedAt ?? new Date(), // conserva la fecha original al editar
       paymentDetected: false,
+      paymentDetectedAt: new Date(), // BUG 2: marca el momento para el cooldown de re-detección de recargas
     },
   });
 
@@ -98,7 +103,7 @@ export async function markPurchase(
       firstName: contact.name ?? undefined,
       value: amount,
       currency,
-      eventId: `${contact.externalId}:purchase`,
+      eventId: opts?.eventId ?? `${contact.externalId}:purchase`,
       eventSourceUrl: contact.landingUrl ?? undefined,
       actionSource: isCtwa ? "business_messaging" : "website",
       ctwaClid: contact.ctwaClid ?? undefined,

@@ -17,6 +17,24 @@ const DEFAULT_CURRENCY = process.env.DEFAULT_CURRENCY ?? "ARS";
 const AUTO_MIN_CONFIDENCE = Number(process.env.PAYMENT_AUTO_MIN_CONFIDENCE ?? "0.7");
 // Máximo de análisis de comprobante por IA por contacto por hora (anti cost-DoS).
 const RECEIPT_AI_MAX_PER_HOUR = Number(process.env.RECEIPT_AI_MAX_PER_HOUR ?? "20");
+// Cooldown de re-detección por contacto (BUG 2): tras una detección/compra, no re-analizamos ese
+// contacto dentro de N horas (evita que un MISMO comprobante re-enviado dispare varios Purchase). Las
+// RECARGAS posteriores a la ventana SÍ se detectan (antes el guard "ya compró" las mataba para siempre).
+const RECHECK_COOLDOWN_MS = Number(process.env.PAYMENT_RECHECK_COOLDOWN_HOURS ?? "1") * 60 * 60 * 1000;
+
+// ¿Estamos dentro del cooldown de re-detección de este contacto? (BUG 2). `now` inyectable para tests.
+export function withinRecheckCooldown(
+  lastAt: Date | string | null | undefined,
+  now: number = Date.now(),
+  cooldownMs: number = RECHECK_COOLDOWN_MS,
+): boolean {
+  if (!lastAt) return false; // nunca se detectó nada → no hay cooldown
+  return now - new Date(lastAt).getTime() < cooldownMs;
+}
+
+// eventId ÚNICO por comprobante para que Meta cuente cada recarga (no las deduplique) (BUG 2).
+export const rechargeEventId = (externalId: string, detKey: string | number): string =>
+  `${externalId}:purchase:${detKey}`;
 
 // ¿Se permite analizar otro comprobante de este contacto? Cuenta las imágenes/PDF
 // entrantes de la última hora (proxy del nº de análisis disparables por esa persona).
@@ -49,7 +67,7 @@ export const textSignalsPayment = (text: string): boolean =>
 export interface DetectPaymentArgs {
   mode: string; // off | assisted | auto
   userId: string;
-  contact: { id: string; externalId: string; stage: string; name: string | null };
+  contact: { id: string; externalId: string; stage: string; name: string | null; paymentDetectedAt?: Date | null };
   instance: string; // sessionId de la línea (instancia Evolution)
   item: Record<string, any>; // mensaje crudo del webhook
   text: string;
@@ -64,7 +82,10 @@ export interface DetectPaymentArgs {
 export async function detectPayment(args: DetectPaymentArgs): Promise<void> {
   const { mode, userId, contact, instance, item, text } = args;
   if (mode !== "assisted" && mode !== "auto") return;
-  if (contact.stage === "COMPRO") return; // ya compró: no re-detectar
+  // BUG 2: cooldown por contacto en vez del guard duro "ya compró". Antes, al pasar a COMPRO el OCR no
+  // volvía a correr NUNCA → las recargas (mismo jugador cargando 5/10/30 veces) eran invisibles para Meta.
+  // Ahora se re-analiza pasada la ventana; el throttle receiptAnalysisAllowed sigue acotando el gasto de IA.
+  if (withinRecheckCooldown(contact.paymentDetectedAt)) return;
 
   try {
     let signal = textSignalsPayment(text);
@@ -111,7 +132,10 @@ export async function detectPayment(args: DetectPaymentArgs): Promise<void> {
     // Modo automático: dispara el Purchase sólo con monto leído y confianza alta.
     // (Nunca mandamos un Purchase con value 0: eso corrompería la optimización de Meta.)
     if (mode === "auto" && amount && amount > 0 && confidence >= AUTO_MIN_CONFIDENCE) {
-      await markPurchase(userId, contact.id, amount, DEFAULT_CURRENCY); // ARS forzado (ver arriba)
+      // eventId ÚNICO por comprobante (waMessageId) → Meta cuenta CADA recarga como un Purchase distinto
+      // en vez de deduplicarlas contra la primera (BUG 2). El "Compró" manual mantiene el eventId estable.
+      const detKey = String(item?.key?.id ?? Date.now());
+      await markPurchase(userId, contact.id, amount, DEFAULT_CURRENCY, { eventId: rechargeEventId(contact.externalId, detKey) });
       return;
     }
 

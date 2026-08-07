@@ -43,6 +43,17 @@ export interface FireMetaResult {
   error?: string;
 }
 
+// BUG 1 fix: el Lead de OPTIMIZACIÓN se dispara en el PRIMER MENSAJE ENTRANTE, no en el clic de /go.
+// Meta ya cuenta el clic (link click del anuncio); mandarle además un Lead por clic le enseña a
+// optimizar por clics baratos que NO convierten (medido: 12.7k Leads vs ~7k mensajes; cuentas con 0-16%
+// de clics que escriben). Por default aplica a TODAS las cuentas; `LEAD_ON_INBOUND_DEFAULT=off` vuelve
+// al comportamiento viejo (Lead en el clic). El clic se sigue guardando (contacto + atribución) para
+// analytics; solo NO dispara el Lead. OJO: este default afecta SOLO el timing del Lead — la
+// auto-detección de pago y el auto-registro siguen gateados por el flag por-cuenta `User.leadOnInbound`.
+export function leadOnInboundDefault(): boolean {
+  return (process.env.LEAD_ON_INBOUND_DEFAULT ?? "on").toLowerCase() !== "off";
+}
+
 /**
  * Dispara un evento de conversión a Meta para un contacto. Punto ÚNICO de salida de eventos.
  */
