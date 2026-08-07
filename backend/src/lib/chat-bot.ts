@@ -84,7 +84,7 @@ export async function runChatBot(accountId: string, convId: string, playerId: st
       const acc2 = await prisma.user.findUnique({ where: { id: accountId }, select: { chatPlatformUrl: true } });
       const url = acc2?.chatPlatformUrl?.trim();
       const link = url ? { label: "🎮 Entrar a jugar", url } : undefined;
-      const body = `¡Listo${name ? `, ${name}` : ""}! 🎉 Tu cuenta para jugar:\n\n👤 Usuario: ${username}\n🔑 Clave: ${casinoPlayerPassword()}\n\n¿Qué querés hacer? 👇`;
+      const body = `¡Listo${name ? `, ${name}` : ""}! 🎉 Tu cuenta para jugar:\n\n👤 Usuario: ${username}\n🔑 Clave: ${casinoPlayerPassword()}\n\n📌 Guardá estos datos: son los que te dejan volver a entrar si cerrás la app.\n\n¿Qué querés hacer? 👇`;
       await botSay(accountId, convId, playerId, body, undefined, link);
       return;
     }

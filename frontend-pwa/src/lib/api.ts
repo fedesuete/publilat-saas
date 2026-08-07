@@ -14,13 +14,30 @@ export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
 }
 
-// El token del jugador viaja como Bearer (NO cookie).
-export const api = axios.create({ baseURL: API_BASE });
+// El token del jugador viaja como Bearer (localStorage) Y como cookie httpOnly (withCredentials): la
+// cookie sobrevive al borrado del localStorage (Safari ITP a los 7 días, incógnito, limpiar datos) y
+// permite recuperar la sesión sin volver a registrar → no se duplica la cuenta de ganamos.
+export const api = axios.create({ baseURL: API_BASE, withCredentials: true });
 api.interceptors.request.use((cfg) => {
   const t = getToken();
   if (t) cfg.headers.Authorization = `Bearer ${t}`;
   return cfg;
 });
+
+// Recupera la sesión desde la cookie httpOnly cuando ya no hay token en localStorage. Repuebla el token
+// + el slug de la cuenta (para que Onboarding/DirectChat ofrezcan "entrar" en vez de crear otra cuenta).
+// Devuelve true si recuperó una sesión válida. Best-effort: si no hay cookie o venció, devuelve false.
+export async function recoverSession(): Promise<boolean> {
+  try {
+    const { data } = await api.get<{ token: string; accountSlug: string | null }>("/api/chat/session");
+    if (!data?.token) return false;
+    setToken(data.token);
+    if (data.accountSlug) localStorage.setItem("publilat_session_slug", data.accountSlug);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export function apiError(e: unknown): string {
   if (axios.isAxiosError(e)) return e.response?.data?.error ?? e.message;

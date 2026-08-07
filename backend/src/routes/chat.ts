@@ -6,8 +6,8 @@ import { z } from "zod";
 import crypto from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
-import { signChatClientToken, requireChatClient } from "../middleware/requireChatClient.js";
-import { hashPassword, verifyPassword } from "../lib/auth.js";
+import { signChatClientToken, requireChatClient, CHAT_CLIENT_COOKIE, extractChatClientToken } from "../middleware/requireChatClient.js";
+import { hashPassword, verifyPassword, verifyToken } from "../lib/auth.js";
 import { sendCapiEvent } from "../lib/meta-capi.js"; // reuso el CAPI existente, NO reimplemento
 import { resolveUserPixel } from "../lib/pixel.js";
 import { analyzeReceipt, aiEnabled } from "../lib/ai-receipt.js"; // lectura de comprobante con IA
@@ -35,6 +35,20 @@ const nickSlug = (s: string) => s.toLowerCase().normalize("NFD").replace(/[^a-z0
 const randDigits = (n: number) => { let s = ""; for (let i = 0; i < n; i++) s += crypto.randomInt(0, 10); return s; };
 // Clave fija simple para los usuarios autogenerados (fácil de recordar, se muestra en "cuenta creada").
 const PLAYER_PASSWORD = "123456";
+
+// Cookie httpOnly de larga duración con el token del jugador, ADEMÁS del Bearer en localStorage. Es lo
+// que evita perder la sesión (y duplicar la cuenta de ganamos) cuando el navegador borra el localStorage
+// (Safari ITP a los 7 días, incógnito, limpiar datos). SameSite=lax: chat.publi.lat y app.publi.lat son
+// el MISMO site (publi.lat), así que la cookie viaja en las llamadas de la PWA (con withCredentials).
+function setChatCookie(res: Response, token: string): void {
+  res.cookie(CHAT_CLIENT_COOKIE, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 90 * 24 * 60 * 60 * 1000, // 90 días (igual que el JWT), se renueva en cada /session
+    path: "/",
+  });
+}
 
 // ¿La cuenta tiene al menos una línea de WhatsApp con un DÍA PAGADO VIGENTE (expiresAt futuro)?
 // El Chat App se vende junto con el servicio de líneas. Gateamos por el día pagado y NO por
@@ -204,6 +218,7 @@ async function fireChatRegistration(
 async function postWelcomeCreds(userId: string, conversationId: string, intro: string | null, username: string, password: string | null, platformUrl: string | null) {
   const lines = [intro?.trim() || "¡Bienvenido/a! 🎉 Tu cuenta está lista.", "", `👤 Usuario: ${username}`];
   if (password) lines.push(`🔑 Clave: ${password}`);
+  lines.push("", "📌 Guardá tu usuario y clave: son los que te dejan volver a entrar si cerrás la app.");
   const body = lines.join("\n");
   const metadata = platformUrl ? { link: { label: "🎮 Entrar a la plataforma", url: platformUrl } } : {};
   const msg = await prisma.chatMessage.create({ data: { userId, conversationId, senderType: "system", body, metadata }, select: { id: true, senderType: true, body: true, metadata: true, createdAt: true } });
@@ -975,6 +990,7 @@ chatPublicRouter.post("/register", async (req, res) => {
   }
 
   const token = signChatClientToken(invite.userId, player.id);
+  setChatCookie(res, token); // sesión persistente (además del Bearer)
   // `password` + `username`: solo en modo un-tap. `pixel` + `eventId`: para que la PWA dispare el
   // MISMO evento por el pixel del navegador (dedup con la CAPI por eventId).
   return res.status(201).json({
@@ -1042,6 +1058,7 @@ chatPublicRouter.post("/login", async (req, res) => {
   const conv = await prisma.chatConversation.findFirst({ where: { userId: accId, playerId: player.id }, select: { id: true } });
   const acc = await prisma.user.findUnique({ where: { id: accId }, select: { slug: true } });
   const token = signChatClientToken(accId, player.id);
+  setChatCookie(res, token); // sesión persistente (además del Bearer)
   // Devolvemos el slug: la app lo guarda para recordar la cuenta y mostrar el branding la próxima vez.
   return res.json({ token, player: { id: player.id, casinoUsername: player.casinoUsername }, conversationId: conv?.id ?? null, accountSlug: acc?.slug ?? null });
 });
@@ -1122,6 +1139,7 @@ chatPublicRouter.post("/start", async (req, res) => {
     const creds = await resolveUserPixel(acc.id, "CompleteRegistration");
     void fireChatRegistration(acc.id, creds, np.casinoUsername, eventId, { fbclid, fbp, fbc });
     const token = signChatClientToken(acc.id, np.id);
+    setChatCookie(res, token); // sesión persistente (además del Bearer)
     return res.status(201).json({ token, player: np, conversationId: conv.id, username: np.casinoUsername, password: plainPassword, pixel: creds?.pixelId ?? null, eventId });
   }
 
@@ -1161,6 +1179,7 @@ chatPublicRouter.post("/start", async (req, res) => {
   }
 
   const token = signChatClientToken(acc.id, player.id);
+  setChatCookie(res, token); // sesión persistente (además del Bearer)
   return res.status(player ? 200 : 201).json({ token, player, conversationId });
 });
 
@@ -1215,7 +1234,41 @@ chatPublicRouter.post("/direct", async (req, res) => {
   });
 
   const token = signChatClientToken(acc.id, np.id);
+  setChatCookie(res, token); // sesión persistente (además del Bearer)
   return res.status(201).json({ token, player: np, conversationId: conv.id });
+});
+
+// GET /api/chat/session — RECUPERA la sesión del jugador desde la cookie httpOnly (o el Bearer). La
+// PWA la llama al abrir cuando no tiene token en localStorage: si la cookie es válida, repuebla la
+// sesión SIN volver a registrar (así NO se duplica la cuenta de ganamos). Es "rodante": re-emite un
+// token fresco y renueva la cookie 90 días, de modo que la sesión no vence mientras el jugador vuelva.
+chatPublicRouter.get("/session", async (req, res) => {
+  const token = extractChatClientToken(req);
+  if (!token) return res.status(401).json({ error: "sin sesión" });
+  let payload;
+  try {
+    payload = verifyToken(token);
+  } catch {
+    res.clearCookie(CHAT_CLIENT_COOKIE, { path: "/" });
+    return res.status(401).json({ error: "sesión vencida" });
+  }
+  if (payload.type !== "client" || !payload.accountId || !payload.playerId) {
+    return res.status(401).json({ error: "token inválido" });
+  }
+  // El jugador y la cuenta tienen que seguir existiendo (si se borraron, no recuperamos).
+  const player = await prisma.chatPlayer.findFirst({
+    where: { id: payload.playerId, userId: payload.accountId },
+    select: { id: true, casinoUsername: true },
+  });
+  if (!player) {
+    res.clearCookie(CHAT_CLIENT_COOKIE, { path: "/" });
+    return res.status(401).json({ error: "sesión inválida" });
+  }
+  const acc = await prisma.user.findUnique({ where: { id: payload.accountId }, select: { slug: true } });
+  const conv = await prisma.chatConversation.findFirst({ where: { userId: payload.accountId, playerId: player.id }, select: { id: true } });
+  const fresh = signChatClientToken(payload.accountId, player.id); // rolling: renueva 90 días
+  setChatCookie(res, fresh);
+  return res.json({ token: fresh, player: { id: player.id, casinoUsername: player.casinoUsername }, accountSlug: acc?.slug ?? null, conversationId: conv?.id ?? null });
 });
 
 // ============================ CAJERO SELF-SERVICE (Fase E) ============================

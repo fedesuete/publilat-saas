@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import "./index.css";
-import { loadBranding, applyBranding, saveBranding, getToken, setToken, API_BASE } from "./lib/api";
+import { loadBranding, applyBranding, saveBranding, getToken, setToken, API_BASE, recoverSession } from "./lib/api";
 import { pointManifestToSession } from "./lib/install";
 
 // App instalada en iPhone: la sesión viene horneada en la URL de lanzamiento (?t=token&s=slug),
@@ -60,10 +60,18 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
-  </React.StrictMode>,
-);
+async function boot() {
+  // Si no hay token en localStorage (borrado por Safari ITP / incógnito / limpiar datos, o primera vez),
+  // intentamos recuperar la sesión desde la cookie httpOnly ANTES de pintar. Así los guards de ruta ya
+  // ven la sesión y NO mandan a crear otra cuenta (evita duplicar la cuenta de ganamos). Es rápido; si
+  // no hay cookie válida, /session responde 401 al toque y seguimos como visitante sin sesión.
+  if (!getToken()) await recoverSession();
+  ReactDOM.createRoot(document.getElementById("root")!).render(
+    <React.StrictMode>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </React.StrictMode>,
+  );
+}
+void boot();
