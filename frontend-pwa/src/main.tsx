@@ -65,7 +65,10 @@ async function boot() {
   // intentamos recuperar la sesión desde la cookie httpOnly ANTES de pintar. Así los guards de ruta ya
   // ven la sesión y NO mandan a crear otra cuenta (evita duplicar la cuenta de ganamos). Es rápido; si
   // no hay cookie válida, /session responde 401 al toque y seguimos como visitante sin sesión.
+  // Si YA hay token, igual pegamos a /session en segundo plano: renueva/backfillea la cookie httpOnly
+  // (los jugadores que ya estaban logueados aún no la tienen) y hace rodar la sesión otros 90 días.
   if (!getToken()) await recoverSession();
+  else void recoverSession();
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
       <BrowserRouter>
