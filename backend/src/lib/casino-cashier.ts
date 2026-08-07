@@ -53,8 +53,19 @@ export async function sendDepositIntent(
   try {
     const referencia = `dep-${dep.id}`;
     if (await prisma.casinoTx.findUnique({ where: { referencia }, select: { id: true } })) return; // intent ya mandado
-    // El /intent NO registra: si el jugador es nuevo lo damos de alta antes (best-effort, tolera taken).
-    await casinoRegister({ usuario: casinoUsername, password: REGISTER_PASSWORD }).catch(() => undefined);
+    // ORDEN (confirmado con Eduardo): /register (si es nuevo) → /intent. El /intent NO registra, y si el
+    // usuario NO existe cuando ganamos va a acreditar, la carga queda FAILED y la plata no se acredita.
+    // Por eso el alta es BLOQUEANTE: si falla (y no es "ya existe"), NO mandamos el intent y avisamos.
+    const reg = await casinoRegister({ usuario: casinoUsername, password: REGISTER_PASSWORD });
+    const yaExiste = !reg.ok && /taken|exist|ya existe|duplicad/i.test(`${reg.errorCode} ${reg.errorMessage}`);
+    if (!reg.ok && !yaExiste) {
+      await prisma.casinoTx.create({
+        data: { userId: dep.userId, playerId: dep.playerId, type: "credit", usuario: casinoUsername, amount: dep.amount, currency: dep.currency, referencia, status: "failed", errorCode: `register:${reg.errorCode ?? "error"}`, attempts: 1 },
+      }).catch(() => undefined);
+      await notify(dep.userId, "system", "⚠️ Alta en ganamos falló",
+        `No se pudo crear el usuario ${casinoUsername} en ganamos (${reg.errorCode ?? "error"}). La carga de ${ars(dep.amount)} NO se va a acreditar hasta resolverlo (ej. requisitos de clave).`);
+      return; // no mandamos el intent para un usuario que no existe
+    }
     const r = await casinoIntent({
       usuario: casinoUsername,
       monto: dep.amount,
