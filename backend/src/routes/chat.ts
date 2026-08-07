@@ -657,15 +657,10 @@ chatPublicRouter.post("/me/deposit/help", requireChatClient, async (req, res) =>
   const acc = await prisma.user.findUnique({ where: { id: req.accountId! }, select: { chatPayCbu: true, chatPayAlias: true, chatPayTitular: true, botPaymentInfo: true } });
   let pay = { cbu: acc?.chatPayCbu ?? null, alias: acc?.chatPayAlias ?? null, titular: acc?.chatPayTitular ?? null };
   let botInfo = acc?.botPaymentInfo ?? null;
-  const last = await prisma.chatMessage.findFirst({ where: { conversationId: conv.id }, orderBy: { createdAt: "desc" }, select: { id: true, senderType: true, body: true, metadata: true, createdAt: true } });
-  if (last && (last.metadata as { pay?: unknown })?.pay) {
-    const lp = (last.metadata as { pay: typeof pay }).pay;
-    return res.json({ message: { id: last.id, senderType: last.senderType, body: last.body, image: null, buttons: null, link: null, pay: lp, createdAt: last.createdAt } });
-  }
-  // MODELO B (auto-carga ganamos): damos de alta al usuario en ganamos y mostramos el CVU de la
-  // recaudadora (del endpoint /cvu, no los datos manuales). El crédito lo dispara el comprobante que
-  // sube el jugador (→ intent → callback). Si el alta o el CVU fallan, avisamos y NO lo mandamos a
-  // transferir a ciegas (a una cuenta muerta o sin usuario en ganamos).
+  // MODELO B (auto-carga ganamos) — ANTES del dedup, así siempre trae el CVU fresco: damos de alta al
+  // usuario en ganamos y mostramos el CVU de la recaudadora (endpoint /cvu, no los datos manuales). El
+  // crédito lo dispara el comprobante que sube el jugador (→ intent → callback). Si el alta o el CVU
+  // fallan, avisamos y NO lo mandamos a transferir a ciegas (cuenta muerta o sin usuario en ganamos).
   if (casinoLiveForAccount(req.accountId!)) {
     const player = await prisma.chatPlayer.findUnique({ where: { id: req.chatPlayerId! }, select: { casinoUsername: true } });
     const u = player ? await ensureCasinoUser(player.casinoUsername) : { ok: false, errorCode: "sin_jugador" };
@@ -681,6 +676,13 @@ chatPublicRouter.post("/me/deposit/help", requireChatClient, async (req, res) =>
     }
     pay = { cbu: cvu.cvu ?? null, alias: cvu.alias ?? null, titular: cvu.titular ?? null };
     botInfo = null;
+  }
+  // Dedup: solo si el último mensaje ya tiene EXACTAMENTE estos datos de pago (mismo CVU/CBU + alias) no
+  // reposteamos. Un "te pasamos los datos" viejo (sin CVU) NO bloquea mostrar el CVU nuevo.
+  const last = await prisma.chatMessage.findFirst({ where: { conversationId: conv.id }, orderBy: { createdAt: "desc" }, select: { id: true, senderType: true, body: true, metadata: true, createdAt: true } });
+  const lastPay = (last?.metadata as { pay?: { cbu: string | null; alias: string | null; titular: string | null } })?.pay;
+  if (last && lastPay && lastPay.cbu === pay.cbu && lastPay.alias === pay.alias) {
+    return res.json({ message: { id: last.id, senderType: last.senderType, body: last.body, image: null, buttons: null, link: null, pay: lastPay, createdAt: last.createdAt } });
   }
   const hasData = pay.cbu || pay.alias || pay.titular || botInfo;
   const body = hasData ? "Para cargar transferí a estos datos y subí el comprobante por favor 🙏" : "Para cargar, escribinos y te pasamos los datos 🙏";
