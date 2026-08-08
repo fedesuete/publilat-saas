@@ -604,25 +604,17 @@ waRouter.post("/lines/:id/activate", async (req, res) => {
   const line = await getOwnedLine(req.userId!, req.params.id);
   if (!line) return res.status(404).json({ error: "Línea no encontrada" });
 
-  // 1 CRÉDITO = 24 h de LÍNEA. Si la línea YA está dentro de su ventana pagada (expiresAt futuro),
-  // reactivar/reconectar es GRATIS: dentro de esas 24 h el número puede caerse o cambiarse las veces
-  // que sea (WhatsApp restringe seguido) sin perder otro crédito. Solo se cobra cuando la ventana venció.
-  const now = new Date();
-  if (line.expiresAt && line.expiresAt > now) {
-    const reactivated = await prisma.waLine.update({ where: { id: line.id }, data: { status: "active" } });
-    return res.json({
-      line: { id: reactivated.id, status: reactivated.status, expiresAt: reactivated.expiresAt },
-      free: true,
-      message: `Tu línea ya está activa hasta el ${reactivated.expiresAt?.toISOString().slice(0, 10)} — reconectá sin gastar días.`,
-    });
-  }
-
-  // Ventana vencida: recién ahí se consumen días para arrancar las próximas 24 h.
+  // 1 CRÉDITO = 24 h de LÍNEA. "Activar +N días" APILA: si la línea sigue dentro de su ventana pagada,
+  // suma SOBRE el vencimiento actual (no se pierde lo que le queda); si ya venció, arranca de ahora.
+  // Siempre consume N créditos. (Reconectar / Ver QR NO pasan por acá — usan /connect y /reset — así que
+  // este endpoint es siempre "agregar días", nunca un reconecte gratis.)
   const credit = await prisma.credit.findUnique({ where: { userId: req.userId! } });
   if (!credit || credit.days < days) {
     return res.status(402).json({ error: "No te alcanzan los días disponibles", have: credit?.days ?? 0 });
   }
-  const expiresAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+  const now = new Date();
+  const base = line.expiresAt && line.expiresAt > now ? line.expiresAt : now; // apila sobre lo que queda
+  const expiresAt = new Date(base.getTime() + days * 24 * 60 * 60 * 1000);
 
   const [updatedLine] = await prisma.$transaction([
     prisma.waLine.update({ where: { id: line.id }, data: { expiresAt, status: "active" } }),
