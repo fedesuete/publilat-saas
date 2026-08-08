@@ -68,6 +68,23 @@ export async function lineRestrictedUntil(instanceName: string): Promise<number 
   }
 }
 
+// Status CRUDO de la sesión en WAHA (WORKING | STARTING | SCAN_QR_CODE | FAILED | STOPPED) o null si no
+// aplica / falla. `connectionState` colapsa STARTING y SCAN_QR_CODE en "connecting"; acá los separamos
+// para que checkLineHealth reinicie SOLO las TRABADAS en STARTING (no las que legítimamente esperan que
+// el usuario escanee el QR). Best-effort (una llamada a WAHA).
+export async function lineRawStatus(instanceName: string): Promise<string | null> {
+  const base = process.env.WAHA_BASE_URL, key = process.env.WAHA_API_KEY;
+  if ((process.env.WA_ENGINE ?? "").toLowerCase() !== "waha" || !base || !key) return null;
+  try {
+    const r = await fetch(`${base}/api/sessions/${instanceName}`, { headers: { "X-Api-Key": key } });
+    if (!r.ok) return null;
+    const s = (await r.json()) as { status?: string };
+    return s.status ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function alertLineDown(line: { id: string; userId: string; label: string | null; phone: string }): Promise<void> {
   const name = line.label || line.phone || "tu línea";
   // Testeo automático del motivo de la caída (para el aviso y para detectar bugs recurrentes).

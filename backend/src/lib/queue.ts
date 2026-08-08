@@ -16,7 +16,7 @@ import { decryptSecret } from "./crypto.js";
 import { notify } from "./notifications.js";
 import { sendAdminMail } from "./mailer.js";
 import { checkWaWebVersion } from "./wa-version.js";
-import { alertLineDown, alertLowBalance, lineRestrictedUntil } from "./line-alert.js";
+import { alertLineDown, alertLowBalance, lineRestrictedUntil, lineRawStatus } from "./line-alert.js";
 import { dedupeSameNumberLines } from "./dedupe-lines.js";
 import { alertCapiFailures } from "./capi-guard.js";
 import { rotateProxy, releaseProxy, applyLineProxy, logProxyEvent, alertAdminProxy, probeProxy, assignFallback, assignProxyPreferred, setLineWaitingProxy } from "./proxy-pool.js";
@@ -149,10 +149,13 @@ const SILENT_MIN_CLICKS = Number(process.env.SILENT_FAIL_MIN_CLICKS ?? 6); // cl
 // Chequea la salud de cada línea activa: conexión (Baileys) y calidad (Cloud API).
 // Guarda el estado y notifica al dueño si se desconecta o baja la calidad.
 export async function checkLineHealth(): Promise<void> {
-  // Chequeamos las activas Y las inactivas que siguen CONECTADAS (ej. una línea que se quedó
-  // sin días pero su WhatsApp sigue vinculado): si esa se cae, el dueño igual debe enterarse.
+  // Chequeamos las activas, las que siguen CONECTADAS (ej. una línea sin días pero aún vinculada) Y las
+  // que tienen DÍAS PAGADOS vigentes (expiresAt futuro) aunque hayan quedado en status "inactive": una
+  // línea PAGA que quedó desconectada/trabada debe recuperarse igual (ese estado inconsistente aparece
+  // tras un corte o un update del motor y, sin esto, la query la dejaba afuera y nunca la reintentaba).
+  const now = new Date();
   const lines = await prisma.waLine.findMany({
-    where: { OR: [{ status: { not: "inactive" } }, { connected: true }] },
+    where: { OR: [{ status: { not: "inactive" } }, { connected: true }, { expiresAt: { gt: now } }] },
   });
   for (const line of lines) {
     // Número externo: no hay sesión propia que monitorear (el WhatsApp vive en otro sistema).
@@ -177,7 +180,14 @@ export async function checkLineHealth(): Promise<void> {
         const inst = line.sessionId ?? `line_${line.id}`;
         const state = await getEngine().connectionState(inst);
         connected = state === "open";
-        if (line.connected && !connected) {
+        // TRABADA en STARTING: una sesión sana llega a WORKING en segundos; si sigue en STARTING entre dos
+        // chequeos (5 min) quedó colgada (típico tras un update del motor). El auto-recupero normal NO la
+        // agarra porque solo dispara en la CAÍDA (line.connected && !connected). La reiniciamos igual (mismo
+        // camino, sin QR). NO tocamos SCAN_QR_CODE (necesita al usuario) ni pausadas/baneadas.
+        const stuckStarting = !connected && !line.connected && line.status !== "paused" && !line.banned
+          && (await lineRawStatus(inst)) === "STARTING";
+        if (stuckStarting) console.log(`[line-health] línea ${line.id} TRABADA en STARTING -> restart automático`);
+        if ((line.connected && !connected) || stuckStarting) {
           // BACKOFF de restricción: si WhatsApp restringió el número, reintentar NO lo recupera hasta que
           // venza y solo genera ruido (515/428 en loop) → NO reiniciamos ni encolamos recuperación, solo
           // avisamos (el diagnóstico ya dice "usá otro número hasta tal fecha").
