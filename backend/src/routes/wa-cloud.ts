@@ -9,7 +9,7 @@ import { emitToUser } from "../lib/io.js";
 import { getCloudMediaBase64, sendCloudButtons, sendCloudCtaUrl } from "../lib/wa-cloud.js";
 import { fireCtwaLead } from "../lib/ctwa.js";
 import { detectPayment, textSignalsPayment } from "../lib/payment-detect.js";
-import { fireMetaEvent } from "../lib/meta-events.js";
+import { fireMetaEvent, leadOnInboundDefault } from "../lib/meta-events.js";
 import { notify } from "../lib/notifications.js";
 import { onInboundFlow } from "../lib/flow-engine.js";
 
@@ -242,10 +242,11 @@ cloudWebhookRouter.post("/", async (req, res) => {
             void fireCtwaLead(userId, { id: contact.id, externalId: contact.externalId, phone: contact.phone, ctwaClid: contact.ctwaClid, name: contact.name });
           }
 
-          // 4c) Lead en el INBOUND (cuentas con leadOnInbound): dispara el Lead cuando la persona
-          // ESCRIBE (no en el clic), UNA vez por contacto. Los CTWA ya lo disparan en fireCtwaLead
-          // (arriba) → no duplicar. Best-effort.
-          if (owner?.leadOnInbound && !isNewCtwaLead) {
+          // 4c) Lead en el INBOUND (BUG 1 fix — por default para TODAS las cuentas, igual que webhook.ts):
+          // dispara el Lead cuando la persona ESCRIBE (no en el clic), UNA vez por contacto. Los CTWA ya
+          // lo disparan en fireCtwaLead (arriba) → no duplicar. Best-effort. (Antes miraba SOLO
+          // owner?.leadOnInbound → las cuentas Cloud API quedaron sin Lead tras el cambio del 07/08.)
+          if ((owner?.leadOnInbound || leadOnInboundDefault()) && !isNewCtwaLead) {
             void fireMetaEvent(contact, "Lead", { oncePerContact: true }).catch(() => undefined);
           }
 
