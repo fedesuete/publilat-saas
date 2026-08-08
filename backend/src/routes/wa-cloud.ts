@@ -10,6 +10,7 @@ import { getCloudMediaBase64, sendCloudButtons, sendCloudCtaUrl } from "../lib/w
 import { fireCtwaLead } from "../lib/ctwa.js";
 import { detectPayment, textSignalsPayment } from "../lib/payment-detect.js";
 import { fireMetaEvent, leadOnInboundDefault } from "../lib/meta-events.js";
+import { forwardInboundToBot } from "../lib/bot-forward.js"; // puente cajero de socio (env-gated, off por default)
 import { notify } from "../lib/notifications.js";
 import { onInboundFlow } from "../lib/flow-engine.js";
 
@@ -249,6 +250,18 @@ cloudWebhookRouter.post("/", async (req, res) => {
           if ((owner?.leadOnInbound || leadOnInboundDefault()) && !isNewCtwaLead) {
             void fireMetaEvent(contact, "Lead", { oncePerContact: true }).catch(() => undefined);
           }
+
+          // 4d) Puente cajero (socio): reenvía el entrante al bot externo si esta línea tiene forward
+          // configurado. Cloud API entrega el teléfono REAL (no LID) → senderPn confiable. Fire-and-forget.
+          forwardInboundToBot(line.id, {
+            remoteJid: String(msg.from),
+            messageId: msg.id,
+            senderPn: phone,
+            message: mediaData ? { imageMessage: { caption: text || undefined } } : { conversation: text },
+            pushName,
+            mediaBase64: mediaData,
+            mediaMimetype: mediaType,
+          });
 
           // 4b) Auto-responder con botón CTA (link). Best-effort y AISLADO. Bienvenida en el 1er
           //     mensaje del contacto + follow-up en cada mensaje siguiente, con un botón que abre un

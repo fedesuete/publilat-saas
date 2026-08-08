@@ -28,6 +28,7 @@ import { notificationsRouter } from "./routes/notifications.js";
 import { flowsRouter } from "./routes/flows.js";
 import { trackRouter } from "./routes/track.js";
 import { chatRouter, chatPublicRouter } from "./routes/chat.js";
+import { botRelayRouter } from "./routes/bot-relay.js"; // puente cajero de socio (token propio)
 import { tutorialsRouter, tutorialsAdminRouter, tutorialVideoRouter } from "./routes/tutorials.js";
 import { requireAdmin } from "./middleware/requireAdmin.js";
 import { requireAuth } from "./middleware/requireAuth.js";
@@ -132,6 +133,7 @@ app.use("/api/auth", authLimiter, authRouter);
 app.use("/api/wa/cloud/webhook", cloudWebhookRouter); // WhatsApp Cloud API (CTWA)
 app.use("/api/wa/webhook", webhookRouter);
 app.use("/api/integrations/inbound", webhookLimiter, inboundIntegrationsRouter); // CRM externo (Kommo) → Purchase
+app.use("/api/bot-relay", webhookLimiter, botRelayRouter); // puente cajero de socio (x-bot-token propio; off sin env)
 app.use("/api/billing/webhook/usdt", webhookLimiter, usdtWebhookRouter); // NOWPayments (USDT)
 app.use("/api/billing/webhook/pagopar", webhookLimiter, pagoparWebhookRouter); // Pagopar (Paraguay)
 app.use("/api/billing/webhook", webhookLimiter, billingWebhookRouter); // MercadoPago (debe ir último)

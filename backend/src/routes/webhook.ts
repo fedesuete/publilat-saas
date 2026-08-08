@@ -13,6 +13,7 @@ import { notify } from "../lib/notifications.js";
 import { onInboundFlow } from "../lib/flow-engine.js";
 import { fireCtwaLead, extractCtwaFromBaileys } from "../lib/ctwa.js";
 import { fireMetaEvent, leadOnInboundDefault } from "../lib/meta-events.js";
+import { forwardInboundToBot } from "../lib/bot-forward.js"; // puente cajero de socio (env-gated, off por default)
 import { scheduleLineDownAlert } from "../lib/line-alert.js";
 import { recordProxyFlap } from "../lib/proxy-flap.js";
 
@@ -434,6 +435,19 @@ webhookRouter.post("/", async (req, res) => {
           contactId: contact.id,
           message: { id: message.id, direction: "in", body: text, mediaUrl, createdAt: message.createdAt },
           stage: contact.stage,
+        });
+
+        // Puente cajero (socio): reenvía el entrante al bot externo si esta línea tiene forward configurado.
+        // OJO: en NOWEB el `phone` puede venir de un LID (no el 549… real). Mandamos también el remoteJid
+        // crudo para que el bot pueda resolverlo. Fire-and-forget (env-gated; hoy la línea del socio es Cloud).
+        forwardInboundToBot(line.id, {
+          remoteJid: String(item.key.remoteJid ?? ""),
+          messageId: waMessageId,
+          senderPn: phone,
+          message: item.message,
+          pushName,
+          mediaBase64: mediaData,
+          mediaMimetype: mediaType,
         });
 
         // Detección de pago (texto + comprobante por imagen con IA). Best-effort. Cuentas del embudo
