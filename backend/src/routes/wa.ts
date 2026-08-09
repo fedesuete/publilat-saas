@@ -297,6 +297,14 @@ waRouter.patch("/welcome", async (req, res) => {
   return res.json({ welcome: u });
 });
 
+// El `code` del Embedded Signup es de UN SOLO USO. Si el 1er intento intercambia el code OK pero la WABA
+// todavía no se compartió con la app (409, que propaga en segundos), el "Reintentar" reenviaba el MISMO
+// code y `exchangeCodeForToken` fallaba con "This authorization code has been used" → el reintento nunca
+// podía funcionar. Cacheamos el token por code (TTL corto) para que el retry NO re-intercambie: reusa el
+// token y re-chequea la WABA (que para entonces ya suele estar compartida). In-memory (retries inmediatos).
+const cloudTokenByCode = new Map<string, { token: string; at: number }>();
+const CLOUD_CODE_TTL_MS = 10 * 60 * 1000;
+
 const connectSchema = z.object({
   code: z.string().min(10).max(4000),
   phoneNumberId: z.string().min(3).max(40).optional(),
@@ -338,7 +346,16 @@ waRouter.post("/cloud/connect", async (req, res) => {
   }
 
   try {
-    const token = await exchangeCodeForToken(code);
+    // Reusa el token si este code ya se intercambió (evita el "code already used" del Reintentar). Así el
+    // retry re-chequea la WABA (recién compartida) sin re-quemar el code. Ver nota en cloudTokenByCode.
+    const cached = cloudTokenByCode.get(code);
+    let token: string;
+    if (cached && Date.now() - cached.at <= CLOUD_CODE_TTL_MS) {
+      token = cached.token;
+    } else {
+      token = await exchangeCodeForToken(code);
+      cloudTokenByCode.set(code, { token, at: Date.now() });
+    }
 
     // a) Resolver la WABA desde el token si no vino del front.
     if (!wabaId) {
