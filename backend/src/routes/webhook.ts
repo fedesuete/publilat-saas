@@ -224,11 +224,15 @@ webhookRouter.post("/", async (req, res) => {
             const dup = await prisma.message.findFirst({ where: { waMessageId: fmId }, select: { id: true } });
             if (dup) continue; // ya lo registramos (enviado desde el CRM)
           }
+          // Matcheamos por teléfono O por el waJid crudo (LID incluido): en NOWEB muchas conversaciones
+          // tienen el contacto guardado por @lid, y el eco del celular viene con ese mismo LID → el match
+          // por teléfono solo fallaba y se perdía la respuesta. Igual que el path de entrantes.
+          const rawJid = item.key.remoteJid as string | undefined;
           const known = await prisma.contact.findFirst({
-            where: { userId, phone: peerPhone },
+            where: { userId, OR: [{ phone: peerPhone }, ...(rawJid ? [{ waJid: rawJid }] : [])] },
             orderBy: { createdAt: "desc" },
           });
-          if (!known) continue; // chat personal: no lo traemos al CRM
+          if (!known) continue; // chat personal (no está en el CRM): no lo importamos
           const fmText = extractText(item.message);
 
           // Media saliente del celular (imagen/audio/documento) -> también se espeja.
