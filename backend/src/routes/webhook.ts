@@ -197,6 +197,12 @@ webhookRouter.post("/", async (req, res) => {
       for (const item of items) {
         if (!item?.key) continue;
 
+        // GRUPOS y difusión/estados: WhatsApp los entrega con remoteJid "…@g.us" (grupo) o "…@broadcast"
+        // (estados / listas de difusión). NO van al Inbox de clientes: mezclaban los chats de grupo con
+        // las conversaciones reales (contactos "120363…" = grupos). Se saltean, entrantes Y fromMe.
+        const jid = String(item.key.remoteJid ?? "");
+        if (jid.endsWith("@g.us") || jid.endsWith("@broadcast")) continue;
+
         // Idempotencia ATÓMICA por (instancia, id de mensaje): el motor —sobre todo WAHA
         // con message.any— puede entregar el MISMO mensaje dos veces casi simultáneas.
         // Insertar en InboundDedup es una escritura única atómica: solo el primer evento
@@ -224,15 +230,11 @@ webhookRouter.post("/", async (req, res) => {
             const dup = await prisma.message.findFirst({ where: { waMessageId: fmId }, select: { id: true } });
             if (dup) continue; // ya lo registramos (enviado desde el CRM)
           }
-          // Matcheamos por teléfono O por el waJid crudo (LID incluido): en NOWEB muchas conversaciones
-          // tienen el contacto guardado por @lid, y el eco del celular viene con ese mismo LID → el match
-          // por teléfono solo fallaba y se perdía la respuesta. Igual que el path de entrantes.
-          const rawJid = item.key.remoteJid as string | undefined;
           const known = await prisma.contact.findFirst({
-            where: { userId, OR: [{ phone: peerPhone }, ...(rawJid ? [{ waJid: rawJid }] : [])] },
+            where: { userId, phone: peerPhone },
             orderBy: { createdAt: "desc" },
           });
-          if (!known) continue; // chat personal (no está en el CRM): no lo importamos
+          if (!known) continue; // chat personal: no lo traemos al CRM
           const fmText = extractText(item.message);
 
           // Media saliente del celular (imagen/audio/documento) -> también se espeja.
