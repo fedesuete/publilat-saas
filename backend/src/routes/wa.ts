@@ -360,6 +360,7 @@ waRouter.post("/cloud/connect", async (req, res) => {
     // a) Resolver la WABA desde el token si no vino del front.
     if (!wabaId) {
       const { wabaIds } = await debugToken(token);
+      console.log(`[wa/cloud/connect] DIAG user=${req.userId} wabaIds=${wabaIds.length} [${wabaIds.join(",")}] frontWaba=${parsed.data.wabaId ?? "-"} frontPhoneId=${parsed.data.phoneNumberId ?? "-"}`);
       if (wabaIds.length === 0) {
         return res.status(409).json({
           error: "La cuenta de WhatsApp se conectó en Meta pero todavía no se comparte con la app. Esperá unos segundos y tocá Reintentar.",
@@ -372,6 +373,7 @@ waRouter.post("/cloud/connect", async (req, res) => {
     //    si no tenemos el teléfono (aunque el phone_number_id ya haya venido del front).
     if (!phoneNumberId || !phone) {
       const numbers = await getWabaPhoneNumbers(wabaId, token);
+      console.log(`[wa/cloud/connect] DIAG user=${req.userId} waba=${wabaId} numbers=${numbers.length}`);
       if (numbers.length === 0) {
         if (!phoneNumberId) {
           return res.status(409).json({
