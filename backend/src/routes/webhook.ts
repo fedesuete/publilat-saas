@@ -230,11 +230,16 @@ webhookRouter.post("/", async (req, res) => {
             const dup = await prisma.message.findFirst({ where: { waMessageId: fmId }, select: { id: true } });
             if (dup) continue; // ya lo registramos (enviado desde el CRM)
           }
-          const known = await prisma.contact.findFirst({
-            where: { userId, phone: peerPhone },
-            orderBy: { createdAt: "desc" },
-          });
-          if (!known) continue; // chat personal: no lo traemos al CRM
+          // Matcheamos el contacto por su waJid EXACTO (incluye @lid) primero, y si no, por teléfono. En
+          // NOWEB el eco fromMe viene con el MISMO LID que ya tiene guardado el contacto → sin esto, las
+          // respuestas del celular a conversaciones por LID NO aparecían en el Inbox. waJid exacto = sin
+          // cruzar conversaciones (cada LID/persona es único). Los grupos ya se saltearon arriba.
+          const rawJid = item.key.remoteJid as string | undefined;
+          let known = rawJid
+            ? await prisma.contact.findFirst({ where: { userId, waJid: rawJid }, orderBy: { createdAt: "desc" } })
+            : null;
+          if (!known) known = await prisma.contact.findFirst({ where: { userId, phone: peerPhone }, orderBy: { createdAt: "desc" } });
+          if (!known) continue; // chat personal (no está en el CRM): no lo importamos
           const fmText = extractText(item.message);
 
           // Media saliente del celular (imagen/audio/documento) -> también se espeja.
