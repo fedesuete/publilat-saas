@@ -85,17 +85,21 @@
   <noscript><img height="1" width="1" style="display:none"
     src="https://www.facebook.com/tr?id=2066250657335669&ev=PageView&noscript=1"/></noscript>
 
-  <!-- Reenvía el fbclid al chat (para atribuir el registro) y dispara Lead al tocar el botón. -->
+  <!-- Reenvía el fbclid al chat, dispara Lead y redirige a crear la cuenta (/r/victor). -->
   <script>
     (function(){
       var p = new URLSearchParams(location.search);
       var q = new URLSearchParams();
       ['fbclid','utm_source','utm_medium','utm_campaign'].forEach(function(k){ if(p.get(k)) q.set(k,p.get(k)); });
       var dest = 'https://chat.publi.lat/r/victor' + (q.toString() ? '?' + q.toString() : '');
+      var went = false;
+      function go(){ if(went) return; went = true; try{ fbq('track','Lead'); }catch(e){} location.href = dest; }
       document.querySelectorAll('a.cta').forEach(function(a){
         a.setAttribute('href', dest);
-        a.addEventListener('click', function(){ try{ fbq('track','Lead'); }catch(e){} });
+        a.addEventListener('click', function(ev){ ev.preventDefault(); go(); });
       });
+      // Auto-redirección: mostramos la landing ~1.4s (dispara el PageView) y vamos a crear la cuenta.
+      setTimeout(go, 1400);
     })();
   </script>
 </body>

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Casino Online - Bono Bienvenida</title>
+
+    <!-- Precarga de recursos críticos -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://app.publi.lat">
+
+    <!-- Fuentes con display=swap para no bloquear el render -->
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Montserrat:wght@400;700;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Anton&family=Montserrat:wght@400;700;900&display=swap" rel="stylesheet"></noscript>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"></noscript>
+    <style>
+        :root {
+            --bg-dark: #050505;
+            --accent-gold: #FFD700;
+            --accent-orange: #FFA500;
+            --accent-green: #25D366;
+            --accent-teal: #128C7E;
+            --text-white: #ffffff;
+            --glass-bg: rgba(20, 20, 20, 0.95);
+            --font-main: 'Montserrat', sans-serif;
+            --font-title: 'Anton', sans-serif;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: var(--font-main);
+            background-color: var(--bg-dark);
+            color: var(--text-white);
+            overflow-x: hidden;
+            background-image: radial-gradient(circle at 50% 0%, #2a1a4a 0%, #050505 60%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .bg-coins {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            background-image: radial-gradient(rgba(255, 215, 0, 0.1) 1px, transparent 1px);
+            background-size: 30px 30px;
+            opacity: 0.5;
+        }
+        header { padding: 20px; text-align: center; z-index: 10; }
+        .logo {
+            font-family: var(--font-title);
+            font-size: 1.5rem;
+            color: var(--accent-gold);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+        }
+        .hero {
+            flex: 1; display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            text-align: center; padding: 40px 20px; position: relative; z-index: 10;
+        }
+        .hero h1 {
+            font-family: var(--font-title);
+            font-size: clamp(3rem, 10vw, 6rem);
+            line-height: 1; margin-bottom: 10px; text-transform: uppercase;
+            background: linear-gradient(180deg, #ffffff 0%, #cccccc 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            text-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        .highlight-gold {
+            background: linear-gradient(180deg, var(--accent-gold) 0%, var(--accent-orange) 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 15px rgba(255, 215, 0, 0.4));
+        }
+        .subtitle {
+            font-size: clamp(1.2rem, 4vw, 2rem); font-weight: 700;
+            color: var(--accent-green); margin-bottom: 40px;
+            text-transform: uppercase; letter-spacing: 1px;
+            background: rgba(37, 211, 102, 0.1); padding: 10px 20px;
+            border-radius: 50px; border: 1px solid rgba(37, 211, 102, 0.3);
+            box-shadow: 0 0 20px rgba(37, 211, 102, 0.2);
+        }
+        button.btn-whatsapp {
+            display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+            background: linear-gradient(to bottom, var(--accent-green), var(--accent-teal));
+            color: white; font-size: 1.3rem; font-weight: 900; text-decoration: none;
+            padding: 20px 40px; border-radius: 50px;
+            box-shadow: 0 0 0 0 rgba(37, 211, 102, 0.7);
+            animation: pulse-green 2s infinite; transition: transform 0.2s;
+            text-transform: uppercase; width: 100%; max-width: 400px;
+            border: 2px solid #4dfc89; cursor: pointer; outline: none;
+            font-family: var(--font-main); margin: 0; appearance: none; -webkit-appearance: none;
+        }
+        button.btn-whatsapp:hover { transform: scale(1.05); }
+        button.btn-whatsapp i { font-size: 1.6rem; }
+        @keyframes pulse-green {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(37, 211, 102, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 20px rgba(37, 211, 102, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(37, 211, 102, 0); }
+        }
+        .trust-row {
+            display: flex; gap: 20px; justify-content: center; margin-top: 40px;
+            font-size: 0.9rem; color: #aaa; flex-wrap: wrap;
+        }
+        .trust-item {
+            display: flex; align-items: center; gap: 8px;
+            background: rgba(255,255,255,0.05); padding: 8px 16px; border-radius: 8px;
+        }
+        .trust-item i { color: var(--accent-gold); }
+        @keyframes slideInOut {
+            0% { transform: translateY(150%); opacity: 0; }
+            10% { transform: translateY(0); opacity: 1; }
+            80% { transform: translateY(0); opacity: 1; }
+            100% { transform: translateY(150%); opacity: 0; }
+        }
+        .notification-popup {
+            position: fixed; bottom: 20px; left: 20px;
+            background: var(--glass-bg); border: 1px solid rgba(255, 215, 0, 0.3);
+            border-left: 4px solid var(--accent-gold); padding: 15px 20px; border-radius: 12px;
+            display: flex; align-items: center; gap: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8); backdrop-filter: blur(10px);
+            z-index: 1000; max-width: 90%; width: 350px;
+            animation: slideInOut 12s ease-in-out infinite; animation-delay: 2s;
+            transform: translateY(150%);
+        }
+        .notif-icon {
+            width: 40px; height: 40px; background: rgba(255, 215, 0, 0.2);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            color: var(--accent-gold); font-size: 1.2rem; flex-shrink: 0;
+        }
+        .notif-content h4 { font-size: 0.9rem; margin: 0; color: #fff; font-weight: 700; }
+        .notif-content p { font-size: 0.8rem; margin: 2px 0 0 0; color: #ccc; }
+        .highlight-money { color: var(--accent-green); font-weight: bold; }
+        footer { padding: 20px; text-align: center; font-size: 0.7rem; color: #555; z-index: 10; }
+        @media (max-width: 600px) {
+            .notification-popup { left: 5%; bottom: 10px; width: 90%; }
+        }
+        /* Escape de navegador in-app (FB/IG/TikTok) */
+        #inapp{display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.93);padding:28px 22px;text-align:center;align-items:center;justify-content:center}
+        #inapp .box{max-width:360px}
+        #inapp h3{font-size:20px;margin-bottom:10px}
+        #inapp p{color:#bbb;font-size:14px;margin-bottom:16px;line-height:1.5}
+        #inapp .obtn{display:inline-block;background:var(--accent-green);color:#04150c;font-weight:800;padding:12px 20px;border-radius:12px;text-decoration:none}
+    </style>
+<!-- Meta Pixel Code -->
+<script>
+!function(f,b,e,v,n,t,s)
+{if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];
+s.parentNode.insertBefore(t,s)}(window, document,'script',
+'https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', '1544072693961131');
+fbq('track', 'PageView');
+</script>
+<noscript><img height="1" width="1" style="display:none"
+src="https://www.facebook.com/tr?id=1544072693961131&ev=PageView&noscript=1"
+/></noscript>
+<!-- End Meta Pixel Code -->
+</head>
+<body>
+    <div class="bg-coins"></div>
+    <header>
+        <div class="logo">🎰 RED GANAMOS</div>
+    </header>
+    <section class="hero">
+        <h1>
+            DUPLICAMOS TU<br>
+            <span class="highlight-gold">PRIMER CARGA</span>
+        </h1>
+
+        <div class="subtitle">Bono del 50% activo</div>
+        <button id="ctx-whatsapp" class="btn-whatsapp" onclick="openRandomLink()">
+         CARGAR AHORA
+        </button>
+        <div class="trust-row">
+            <div class="trust-item"><i class="fa-solid fa-bolt"></i> Cargas al Instante</div>
+            <div class="trust-item"><i class="fa-solid fa-money-bill-wave"></i> Retiros 24/7</div>
+            <div class="trust-item"><i class="fa-solid fa-shield-halved"></i> 100% Seguro</div>
+        </div>
+    </section>
+    <footer>
+        <p>Jugar compulsivamente es perjudicial para la salud. +18.</p>
+    </footer>
+    <div class="notification-popup">
+        <div class="notif-icon"><i class="fa-solid fa-money-bill-transfer"></i></div>
+        <div class="notif-content">
+            <h4>Matías, de CABA</h4>
+            <p>acaba de retirar <span class="highlight-money">$ 124.500</span></p>
+        </div>
+    </div>
+
+    <div id="inapp"><div class="box">
+        <h3>🚀 Abrí esto en tu navegador</h3>
+        <p>Para registrarte y jugar sin problemas, tocá los <b>•••</b> (arriba a la derecha) y elegí <b>“Abrir en el navegador”</b>.</p>
+        <a class="obtn" href="#" id="openBrowser">Abrir en el navegador ↗</a>
+    </div></div>
+
+<script>
+    /* ============================================================
+       CONFIG — cambiá estas 3 por cliente
+       ============================================================ */
+    var GO_BASE  = "https://app.publi.lat";                   // backend donde vive /go — NO cambiar
+    var USER     = "matias";                                 // slug del cliente en Publi.lat
+    var MSG      = "Hola! Quiero activar mi bono del 50% 🎁";  // /go le agrega el (ref: CODIGO) solo
+    var PIXEL_ID = "1544072693961131";                         // pixel del cliente (Mi Pixel)
+
+    function cookie(n){var m=document.cookie.match('(^|; )'+n+'=([^;]+)');return m?decodeURIComponent(m[2]):"";}
+    function newEid(){try{return crypto.randomUUID();}catch(e){return 'e'+Date.now()+Math.round(Math.random()*1e9);}}
+
+    /* CTA → /go (crea el lead + atribución + código, rota entre las líneas del cliente, y manda a
+       WhatsApp). Reemplaza al script.js de ScaleOS: acá la rotación la hace NUESTRO backend. */
+    function openRandomLink(){
+      var id = newEid();
+      if(PIXEL_ID){ try{ fbq('track','Lead',{},{eventID:id}); }catch(_){} }
+      var p = new URLSearchParams();
+      p.set('u', USER); p.set('msg', MSG); p.set('eid', id);
+      var here = new URLSearchParams(location.search);
+      var fbc = cookie('_fbc'); if(fbc) p.set('fbc', fbc);
+      var fbp = cookie('_fbp'); if(fbp) p.set('fbp', fbp);
+      ['fbclid','campaign','ad','src'].forEach(function(k){var v=here.get(k); if(v) p.set(k,v);});
+      location.href = GO_BASE + '/go?' + p.toString();
+    }
+
+    /* Escape de webview in-app (FB/IG/TikTok): sin esto se pierde casi todo el tráfico CTWA. */
+    var ua = navigator.userAgent||"";
+    if(/FBAN|FBAV|Instagram|FB_IAB|Line|Messenger|TikTok|musical_ly|Bytedance/i.test(ua)){
+      var el=document.getElementById('inapp');
+      if(el){ el.style.display='flex'; var ob=document.getElementById('openBrowser'); if(ob) ob.href=location.href; }
+    }
+</script>
+</body>
+</html>

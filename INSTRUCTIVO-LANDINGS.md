@@ -142,3 +142,53 @@ No hace falta `CLOUDFRONT_DOMAIN` (esa variable es para un CDN compartido; acá 
 
 Con el botón por `/go` y el pixel base bien puesto, tu atribución cierra el círculo:
 **anuncio → WhatsApp → venta → vuelve a Meta.**
+
+---
+
+## 🔁 Auto-redirect: SIEMPRE llevá el fbclid (si no, perdés la atribución)
+
+Muchas landings redirigen solas a WhatsApp tras unos segundos. **Ojo:** el `fbclid` (el identificador
+del clic del anuncio) viene en la URL de la landing (`...?fbclid=xxx`). Si el redirect va a un `/go?u=...`
+**fijo**, NO lo copia → el contacto queda **sin atribución** y su venta **no matchea** en Meta.
+
+**La regla:** el botón Y el auto-redirect tienen que **copiar el fbclid** (y `fbp`/`fbc` de las cookies)
+de la URL al `/go`. Script que resuelve las dos cosas (poné tu slug y tu mensaje):
+
+```html
+<script>
+(function(){
+  var base = "https://app.publi.lat/go?u=TU_SLUG&msg=Hola%2C%20quiero%20info";
+  var here = new URLSearchParams(location.search);
+  ["fbclid","campaign","ad","src"].forEach(function(k){ var v=here.get(k); if(v) base+="&"+k+"="+encodeURIComponent(v); });
+  function ck(n){ var m=document.cookie.match('(^|;)\s*'+n+'\s*=\s*([^;]+)'); return m?decodeURIComponent(m.pop()):''; }
+  var fbp=ck('_fbp'); if(fbp) base+="&fbp="+encodeURIComponent(fbp);
+  var fbc=ck('_fbc'); if(fbc) base+="&fbc="+encodeURIComponent(fbc);
+  var b=document.querySelector('a[href*="/go?"]'); if(b) b.href=base;                 // botón con atribución
+  if (window.self === window.top) setTimeout(function(){ window.location.href=base; }, 3000); // auto-redirect ~3s
+})();
+</script>
+```
+
+- No pongas el auto-redirect en **0 segundos**: Meta penaliza las landings que redirigen al instante
+  (lo lee como mala experiencia / cloaking). **~3 s** mostrando el contenido es lo seguro.
+- El `if (window.self === window.top)` evita que el redirect corra dentro del **editor** (la vista
+  previa vive en un iframe y wa.me no se puede abrir ahí → mostraba "wa.me rechazó la conexión").
+
+## 📊 Entender las métricas (por qué Meta y el CRM no coinciden)
+
+Son **tres cosas distintas**, y es NORMAL que no den el mismo número:
+
+| Métrica | Qué mide |
+|---|---|
+| **Clic** (Dashboard) | Tocó el botón/link → lo mandamos a WhatsApp. **Cuenta cada hit al `/go`, incluidos bots/crawlers** (Meta y WhatsApp escanean el link). |
+| **"Cliente potencial" en Meta** | El **Lead** que Meta atribuyó al anuncio (deduplicado, filtra bots, sólo los que tienen fbclid/fbc). |
+| **Chat** (CRM) | La persona **realmente escribió** un mensaje. Siempre es MUCHO menos: mucha gente toca y no escribe. |
+
+**Claves:**
+- El **Lead se dispara al CLICKEAR, no al hablar.** Por eso "chats" < "leads" siempre.
+- Los **"clics" del Dashboard son más altos** que los leads de Meta porque incluyen bots/crawlers que
+  golpean el `/go`. Es esperable.
+- Lo que importa para el ROAS: que los clics **reales lleven el fbclid** (ver sección de auto-redirect
+  arriba). Si muchos contactos quedan **sin fbclid**, la atribución se está perdiendo → revisá que la
+  landing copie el fbclid al `/go`.
+- El salto de calidad de match llega con el **Purchase** (que manda el teléfono) y con **volumen**.

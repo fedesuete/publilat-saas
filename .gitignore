@@ -28,3 +28,7 @@ frontend-pwa/dev-dist
 frontend-pwa/*.tsbuildinfo
 frontend-pwa/vite.config.js
 frontend-pwa/vite.config.d.ts
+
+# QR de test de líneas (credencial-ish, no va al repo)
+qr-line-test.png
+qr-*.png
