@@ -68,16 +68,29 @@ function sendNoLine(res: Response) {
 // (rotación LRU: la menos usada primero). Elegible = conectada, status active y con
 // TIEMPO PAGADO vigente (expiresAt futuro). Sin línea paga activa no enviamos el clic a
 // un número del cliente (paywall): caemos a DEMO si está definido. 1 día = 24h activa.
-async function pickLine(userId: string) {
+async function pickLine(userId: string, linePref?: string) {
   const now = new Date();
+  const base = { userId, connected: true, status: "active", NOT: { phone: "" }, expiresAt: { gt: now } };
+
+  // LÍNEA FIJA por link (&line=<etiqueta|id|teléfono>): si el link pide una línea específica y está
+  // activa, la usamos y NO rotamos. Así el cliente manda cada landing a una línea distinta (una landing
+  // → &line=Ventas, otra → &line=Soporte). Si la línea pedida no existe o está caída, cae a la rotación
+  // normal (nunca deja el clic sin línea).
+  if (linePref?.trim()) {
+    const pref = linePref.trim();
+    const digits = pref.replace(/\D/g, "");
+    const pinned = await prisma.waLine.findFirst({
+      where: { ...base, OR: [{ label: { equals: pref, mode: "insensitive" } }, { id: pref }, ...(digits ? [{ phone: digits }] : [])] },
+      orderBy: { lastUsedAt: { sort: "asc", nulls: "first" } },
+    });
+    if (pinned?.phone) {
+      await prisma.waLine.update({ where: { id: pinned.id }, data: { lastUsedAt: now } });
+      return { phone: pinned.phone, lineId: pinned.id as string | undefined };
+    }
+  }
+
   const eligible = await prisma.waLine.findFirst({
-    where: {
-      userId,
-      connected: true,
-      status: "active",
-      NOT: { phone: "" },
-      expiresAt: { gt: now },
-    },
+    where: base,
     orderBy: { lastUsedAt: { sort: "asc", nulls: "first" } }, // la menos reciente primero
   });
 
@@ -164,6 +177,9 @@ goRouter.get("/go", async (req: Request, res: Response) => {
     const campaignId = req.query.campaign ? String(req.query.campaign) : undefined;
     const adId = req.query.ad ? String(req.query.ad) : undefined;
     const source = req.query.src ? String(req.query.src) : undefined;
+    // &line=<etiqueta|id|teléfono>: fija a qué línea de WhatsApp manda ESTE link (una landing → una
+    // línea). Opcional: sin esto, rota entre todas las líneas activas como siempre.
+    const linePref = req.query.line ? String(req.query.line) : undefined;
     // Compartidos por la landing (pixel del navegador) para deduplicar:
     const eid = req.query.eid ? String(req.query.eid) : undefined;
     const fbpQuery = req.query.fbp ? String(req.query.fbp) : undefined;
@@ -192,7 +208,7 @@ goRouter.get("/go", async (req: Request, res: Response) => {
       if (dup) {
         const now = new Date();
         const same = dup.line && dup.line.connected && dup.line.status === "active" && dup.line.expiresAt && dup.line.expiresAt > now ? dup.line.phone : "";
-        const phone = same || (await pickLine(user.id)).phone; // misma línea si sigue vigente, si no rota
+        const phone = same || (await pickLine(user.id, linePref)).phone; // misma línea si sigue vigente, si no la fijada/rota
         if (!phone) return sendNoLine(res);
         const text = encodeURIComponent(`${msg} (ref: ${dup.code})`);
         return res.redirect(302, `https://wa.me/${phone}?text=${text}`);
@@ -208,7 +224,7 @@ goRouter.get("/go", async (req: Request, res: Response) => {
     // eventId compartido con el Lead del navegador (si vino eid); si no, uno propio.
     const eventId = eid ?? externalId;
 
-    const { phone: linePhone, lineId } = await pickLine(user.id);
+    const { phone: linePhone, lineId } = await pickLine(user.id, linePref);
 
     // Persistir el contacto con TODA la atribución (clave para que el Purchase matchee).
     const contact = await prisma.contact.create({
