@@ -14,6 +14,7 @@ export interface LandingConfig {
   autoRedirect?: boolean; // si true, redirige solo tras ~1 seg
   destino?: "whatsapp" | "chatapp"; // a dónde va el botón (default whatsapp)
   chatBase?: string; // base de la PWA del Chat App (ej https://chat.publi.lat) para /r/<slug>
+  line?: string; // línea FIJA para esta landing (etiqueta/id/teléfono → &line=). Vacío = rota.
 }
 
 const esc = (s: string) =>
@@ -110,6 +111,7 @@ export function renderTrackedLanding(cfg: LandingConfig): string {
     chatBase: (cfg.chatBase || "").replace(/\/$/, ""),
     destino: isChat ? "chatapp" : "whatsapp",
     autoRedirect: !!cfg.autoRedirect,
+    line: cfg.line || undefined, // línea fija (si el cliente la eligió en el editor)
   }).replace(/</g, "\\u003c");
 
   return `<!doctype html>
@@ -171,6 +173,7 @@ src="https://www.facebook.com/tr?id=${esc(cfg.pixelId)}&ev=PageView&noscript=1"/
     p.set('u', CFG.slug);
     p.set('msg', CFG.msg);
     p.set('eid', eid);
+    if (CFG.line) p.set('line', CFG.line);
     var fbp = getCookie('_fbp'); if (fbp) p.set('fbp', fbp);
     var fbc = getCookie('_fbc'); if (fbc) p.set('fbc', fbc);
     var here = new URLSearchParams(location.search);

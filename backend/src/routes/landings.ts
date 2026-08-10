@@ -20,6 +20,7 @@ const configSchema = z.object({
   msg: z.string().max(400).optional(),
   autoRedirect: z.boolean().optional(), // pasa 1 seg por la landing y redirige
   destino: z.enum(["whatsapp", "chatapp"]).optional(), // a dónde va el botón (default whatsapp)
+  line: z.string().max(60).optional(), // línea FIJA de esta landing (etiqueta/id/teléfono). Vacío = rota.
 });
 type Cfg = z.infer<typeof configSchema>;
 
@@ -49,6 +50,7 @@ async function buildHtml(userId: string, userSlug: string, cfg: Cfg): Promise<st
     autoRedirect: cfg.autoRedirect ?? false,
     destino: cfg.destino ?? "whatsapp",
     chatBase: process.env.CHAT_PWA_URL ?? "https://chat.publi.lat",
+    line: cfg.line || undefined, // línea fija elegida en el editor (si la hay)
   };
   // Escape de webview in-app horneado (recupera tráfico CTWA que se pierde en el navegador de FB/IG).
   return injectInAppEscape(renderTrackedLanding(full));

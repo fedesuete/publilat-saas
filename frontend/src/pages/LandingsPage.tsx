@@ -78,7 +78,7 @@ function templates(slug: string, pixelId: string): Tpl[] {
   ];
 }
 
-interface LandingConfig { title?: string; headline?: string; subtitle?: string; buttonText?: string; msg?: string; autoRedirect?: boolean; destino?: "whatsapp" | "chatapp" }
+interface LandingConfig { title?: string; headline?: string; subtitle?: string; buttonText?: string; msg?: string; autoRedirect?: boolean; destino?: "whatsapp" | "chatapp"; line?: string }
 interface Landing { id: string; name: string; slug: string; config: LandingConfig | null; isPrimary: boolean; published: boolean; publishedUrl: string | null; createdAt: string }
 
 const landingUrl = (slug: string) => `${API_BASE}/p/${slug}`;
@@ -87,7 +87,7 @@ const landingUrl = (slug: string) => `${API_BASE}/p/${slug}`;
 function previewFromFields(slug: string, f: FormState): string {
   const dest = f.destino === "chatapp"
     ? `${CHAT_PWA_URL}/r/${slug}`
-    : `${API_BASE}/go?u=${slug}&msg=${encodeURIComponent(f.msg || "Hola, quiero info")}`;
+    : `${API_BASE}/go?u=${slug}&msg=${encodeURIComponent(f.msg || "Hola, quiero info")}${f.line ? `&line=${encodeURIComponent(f.line)}` : ""}`;
   const btn = f.buttonText || (f.destino === "chatapp" ? "Abrir chat" : "Escribir por WhatsApp");
   return `<!doctype html><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${f.title || "Landing"}</title><div style="font-family:system-ui;min-height:100vh;margin:0;display:flex;align-items:center;justify-content:center;background:#0b141a;color:#e9edef;padding:24px"><div style="max-width:440px;width:100%;text-align:center;padding:44px 28px;background:#111b21;border:1px solid #222d34;border-radius:16px"><h1 style="font-size:26px;margin:0 0 10px">${f.headline || "Tu encabezado acá"}</h1><p style="color:#8696a0;margin:0 0 28px;line-height:1.55">${f.subtitle || "Tu subtítulo descriptivo"}</p><a href="${dest}" style="display:block;text-decoration:none;border-radius:999px;padding:16px;font-size:17px;font-weight:700;background:#25d366;color:#03301a">${btn}</a></div></div>`;
 }
@@ -101,8 +101,8 @@ function CopyBtn({ value, label = "Copiar" }: { value: string; label?: string })
   );
 }
 
-interface FormState { name: string; title: string; headline: string; subtitle: string; buttonText: string; msg: string; autoRedirect: boolean; destino: "whatsapp" | "chatapp" }
-const EMPTY_FORM: FormState = { name: "", title: "", headline: "", subtitle: "", buttonText: "", msg: "", autoRedirect: false, destino: "whatsapp" };
+interface FormState { name: string; title: string; headline: string; subtitle: string; buttonText: string; msg: string; autoRedirect: boolean; destino: "whatsapp" | "chatapp"; line: string }
+const EMPTY_FORM: FormState = { name: "", title: "", headline: "", subtitle: "", buttonText: "", msg: "", autoRedirect: false, destino: "whatsapp", line: "" };
 
 // Revisión automática del HTML propio: detecta los errores típicos y guía (no bloquea).
 // Distingue el Pixel del NAVEGADOR (código en el HTML) del Pixel SERVER-SIDE/CAPI (cargado en
@@ -313,6 +313,7 @@ export default function LandingsPage() {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [waLines, setWaLines] = useState<Array<{ id: string; label: string | null; phone: string }>>([]); // líneas del cliente para fijar por landing
   const [mode, setMode] = useState<"fields" | "html">("html");
   const [html, setHtml] = useState("");
   const [saving, setSaving] = useState(false);
@@ -335,6 +336,12 @@ export default function LandingsPage() {
     catch (err) { setError(apiError(err)); } finally { setLoading(false); }
   };
   useEffect(() => { void load(); }, []);
+  // Líneas del cliente (para el selector "fijar línea" por landing).
+  useEffect(() => {
+    api.get<{ lines: Array<{ id: string; label: string | null; phone: string }> }>("/api/wa/lines")
+      .then(({ data }) => setWaLines(data.lines ?? []))
+      .catch(() => undefined);
+  }, []);
 
   const startCreate = () => {
     setEditingId(null); setForm(EMPTY_FORM); setMode("html");
@@ -351,14 +358,14 @@ export default function LandingsPage() {
       setHtml(body); setSnapshot(`h|${l.name}|${body}`);
     } else {
       setMode("fields"); setHtml("");
-      const f: FormState = { name: l.name, title: c.title ?? "", headline: c.headline ?? "", subtitle: c.subtitle ?? "", buttonText: c.buttonText ?? "", msg: c.msg ?? "", autoRedirect: c.autoRedirect ?? false, destino: c.destino ?? "whatsapp" };
+      const f: FormState = { name: l.name, title: c.title ?? "", headline: c.headline ?? "", subtitle: c.subtitle ?? "", buttonText: c.buttonText ?? "", msg: c.msg ?? "", autoRedirect: c.autoRedirect ?? false, destino: c.destino ?? "whatsapp", line: c.line ?? "" };
       setForm(f); setSnapshot(`f|${l.name}|${JSON.stringify(f)}`);
     }
   };
 
   const onUploadHtml = (file: File) => { const r = new FileReader(); r.onload = () => { setHtml(String(r.result ?? "")); setMode("html"); }; r.readAsText(file); };
 
-  const buildConfig = (): LandingConfig => ({ title: form.title || undefined, headline: form.headline || undefined, subtitle: form.subtitle || undefined, buttonText: form.buttonText || undefined, msg: form.msg || undefined, autoRedirect: form.autoRedirect || undefined, destino: form.destino });
+  const buildConfig = (): LandingConfig => ({ title: form.title || undefined, headline: form.headline || undefined, subtitle: form.subtitle || undefined, buttonText: form.buttonText || undefined, msg: form.msg || undefined, autoRedirect: form.autoRedirect || undefined, destino: form.destino, line: form.line || undefined });
 
   // Duplica la landing que estás editando: nace DESPUBLICADA y con slug + dominio propios (el server
   // genera el slug). Ideal para el flujo anti-ban: clonar una creatividad quemada y republicarla limpia.
@@ -572,8 +579,25 @@ export default function LandingsPage() {
                     </div>
                     <p className="mt-1 text-[11px] text-slate-500">{form.destino === "chatapp"
                       ? "El botón abre tu chat propio (registro de un tap). Funciona sin WhatsApp; se apaga si te quedás sin días."
-                      : "El botón rota tus líneas de WhatsApp con seguimiento (/go)."}</p>
+                      : "El botón manda a la línea que elijas abajo (o rota entre todas)."}</p>
                   </div>
+                  {form.destino === "whatsapp" && (
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-400">Línea de WhatsApp</label>
+                      <select value={form.line} onChange={(e) => setForm((p) => ({ ...p, line: e.target.value }))}
+                        className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200">
+                        <option value="">Rotar entre todas (automático)</option>
+                        {waLines.map((l) => (
+                          <option key={l.id} value={l.label || l.phone}>{l.label || l.phone}</option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        {waLines.length === 0
+                          ? "Todavía no tenés líneas — conectá una en WhatsApp y volvé."
+                          : "Fijá una línea para esta landing, o dejá \"Rotar\" para repartir entre todas. Si la línea elegida se cae, manda a otra activa."}
+                      </p>
+                    </div>
+                  )}
                   {([["title", "Título de la pestaña"], ["headline", "Encabezado"], ["subtitle", "Subtítulo"], ["buttonText", "Texto del botón"], ["msg", "Mensaje de WhatsApp"]] as Array<[TextKey, string]>)
                     .filter(([k]) => k !== "msg" || form.destino === "whatsapp")
                     .map(([k, ph]) => (
