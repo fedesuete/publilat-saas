@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { apiError } from "../lib/api";
 import { Button, Input, ErrorMsg } from "../components/ui";
@@ -7,8 +7,11 @@ import { Button, Input, ErrorMsg } from "../components/ui";
 export default function LoginPage() {
   const { login, register } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const ref = searchParams.get("ref") || ""; // código de referido (/login?ref=CODE)
 
-  const [mode, setMode] = useState<"login" | "register">("login");
+  // Si vino con ?ref, arrancamos directo en "Crear cuenta".
+  const [mode, setMode] = useState<"login" | "register">(ref ? "register" : "login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -29,6 +32,7 @@ export default function LoginPage() {
           password,
           name: name || undefined,
           phone: phone || undefined,
+          ref: ref || undefined,
         });
         // Recién creada la cuenta: marcamos para disparar el recorrido guiado y
         // aterrizamos en "Empezá acá".
@@ -54,6 +58,12 @@ export default function LoginPage() {
         <p className="mb-5 text-center text-sm text-slate-400">
           Atribución WhatsApp → Meta Ads
         </p>
+
+        {ref && (
+          <div className="mb-4 rounded-md border border-wa-green/40 bg-wa-green/10 px-3 py-2 text-center text-sm text-wa-green">
+            🎁 Te invitó un cliente de Publi.lat — creá tu cuenta para arrancar.
+          </div>
+        )}
 
         <div className="mb-5 grid grid-cols-2 gap-1 rounded-md bg-slate-900 p-1 text-sm">
           <button

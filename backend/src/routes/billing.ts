@@ -13,6 +13,7 @@ import {
   pagoparEnabled, createPagoparOrder, verifyPagoparWebhook, getPagoparOrder,
 } from "../lib/payments.js";
 import { sendAdminMail } from "../lib/mailer.js";
+import { settleReferralOnFirstPayment } from "../lib/referrals.js";
 
 export const billingRouter = Router();
 // Webhooks públicos (los monta index.ts sin requireAuth).
@@ -49,6 +50,9 @@ async function approvePayment(paymentId: string, providerLabel: string): Promise
     },
   });
   console.log(`[billing] ${providerLabel}: +${payment.days} días a user ${payment.userId}`);
+  // Referidos: si esta cuenta fue referida por un cliente, su 1ra compra genera la comisión del
+  // 10% (pending, USDT manual). Best-effort: nunca frena la acreditación del pago.
+  void settleReferralOnFirstPayment(payment).catch(() => undefined);
   // Aviso por email al equipo (ADMIN_ALERT_EMAIL: publilat.meta@gmail.com + federicobogado1997@gmail.com).
   // Best-effort: no frena la acreditación.
   void (async () => {

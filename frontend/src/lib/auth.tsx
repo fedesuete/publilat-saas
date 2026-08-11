@@ -16,6 +16,7 @@ export interface RegisterPayload {
   password: string;
   name?: string;
   phone?: string;
+  ref?: string; // código de referido (viene del ?ref= en la URL)
 }
 
 interface AuthContextValue {

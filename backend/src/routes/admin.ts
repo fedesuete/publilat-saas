@@ -281,6 +281,49 @@ adminRouter.post("/clients/:id/credits", async (req, res) => {
   return res.json({ ok: true, days: updated.days });
 });
 
+// --- Referidos: comisiones del 10% (USDT, pago manual). Lista + marcar pagada. ---
+adminRouter.get("/referrals", async (_req, res) => {
+  // Pendientes primero (status 'paid' > 'pending' alfabéticamente, así que ordenamos al revés).
+  const rows = await prisma.referral.findMany({ orderBy: [{ status: "desc" }, { createdAt: "desc" }], take: 300 });
+  const ids = Array.from(new Set(rows.flatMap((r) => [r.referrerId, r.referredUserId])));
+  const users = ids.length
+    ? await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, email: true, slug: true } })
+    : [];
+  const byId = new Map(users.map((u) => [u.id, u]));
+  const referrals = rows.map((r) => {
+    const ref = byId.get(r.referrerId);
+    const red = byId.get(r.referredUserId);
+    return {
+      id: r.id,
+      status: r.status,
+      referrer: ref ? { name: ref.name, email: ref.email, slug: ref.slug } : null,
+      referred: red ? { name: red.name, email: red.email, slug: red.slug } : null,
+      days: r.days,
+      commissionUsd: r.commissionUsdCents / 100,
+      amount: r.amount,
+      currency: r.currency,
+      createdAt: r.createdAt,
+      paidAt: r.paidAt,
+      paidNote: r.paidNote,
+    };
+  });
+  const pendingUsd = rows.filter((r) => r.status === "pending").reduce((s, r) => s + r.commissionUsdCents, 0) / 100;
+  return res.json({ referrals, pendingUsd });
+});
+
+const referralPaidSchema = z.object({ note: z.string().max(200).optional() });
+adminRouter.post("/referrals/:id/paid", async (req, res) => {
+  const parsed = referralPaidSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const id = req.params.id;
+  const r = await prisma.referral.findUnique({ where: { id } });
+  if (!r) return res.status(404).json({ error: "Referido no encontrado" });
+  if (r.status === "paid") return res.json({ ok: true, alreadyPaid: true });
+  await prisma.referral.update({ where: { id }, data: { status: "paid", paidAt: new Date(), paidNote: parsed.data.note ?? null } });
+  await adminLog(req.userId!, "referral_paid", r.referrerId, { referralId: id, usd: r.commissionUsdCents / 100 });
+  return res.json({ ok: true });
+});
+
 // Cambiar / resetear la contraseña de un cliente. Devuelve la nueva EN TEXTO PLANO una vez para
 // que el admin se la pase (las contraseñas se guardan hasheadas, no se pueden recuperar). Si no
 // mandan `password`, se genera una aleatoria. No se permite sobre otro ADMIN.

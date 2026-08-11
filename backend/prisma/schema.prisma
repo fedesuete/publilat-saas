@@ -33,6 +33,10 @@ model User {
   demoExpiresAt DateTime?
   source        String?                    // cómo llegó la cuenta (demo, referido, etc.)
   lastLoginAt   DateTime?
+  // --- Referidos: 10% de la PRIMERA compra del referido, pagado en USDT a mano por el admin.
+  // Solo clientes existentes (con ≥1 compra aprobada) pueden referir. Ver lib/referrals.ts. ---
+  referralCode  String?   @unique          // código propio para compartir (/register?ref=CODE)
+  referredById  String?                    // quién refirió a esta cuenta (User.id del referidor)
   // --- Límites de plan (configurables por cliente desde el panel) ---
   maxLines      Int       @default(5)        // líneas de WhatsApp permitidas (5 por defecto; más = soporte)
   maxLandings   Int       @default(50)       // landings permitidas
@@ -107,6 +111,7 @@ model User {
   credit      Credit?
   integration Integration?
   payments    Payment[]
+  referralsMade Referral[] @relation("ReferralReferrer") // comisiones que ganó como referidor
   supportMessages SupportMessage[]
   quickReplies QuickReply[]
   audioClips  AudioClip[]
@@ -547,6 +552,29 @@ model Payment {
   status     String   @default("pending") // pending | approved | rejected
   createdAt  DateTime @default(now())
   user       User     @relation(fields: [userId], references: [id])
+}
+
+// Referido: comisión del 10% de la PRIMERA compra del referido, en USDT, pagada A MANO por el
+// admin. Se crea al aprobarse el PRIMER pago del referido (ver lib/referrals.ts, enganchado en
+// approvePayment). referredUserId es UNIQUE = una sola comisión por referido (primera compra).
+// El monto se calcula sobre el valor en USD (días × usdPerDay) para no depender de la moneda.
+model Referral {
+  id                 String   @id @default(cuid())
+  referrerId         String                        // quién refirió (User.id) — cobra la comisión
+  referredUserId     String   @unique              // el referido: una comisión por referido
+  paymentId          String?                        // el pago que la disparó
+  days               Int      @default(0)           // días de esa primera compra
+  amount             Int?                            // monto pagado (centavos, moneda original)
+  currency           String   @default("USD")
+  commissionUsdCents Int      @default(0)           // 10% del valor en USD, en centavos de USD
+  status             String   @default("pending")   // pending | paid (el admin transfirió el USDT)
+  paidAt             DateTime?
+  paidNote           String?                          // hash/nota de la transferencia USDT
+  createdAt          DateTime @default(now())
+  referrer           User     @relation("ReferralReferrer", fields: [referrerId], references: [id])
+
+  @@index([referrerId])
+  @@index([status])
 }
 
 // ============================================================================

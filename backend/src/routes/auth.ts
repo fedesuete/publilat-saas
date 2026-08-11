@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { hashPassword, verifyPassword, signToken, slugify } from "../lib/auth.js";
 import { requireAuth, AUTH_COOKIE } from "../middleware/requireAuth.js";
+import { resolveReferrerByCode } from "../lib/referrals.js";
 import type { Response } from "express";
 
 export const authRouter = Router();
@@ -27,6 +28,7 @@ const registerSchema = z.object({
   password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres"),
   name: z.string().min(1).optional(),
   phone: z.string().max(30).optional(), // WhatsApp del usuario (opcional)
+  ref: z.string().max(20).optional(), // código de referido (/register?ref=CODE)
 });
 
 const loginSchema = z.object({
@@ -51,10 +53,13 @@ authRouter.post("/register", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
   }
-  const { email, password, name, phone } = parsed.data;
+  const { email, password, name, phone, ref } = parsed.data;
 
   try {
     const slug = await uniqueSlug(name ?? email.split("@")[0]);
+    // Referido: si vino un ?ref válido, guardamos quién lo refirió. La comisión (10%) recién se
+    // liquida cuando ESTA cuenta hace su 1ra compra Y el referidor ya es cliente (ver referrals.ts).
+    const referredById = ref ? await resolveReferrerByCode(ref) : null;
     const user = await prisma.user.create({
       data: {
         email,
@@ -62,6 +67,7 @@ authRouter.post("/register", async (req, res) => {
         name,
         phone,
         password: await hashPassword(password),
+        ...(referredById ? { referredById, source: "referido" } : {}),
       },
       select: { id: true, email: true, slug: true, name: true, role: true, tokenVersion: true },
     });

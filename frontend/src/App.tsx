@@ -13,6 +13,7 @@ import LinksPage from "./pages/LinksPage";
 import LandingsPage from "./pages/LandingsPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import BillingPage from "./pages/BillingPage";
+import ReferralsPage from "./pages/ReferralsPage";
 import PixelPage from "./pages/PixelPage";
 import AgendaPage from "./pages/AgendaPage";
 import SetupPage from "./pages/SetupPage";
@@ -29,6 +30,7 @@ import AdminProxies from "./pages/admin/AdminProxies";
 import AdminMetrics from "./pages/admin/AdminMetrics";
 import AdminLandings from "./pages/admin/AdminLandings";
 import AdminRevenue from "./pages/admin/AdminRevenue";
+import AdminReferrals from "./pages/admin/AdminReferrals";
 import AdminDemos from "./pages/admin/AdminDemos";
 import AdminTutorials from "./pages/admin/AdminTutorials";
 import AdminSupport from "./pages/admin/AdminSupport";
@@ -57,6 +59,7 @@ export default function App() {
             <Route path="/automatizaciones" element={<AutomationsPage />} />
             <Route path="/whatsapp" element={<WhatsappPage />} />
             <Route path="/billing" element={<BillingPage />} />
+            <Route path="/referidos" element={<ReferralsPage />} />
             <Route path="/pixel" element={<PixelPage />} />
             <Route path="/links" element={<LinksPage />} />
             <Route path="/landings" element={<LandingsPage />} />
@@ -80,6 +83,7 @@ export default function App() {
             <Route path="/admin/metricas" element={<AdminMetrics />} />
             <Route path="/admin/landings" element={<AdminLandings />} />
             <Route path="/admin/ingresos" element={<AdminRevenue />} />
+            <Route path="/admin/referidos" element={<AdminReferrals />} />
             <Route path="/admin/demos" element={<AdminDemos />} />
             <Route path="/admin/tutoriales" element={<AdminTutorials />} />
             <Route path="/admin/soporte" element={<AdminSupport />} />
