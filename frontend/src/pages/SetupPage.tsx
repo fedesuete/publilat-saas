@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, apiError } from "../lib/api";
-import { Button, Card, ErrorMsg } from "../components/ui";
+import { Button, Card, ErrorMsg, Input } from "../components/ui";
 
 interface SetupStatus { pixel: boolean; landing: boolean; whatsapp: boolean; }
 type Mode = "nativo" | "webhook" | "kommo";
@@ -46,6 +46,33 @@ export default function SetupPage() {
   const [savingMode, setSavingMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
+
+  // Cambio de contraseña (self-service)
+  const [curPw, setCurPw] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [confPw, setConfPw] = useState("");
+  const [changingPw, setChangingPw] = useState(false);
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwOk, setPwOk] = useState(false);
+
+  const changePassword = async () => {
+    setPwError(null);
+    setPwOk(false);
+    if (newPw.length < 6) return setPwError("La nueva contraseña debe tener al menos 6 caracteres.");
+    if (newPw !== confPw) return setPwError("La nueva contraseña y su confirmación no coinciden.");
+    setChangingPw(true);
+    try {
+      await api.post("/api/auth/change-password", { currentPassword: curPw, newPassword: newPw });
+      setPwOk(true);
+      setCurPw("");
+      setNewPw("");
+      setConfPw("");
+    } catch (e) {
+      setPwError(apiError(e));
+    } finally {
+      setChangingPw(false);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -221,6 +248,48 @@ export default function SetupPage() {
               {payMode !== savedPayMode && <span className="text-xs text-amber-300">Tenés cambios sin guardar</span>}
             </div>
             {savedMsg && <p className="mt-2 text-xs text-emerald-300">{savedMsg}</p>}
+          </Card>
+
+          {/* Cambiar contraseña (self-service) */}
+          <Card>
+            <div className="mb-1 text-sm font-semibold text-slate-200">Cambiar contraseña</div>
+            <p className="mb-3 text-xs text-slate-500">
+              Cambiá la contraseña de tu cuenta. Por seguridad, se cerrarán tus otras sesiones (esta
+              queda abierta).
+            </p>
+            <div className="grid max-w-md gap-2">
+              <Input
+                type="password"
+                placeholder="Contraseña actual"
+                autoComplete="current-password"
+                value={curPw}
+                onChange={(e) => setCurPw(e.target.value)}
+              />
+              <Input
+                type="password"
+                placeholder="Nueva contraseña (mín. 6)"
+                autoComplete="new-password"
+                value={newPw}
+                onChange={(e) => setNewPw(e.target.value)}
+              />
+              <Input
+                type="password"
+                placeholder="Repetí la nueva contraseña"
+                autoComplete="new-password"
+                value={confPw}
+                onChange={(e) => setConfPw(e.target.value)}
+              />
+            </div>
+            {pwError && <div className="mt-2"><ErrorMsg>{pwError}</ErrorMsg></div>}
+            {pwOk && <p className="mt-2 text-xs text-emerald-300">✓ Contraseña actualizada.</p>}
+            <div className="mt-3">
+              <Button
+                onClick={() => void changePassword()}
+                disabled={changingPw || !curPw || !newPw || !confPw}
+              >
+                {changingPw ? "Guardando…" : "Cambiar contraseña"}
+              </Button>
+            </div>
           </Card>
         </div>
       )}

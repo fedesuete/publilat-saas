@@ -127,3 +127,35 @@ authRouter.get("/me", requireAuth, async (req, res) => {
   if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
   return res.json({ user });
 });
+
+// POST /api/auth/change-password — el cliente cambia SU PROPIA contraseña desde el panel.
+// Verifica la actual, guarda el hash nuevo y SUBE tokenVersion (revoca las OTRAS sesiones);
+// reemite la cookie de ESTA sesión para no desloguear a quien hizo el cambio.
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Ingresá tu contraseña actual"),
+  newPassword: z.string().min(6, "La nueva contraseña debe tener al menos 6 caracteres"),
+});
+authRouter.post("/change-password", requireAuth, async (req, res) => {
+  const parsed = changePasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
+  }
+  const { currentPassword, newPassword } = parsed.data;
+  const user = await prisma.user.findUnique({ where: { id: req.userId! } });
+  if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+  if (!(await verifyPassword(currentPassword, user.password))) {
+    return res.status(400).json({ error: "La contraseña actual es incorrecta" });
+  }
+  if (await verifyPassword(newPassword, user.password)) {
+    return res.status(400).json({ error: "La nueva contraseña debe ser distinta de la actual" });
+  }
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: { password: await hashPassword(newPassword), tokenVersion: { increment: 1 } },
+    select: { tokenVersion: true },
+  });
+  // Sesión actual: token nuevo con el tokenVersion nuevo (las demás quedan revocadas).
+  const token = signToken({ userId: user.id, tv: updated.tokenVersion });
+  setAuthCookie(res, token);
+  return res.json({ ok: true });
+});
