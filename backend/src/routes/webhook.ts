@@ -223,6 +223,8 @@ webhookRouter.post("/", async (req, res) => {
         // importamos chats personales). Lo enviado desde el CRM se deduplica por
         // waMessageId (lo guardamos al enviar).
         if (item.key.fromMe) {
+          // DIAG temporal (sin PII): confirma si WAHA entrega el eco del celu y qué dominio trae el peer.
+          console.log(`[fromMe-diag] llega dom=${String(item.key.remoteJid ?? "").split("@")[1] || "?"}`);
           const peerPhone = jidToPhone(item.key.remoteJid);
           if (!peerPhone) continue;
           const fmId = item.key.id as string | undefined;
@@ -239,6 +241,7 @@ webhookRouter.post("/", async (req, res) => {
             ? await prisma.contact.findFirst({ where: { userId, waJid: rawJid }, orderBy: { createdAt: "desc" } })
             : null;
           if (!known) known = await prisma.contact.findFirst({ where: { userId, phone: peerPhone }, orderBy: { createdAt: "desc" } });
+          console.log(`[fromMe-diag] match=${known ? "si" : "no"} byWaJid=${!!(rawJid && known && known.waJid === rawJid)}`);
           if (!known) continue; // chat personal (no está en el CRM): no lo importamos
           const fmText = extractText(item.message);
 
