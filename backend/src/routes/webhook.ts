@@ -11,6 +11,7 @@ import { detectPayment } from "../lib/payment-detect.js";
 import { consumeDayAndActivate } from "../lib/access.js";
 import { notify } from "../lib/notifications.js";
 import { onInboundFlow } from "../lib/flow-engine.js";
+import { runExclusive } from "../lib/keyed-lock.js";
 import { fireCtwaLead, extractCtwaFromBaileys } from "../lib/ctwa.js";
 import { fireMetaEvent, leadOnInboundDefault } from "../lib/meta-events.js";
 import { forwardInboundToBot } from "../lib/bot-forward.js"; // puente cajero de socio (env-gated, off por default)
@@ -321,35 +322,23 @@ webhookRouter.post("/", async (req, res) => {
           : null;
         if (!contact) {
           const rawJid = item.key.remoteJid as string | undefined;
-          contact = await prisma.contact.findFirst({
-            where: { userId, OR: [{ phone }, ...(rawJid ? [{ waJid: rawJid }] : [])] },
-            orderBy: { createdAt: "desc" },
-          });
-        }
-        if (!contact) {
-          // Link con `ref:` de un cliente (código propio, no de /go) O mensaje directo. Guardamos el
-          // código que ya parseamos arriba, así CUALQUIER link con ref funciona (no solo los del /go) y
-          // se puede cruzar la carga con la publicidad que la trajo. Sin ref, entra como directo.
-          const code = codeMatch ? codeMatch[1].toUpperCase() : null;
-          try {
-            contact = await prisma.contact.create({
-              data: {
-                userId,
-                externalId: crypto.randomUUID(),
-                phone,
-                waJid: item.key.remoteJid ?? undefined,
-                lineId: line.id,
-                source: "wa",
-                stage: "NUEVO",
-                ...(code ? { code } : {}),
-              },
+          // Find-or-create SERIALIZADO por persona (userId + waJid/phone): varios mensajes casi
+          // simultáneos de la MISMA persona llegaban como webhooks concurrentes y, al no existir aún
+          // el contacto, cada uno creaba UNO nuevo (Contact no tiene UNIQUE por waJid) -> la conversación
+          // quedaba partida en N chats. Con el lock, el 1ro crea y los demás encuentran el que ya está.
+          const found = await runExclusive(`contact:${userId}:${rawJid || phone}`, async () => {
+            const existing = await prisma.contact.findFirst({
+              where: { userId, OR: [{ phone }, ...(rawJid ? [{ waJid: rawJid }] : [])] },
+              orderBy: { createdAt: "desc" },
             });
-          } catch (e) {
-            // Colisión de código (raro con @@unique([userId,code]); solo en una carrera de dos personas
-            // usando el MISMO ref a la vez). NUNCA perdemos el lead: lo creamos SIN el código (solo se
-            // pierde el cruce con el ad de ese contacto puntual).
-            if ((e as { code?: string })?.code === "P2002" && code) {
-              contact = await prisma.contact.create({
+            if (existing) return { contact: existing, isNew: false };
+            // Link con `ref:` de un cliente (código propio, no de /go) O mensaje directo. Guardamos el
+            // código que ya parseamos arriba, así CUALQUIER link con ref funciona (no solo los del /go)
+            // y se puede cruzar la carga con la publicidad que la trajo. Sin ref, entra como directo.
+            const code = codeMatch ? codeMatch[1].toUpperCase() : null;
+            let created;
+            try {
+              created = await prisma.contact.create({
                 data: {
                   userId,
                   externalId: crypto.randomUUID(),
@@ -358,11 +347,33 @@ webhookRouter.post("/", async (req, res) => {
                   lineId: line.id,
                   source: "wa",
                   stage: "NUEVO",
+                  ...(code ? { code } : {}),
                 },
               });
-            } else throw e;
+            } catch (e) {
+              // Colisión de código (raro con @@unique([userId,code]); solo en una carrera de dos
+              // personas usando el MISMO ref a la vez). NUNCA perdemos el lead: lo creamos SIN el código
+              // (solo se pierde el cruce con el ad de ese contacto puntual).
+              if ((e as { code?: string })?.code === "P2002" && code) {
+                created = await prisma.contact.create({
+                  data: {
+                    userId,
+                    externalId: crypto.randomUUID(),
+                    phone,
+                    waJid: item.key.remoteJid ?? undefined,
+                    lineId: line.id,
+                    source: "wa",
+                    stage: "NUEVO",
+                  },
+                });
+              } else throw e;
+            }
+            return { contact: created, isNew: true };
+          });
+          contact = found.contact;
+          if (found.isNew) {
+            void notify(userId, "lead", "Nuevo lead 💬", `Te escribió un contacto nuevo (${phone}).`);
           }
-          void notify(userId, "lead", "Nuevo lead 💬", `Te escribió un contacto nuevo (${phone}).`);
         }
 
         // Atribución CTWA sin landing: si el mensaje viene de un anuncio Click-to-WhatsApp,
