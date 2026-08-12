@@ -1,4 +1,4 @@
-// Inbox del Chat App (canal jugador↔cajero) — SEPARADO del Inbox de WhatsApp. Abre un
+// Inbox del Chat App (canal cliente↔cajero) — SEPARADO del Inbox de WhatsApp. Abre un
 // SEGUNDO socket al namespace "/chat" SOLO en esta página; no toca el socket default.
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { io, type Socket } from "socket.io-client";
@@ -14,10 +14,10 @@ const CHAT_PWA_URL = (import.meta.env.VITE_CHAT_PWA_URL as string | undefined) ?
 
 // Recorrido guiado del Chat App (misma mecánica que el de las landings / primer panel).
 const CHATAPP_TOUR: TourStep[] = [
-  { targetId: "ca-title", title: "Tu app de chat 💬", body: "Chat App es tu propia aplicación para hablar con los jugadores — instalable en el celu y separada de WhatsApp. Te muestro cómo usarla en 4 pasos." },
-  { targetId: "ca-tab-invites", title: "1. Creá un acceso", body: "Entrá a “Accesos” y generá un usuario + clave para cada jugador. Le pasás ese acceso y con eso instala la app y entra." },
-  { targetId: "ca-tab-chats", title: "2. Chateá en vivo", body: "En “Conversaciones” aparecen los jugadores que entraron. Les respondés al instante, como un WhatsApp propio tuyo." },
-  { targetId: "ca-tab-avisos", title: "3. Mandá avisos", body: "En “Avisos” enviás notificaciones al celular de tus jugadores (promos) y configurás el popup que ven al abrir la app." },
+  { targetId: "ca-title", title: "Tu app de chat 💬", body: "Chat App es tu propia aplicación para hablar con los clientes — instalable en el celu y separada de WhatsApp. Te muestro cómo usarla en 4 pasos." },
+  { targetId: "ca-tab-invites", title: "1. Creá un acceso", body: "Entrá a “Accesos” y generá un usuario + clave para cada cliente. Le pasás ese acceso y con eso instala la app y entra." },
+  { targetId: "ca-tab-chats", title: "2. Chateá en vivo", body: "En “Conversaciones” aparecen los clientes que entraron. Les respondés al instante, como un WhatsApp propio tuyo." },
+  { targetId: "ca-tab-avisos", title: "3. Mandá avisos", body: "En “Avisos” enviás notificaciones al celular de tus clientes (promos) y configurás el popup que ven al abrir la app." },
   { targetId: "ca-tab-brand", title: "4. Tu marca", body: "En “Marca” le ponés tu logo, tus colores y el nombre de la app. Queda 100% con tu identidad." },
 ];
 
@@ -128,7 +128,7 @@ export default function ChatAppPage() {
         <div className="flex items-start justify-between gap-2">
           <div>
             <h1 id="ca-title" className="text-xl font-bold">Chat App</h1>
-            <p className="text-sm text-slate-400">Canal directo con tus jugadores (app instalable). Separado del WhatsApp.</p>
+            <p className="text-sm text-slate-400">Canal directo con tus clientes (app instalable). Separado del WhatsApp.</p>
           </div>
           <Button variant="ghost" onClick={startTour} className="shrink-0"><GraduationCap className="h-4 w-4" /> Guía</Button>
         </div>
@@ -180,7 +180,7 @@ export default function ChatAppPage() {
           <div className={`w-full shrink-0 flex-col overflow-hidden rounded-lg border border-slate-800 lg:flex lg:w-80 ${selected ? "hidden lg:flex" : "flex"}`}>
             <div className="border-b border-slate-800 px-4 py-3 text-xs text-slate-500">{convs.length} conversaciones</div>
             <div className="flex-1 overflow-y-auto">
-              {convs.length === 0 ? <p className="p-4 text-sm text-slate-500">Todavía no hay jugadores. Creá un acceso en la pestaña "Accesos".</p> :
+              {convs.length === 0 ? <p className="p-4 text-sm text-slate-500">Todavía no hay clientes. Creá un acceso en la pestaña "Accesos".</p> :
                 convs.map((c) => (
                   <button key={c.id} onClick={() => void openConv(c.id)}
                     className={`flex w-full items-start gap-3 border-b border-slate-800/60 px-4 py-3 text-left transition ${selected === c.id ? "bg-slate-800" : "hover:bg-slate-800/50"}`}>
@@ -254,7 +254,7 @@ export default function ChatAppPage() {
   );
 }
 
-// Sub-sección "Accesos": LISTA de jugadores de la cuenta (todos, incluidos los que entran por la
+// Sub-sección "Accesos": LISTA de clientes de la cuenta (todos, incluidos los que entran por la
 // landing) + crear un acceso manual (usuario + clave) + resetear la clave de cualquiera. Genera el
 // link + QR + mensaje listo para mandarle al cliente.
 interface PlayerRow { id: string; username: string; name: string | null; estatus: string; createdAt: string }
@@ -266,7 +266,7 @@ function InvitesTab() {
   const [accBusy, setAccBusy] = useState(false);
   const [creds, setCreds] = useState<{ accountSlug: string; username: string; password: string; reset: boolean } | null>(null);
   const [accCopied, setAccCopied] = useState(false);
-  // Lista de jugadores de la cuenta + reset de clave por jugador.
+  // Lista de clientes de la cuenta + reset de clave por cliente.
   const [players, setPlayers] = useState<PlayerRow[]>([]);
   const [loadingPlayers, setLoadingPlayers] = useState(true);
   const [resetting, setResetting] = useState<string | null>(null);
@@ -313,7 +313,7 @@ function InvitesTab() {
       );
       setCreds(data);
       setAccUser(""); setAccPass("Hola123");
-      void loadPlayers(); // el nuevo jugador aparece en la lista de abajo
+      void loadPlayers(); // el nuevo cliente aparece en la lista de abajo
     } catch (e) { setError(apiError(e)); } finally { setAccBusy(false); }
   };
   const copyCreds = async () => {
@@ -354,18 +354,18 @@ function InvitesTab() {
         )}
       </Card>
 
-      {/* Lista de jugadores de la cuenta (incluye los que entran por la landing) */}
+      {/* Lista de clientes de la cuenta (incluye los que entran por la landing) */}
       <Card>
         <div className="mb-2 flex items-center justify-between">
           <div className="text-sm font-semibold text-slate-200">
-            Jugadores {players.length > 0 && <span className="text-slate-500">({players.length})</span>}
+            Clientes {players.length > 0 && <span className="text-slate-500">({players.length})</span>}
           </div>
           <button type="button" onClick={() => void loadPlayers()} className="text-xs text-slate-400 hover:text-slate-200">↻ Actualizar</button>
         </div>
         {loadingPlayers ? (
           <p className="text-sm text-slate-500">Cargando…</p>
         ) : players.length === 0 ? (
-          <p className="text-sm text-slate-500">Todavía no hay jugadores. Se listan acá los que crees a mano y los que entren por la landing.</p>
+          <p className="text-sm text-slate-500">Todavía no hay clientes. Se listan acá los que crees a mano y los que entren por la landing.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
@@ -428,7 +428,7 @@ function InviteQr({ url, code }: { url: string; code: string }) {
   );
 }
 
-// Sub-sección "Marca": branding white-label de la PWA del jugador (logo, colores, textos).
+// Sub-sección "Marca": branding white-label de la PWA del cliente (logo, colores, textos).
 interface Brand {
   brandName: string | null; logoUrl: string | null; primaryColor: string | null; accentColor: string | null; chatTheme: string | null;
   welcomeText: string | null; welcomeMsgText: string | null; welcomeMsgImage: string | null; chatWaLink: string | null; chatPlatformUrl: string | null;
@@ -442,7 +442,7 @@ const EMPTY_BRAND: Brand = { brandName: null, logoUrl: null, primaryColor: null,
 // Diseños disponibles del chat (mini-preview en el selector). "brand" = usa el color del cliente.
 const CHAT_THEMES = [
   { id: "whatsapp", label: "WhatsApp (actual)", header: "#0b7d6e", headerText: "#ffffff", bg: "#e5ddd5", op: "#ffffff", opText: "#1e293b", me: "#d9fdd3", accent: "#1fa855" },
-  { id: "midnight", label: "Oscuro / Casino", header: "#0f172a", headerText: "#ffffff", bg: "#0b1220", op: "#1e293b", opText: "#e2e8f0", me: "brand", accent: "brand" },
+  { id: "midnight", label: "Oscuro", header: "#0f172a", headerText: "#ffffff", bg: "#0b1220", op: "#1e293b", opText: "#e2e8f0", me: "brand", accent: "brand" },
 ];
 
 function BrandingTab() {
@@ -495,12 +495,12 @@ function BrandingTab() {
         <Card>
           <div className="mb-1 text-sm font-semibold text-slate-100">💬 Chat directo (sin registro)</div>
           <p className="mb-3 text-xs text-slate-400">
-            El jugador entra por este link y cae <b>directo al chat</b>, sin pantalla de registro. Le llega tu
+            El cliente entra por este link y cae <b>directo al chat</b>, sin pantalla de registro. Le llega tu
             primer mensaje, escribe su nombre y ya puede cargar/retirar con los botones. Es la tercera forma de
             entrar (además del acceso con usuario/clave y la landing de registro).
           </p>
 
-          {/* Foto de perfil = logoUrl: es la foto que se ve arriba en el chat del jugador. */}
+          {/* Foto de perfil = logoUrl: es la foto que se ve arriba en el chat del cliente. */}
           <label className="mb-1 block text-xs text-slate-400">Foto de perfil del chat</label>
           <div className="mb-4 flex items-center gap-3">
             {form.logoUrl
@@ -532,7 +532,7 @@ function BrandingTab() {
 
         <Card>
           <div className="mb-1 text-sm font-semibold text-slate-100">Diseño del chat</div>
-          <p className="mb-3 text-xs text-slate-400">Elegí cómo se ve la app del jugador. Podés cambiarlo cuando quieras (no toca los datos).</p>
+          <p className="mb-3 text-xs text-slate-400">Elegí cómo se ve la app del cliente. Podés cambiarlo cuando quieras (no toca los datos).</p>
           <div className="grid grid-cols-2 gap-3">
             {CHAT_THEMES.map((t) => {
               const active = (form.chatTheme || "whatsapp") === t.id;
@@ -545,7 +545,7 @@ function BrandingTab() {
                     <div className="px-2 py-1.5 text-[10px] font-semibold" style={{ background: t.header, color: t.headerText }}>{form.brandName || "Chat"} · en línea</div>
                     <div className="space-y-1 p-2">
                       <div className="w-3/4 rounded px-1.5 py-1 text-[9px]" style={{ background: t.op, color: t.opText }}>operador</div>
-                      <div className="ml-auto w-2/3 rounded px-1.5 py-1 text-right text-[9px] text-white" style={{ background: me }}>jugador</div>
+                      <div className="ml-auto w-2/3 rounded px-1.5 py-1 text-right text-[9px] text-white" style={{ background: me }}>cliente</div>
                       <div className="mt-1 rounded py-1 text-center text-[9px] font-bold text-white" style={{ background: accent }}>CARGAR</div>
                     </div>
                   </div>
@@ -638,9 +638,9 @@ function BrandingTab() {
             <input type="checkbox" checked={form.chatInstallPromptEnabled} onChange={(e) => set("chatInstallPromptEnabled", e.target.checked)} className="h-5 w-5 accent-wa-green" />
             <span className="text-sm text-slate-200">{form.chatInstallPromptEnabled ? "Cartel “Instalá la app” ACTIVADO en el chat 🟢" : "Cartel “Instalá la app” apagado"}</span>
           </label>
-          <p className="mb-3 text-xs text-slate-500">Es el cartel automático “📲 Instalá la app” que aparece dentro del chat del jugador. Apagado por defecto.</p>
+          <p className="mb-3 text-xs text-slate-500">Es el cartel automático “📲 Instalá la app” que aparece dentro del chat del cliente. Apagado por defecto.</p>
 
-          <p className="mb-3 text-xs text-slate-400">Abajo, los mensajes guardados que enviás a mano desde el chat (botón 📲) después de una carga. El mensaje 2 le muestra al jugador un botón <b>INSTALAR APP</b>.</p>
+          <p className="mb-3 text-xs text-slate-400">Abajo, los mensajes guardados que enviás a mano desde el chat (botón 📲) después de una carga. El mensaje 2 le muestra al cliente un botón <b>INSTALAR APP</b>.</p>
 
           <label className="mb-1 block text-xs text-slate-400">Mensaje 1 (avisar que instale)</label>
           <textarea value={form.chatInstallMsg1 ?? ""} onChange={(e) => set("chatInstallMsg1", e.target.value || null)} rows={2}
@@ -691,7 +691,7 @@ function BrandingTab() {
         </div>
       </div>
 
-      {/* Vista previa (mock de la PWA del jugador) */}
+      {/* Vista previa (mock de la PWA del cliente) */}
       <div className="lg:sticky lg:top-6 lg:self-start">
         <div className="mb-2 text-xs text-slate-500">Vista previa</div>
         <div className="mx-auto w-full max-w-[18rem] overflow-hidden rounded-3xl border-4 border-slate-800 bg-slate-950 shadow-xl">
@@ -708,7 +708,7 @@ function BrandingTab() {
   );
 }
 
-// Sub-sección "Avisos": notificaciones push (a todos o a un jugador) + popup con imagen al entrar.
+// Sub-sección "Avisos": notificaciones push (a todos o a un cliente) + popup con imagen al entrar.
 interface PopupForm {
   popupActive: boolean; popupImageUrl: string | null; popupTitle: string | null; popupText: string | null; popupLink: string | null;
   popupFrom: string | null; popupUntil: string | null; // ISO (UTC); ventana de programación opcional
@@ -815,21 +815,21 @@ function AvisosTab() {
       {/* Notificación push */}
       <Card>
         <div className="mb-1 text-sm font-semibold text-slate-100">🔔 Enviar notificación</div>
-        <p className="mb-3 text-xs text-slate-500">Le llega al celular de tus jugadores (aun con la app cerrada, si activaron las notificaciones).</p>
+        <p className="mb-3 text-xs text-slate-500">Le llega al celular de tus clientes (aun con la app cerrada, si activaron las notificaciones).</p>
         <label className="mb-1 block text-xs text-slate-400">Para</label>
         <select value={target} onChange={(e) => setTarget(e.target.value)} className="mb-2 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green">
-          <option value="all">Todos mis jugadores</option>
+          <option value="all">Todos mis clientes</option>
           {convs.map((c) => {
             const hp = stats?.players.find((p) => p.id === c.playerId)?.hasPush;
             return <option key={c.playerId} value={c.playerId}>{c.player} ({c.username}){stats ? (hp ? " 🔔" : " — sin notificaciones") : ""}</option>;
           })}
         </select>
         {stats && (target === "all" ? (
-          <p className="mb-3 text-xs text-slate-400">🔔 {stats.players.filter((p) => p.hasPush).length} de {stats.players.length} jugadores tienen notificaciones activas (a los demás no les llega).</p>
+          <p className="mb-3 text-xs text-slate-400">🔔 {stats.players.filter((p) => p.hasPush).length} de {stats.players.length} clientes tienen notificaciones activas (a los demás no les llega).</p>
         ) : stats.players.find((p) => p.id === target)?.hasPush ? (
           <p className="mb-3 text-xs text-wa-green">🔔 Notificaciones activas — le va a llegar.</p>
         ) : (
-          <p className="mb-3 text-xs text-amber-400">⚠️ Este jugador todavía no activó las notificaciones en su celular, así que no le va a llegar. Tiene que abrir la app, entrar al chat y tocar “activar notificaciones”.</p>
+          <p className="mb-3 text-xs text-amber-400">⚠️ Este cliente todavía no activó las notificaciones en su celular, así que no le va a llegar. Tiene que abrir la app, entrar al chat y tocar “activar notificaciones”.</p>
         ))}
         <label className="mb-1 block text-xs text-slate-400">Título</label>
         <Input value={pTitle} onChange={(e) => setPTitle(e.target.value)} placeholder="Ej: ¡Promo de hoy!" maxLength={80} className="mb-3" />
@@ -863,7 +863,7 @@ function AvisosTab() {
             <input type="checkbox" checked={popup.popupActive} onChange={(e) => setP({ popupActive: e.target.checked })} /> Activo
           </label>
         </div>
-        <p className="mb-3 text-xs text-slate-500">Aparece una vez cuando el jugador abre la app (se vuelve a mostrar cada vez que lo cambiás). Ideal para una promo con imagen.</p>
+        <p className="mb-3 text-xs text-slate-500">Aparece una vez cuando el cliente abre la app (se vuelve a mostrar cada vez que lo cambiás). Ideal para una promo con imagen.</p>
         <label className="mb-1 block text-xs text-slate-400">Imagen</label>
         <div className="mb-3 flex items-center gap-3">
           {popup.popupImageUrl && <img src={popup.popupImageUrl} alt="" className="h-16 w-16 rounded object-cover" />}
@@ -905,7 +905,7 @@ function AvisosTab() {
       {stats && (
         <div className="space-y-4 lg:col-span-2">
           <div className="grid grid-cols-3 gap-3">
-            <StatCard label="Jugadores (clientes)" value={stats.totalPlayers} />
+            <StatCard label="Clientes" value={stats.totalPlayers} />
             <StatCard label="Con notificaciones activas" value={stats.playersWithPush} />
             <StatCard label="% activación" value={stats.totalPlayers ? `${Math.round((100 * stats.playersWithPush) / stats.totalPlayers)}%` : "—"} />
           </div>
@@ -936,9 +936,9 @@ function AvisosTab() {
           </Card>
 
           <Card>
-            <div className="mb-2 text-sm font-semibold text-slate-100">Jugadores — quién activó las notificaciones</div>
+            <div className="mb-2 text-sm font-semibold text-slate-100">Clientes — quién activó las notificaciones</div>
             {stats.players.length === 0 ? (
-              <p className="text-xs text-slate-500">Todavía no tenés jugadores registrados.</p>
+              <p className="text-xs text-slate-500">Todavía no tenés clientes registrados.</p>
             ) : (
               <div className="max-h-72 space-y-0.5 overflow-y-auto">
                 {stats.players.map((p) => (
@@ -987,18 +987,18 @@ function BotTab() {
     <div className="grid max-w-5xl gap-6 lg:grid-cols-[1fr_20rem]">
       <Card>
         <div className="mb-1 text-sm font-semibold text-slate-100">🤖 Bot de carga</div>
-        <p className="mb-4 text-xs text-slate-500">El bot atiende solo a los jugadores en la app: les toma el monto, les pasa tus datos de pago y te avisa para acreditar. Vos podés tomar el chat cuando quieras (el jugador escribe “cajero” o vos le respondés).</p>
+        <p className="mb-4 text-xs text-slate-500">El bot atiende solo a los clientes en la app: les toma el monto, les pasa tus datos de pago y te avisa para acreditar. Vos podés tomar el chat cuando quieras (el cliente escribe “cajero” o vos le respondés).</p>
 
         <label className="mb-4 flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2.5">
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="h-5 w-5 accent-wa-green" />
           <span className="text-sm text-slate-200">{enabled ? "Bot ACTIVADO — atiende automático 🟢" : "Bot apagado"}</span>
         </label>
 
-        <label className="mb-1 block text-xs text-slate-400">Datos de pago (lo que el bot le muestra al jugador para cargar)</label>
-        <textarea value={pay} onChange={(e) => setPay(e.target.value)} rows={4} placeholder={"Ej:\nAlias: micasino.mp\nTitular: Juan Pérez\n(o el QR / la dirección USDT)"} className="mb-3 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
+        <label className="mb-1 block text-xs text-slate-400">Datos de pago (lo que el bot le muestra al cliente para cargar)</label>
+        <textarea value={pay} onChange={(e) => setPay(e.target.value)} rows={4} placeholder={"Ej:\nAlias: minegocio.mp\nTitular: Juan Pérez\n(o el QR / la dirección USDT)"} className="mb-3 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
 
         <label className="mb-1 block text-xs text-slate-400">Saludo del bot (opcional)</label>
-        <textarea value={welcome} onChange={(e) => setWelcome(e.target.value)} rows={2} placeholder="Ej: ¡Hola! Soy el asistente de MiCasino 🎰" className="mb-3 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
+        <textarea value={welcome} onChange={(e) => setWelcome(e.target.value)} rows={2} placeholder="Ej: ¡Hola! Soy tu asistente 👋" className="mb-3 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
 
         {error && <div className="mb-2"><ErrorMsg>{error}</ErrorMsg></div>}
         <div className="flex items-center gap-3">
@@ -1010,10 +1010,10 @@ function BotTab() {
       <Card>
         <div className="mb-2 text-sm font-semibold text-slate-100">Cómo funciona</div>
         <ol className="space-y-2 text-xs text-slate-400">
-          <li><b className="text-slate-200">1.</b> El jugador entra a la app y escribe.</li>
+          <li><b className="text-slate-200">1.</b> El cliente entra a la app y escribe.</li>
           <li><b className="text-slate-200">2.</b> El bot le ofrece <b>Cargar · Retirar · Cajero</b>.</li>
           <li><b className="text-slate-200">3.</b> En carga: le pide el monto y le muestra tus datos de pago.</li>
-          <li><b className="text-slate-200">4.</b> Cuando el jugador dice “ya pagué”, te avisa en <b>Conversaciones</b> para que verifiques y cargues.</li>
+          <li><b className="text-slate-200">4.</b> Cuando el cliente dice “ya pagué”, te avisa en <b>Conversaciones</b> para que verifiques y cargues.</li>
         </ol>
         <p className="mt-3 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-[11px] leading-tight text-slate-500">Próximamente: conectamos el sistema de tu socio para que la carga/descarga sea 100% automática. Por ahora vos das el OK final desde el chat.</p>
       </Card>
@@ -1021,7 +1021,7 @@ function BotTab() {
       {link && (
         <Card className="lg:col-span-2">
           <div className="mb-1 text-sm font-semibold text-slate-100">🔗 Link para tu landing / anuncio</div>
-          <p className="mb-2 text-xs text-slate-500">Poné este link en tu landing o en el botón del anuncio. Los jugadores entran a la app y el bot los atiende solo.</p>
+          <p className="mb-2 text-xs text-slate-500">Poné este link en tu landing o en el botón del anuncio. Los clientes entran a la app y el bot los atiende solo.</p>
           <div className="flex items-center gap-2">
             <code className="min-w-0 flex-1 truncate rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-200">{link}</code>
             <Button variant="secondary" className="shrink-0" onClick={() => { void navigator.clipboard.writeText(link); setCopied(true); window.setTimeout(() => setCopied(false), 1500); }}>{copied ? "✓ Copiado" : "Copiar"}</Button>
@@ -1033,7 +1033,7 @@ function BotTab() {
 }
 
 // Sección "Cajero": el operador ve las cargas/retiros pendientes y los aprueba/rechaza. Aprobar una
-// carga ACREDITA al jugador y dispara el Purchase (solo acá). Se actualiza en vivo por el socket /chat.
+// carga ACREDITA al cliente y dispara el Purchase (solo acá). Se actualiza en vivo por el socket /chat.
 interface CashierDeposit { id: string; player: string; amount: number; method: string; hasComprobante: boolean; createdAt: string; }
 interface CashierWithdrawal { id: string; player: string; amount: number; destino: string; createdAt: string; }
 
@@ -1072,7 +1072,7 @@ function CajeroTab() {
   }, []);
 
   const act = async (kind: "deposit" | "withdrawal", id: string, action: "approve" | "reject") => {
-    if (action === "approve" && kind === "deposit" && !confirm("¿Confirmás que la plata entró de verdad? Se va a acreditar al jugador.")) return;
+    if (action === "approve" && kind === "deposit" && !confirm("¿Confirmás que la plata entró de verdad? Se va a acreditar al cliente.")) return;
     setBusy(id); setError(null);
     try { await api.post(`/api/chat/cashier/${kind}/${id}/${action}`); await load(); }
     catch (e) { setError(apiError(e)); } finally { setBusy(null); }
@@ -1130,7 +1130,7 @@ function CajeroTab() {
         )}
       </div>
 
-      <p className="text-xs text-slate-600">💡 Acreditá una carga SOLO después de confirmar que la plata entró de verdad. Al acreditar se suma al saldo del jugador y se registra la venta (Purchase) en tu pixel.</p>
+      <p className="text-xs text-slate-600">💡 Acreditá una carga SOLO después de confirmar que la plata entró de verdad. Al acreditar se suma al saldo del cliente y se registra la venta (Purchase) en tu pixel.</p>
 
       {viewImg && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4" onClick={closeImg}>
