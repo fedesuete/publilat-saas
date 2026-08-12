@@ -240,14 +240,18 @@ goRouter.get("/go", async (req: Request, res: Response) => {
         pixelId: pixelHint,
         code,
         landingUrl: req.get("referer") ?? undefined,
-        // IP + user agent de la sesión web original: se guardan para reusarlos en el Purchase CAPI
-        // (client_ip_address + client_user_agent juntos → sube el EMQ). No cambia el envío del Lead.
-        clientIp: req.ip,
-        clientUserAgent: req.get("user-agent") ?? undefined,
         lineId,
         stage: "NUEVO",
       },
     });
+
+    // IP + user agent de la sesión web original (para subir el EMQ del Purchase CAPI). BLINDADO: va en
+    // un update APARTE, fire-and-forget, que TRAGA cualquier error → NUNCA puede bloquear el redirect a
+    // WhatsApp ni el emit del Lead. La atribución es "nice to have"; el mensaje al cajero es el negocio
+    // y no puede depender de esto.
+    void prisma.contact
+      .update({ where: { id: contact.id }, data: { clientIp: req.ip, clientUserAgent: req.get("user-agent") ?? undefined } })
+      .catch(() => undefined);
 
     // Webhook saliente al CRM externo (si está configurado). Best-effort.
     void fireIntegration(user.id, "lead", {
