@@ -254,8 +254,10 @@ export default function ChatAppPage() {
   );
 }
 
-// Sub-sección "Accesos": el ÚNICO flujo — crear un acceso (usuario + clave) y pasarle al cliente
-// el mensaje con el link (que ya trae cuenta + usuario) + QR + clave. Descarga la app y entra.
+// Sub-sección "Accesos": LISTA de jugadores de la cuenta (todos, incluidos los que entran por la
+// landing) + crear un acceso manual (usuario + clave) + resetear la clave de cualquiera. Genera el
+// link + QR + mensaje listo para mandarle al cliente.
+interface PlayerRow { id: string; username: string; name: string | null; estatus: string; createdAt: string }
 function InvitesTab() {
   const [error, setError] = useState<string | null>(null);
   // Crear ACCESO (usuario + clave) — el ÚNICO flujo: se lo pasás al cliente y entra a la app.
@@ -264,6 +266,27 @@ function InvitesTab() {
   const [accBusy, setAccBusy] = useState(false);
   const [creds, setCreds] = useState<{ accountSlug: string; username: string; password: string; reset: boolean } | null>(null);
   const [accCopied, setAccCopied] = useState(false);
+  // Lista de jugadores de la cuenta + reset de clave por jugador.
+  const [players, setPlayers] = useState<PlayerRow[]>([]);
+  const [loadingPlayers, setLoadingPlayers] = useState(true);
+  const [resetting, setResetting] = useState<string | null>(null);
+  const loadPlayers = async () => {
+    try {
+      const { data } = await api.get<{ players: PlayerRow[] }>("/api/chat/players");
+      setPlayers(data.players);
+    } catch { /* noop */ } finally { setLoadingPlayers(false); }
+  };
+  useEffect(() => { void loadPlayers(); }, []);
+  const resetPassword = async (username: string) => {
+    setResetting(username); setError(null); setCreds(null); setAccCopied(false);
+    try {
+      const { data } = await api.post<{ accountSlug: string; username: string; password: string; reset: boolean }>(
+        "/api/chat/access", { username },
+      );
+      setCreds(data);
+      window.scrollTo({ top: 0, behavior: "smooth" }); // el mensaje/QR para mandar aparece arriba
+    } catch (e) { setError(apiError(e)); } finally { setResetting(null); }
+  };
 
   // Link que YA trae la cuenta + el usuario cargados: el cliente solo pone la clave.
   const entryLink = (c: { accountSlug: string; username: string }) =>
@@ -290,6 +313,7 @@ function InvitesTab() {
       );
       setCreds(data);
       setAccUser(""); setAccPass("Hola123");
+      void loadPlayers(); // el nuevo jugador aparece en la lista de abajo
     } catch (e) { setError(apiError(e)); } finally { setAccBusy(false); }
   };
   const copyCreds = async () => {
@@ -326,6 +350,48 @@ function InvitesTab() {
               </div>
             </div>
             <Button className="mt-2" onClick={() => void copyCreds()}>{accCopied ? "¡Copiado! ✓" : "📋 Copiar y mandar"}</Button>
+          </div>
+        )}
+      </Card>
+
+      {/* Lista de jugadores de la cuenta (incluye los que entran por la landing) */}
+      <Card>
+        <div className="mb-2 flex items-center justify-between">
+          <div className="text-sm font-semibold text-slate-200">
+            Jugadores {players.length > 0 && <span className="text-slate-500">({players.length})</span>}
+          </div>
+          <button type="button" onClick={() => void loadPlayers()} className="text-xs text-slate-400 hover:text-slate-200">↻ Actualizar</button>
+        </div>
+        {loadingPlayers ? (
+          <p className="text-sm text-slate-500">Cargando…</p>
+        ) : players.length === 0 ? (
+          <p className="text-sm text-slate-500">Todavía no hay jugadores. Se listan acá los que crees a mano y los que entren por la landing.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="py-2 pr-3">Usuario</th>
+                  <th className="py-2 pr-3">Nombre</th>
+                  <th className="py-2 pr-3">Alta</th>
+                  <th className="py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {players.map((p) => (
+                  <tr key={p.id} className="border-t border-slate-800">
+                    <td className="py-2 pr-3 font-medium text-slate-200">{p.username}</td>
+                    <td className="py-2 pr-3 text-slate-400">{p.name || "—"}</td>
+                    <td className="py-2 pr-3 text-slate-500">{fmtDate(p.createdAt)}</td>
+                    <td className="py-2">
+                      <Button variant="secondary" className="text-xs" disabled={resetting === p.username} onClick={() => void resetPassword(p.username)}>
+                        {resetting === p.username ? "…" : "Resetear clave"}
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </Card>

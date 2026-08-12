@@ -116,6 +116,21 @@ const accessSchema = z.object({
   password: z.string().min(4).max(60).optional(),
 });
 
+// GET /api/chat/players — lista los jugadores/accesos de la cuenta, para verlos y gestionarlos
+// desde el panel. Los que entran por la landing (auto-registro) NO aparecen en ningún lado hasta que
+// chatean; acá se ven todos (con su usuario, nombre, estado y fecha).
+chatRouter.get("/players", async (req, res) => {
+  const players = await prisma.chatPlayer.findMany({
+    where: { userId: req.userId! },
+    orderBy: { createdAt: "desc" },
+    take: 500,
+    select: { id: true, casinoUsername: true, nombre: true, estatus: true, createdAt: true },
+  });
+  return res.json({
+    players: players.map((p) => ({ id: p.id, username: p.casinoUsername, name: p.nombre, estatus: p.estatus, createdAt: p.createdAt })),
+  });
+});
+
 // POST /api/chat/access — el operador crea (o resetea) un ACCESO con usuario + clave para un
 // cliente. Devuelve las credenciales (clave en texto) para pasárselas. Si el usuario ya existe,
 // le re-setea la clave (sirve de "resetear acceso"). Clave por defecto: "Hola123".
