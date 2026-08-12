@@ -14,7 +14,7 @@ const ENV_TEST_CODE = process.env.META_TEST_EVENT_CODE || undefined;
 // ¿Está permitido el fallback al pixel global del .env? (default: NO, para multi-tenant).
 export const globalPixelAllowed = (): boolean => ALLOW_GLOBAL;
 const SOURCE_URL = process.env.META_EVENT_SOURCE_URL ?? "";
-const GRAPH_VERSION = process.env.META_GRAPH_VERSION ?? "v20.0";
+const GRAPH_VERSION = process.env.META_GRAPH_VERSION ?? "v21.0";
 
 const sha256 = (v: string) =>
   crypto.createHash("sha256").update(v.trim().toLowerCase()).digest("hex");
