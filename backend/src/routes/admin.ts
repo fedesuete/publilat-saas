@@ -8,7 +8,8 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
 import { retryFailedCapi, enqueueProxyRecover } from "../lib/queue.js";
-import { hashPassword } from "../lib/auth.js";
+import { hashPassword, signToken } from "../lib/auth.js";
+import { AUTH_COOKIE } from "../middleware/requireAuth.js";
 import { encryptSecret } from "../lib/crypto.js";
 import { assignProxy, rotateProxy, applyLineProxy, logProxyEvent, probeProxy, autoAssignEnabled, assignProxyPreferred, setLineWaitingProxy } from "../lib/proxy-pool.js";
 import { getEngine } from "../lib/wa-engine.js";
@@ -339,6 +340,29 @@ adminRouter.post("/clients/:id/password", async (req, res) => {
   await prisma.user.update({ where: { id: userId }, data: { password: await hashPassword(password) } });
   await adminLog(req.userId!, "reset_password", userId, { email: user.email });
   return res.json({ email: user.email, name: user.name, password });
+});
+
+// POST /api/admin/clients/:id/impersonate — "Acceder como": deja en la cookie httpOnly una sesión de
+// ESE cliente, SIN cambiar su contraseña (la clave sigue siendo la del cliente). El admin queda logueado
+// como el cliente; para volver a ser admin, se loguea de nuevo. Auditado. No aplica sobre otro ADMIN.
+adminRouter.post("/clients/:id/impersonate", async (req, res) => {
+  const userId = req.params.id;
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, email: true, slug: true, name: true, role: true, tokenVersion: true },
+  });
+  if (!user) return res.status(404).json({ error: "Cliente no encontrado" });
+  if (user.role === "ADMIN") return res.status(403).json({ error: "No se puede acceder como otro administrador." });
+  const token = signToken({ userId: user.id, tv: user.tokenVersion });
+  res.cookie(AUTH_COOKIE, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: "/",
+  });
+  await adminLog(req.userId!, "impersonate", user.id, { email: user.email });
+  return res.json({ ok: true, user: { id: user.id, email: user.email, slug: user.slug, name: user.name, role: user.role } });
 });
 
 // Editar límites del plan (líneas / landings) por cliente.

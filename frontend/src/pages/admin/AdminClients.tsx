@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, apiError } from "../../lib/api";
 import { fmtDate } from "../../lib/format";
+import { USER_KEY } from "../../lib/config";
 import { Button, Input, Card, ErrorMsg } from "../../components/ui";
 
 interface Client {
@@ -125,6 +126,18 @@ export default function AdminClients() {
   const giveDemo = (id: string) => act(() => api.post(`/api/admin/clients/${id}/demo`, {}));
   const toggleSuspend = (id: string, suspended: boolean) => act(() => api.post(`/api/admin/clients/${id}/suspend`, { suspended }));
   const saveLimits = (id: string, maxLines: number, maxLandings: number) => act(() => api.post(`/api/admin/clients/${id}/limits`, { maxLines, maxLandings }));
+
+  // "Acceder como": entra a la cuenta del cliente SIN cambiarle la clave (deja su sesión en la cookie).
+  // Para volver a admin, cerrás sesión y volvés a entrar con tu cuenta.
+  const impersonate = async (id: string) => {
+    if (!window.confirm("Vas a ENTRAR como este cliente, sin cambiarle la clave. Para volver a tu cuenta admin, cerrás sesión y volvés a entrar. ¿Seguir?")) return;
+    setError(null);
+    try {
+      const { data } = await api.post<{ user: { id: string; email: string; slug: string; name: string | null; role: string } }>(`/api/admin/clients/${id}/impersonate`, {});
+      localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+      window.location.href = "/dashboard"; // recarga limpia: la cookie ya es la del cliente
+    } catch (e) { setError(apiError(e)); }
+  };
 
   const onSearch = (e: FormEvent) => { e.preventDefault(); void load(1, q, status); };
   const setFilter = (st: string) => { setStatus(st); void load(1, q, st); };
@@ -275,6 +288,7 @@ export default function AdminClients() {
 
               {/* Credenciales: cambiar contraseña + copiar para mandarle al cliente (como la demo). */}
               <div className="mt-2 flex flex-wrap gap-2">
+                <Button variant="secondary" disabled={busy} title="Entrar a la cuenta del cliente sin cambiarle la clave" onClick={() => void impersonate(sel.user.id)}>👤 Acceder como</Button>
                 <Button variant="secondary" disabled={busy} onClick={() => void changePassword(sel.user.id)}>🔑 Cambiar contraseña</Button>
                 <Button
                   variant="secondary"
