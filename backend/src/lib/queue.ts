@@ -5,7 +5,7 @@ import net from "node:net";
 import { Queue, Worker, type Job } from "bullmq";
 import { prisma } from "./prisma.js";
 import { emitToUser } from "./io.js";
-import { sendCapiEvent } from "./meta-capi.js";
+import { sendCapiEvent, contactFbc } from "./meta-capi.js";
 import { resolveUserPixel } from "./pixel.js";
 import { consumeDayAndActivate, consumeChatDayAndActivate } from "./access.js";
 import { notifyMissingPixel } from "./capi-guard.js";
@@ -108,15 +108,26 @@ export async function retryFailedCapi(opts?: { includeDead?: boolean; max?: numb
         eventName,
         externalId: contact.externalId,
         fbp: contact.fbp ?? undefined,
-        fbc: contact.fbc ?? undefined,
         phone: contact.phone ?? undefined,
         firstName: contact.name ?? undefined,
         eventSourceUrl: contact.landingUrl ?? undefined,
         pixelId: creds?.pixelId,
         capiToken: creds?.capiToken,
         ...(eventName === "Purchase"
-          ? { value: (contact.amount ?? 0) / 100, currency: "ARS", eventId: `${contact.externalId}:purchase` }
-          : { eventId: contact.externalId }),
+          ? {
+              // Reintento de Purchase: mismo enriquecimiento que markPurchase (event_time real + IP/UA
+              // guardados + fbc con fallback), para que el reenvío NO baje el match ni corra el tiempo.
+              fbc: contactFbc(contact), // cookie _fbc o construida desde el fbclid
+              value: (contact.amount ?? 0) / 100,
+              currency: "ARS",
+              eventId: `${contact.externalId}:purchase`,
+              eventTime: contact.purchasedAt ?? undefined,
+              clientIp: contact.clientIp ?? undefined,
+              userAgent: contact.clientUserAgent ?? undefined,
+              actionSource: contact.ctwaClid ? "business_messaging" : "website",
+              ctwaClid: contact.ctwaClid ?? undefined,
+            }
+          : { fbc: contact.fbc ?? undefined, eventId: contact.externalId }),
       });
       await prisma.metaEvent.update({
         where: { id: ev.id },

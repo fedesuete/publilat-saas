@@ -55,6 +55,14 @@ export interface CapiResult {
  * Envía un evento a Meta. Devuelve el pixel usado, el payload y la respuesta.
  * Doc: https://developers.facebook.com/docs/marketing-api/conversions-api
  */
+// fbc para el CAPI: usa la cookie _fbc guardada, o la construye desde el fbclid del clic (formato de
+// Meta: fb.1.<timestamp_ms>.<fbclid>). Sube el match cuando la cookie _fbc no viajó pero sí el fbclid.
+export function contactFbc(c: { fbc: string | null; fbclid: string | null; createdAt: Date }): string | undefined {
+  if (c.fbc) return c.fbc;
+  if (c.fbclid) return `fb.1.${c.createdAt.getTime()}.${c.fbclid}`;
+  return undefined;
+}
+
 export async function sendCapiEvent(input: CapiEventInput): Promise<CapiResult> {
   // Fallback al pixel del .env SOLO si está explícitamente permitido (single-tenant).
   const pixelId = input.pixelId || (ALLOW_GLOBAL ? ENV_PIXEL_ID : "");

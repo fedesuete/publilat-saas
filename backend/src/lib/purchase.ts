@@ -2,7 +2,7 @@
 // Purchase a Meta por CAPI con el MISMO externalId/fbp/fbc + value (habilita el match).
 // Se usa desde el endpoint /api/leads/:id/purchase Y desde la detección automática de pago.
 import { prisma } from "./prisma.js";
-import { sendCapiEvent, globalPixelAllowed } from "./meta-capi.js";
+import { sendCapiEvent, globalPixelAllowed, contactFbc } from "./meta-capi.js";
 import { resolveUserPixel } from "./pixel.js";
 import { fireIntegration } from "./integrations.js";
 import { emitToUser } from "./io.js";
@@ -97,10 +97,16 @@ export async function markPurchase(
     const result = await sendCapiEvent({
       eventName: "Purchase",
       externalId: contact.externalId, // <- mismo id que el Lead: habilita el match
+      // event_time = momento REAL de la carga (purchasedAt), no el del envío. Meta acepta hasta 7 días
+      // atrás, así que un reintento tampoco corre el tiempo del evento.
+      eventTime: updated.purchasedAt ?? undefined,
       fbp: contact.fbp ?? undefined,
-      fbc: contact.fbc ?? undefined,
-      phone: contact.phone ?? undefined,
+      fbc: contactFbc(contact), // cookie _fbc o construida desde el fbclid
+      phone: contact.phone ?? undefined, // E.164 sin + (jidToPhone ya deja solo dígitos) -> se hashea SHA-256
       firstName: contact.name ?? undefined,
+      // IP + user agent de la sesión web original (landing), guardados en el Contact. Suben el EMQ.
+      clientIp: contact.clientIp ?? undefined,
+      userAgent: contact.clientUserAgent ?? undefined,
       value: amount,
       currency,
       eventId: opts?.eventId ?? `${contact.externalId}:purchase`,

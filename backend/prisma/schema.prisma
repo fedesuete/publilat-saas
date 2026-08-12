@@ -460,6 +460,8 @@ model Contact {
   ctwaClid    String?                    // click id de anuncios Click-to-WhatsApp (referral de la Cloud API)
   code        String?                    // código corto incrustado en el msg de WA (único POR usuario, ver @@unique abajo)
   landingUrl  String?
+  clientIp    String?                    // IP del visitante en la landing (sesión web original) — sube el EMQ del Purchase
+  clientUserAgent String?                // user agent del visitante en la landing (va junto a la IP en el CAPI)
   lineId      String?
   stage       Stage    @default(NUEVO)
   amount      Int?                       // monto de la venta (en centavos o unidad menor)

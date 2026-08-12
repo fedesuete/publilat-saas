@@ -240,6 +240,10 @@ goRouter.get("/go", async (req: Request, res: Response) => {
         pixelId: pixelHint,
         code,
         landingUrl: req.get("referer") ?? undefined,
+        // IP + user agent de la sesión web original: se guardan para reusarlos en el Purchase CAPI
+        // (client_ip_address + client_user_agent juntos → sube el EMQ). No cambia el envío del Lead.
+        clientIp: req.ip,
+        clientUserAgent: req.get("user-agent") ?? undefined,
         lineId,
         stage: "NUEVO",
       },
