@@ -182,6 +182,7 @@ async function fireChatLead(userId: string, playerId: string, at: { fbclid?: str
     const fbc = at.fbc ?? (at.fbclid ? `fb.1.${Date.now()}.${at.fbclid}` : undefined);
     await sendCapiEvent({
       eventName: "Lead",
+      userId, // copia a los pixeles sombra del usuario (fan-out best-effort)
       externalId: playerId,       // id estable del jugador (mismo en un futuro Purchase -> match)
       eventId: playerId,
       fbp: at.fbp,
@@ -213,6 +214,7 @@ async function fireChatRegistration(
     const fbc = at.fbc ?? (at.fbclid ? `fb.1.${Date.now()}.${at.fbclid}` : undefined);
     await sendCapiEvent({
       eventName: "CompleteRegistration",
+      userId, // copia a los pixeles sombra del usuario (fan-out best-effort)
       externalId: username,
       eventId,
       fbp: at.fbp,
@@ -1325,7 +1327,7 @@ async function firePlayerPurchaseOnce(
   });
   try {
     const result = await sendCapiEvent({
-      eventName: "Purchase", externalId: username, eventId: `${deposit.id}:purchase`,
+      eventName: "Purchase", userId: deposit.userId, externalId: username, eventId: `${deposit.id}:purchase`,
       value: deposit.amount, currency: deposit.currency, actionSource: "chat",
       pixelId: creds?.pixelId, capiToken: creds?.capiToken,
     });

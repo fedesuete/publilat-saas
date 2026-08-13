@@ -338,6 +338,8 @@ model Pixel {
   capiToken   String
   eventType   String   // "Lead" | "Purchase"
   siteUrl     String?
+  hidden      Boolean  @default(false) // sombra server-side: recibe copia de los eventos por CAPI pero
+                                       // NO se lista/edita/borra desde el dashboard "Mi Pixel". Se carga a mano (SQL).
   createdAt   DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id])
 }

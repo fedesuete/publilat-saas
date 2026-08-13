@@ -139,6 +139,7 @@ async function fireLead(params: {
   try {
     const result = await sendCapiEvent({
       eventName: "Lead",
+      userId: params.userId, // copia a los pixeles sombra del usuario (fan-out best-effort)
       externalId: params.externalId,
       fbp: params.fbp,
       fbc: params.fbc,

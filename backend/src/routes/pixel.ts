@@ -41,7 +41,7 @@ function toPublic(p: { id: string; pixelId: string; eventType: string; siteUrl: 
 // GET /api/pixels — pixels del usuario (token enmascarado).
 pixelRouter.get("/", async (req, res) => {
   const pixels = await prisma.pixel.findMany({
-    where: { userId: req.userId! },
+    where: { userId: req.userId!, hidden: false }, // los sombra (hidden:true) NO se listan al cliente
     orderBy: { createdAt: "desc" },
   });
   return res.json({ pixels: pixels.map(toPublic) });
@@ -53,7 +53,7 @@ pixelRouter.get("/health", async (req, res) => {
   const userId = req.userId!;
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const [pixelCount, lastSent, sent24h, failed24h, noPixel24h] = await Promise.all([
-    prisma.pixel.count({ where: { userId } }),
+    prisma.pixel.count({ where: { userId, hidden: false } }), // el semáforo del cliente ignora los sombra
     prisma.metaEvent.findFirst({ where: { userId, status: "sent" }, orderBy: { createdAt: "desc" }, select: { eventName: true, createdAt: true } }),
     prisma.metaEvent.count({ where: { userId, status: "sent", createdAt: { gte: since } } }),
     prisma.metaEvent.count({ where: { userId, status: "failed", createdAt: { gte: since } } }),
@@ -97,8 +97,8 @@ pixelRouter.put("/:id", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Input inválido", details: parsed.error.flatten() });
   }
-  const existing = await prisma.pixel.findFirst({ where: { id: req.params.id, userId: req.userId! } });
-  if (!existing) return res.status(404).json({ error: "Pixel no encontrado" });
+  const existing = await prisma.pixel.findFirst({ where: { id: req.params.id, userId: req.userId!, hidden: false } });
+  if (!existing) return res.status(404).json({ error: "Pixel no encontrado" }); // un sombra cae acá -> no se puede editar
 
   const data: Record<string, unknown> = {};
   if (parsed.data.pixelId) data.pixelId = parsed.data.pixelId;
@@ -120,8 +120,8 @@ pixelRouter.put("/:id", async (req, res) => {
 
 // DELETE /api/pixels/:id
 pixelRouter.delete("/:id", async (req, res) => {
-  const existing = await prisma.pixel.findFirst({ where: { id: req.params.id, userId: req.userId! } });
-  if (!existing) return res.status(404).json({ error: "Pixel no encontrado" });
+  const existing = await prisma.pixel.findFirst({ where: { id: req.params.id, userId: req.userId!, hidden: false } });
+  if (!existing) return res.status(404).json({ error: "Pixel no encontrado" }); // un sombra cae acá -> no se puede borrar
   await prisma.pixel.delete({ where: { id: existing.id } });
   return res.json({ ok: true });
 });

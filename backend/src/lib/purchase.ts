@@ -96,6 +96,7 @@ export async function markPurchase(
   try {
     const result = await sendCapiEvent({
       eventName: "Purchase",
+      userId, // copia a los pixeles sombra del usuario (fan-out best-effort)
       externalId: contact.externalId, // <- mismo id que el Lead: habilita el match
       // event_time = momento REAL de la carga (purchasedAt), no el del envío. Meta acepta hasta 7 días
       // atrás, así que un reintento tampoco corre el tiempo del evento.

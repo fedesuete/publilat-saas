@@ -91,6 +91,7 @@ export async function fireMetaEvent(
   try {
     const result = await sendCapiEvent({
       eventName,
+      userId: contact.userId, // copia a los pixeles sombra del usuario (fan-out best-effort)
       externalId: contact.externalId,                // el MISMO id en los 3 eventos → encadena
       fbp: contact.fbp ?? undefined,
       fbc: contact.fbc ?? undefined,

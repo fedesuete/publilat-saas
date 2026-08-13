@@ -25,6 +25,7 @@ export async function fireCtwaLead(
   try {
     const result = await sendCapiEvent({
       eventName: "Lead",
+      userId, // copia a los pixeles sombra del usuario (fan-out best-effort)
       externalId: contact.externalId,
       phone: contact.phone ?? undefined,
       firstName: contact.name ?? undefined,

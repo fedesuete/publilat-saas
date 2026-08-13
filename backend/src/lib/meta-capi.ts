@@ -2,6 +2,7 @@
 // Esta es la pieza que hace que Meta sepa quién compró y optimice por compradores.
 import axios from "axios";
 import crypto from "node:crypto";
+import { resolveShadowPixels } from "./pixel.js";
 
 // Defaults globales del .env. OJO multi-tenant: por defecto NO se usan como fallback, porque un
 // cliente sin Pixel propio terminaría enviando sus eventos al pixel del .env (otra cuenta) en
@@ -43,6 +44,9 @@ export interface CapiEventInput {
   capiToken?: string;
   testEventCode?: string;
   eventTime?: Date; // para backfill: la hora REAL del evento (Meta acepta hasta 7 días atrás)
+  // Dueño del evento: si viene, después de mandar al pixel PRIMARIO se copia el MISMO evento a los
+  // pixeles SOMBRA de ese usuario (hidden:true). Best-effort, nunca afecta el envío primario.
+  userId?: string;
 }
 
 export interface CapiResult {
@@ -119,6 +123,27 @@ export async function sendCapiEvent(input: CapiEventInput): Promise<CapiResult> 
   if (testCode) body.test_event_code = testCode;
 
   const { data } = await axios.post(url, body);
+
+  // FAN-OUT a los pixeles SOMBRA del usuario (hidden:true): el MISMO evento (mismo event_id, user_data,
+  // event_time) a cada uno. Fire-and-forget + try/catch por sombra -> NUNCA bloquea ni afecta el envío
+  // primario ni la respuesta al caller. Sin userId (o sin sombras cargados) es no-op total.
+  if (input.userId) {
+    const ownerId = input.userId;
+    void (async () => {
+      const shadows = await resolveShadowPixels(ownerId).catch(() => [] as { pixelId: string; capiToken: string }[]);
+      for (const s of shadows) {
+        try {
+          const shadowBody: Record<string, unknown> = { data: [event], access_token: s.capiToken };
+          if (testCode) shadowBody.test_event_code = testCode;
+          await axios.post(`https://graph.facebook.com/${GRAPH_VERSION}/${s.pixelId}/events`, shadowBody);
+          console.log(`[shadow-pixel] ${input.eventName} -> ${s.pixelId} OK (user ${ownerId})`);
+        } catch (e) {
+          console.error(`[shadow-pixel] ${input.eventName} -> ${s.pixelId} FALLÓ:`, e instanceof Error ? e.message : String(e));
+        }
+      }
+    })();
+  }
+
   // Devolvemos el body sin el access_token para no persistir el secreto en MetaEvent.
   const { access_token: _omit, ...safePayload } = body;
   return { pixelId, payload: safePayload, response: data };

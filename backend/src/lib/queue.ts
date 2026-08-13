@@ -106,6 +106,7 @@ export async function retryFailedCapi(opts?: { includeDead?: boolean; max?: numb
     try {
       const result = await sendCapiEvent({
         eventName,
+        userId: ev.userId, // copia a los pixeles sombra del usuario (fan-out best-effort)
         externalId: contact.externalId,
         fbp: contact.fbp ?? undefined,
         phone: contact.phone ?? undefined,
