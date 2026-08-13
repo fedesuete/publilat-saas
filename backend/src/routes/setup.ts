@@ -21,36 +21,23 @@ setupRouter.get("/status", async (req, res) => {
   });
 });
 
-// ---- Sonido de notificación del panel (operador): al llegar un mensaje nuevo. ----
-// Se guarda como BrandingAsset (audio) y se sirve por /api/chat/branding/asset/:id (público + CORP).
-const soundSchema = z.object({ dataUrl: z.string().regex(/^data:audio\/(mpeg|mp3|ogg|wav|webm|x-m4a|mp4|aac);base64,/, "Audio inválido") });
+// ---- Sonido de notificación del panel: SOLO 2 opciones, "new" (el sonido nuevo empaquetado /notif.mp3)
+// o "original" (el ding generado). No se suben sonidos custom. Guardado en notifSoundUrl como sentinela:
+// null = "new" (default de TODAS las cuentas); "original" = el ding.
+const soundModeSchema = z.object({ mode: z.enum(["new", "original"]) });
 
-// GET /api/setup/notif-sound — URL del sonido custom actual (null = usa el "ding" por defecto).
+// GET /api/setup/notif-sound — modo actual ("new" | "original").
 setupRouter.get("/notif-sound", async (req, res) => {
   const u = await prisma.user.findUnique({ where: { id: req.userId! }, select: { notifSoundUrl: true } });
-  return res.json({ url: u?.notifSoundUrl ?? null });
+  return res.json({ mode: u?.notifSoundUrl === "original" ? "original" : "new" });
 });
 
-// POST /api/setup/notif-sound — sube un audio (base64) y lo deja como sonido del panel.
-setupRouter.post("/notif-sound", async (req, res) => {
-  const parsed = soundSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: "Enviá un audio MP3/OGG/WAV corto." });
-  const { dataUrl } = parsed.data;
-  const comma = dataUrl.indexOf(",");
-  const mime = dataUrl.slice(5, dataUrl.indexOf(";"));
-  const buffer = Buffer.from(dataUrl.slice(comma + 1), "base64");
-  if (buffer.length > 500 * 1024) return res.status(413).json({ error: "El sonido supera 500 KB. Usá uno más corto/liviano." });
-  const asset = await prisma.brandingAsset.create({ data: { userId: req.userId!, contentType: mime, data: buffer }, select: { id: true } });
-  const base = (process.env.APP_BASE_URL ?? "http://localhost:4000").replace(/\/$/, "");
-  const url = `${base}/api/chat/branding/asset/${asset.id}`;
-  await prisma.user.update({ where: { id: req.userId! }, data: { notifSoundUrl: url } });
-  return res.json({ url });
-});
-
-// DELETE /api/setup/notif-sound — vuelve al "ding" por defecto.
-setupRouter.delete("/notif-sound", async (req, res) => {
-  await prisma.user.update({ where: { id: req.userId! }, data: { notifSoundUrl: null } });
-  return res.json({ ok: true });
+// PUT /api/setup/notif-sound — elige el modo (new = el sonido nuevo, original = el ding).
+setupRouter.put("/notif-sound", async (req, res) => {
+  const parsed = soundModeSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Modo inválido" });
+  await prisma.user.update({ where: { id: req.userId! }, data: { notifSoundUrl: parsed.data.mode === "original" ? "original" : null } });
+  return res.json({ ok: true, mode: parsed.data.mode });
 });
 
 // GET /api/setup/payment-detection — modo actual + si la IA de visión está disponible.

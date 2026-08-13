@@ -71,19 +71,16 @@ function playPing() {
   o.stop(t + 0.34);
 }
 
-// Sonido de notificación: por DEFECTO para todas las cuentas usamos el archivo empaquetado /notif.mp3.
-// Si el operador subió uno propio en Configuración → Notificaciones, usa ese. Si el navegador bloquea
-// el audio (autoplay), cae al "ding" generado por código.
+// Sonido de notificación: 2 opciones. Por DEFECTO (todas las cuentas) el archivo empaquetado /notif.mp3;
+// el operador puede elegir el "original" (ding generado) en Configuración. Si el navegador bloquea el
+// audio (autoplay), cae al ding igual.
 const defaultAudio = new Audio("/notif.mp3");
 defaultAudio.preload = "auto";
-let customAudio: HTMLAudioElement | null = null;
-function setCustomSound(url: string | null) {
-  customAudio = url ? new Audio(url) : null;
-  if (customAudio) customAudio.preload = "auto";
-}
+let useOriginalDing = false; // el operador eligió el ding original en vez del sonido nuevo
+function setSoundMode(mode: "new" | "original") { useOriginalDing = mode === "original"; }
 function playPingOrCustom() {
-  const a = customAudio ?? defaultAudio;
-  try { a.currentTime = 0; void a.play().catch(() => playPing()); return; } catch { playPing(); }
+  if (useOriginalDing) { playPing(); return; }
+  try { defaultAudio.currentTime = 0; void defaultAudio.play().catch(() => playPing()); return; } catch { playPing(); }
 }
 
 // "Cha-ching" de caja registradora 💰: cuando entra una imagen/PDF (comprobante de pago).
@@ -247,7 +244,7 @@ export default function AppLayout() {
   // Configuración (evento "notif-sound-changed"). Sin sonido custom, suena el "ding" de siempre.
   useEffect(() => {
     const load = () => {
-      void api.get<{ url: string | null }>("/api/setup/notif-sound").then(({ data }) => setCustomSound(data.url)).catch(() => undefined);
+      void api.get<{ mode: "new" | "original" }>("/api/setup/notif-sound").then(({ data }) => setSoundMode(data.mode)).catch(() => undefined);
     };
     load();
     window.addEventListener("notif-sound-changed", load);
