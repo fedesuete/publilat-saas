@@ -27,6 +27,7 @@ import AdminOverview from "./pages/admin/AdminOverview";
 import AdminClients from "./pages/admin/AdminClients";
 import AdminLines from "./pages/admin/AdminLines";
 import AdminProxies from "./pages/admin/AdminProxies";
+import AdminProxyHealth from "./pages/admin/AdminProxyHealth";
 import AdminMetrics from "./pages/admin/AdminMetrics";
 import AdminLandings from "./pages/admin/AdminLandings";
 import AdminRevenue from "./pages/admin/AdminRevenue";
@@ -80,6 +81,7 @@ export default function App() {
             <Route path="/admin/clientes" element={<AdminClients />} />
             <Route path="/admin/lineas" element={<AdminLines />} />
             <Route path="/admin/proxies" element={<AdminProxies />} />
+            <Route path="/admin/proxy-health" element={<AdminProxyHealth />} />
             <Route path="/admin/metricas" element={<AdminMetrics />} />
             <Route path="/admin/landings" element={<AdminLandings />} />
             <Route path="/admin/ingresos" element={<AdminRevenue />} />

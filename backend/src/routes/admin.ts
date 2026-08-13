@@ -12,6 +12,7 @@ import { hashPassword, signToken } from "../lib/auth.js";
 import { AUTH_COOKIE } from "../middleware/requireAuth.js";
 import { encryptSecret } from "../lib/crypto.js";
 import { assignProxy, rotateProxy, applyLineProxy, logProxyEvent, probeProxy, autoAssignEnabled, assignProxyPreferred, setLineWaitingProxy } from "../lib/proxy-pool.js";
+import { buildProxyHealthSummary } from "../lib/proxy-report.js";
 import { getEngine } from "../lib/wa-engine.js";
 import { uniqueSlug } from "./auth.js";
 
@@ -742,6 +743,14 @@ adminRouter.get("/proxies/lines", async (_req, res) => {
 adminRouter.get("/proxies/events", async (_req, res) => {
   const events = await prisma.proxyEvent.findMany({ orderBy: { createdAt: "desc" }, take: 100 });
   return res.json({ events });
+});
+
+// GET /api/admin/proxy-health — resumen de estabilidad IPRoyal (Fase 5): por línea de prueba, cambios de
+// IP, caídas/reconexiones, uptime %, IP actual + timeline. Query ?hours=24 (ventana, 1..168).
+adminRouter.get("/proxy-health", async (req, res) => {
+  const hours = Math.min(168, Math.max(1, Number(req.query.hours) || 24));
+  const lines = await buildProxyHealthSummary(hours, true);
+  return res.json({ hours, lines });
 });
 
 // POST /api/admin/lines/:id/proxy — asigna/cambia el proxy. body { proxyId? } (sin proxyId = auto

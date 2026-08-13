@@ -565,6 +565,17 @@ export async function watchProxyRegistration(lineId: string, attempt = 1): Promi
   enqueueProxyWatch(lineId, attempt + 1);
 }
 
+// Encola un reporte de proxies IPRoyal UNA vez, con delay (ej. a las 24h de arrancar el test shadow).
+// jobId determinista → no se duplica si se llama dos veces con los mismos parámetros. No-op sin Redis.
+export function enqueueProxyReport(delayMs: number, windowHours = 24, tag = ""): void {
+  if (!queue) return;
+  void queue.add(
+    "proxy-report",
+    { windowHours, tag },
+    { delay: Math.max(0, delayMs), jobId: `proxy-report-${delayMs}-${windowHours}-${tag}`, removeOnComplete: true, removeOnFail: 20 },
+  );
+}
+
 // Encola el watchdog de una línea con delay (dedup por jobId línea+intento).
 export function enqueueProxyWatch(lineId: string, attempt = 1): void {
   if (queue) {
@@ -649,6 +660,8 @@ export async function initQueues(): Promise<void> {
         if (job.name === "proxy-watch") return watchProxyRegistration(job.data.lineId as string, (job.data.attempt as number) ?? 1);
         if (job.name === "proxy-waiting") return recoverWaitingProxyLines();
         if (job.name === "proxy-monitor") { const { sampleProxyHealth } = await import("./proxy-monitor.js"); return sampleProxyHealth(); }
+        if (job.name === "proxy-report-daily") { const { sendProxyHealthReport } = await import("./proxy-report.js"); await sendProxyHealthReport(24, "resumen diario 08:00 ART"); return; }
+        if (job.name === "proxy-report") { const { sendProxyHealthReport } = await import("./proxy-report.js"); await sendProxyHealthReport((job.data.windowHours as number) ?? 24, (job.data.tag as string) ?? ""); return; }
         if (job.name === "waha-cleanup") return cleanupOrphanWahaSessions();
         if (job.name === "flow-resume") {
           const { resumeFlowRun } = await import("./flow-engine.js");
@@ -670,6 +683,8 @@ export async function initQueues(): Promise<void> {
     await queue.add("proxy-health", {}, { repeat: { every: 360_000 }, jobId: "proxy-health-repeat", removeOnComplete: true, removeOnFail: 50 });
     await queue.add("proxy-waiting", {}, { repeat: { every: 120_000 }, jobId: "proxy-waiting-repeat", removeOnComplete: true, removeOnFail: 50 });
     await queue.add("proxy-monitor", {}, { repeat: { every: 300_000 }, jobId: "proxy-monitor-repeat", removeOnComplete: true, removeOnFail: 50 });
+    // Reporte diario de proxies IPRoyal a las 08:00 ART (no-op si no hay líneas de prueba ni SMTP).
+    await queue.add("proxy-report-daily", {}, { repeat: { pattern: "0 8 * * *", tz: "America/Argentina/Buenos_Aires" }, jobId: "proxy-report-daily-repeat", removeOnComplete: true, removeOnFail: 20 });
     await queue.add("waha-cleanup", {}, { repeat: { every: 1_800_000 }, jobId: "waha-cleanup-repeat", removeOnComplete: true, removeOnFail: 50 });
     console.log("[queue] BullMQ listo (vencimiento 60s + CAPI 5min + salud 5min + saldo 30min + versión WA Web 12h + proxies 6min + waiting_proxy 2min + limpieza WAHA 30min)");
   } catch (e) {
