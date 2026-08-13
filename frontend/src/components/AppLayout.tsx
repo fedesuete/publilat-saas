@@ -71,18 +71,19 @@ function playPing() {
   o.stop(t + 0.34);
 }
 
-// Sonido CUSTOM del operador (subido en Configuración → Notificaciones): un archivo de audio en vez
-// del "ding" generado. Si no hay, o si el navegador lo bloquea, cae al ding de siempre.
+// Sonido de notificación: por DEFECTO para todas las cuentas usamos el archivo empaquetado /notif.mp3.
+// Si el operador subió uno propio en Configuración → Notificaciones, usa ese. Si el navegador bloquea
+// el audio (autoplay), cae al "ding" generado por código.
+const defaultAudio = new Audio("/notif.mp3");
+defaultAudio.preload = "auto";
 let customAudio: HTMLAudioElement | null = null;
 function setCustomSound(url: string | null) {
   customAudio = url ? new Audio(url) : null;
   if (customAudio) customAudio.preload = "auto";
 }
 function playPingOrCustom() {
-  if (customAudio) {
-    try { customAudio.currentTime = 0; void customAudio.play().catch(() => playPing()); return; } catch { /* cae al ding */ }
-  }
-  playPing();
+  const a = customAudio ?? defaultAudio;
+  try { a.currentTime = 0; void a.play().catch(() => playPing()); return; } catch { playPing(); }
 }
 
 // "Cha-ching" de caja registradora 💰: cuando entra una imagen/PDF (comprobante de pago).
