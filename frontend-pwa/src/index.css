@@ -51,6 +51,22 @@ html, body, #root {
 .btn-glow { animation: brandGlow 1.9s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .btn-glow { animation: none; } }
 
+/* Glow del CTA de acento (botón "Activar ahora" del modal de notificaciones). */
+@keyframes accentGlow {
+  0%, 100% { box-shadow: 0 8px 22px -6px var(--brand-accent, #128c7e); }
+  50%      { box-shadow: 0 0 26px 2px var(--brand-accent, #128c7e), 0 8px 22px -6px var(--brand-accent, #128c7e); }
+}
+.btn-glow-accent { animation: accentGlow 1.9s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .btn-glow-accent { animation: none; } }
+
+/* Entrada del modal (aparece con un leve pop). */
+@keyframes modalPop {
+  from { opacity: 0; transform: scale(0.92) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+.modal-pop { animation: modalPop 0.22s ease-out both; }
+@media (prefers-reduced-motion: reduce) { .modal-pop { animation: none; } }
+
 /* iOS hace auto-zoom al enfocar un input con font-size < 16px (el "zoom que hay que acomodar a
    mano"). Forzamos 16px en pantallas táctiles → nunca zoomea, mantiene la medida del celular. */
 @media (pointer: coarse) {

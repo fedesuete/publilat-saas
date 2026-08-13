@@ -3,6 +3,7 @@ import { io, type Socket } from "socket.io-client";
 import { api, apiError, API_BASE, getToken, clearToken, loadBranding, saveBranding, applyBranding, type Branding } from "../lib/api";
 import { subscribeToPush, pushSupported, pushPermission } from "../lib/push";
 import InstallPrompt, { InstallGuide } from "../components/InstallPrompt";
+import PushPrompt from "../components/PushPrompt";
 import { promptInstall, onInstallAvailable, bakeSessionIntoUrl, pointManifestToSession } from "../lib/install";
 
 interface Pay { cbu: string | null; alias: string | null; titular: string | null }
@@ -242,16 +243,9 @@ export default function ChatPage() {
           Solo si el operador lo activó en el panel (apagado por defecto). */}
       {branding?.chatInstallPromptEnabled && <InstallPrompt />}
 
-      {/* Aviso: activar notificaciones (solo si el navegador las soporta y aún no decidió). */}
-      {push === "default" && (
-        <div className="flex items-center justify-between gap-3 px-4 py-2 text-sm shadow-sm" style={{ background: "var(--c-surface)", color: "var(--c-surface-text)" }}>
-          <span>🔔 Activá las notificaciones para no perderte respuestas.</span>
-          <button onClick={() => void enablePush()} disabled={pushBusy}
-            className="shrink-0 rounded-full px-3 py-1 text-xs font-semibold disabled:opacity-50" style={{ background: "var(--c-accent)", color: "var(--c-accent-text)" }}>
-            {pushBusy ? "…" : "Activar"}
-          </button>
-        </div>
-      )}
+      {/* Modal GRANDE para activar notificaciones (solo si el navegador las soporta y aún no decidió).
+          Branded por cuenta; se posterga unos días al tocar "Ahora no". */}
+      {push === "default" && <PushPrompt branding={branding} onEnable={enablePush} busy={pushBusy} />}
       {push === "denied" && (
         <div className="px-4 py-2 text-center text-xs" style={{ background: "var(--c-surface)", color: "var(--c-muted)" }}>
           Notificaciones bloqueadas. Podés activarlas desde los ajustes del navegador.
