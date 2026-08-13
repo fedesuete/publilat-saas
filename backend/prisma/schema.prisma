@@ -68,7 +68,10 @@ model User {
   chatInstallMsg1 String?   // secuencia de instalación (mensajes guardados que el operador envía)
   chatInstallMsg2 String?   // el 2do lleva botón "INSTALAR APP" en la PWA
   chatInstallMsg3 String?
-  chatTutIosImg     String? // foto tutorial de instalación iPhone (URL /branding/asset/:id)
+  chatTutIosImg     String? // foto tutorial de instalación iPhone, paso 1 (URL /branding/asset/:id)
+  chatTutIosImg2    String? // foto tutorial iPhone, paso 2
+  chatTutIosImg3    String? // foto tutorial iPhone, paso 3
+  chatTutIosImg4    String? // foto tutorial iPhone, paso 4
   chatTutAndroidImg String? // foto tutorial de instalación Android
   chatDirectWelcome String? // 1er mensaje del "chat directo" (/c/:slug, sin registro): pide el nombre
   chatInstallPromptEnabled Boolean @default(false) // muestra el cartel "Instalá la app" dentro del chat

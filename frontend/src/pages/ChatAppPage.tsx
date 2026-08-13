@@ -433,12 +433,13 @@ interface Brand {
   brandName: string | null; logoUrl: string | null; primaryColor: string | null; accentColor: string | null; chatTheme: string | null;
   welcomeText: string | null; welcomeMsgText: string | null; welcomeMsgImage: string | null; chatWaLink: string | null; chatPlatformUrl: string | null;
   chatPayCbu: string | null; chatPayAlias: string | null; chatPayTitular: string | null;
-  chatInstallMsg1: string | null; chatInstallMsg2: string | null; chatInstallMsg3: string | null; chatTutIosImg: string | null; chatTutAndroidImg: string | null;
+  chatInstallMsg1: string | null; chatInstallMsg2: string | null; chatInstallMsg3: string | null;
+  chatTutIosImg: string | null; chatTutIosImg2: string | null; chatTutIosImg3: string | null; chatTutIosImg4: string | null; chatTutAndroidImg: string | null;
   chatDirectWelcome: string | null;
   chatInstallPromptEnabled: boolean;
   chatNotifTitle: string | null; chatNotifText: string | null;
 }
-const EMPTY_BRAND: Brand = { brandName: null, logoUrl: null, primaryColor: null, accentColor: null, chatTheme: "whatsapp", welcomeText: null, welcomeMsgText: null, welcomeMsgImage: null, chatWaLink: null, chatPlatformUrl: null, chatPayCbu: null, chatPayAlias: null, chatPayTitular: null, chatInstallMsg1: null, chatInstallMsg2: null, chatInstallMsg3: null, chatTutIosImg: null, chatTutAndroidImg: null, chatDirectWelcome: null, chatInstallPromptEnabled: false, chatNotifTitle: null, chatNotifText: null };
+const EMPTY_BRAND: Brand = { brandName: null, logoUrl: null, primaryColor: null, accentColor: null, chatTheme: "whatsapp", welcomeText: null, welcomeMsgText: null, welcomeMsgImage: null, chatWaLink: null, chatPlatformUrl: null, chatPayCbu: null, chatPayAlias: null, chatPayTitular: null, chatInstallMsg1: null, chatInstallMsg2: null, chatInstallMsg3: null, chatTutIosImg: null, chatTutIosImg2: null, chatTutIosImg3: null, chatTutIosImg4: null, chatTutAndroidImg: null, chatDirectWelcome: null, chatInstallPromptEnabled: false, chatNotifTitle: null, chatNotifText: null };
 
 // Diseños disponibles del chat (mini-preview en el selector). "brand" = usa el color del cliente.
 const CHAT_THEMES = [
@@ -452,7 +453,7 @@ function BrandingTab() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
-  const [uploading, setUploading] = useState<"logo" | "welcome" | "tut_ios" | "tut_android" | null>(null);
+  const [uploading, setUploading] = useState<"logo" | "welcome" | "tut_ios" | "tut_ios2" | "tut_ios3" | "tut_ios4" | "tut_android" | null>(null);
   const [slug, setSlug] = useState<string | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
 
@@ -466,7 +467,11 @@ function BrandingTab() {
   const set = (k: keyof Brand, v: string | null | boolean) => { setForm((f) => ({ ...f, [k]: v })); setOk(false); };
 
   // Lee el archivo como data URL y lo sube; el backend devuelve la URL (CDN si hay S3, si no el data URL).
-  const upload = async (file: File, field: "logoUrl" | "welcomeMsgImage" | "chatTutIosImg" | "chatTutAndroidImg", which: "logo" | "welcome" | "tut_ios" | "tut_android") => {
+  const upload = async (
+    file: File,
+    field: "logoUrl" | "welcomeMsgImage" | "chatTutIosImg" | "chatTutIosImg2" | "chatTutIosImg3" | "chatTutIosImg4" | "chatTutAndroidImg",
+    which: "logo" | "welcome" | "tut_ios" | "tut_ios2" | "tut_ios3" | "tut_ios4" | "tut_android",
+  ) => {
     if (file.size > 700 * 1024) { setError("La imagen supera 700 KB. Comprimila o usá una más liviana."); return; }
     setUploading(which); setError(null);
     try {
@@ -477,6 +482,26 @@ function BrandingTab() {
       set(field, data.url);
     } catch (e) { setError(apiError(e)); } finally { setUploading(null); }
   };
+
+  // Slot de foto de instalación (reutilizable: iPhone paso 1→4). Sube, muestra miniatura y permite quitar.
+  const tutSlot = (
+    field: "chatTutIosImg" | "chatTutIosImg2" | "chatTutIosImg3" | "chatTutIosImg4",
+    which: "tut_ios" | "tut_ios2" | "tut_ios3" | "tut_ios4",
+    label: string,
+  ) => (
+    <div>
+      <label className="mb-1 block text-xs text-slate-400">{label}</label>
+      <div className="flex items-center gap-2">
+        {form[field] && <img src={form[field]!} alt={label} className="h-12 w-12 rounded-lg object-cover" />}
+        <label className="cursor-pointer rounded-md border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-slate-800">
+          {uploading === which ? "Subiendo…" : form[field] ? "Cambiar" : "Subir"}
+          <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f, field, which); e.target.value = ""; }} />
+        </label>
+        {form[field] && <button onClick={() => set(field, null)} className="text-xs text-rose-400 hover:underline">Quitar</button>}
+      </div>
+    </div>
+  );
 
   const save = async () => {
     setSaving(true); setError(null); setOk(false);
@@ -670,30 +695,25 @@ function BrandingTab() {
             placeholder="Si no podés, decinos y te indicamos con dos fotitos cómo es, por favor 🙏"
             className="mb-4 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-xs text-slate-400">📱 Foto tutorial iPhone</label>
-              <div className="flex items-center gap-2">
-                {form.chatTutIosImg && <img src={form.chatTutIosImg} alt="iOS" className="h-12 w-12 rounded-lg object-cover" />}
-                <label className="cursor-pointer rounded-md border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-slate-800">
-                  {uploading === "tut_ios" ? "Subiendo…" : form.chatTutIosImg ? "Cambiar" : "Subir"}
-                  <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden"
-                    onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f, "chatTutIosImg", "tut_ios"); e.target.value = ""; }} />
-                </label>
-                {form.chatTutIosImg && <button onClick={() => set("chatTutIosImg", null)} className="text-xs text-rose-400 hover:underline">Quitar</button>}
-              </div>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs text-slate-400">🤖 Foto tutorial Android</label>
-              <div className="flex items-center gap-2">
-                {form.chatTutAndroidImg && <img src={form.chatTutAndroidImg} alt="Android" className="h-12 w-12 rounded-lg object-cover" />}
-                <label className="cursor-pointer rounded-md border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-slate-800">
-                  {uploading === "tut_android" ? "Subiendo…" : form.chatTutAndroidImg ? "Cambiar" : "Subir"}
-                  <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden"
-                    onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f, "chatTutAndroidImg", "tut_android"); e.target.value = ""; }} />
-                </label>
-                {form.chatTutAndroidImg && <button onClick={() => set("chatTutAndroidImg", null)} className="text-xs text-rose-400 hover:underline">Quitar</button>}
-              </div>
+          <div className="mb-1 text-xs font-semibold text-slate-300">📱 Fotos de instalación iPhone</div>
+          <p className="mb-2 text-xs text-slate-500">Cargá hasta 4 pasos. El botón “📱 Foto iPhone” del chat las manda en orden (1→2→3→4). Con cargar 1 alcanza; poné más para el paso a paso.</p>
+          <div className="mb-4 grid grid-cols-2 gap-3">
+            {tutSlot("chatTutIosImg", "tut_ios", "Paso 1")}
+            {tutSlot("chatTutIosImg2", "tut_ios2", "Paso 2")}
+            {tutSlot("chatTutIosImg3", "tut_ios3", "Paso 3")}
+            {tutSlot("chatTutIosImg4", "tut_ios4", "Paso 4")}
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs text-slate-400">🤖 Foto tutorial Android</label>
+            <div className="flex items-center gap-2">
+              {form.chatTutAndroidImg && <img src={form.chatTutAndroidImg} alt="Android" className="h-12 w-12 rounded-lg object-cover" />}
+              <label className="cursor-pointer rounded-md border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-slate-800">
+                {uploading === "tut_android" ? "Subiendo…" : form.chatTutAndroidImg ? "Cambiar" : "Subir"}
+                <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f, "chatTutAndroidImg", "tut_android"); e.target.value = ""; }} />
+              </label>
+              {form.chatTutAndroidImg && <button onClick={() => set("chatTutAndroidImg", null)} className="text-xs text-rose-400 hover:underline">Quitar</button>}
             </div>
           </div>
         </Card>

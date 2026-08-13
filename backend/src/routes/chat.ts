@@ -379,7 +379,7 @@ chatRouter.post("/messages/install", requireActiveLine, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
   const conv = await prisma.chatConversation.findFirst({ where: { id: parsed.data.conversationId, userId: req.userId! }, select: { id: true, playerId: true } });
   if (!conv) return res.status(404).json({ error: "Conversación no encontrada" });
-  const acc = await prisma.user.findUnique({ where: { id: req.userId! }, select: { chatInstallMsg1: true, chatInstallMsg2: true, chatInstallMsg3: true, chatTutIosImg: true, chatTutAndroidImg: true } });
+  const acc = await prisma.user.findUnique({ where: { id: req.userId! }, select: { chatInstallMsg1: true, chatInstallMsg2: true, chatInstallMsg3: true, chatTutIosImg: true, chatTutIosImg2: true, chatTutIosImg3: true, chatTutIosImg4: true, chatTutAndroidImg: true } });
   const m1 = acc?.chatInstallMsg1?.trim() || DEFAULT_INSTALL.msg1;
   const m2 = acc?.chatInstallMsg2?.trim() || DEFAULT_INSTALL.msg2;
   const m3 = acc?.chatInstallMsg3?.trim() || DEFAULT_INSTALL.msg3;
@@ -392,10 +392,13 @@ chatRouter.post("/messages/install", requireActiveLine, async (req, res) => {
     case "msg1": items.push({ body: m1, metadata: {} }); break;
     case "msg2": items.push({ body: m2, metadata: { install: true } }); break;
     case "msg3": items.push({ body: m3, metadata: {} }); break;
-    case "tut_ios":
-      if (!acc?.chatTutIosImg) return res.status(400).json({ error: "Cargá primero la foto de instalación de iPhone en el panel (Marca)." });
-      items.push({ body: "📱 Instalación en iPhone:", metadata: { image: acc.chatTutIosImg } });
+    case "tut_ios": {
+      // Manda TODAS las fotos de iPhone cargadas (paso 1→4) en orden, como una secuencia de pasos.
+      const iosImgs = [acc?.chatTutIosImg, acc?.chatTutIosImg2, acc?.chatTutIosImg3, acc?.chatTutIosImg4].filter((u): u is string => Boolean(u && u.trim()));
+      if (iosImgs.length === 0) return res.status(400).json({ error: "Cargá primero las fotos de instalación de iPhone en el panel (Marca)." });
+      iosImgs.forEach((img, i) => items.push({ body: i === 0 ? "📱 Cómo instalar en iPhone:" : `Paso ${i + 1}`, metadata: { image: img } }));
       break;
+    }
     case "tut_android":
       if (!acc?.chatTutAndroidImg) return res.status(400).json({ error: "Cargá primero la foto de instalación de Android en el panel (Marca)." });
       items.push({ body: "🤖 Instalación en Android:", metadata: { image: acc.chatTutAndroidImg } });
@@ -522,9 +525,9 @@ chatRouter.get("/broadcasts", async (req, res) => {
 
 // Solo estos campos del User son "branding" del Chat App. El PATCH NUNCA toca otra cosa
 // (nada de plan, tokenVersion, líneas de WhatsApp, etc.).
-const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "chatTheme", "welcomeText", "welcomeMsgText", "welcomeMsgImage", "chatWaLink", "chatPlatformUrl", "chatPayCbu", "chatPayAlias", "chatPayTitular", "chatInstallMsg1", "chatInstallMsg2", "chatInstallMsg3", "chatTutIosImg", "chatTutAndroidImg", "chatDirectWelcome", "chatInstallPromptEnabled", "chatNotifTitle", "chatNotifText"] as const;
+const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "chatTheme", "welcomeText", "welcomeMsgText", "welcomeMsgImage", "chatWaLink", "chatPlatformUrl", "chatPayCbu", "chatPayAlias", "chatPayTitular", "chatInstallMsg1", "chatInstallMsg2", "chatInstallMsg3", "chatTutIosImg", "chatTutIosImg2", "chatTutIosImg3", "chatTutIosImg4", "chatTutAndroidImg", "chatDirectWelcome", "chatInstallPromptEnabled", "chatNotifTitle", "chatNotifText"] as const;
 // Select del branding del OPERADOR (incluye los campos de instalación; NO se exponen al jugador).
-const BRANDING_SELECT = { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true, chatPayCbu: true, chatPayAlias: true, chatPayTitular: true, chatInstallMsg1: true, chatInstallMsg2: true, chatInstallMsg3: true, chatTutIosImg: true, chatTutAndroidImg: true, chatDirectWelcome: true, chatInstallPromptEnabled: true, chatNotifTitle: true, chatNotifText: true } as const;
+const BRANDING_SELECT = { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true, chatPayCbu: true, chatPayAlias: true, chatPayTitular: true, chatInstallMsg1: true, chatInstallMsg2: true, chatInstallMsg3: true, chatTutIosImg: true, chatTutIosImg2: true, chatTutIosImg3: true, chatTutIosImg4: true, chatTutAndroidImg: true, chatDirectWelcome: true, chatInstallPromptEnabled: true, chatNotifTitle: true, chatNotifText: true } as const;
 
 // GET /api/chat/branding — branding actual de la cuenta (para poblar el formulario del panel).
 chatRouter.get("/branding", async (req, res) => {
@@ -555,6 +558,9 @@ const brandingSchema = z.object({
   chatInstallMsg2: z.string().max(1000).nullish(),
   chatInstallMsg3: z.string().max(1000).nullish(),
   chatTutIosImg: z.string().url().max(600).nullish(),
+  chatTutIosImg2: z.string().url().max(600).nullish(),
+  chatTutIosImg3: z.string().url().max(600).nullish(),
+  chatTutIosImg4: z.string().url().max(600).nullish(),
   chatTutAndroidImg: z.string().url().max(600).nullish(),
   chatDirectWelcome: z.string().max(1000).nullish(),
   chatInstallPromptEnabled: z.boolean().optional(),
