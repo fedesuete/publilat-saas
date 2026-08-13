@@ -7,8 +7,7 @@
 import crypto from "node:crypto";
 import { prisma } from "./prisma.js";
 import { emitChat } from "./io.js";
-import { casinoLiveForAccount, ensureCasinoUser, casinoPlayerPassword } from "./casino-cashier.js"; // modelo B (auto-carga ganamos)
-import { casinoCvu } from "./casino-partner.js";
+import { casinoLiveForAccount, casinoCvuForAccount, ensureCasinoUser, casinoPlayerPassword } from "./casino-cashier.js"; // modelo B (auto-carga, key por cuenta)
 
 // Usuario del jugador a partir de su nombre (apodo + dígitos), igual que el registro un-tap.
 const nickSlug = (s: string) => s.toLowerCase().normalize("NFD").replace(/[^a-z0-9]/g, "").slice(0, 12);
@@ -69,7 +68,7 @@ export async function runChatBot(accountId: string, convId: string, playerId: st
     await prisma.chatConversation.update({ where: { id: convId }, data: { botStep: null } });
     // MODELO B: usamos el NOMBRE que escribió como base del usuario de ganamos (apodo + dígitos, en vez
     // del web###### random), lo creamos en ganamos y le devolvemos usuario + clave + link para jugar.
-    if (casinoLiveForAccount(accountId) && conv.player?.casinoUsername) {
+    if ((await casinoLiveForAccount(accountId)) && conv.player?.casinoUsername) {
       const base = nickSlug(name) || "user";
       let username = conv.player.casinoUsername;
       for (let i = 0; i < 6; i++) {
@@ -80,7 +79,7 @@ export async function runChatBot(accountId: string, convId: string, playerId: st
           break;
         } catch { /* choque userId+casinoUsername → reintentamos con otros dígitos */ }
       }
-      await ensureCasinoUser(username).catch(() => undefined);
+      await ensureCasinoUser(accountId, username).catch(() => undefined);
       const acc2 = await prisma.user.findUnique({ where: { id: accountId }, select: { chatPlatformUrl: true } });
       const url = acc2?.chatPlatformUrl?.trim();
       const link = url ? { label: "🎮 Entrar a jugar", url } : undefined;
@@ -119,15 +118,15 @@ export async function runChatBot(accountId: string, convId: string, playerId: st
     // MODELO B (auto-carga ganamos): 1) crear el usuario en ganamos (si no la carga queda failed),
     // 2) mostrar el CVU de la recaudadora (del endpoint, no hardcodeado). El crédito lo dispara el
     // comprobante que sube el jugador (→ intent → callback). No usa "Ya pagué" ni al cajero.
-    if (casinoLiveForAccount(accountId) && conv.player?.casinoUsername) {
-      const u = await ensureCasinoUser(conv.player.casinoUsername);
+    if ((await casinoLiveForAccount(accountId)) && conv.player?.casinoUsername) {
+      const u = await ensureCasinoUser(accountId, conv.player.casinoUsername);
       if (!u.ok) {
         await setStep("human");
         await botSay(accountId, convId, playerId, "Tuvimos un problema al preparar tu usuario 😔. Un cajero te ayuda en un momento.");
         await alertCajero(accountId, convId, `⚠️ No se pudo crear el usuario ${conv.player.casinoUsername} en ganamos (${u.errorCode ?? "error"}). Revisar antes de cargar.`);
         return;
       }
-      const cvu = await casinoCvu();
+      const cvu = await casinoCvuForAccount(accountId);
       if (!cvu.ok) {
         await setStep(null, null);
         await botSay(accountId, convId, playerId, "En este momento no podemos procesar cargas 😔. Probá de nuevo en unos minutos.");

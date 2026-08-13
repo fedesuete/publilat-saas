@@ -8,7 +8,8 @@
 // decisión de "fuente de verdad" (ganamos vs wallet interno) y el manejo fino de fallos se define al
 // prender el flag (ver preguntas de go-live). Best-effort: nunca tira → no rompe el approve.
 import { prisma } from "./prisma.js";
-import { casinoPartnerEnabled, casinoCredit, casinoDebit, casinoRegister, casinoIntent } from "./casino-partner.js";
+import { casinoPartnerEnabled, casinoCredit, casinoDebit, casinoRegister, casinoIntent, casinoCvu, type CasinoCreds, type CvuInfo } from "./casino-partner.js";
+import { decryptSecret } from "./crypto.js";
 import { notify } from "./notifications.js";
 
 // Clave para el alta on-demand en ganamos. Por defecto la de los jugadores autogenerados (un-tap).
@@ -35,17 +36,42 @@ function modelBAccounts(): string[] {
   return (process.env.CASINO_MODEL_B_ACCOUNTS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-// ¿El modelo B (auto-carga) está activo para ESTA cuenta? Requiere API del socio + secreto del callback
-// + que la cuenta esté en la lista. Es lo que gatea el envío del intent (la plata a ganamos).
-export function casinoLiveForAccount(userId: string): boolean {
-  return casinoModelBEnabled() && modelBAccounts().includes(userId);
+// Resuelve las CREDENCIALES del casino de UNA cuenta (multi-tenant): si tiene casinoApiKey propia -> su
+// tenant (Fortunatotal, etc.); si no, si está en la lista legacy del .env -> la key global (mrchcod/
+// Ganamos). null = la cuenta no tiene casino. La base es compartida (mismo partner-api).
+export async function resolveCasinoCreds(userId: string): Promise<CasinoCreds | null> {
+  const base = (process.env.CASINO_API_URL ?? "").replace(/\/$/, "");
+  if (!base) return null;
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { casinoApiKey: true } });
+  if (u?.casinoApiKey) {
+    try { return { baseUrl: base, key: decryptSecret(u.casinoApiKey) }; } catch { return null; }
+  }
+  const globalKey = process.env.CASINO_API_KEY ?? "";
+  if (globalKey && modelBAccounts().includes(userId)) return { baseUrl: base, key: globalKey }; // legacy (mrchcod)
+  return null;
+}
+
+// ¿El modelo B (auto-carga) está activo para ESTA cuenta? Requiere el secreto del callback (global) + que
+// la cuenta tenga casino (key propia o legacy). Es lo que gatea el envío del intent (la plata a ganamos).
+export async function casinoLiveForAccount(userId: string): Promise<boolean> {
+  if (!process.env.CHAT_PAY_WEBHOOK_SECRET) return false; // sin secreto del callback no hay auto-carga segura
+  return (await resolveCasinoCreds(userId)) !== null;
+}
+
+// CVU de la recaudadora para ESTA cuenta (usa su key). Sin casino en la cuenta -> not_configured.
+export async function casinoCvuForAccount(userId: string): Promise<CvuInfo> {
+  const creds = await resolveCasinoCreds(userId);
+  if (!creds) return { ok: false, errorCode: "not_configured" };
+  return casinoCvu(creds);
 }
 
 // Da de alta al jugador en ganamos (idempotente: tolera "ya existe"). Lo usa el bot ANTES de mostrarle
 // el CVU, así el usuario EXISTE cuando ganamos va a acreditar (si no, la carga queda failed). ok=true si
 // quedó listo (creado o ya existía). Usa la clave por defecto (la que ya conoce el jugador de su alta).
-export async function ensureCasinoUser(casinoUsername: string): Promise<{ ok: boolean; errorCode?: string }> {
-  const r = await casinoRegister({ usuario: casinoUsername, password: REGISTER_PASSWORD });
+export async function ensureCasinoUser(userId: string, casinoUsername: string): Promise<{ ok: boolean; errorCode?: string }> {
+  const creds = await resolveCasinoCreds(userId);
+  if (!creds) return { ok: false, errorCode: "not_configured" };
+  const r = await casinoRegister({ usuario: casinoUsername, password: REGISTER_PASSWORD }, creds);
   if (r.ok) return { ok: true };
   if (/taken|exist|ya existe|duplicad/i.test(`${r.errorCode} ${r.errorMessage}`)) return { ok: true };
   console.error("[casino-cashier] ensureCasinoUser falló:", casinoUsername, r.errorCode);
@@ -63,7 +89,9 @@ export async function sendDepositIntent(
   casinoUsername: string,
   receipt: { senderName: string | null; codigoOperacion: string | null },
 ): Promise<void> {
-  if (!casinoLiveForAccount(dep.userId)) return; // solo cuentas habilitadas (rollout escalonado)
+  if (!process.env.CHAT_PAY_WEBHOOK_SECRET) return; // sin secreto del callback no hay auto-carga segura
+  const creds = await resolveCasinoCreds(dep.userId);
+  if (!creds) return; // la cuenta no tiene casino (rollout por cuenta)
   try {
     const referencia = `dep-${dep.id}`;
     if (await prisma.casinoTx.findUnique({ where: { referencia }, select: { id: true } })) return; // intent ya mandado
@@ -81,7 +109,7 @@ export async function sendDepositIntent(
     // ORDEN (confirmado con Eduardo): /register (si es nuevo) → /intent. El /intent NO registra, y si el
     // usuario NO existe cuando ganamos va a acreditar, la carga queda FAILED y la plata no se acredita.
     // Por eso el alta es BLOQUEANTE: si falla (y no es "ya existe"), NO mandamos el intent y avisamos.
-    const reg = await casinoRegister({ usuario: casinoUsername, password: REGISTER_PASSWORD });
+    const reg = await casinoRegister({ usuario: casinoUsername, password: REGISTER_PASSWORD }, creds);
     const yaExiste = !reg.ok && /taken|exist|ya existe|duplicad/i.test(`${reg.errorCode} ${reg.errorMessage}`);
     if (!reg.ok && !yaExiste) {
       await prisma.casinoTx.create({
@@ -101,7 +129,7 @@ export async function sendDepositIntent(
       // rompe el match, porque TODAS las cargas comparten esa misma cuenta destino.
       remitente: receipt.senderName,
       codigoOperacion: receipt.codigoOperacion,
-    });
+    }, creds);
     await prisma.casinoTx.create({
       data: {
         userId: dep.userId, playerId: dep.playerId, type: "credit", usuario: casinoUsername,
@@ -121,8 +149,9 @@ export async function sendDepositIntent(
 
 // Acredita en ganamos una carga YA APROBADA por el operador. Idempotente por `dep-<id>`.
 export async function creditDepositInCasino(dep: Op, casinoUsername: string): Promise<void> {
-  if (!casinoPartnerEnabled()) return;
-  if (casinoModelBEnabled()) return; // Model B: la carga la acredita el callback, no el /credit del approve.
+  const creds = await resolveCasinoCreds(dep.userId);
+  if (!creds) return; // la cuenta no tiene casino
+  if (process.env.CHAT_PAY_WEBHOOK_SECRET) return; // Model B: la carga la acredita el callback, no el /credit del approve.
   try {
     const referencia = `dep-${dep.id}`;
     const existing = await prisma.casinoTx.findUnique({ where: { referencia } });
@@ -135,11 +164,11 @@ export async function creditDepositInCasino(dep: Op, casinoUsername: string): Pr
       });
     }
 
-    let r = await casinoCredit({ usuario: casinoUsername, monto: dep.amount, referencia });
+    let r = await casinoCredit({ usuario: casinoUsername, monto: dep.amount, referencia }, creds);
     // Jugador aún no dado de alta en ganamos → alta on-demand + reintento (misma referencia = idempotente).
     if (!r.ok && r.errorCode === "PLAYER_NOT_FOUND") {
-      await casinoRegister({ usuario: casinoUsername, password: REGISTER_PASSWORD });
-      r = await casinoCredit({ usuario: casinoUsername, monto: dep.amount, referencia });
+      await casinoRegister({ usuario: casinoUsername, password: REGISTER_PASSWORD }, creds);
+      r = await casinoCredit({ usuario: casinoUsername, monto: dep.amount, referencia }, creds);
     }
 
     if (r.ok) {
@@ -159,7 +188,8 @@ export async function creditDepositInCasino(dep: Op, casinoUsername: string): Pr
 
 // Debita en ganamos un retiro YA APROBADO por el operador. Idempotente por `wd-<id>`.
 export async function debitWithdrawalInCasino(w: Op, casinoUsername: string): Promise<void> {
-  if (!casinoPartnerEnabled()) return;
+  const creds = await resolveCasinoCreds(w.userId);
+  if (!creds) return; // la cuenta no tiene casino
   try {
     const referencia = `wd-${w.id}`;
     const existing = await prisma.casinoTx.findUnique({ where: { referencia } });
@@ -172,7 +202,7 @@ export async function debitWithdrawalInCasino(w: Op, casinoUsername: string): Pr
       });
     }
 
-    const r = await casinoDebit({ usuario: casinoUsername, monto: w.amount, referencia });
+    const r = await casinoDebit({ usuario: casinoUsername, monto: w.amount, referencia }, creds);
     if (r.ok) {
       // Eduardo no devuelve txId; guardamos el saldo resultante en txId como referencia útil de auditoría.
       await prisma.casinoTx.update({ where: { referencia }, data: { status: "completed", txId: typeof r.saldo === "number" ? `saldo:${r.saldo}` : null, errorCode: null } });

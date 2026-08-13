@@ -52,6 +52,8 @@ model User {
   brandName       String?
   logoUrl         String?
   notifSoundUrl   String?   // sonido custom del panel al llegar un mensaje nuevo (URL de un BrandingAsset)
+  casinoApiKey    String?   // API key del partner-api del casino de ESTA cuenta (cifrada). Si está, la
+                            // cuenta opera su propio tenant; si no, cae a la key global del .env (legacy).
   primaryColor    String?
   accentColor     String?
   chatTheme       String    @default("whatsapp") // diseño de la PWA del chat: whatsapp | midnight

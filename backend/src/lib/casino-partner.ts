@@ -14,8 +14,14 @@ import axios from "axios";
 const BASE = (process.env.CASINO_API_URL ?? "").replace(/\/$/, "");
 const KEY = process.env.CASINO_API_KEY ?? "";
 
-export function casinoPartnerEnabled(): boolean {
-  return Boolean(BASE && KEY);
+// Credenciales del casino de UNA cuenta (multi-tenant): base + key. Si no se pasan, se usan las del .env
+// (legacy single-tenant). El resolver por cuenta vive en casino-cashier (resolveCasinoCreds).
+export interface CasinoCreds { baseUrl: string; key: string }
+const effBase = (c?: CasinoCreds): string => (c?.baseUrl ?? BASE).replace(/\/$/, "");
+const effKey = (c?: CasinoCreds): string => c?.key ?? KEY;
+
+export function casinoPartnerEnabled(creds?: CasinoCreds): boolean {
+  return Boolean(effBase(creds) && effKey(creds));
 }
 
 export interface PartnerResult {
@@ -38,18 +44,18 @@ export interface PartnerResult {
   retryable: boolean;
 }
 
-async function call(path: string, method: "post" | "get", payload: Record<string, unknown>): Promise<PartnerResult> {
-  if (!casinoPartnerEnabled()) {
+async function call(path: string, method: "post" | "get", payload: Record<string, unknown>, creds?: CasinoCreds): Promise<PartnerResult> {
+  if (!casinoPartnerEnabled(creds)) {
     return { ok: false, errorCode: "not_configured", errorMessage: "CASINO_API_URL/KEY no configurados", retryable: false };
   }
   const referencia = typeof payload.referencia === "string" ? payload.referencia : undefined;
   try {
     const res = await axios.request({
-      url: `${BASE}${path}`,
+      url: `${effBase(creds)}${path}`,
       method,
       ...(method === "post" ? { data: payload } : { params: payload }),
       headers: {
-        Authorization: `Bearer ${KEY}`,
+        Authorization: `Bearer ${effKey(creds)}`,
         "Content-Type": "application/json",
         ...(referencia ? { "Idempotency-Key": referencia } : {}),
       },
@@ -94,23 +100,23 @@ async function call(path: string, method: "post" | "get", payload: Record<string
 
 // ALTA del jugador en ganamos. Devuelve `playerId`. Si el usuario ya existe, Eduardo responde failed
 // (ej. "username-taken") → se puede seguir operando con ese mismo usuario igual.
-export async function casinoRegister(args: { usuario: string; password: string }): Promise<PartnerResult> {
-  return call("/register", "post", { usuario: args.usuario, password: args.password });
+export async function casinoRegister(args: { usuario: string; password: string }, creds?: CasinoCreds): Promise<PartnerResult> {
+  return call("/register", "post", { usuario: args.usuario, password: args.password }, creds);
 }
 
 // CARGA: acredita fichas al jugador. `monto` entero en ARS. Si da PLAYER_NOT_FOUND → registrar primero.
-export async function casinoCredit(args: { usuario: string; monto: number; referencia: string }): Promise<PartnerResult> {
-  return call("/credit", "post", { usuario: args.usuario, monto: args.monto, referencia: args.referencia });
+export async function casinoCredit(args: { usuario: string; monto: number; referencia: string }, creds?: CasinoCreds): Promise<PartnerResult> {
+  return call("/credit", "post", { usuario: args.usuario, monto: args.monto, referencia: args.referencia }, creds);
 }
 
 // DESCARGA: debita fichas del jugador.
-export async function casinoDebit(args: { usuario: string; monto: number; referencia: string }): Promise<PartnerResult> {
-  return call("/debit", "post", { usuario: args.usuario, monto: args.monto, referencia: args.referencia });
+export async function casinoDebit(args: { usuario: string; monto: number; referencia: string }, creds?: CasinoCreds): Promise<PartnerResult> {
+  return call("/debit", "post", { usuario: args.usuario, monto: args.monto, referencia: args.referencia }, creds);
 }
 
 // SALDO del jugador. `existe:false` = el jugador no está dado de alta en ganamos.
-export async function casinoBalance(usuario: string): Promise<PartnerResult> {
-  return call("/balance", "get", { usuario });
+export async function casinoBalance(usuario: string, creds?: CasinoCreds): Promise<PartnerResult> {
+  return call("/balance", "get", { usuario }, creds);
 }
 
 // CVU de la recaudadora (modelo B): a dónde transfiere el jugador. FIJO y compartido — ganamos matchea
@@ -126,10 +132,10 @@ export interface CvuInfo {
   errorCode?: string;
   httpStatus?: number;
 }
-export async function casinoCvu(): Promise<CvuInfo> {
-  if (!casinoPartnerEnabled()) return { ok: false, errorCode: "not_configured" };
+export async function casinoCvu(creds?: CasinoCreds): Promise<CvuInfo> {
+  if (!casinoPartnerEnabled(creds)) return { ok: false, errorCode: "not_configured" };
   try {
-    const res = await axios.get(`${BASE}/cvu`, { headers: { Authorization: `Bearer ${KEY}` }, timeout: 10000, validateStatus: () => true });
+    const res = await axios.get(`${effBase(creds)}/cvu`, { headers: { Authorization: `Bearer ${effKey(creds)}` }, timeout: 10000, validateStatus: () => true });
     const d = (res.data ?? {}) as Record<string, unknown>;
     const s = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
     if (res.status === 200 && d.ok === true && s(d.cvu)) {
@@ -156,7 +162,7 @@ export async function casinoIntent(args: {
   cuit?: string | null;
   remitente?: string | null;
   codigoOperacion?: string | null; // código/N° de transferencia (matcheo exacto si el OCR lo lee)
-}): Promise<PartnerResult> {
+}, creds?: CasinoCreds): Promise<PartnerResult> {
   return call("/intent", "post", {
     usuario: args.usuario,
     monto: args.monto,
@@ -166,5 +172,5 @@ export async function casinoIntent(args: {
     ...(args.cuit ? { cuit: args.cuit } : {}),
     ...(args.remitente ? { remitente: args.remitente } : {}),
     ...(args.codigoOperacion ? { codigoOperacion: args.codigoOperacion } : {}),
-  });
+  }, creds);
 }

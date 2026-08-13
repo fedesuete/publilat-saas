@@ -16,9 +16,8 @@ import { pushEnabled, publicVapidKey, enqueuePlayerPush, enqueueAccountBroadcast
 import { s3Enabled } from "../lib/s3.js";
 import { runChatBot } from "../lib/chat-bot.js";
 import { canOperateChat, consumeChatDayAndActivate, getAvailableDays } from "../lib/access.js";
-import { creditDepositInCasino, debitWithdrawalInCasino, sendDepositIntent, casinoLiveForAccount, ensureCasinoUser, casinoPlayerPassword } from "../lib/casino-cashier.js"; // puente ganamos (flag)
+import { creditDepositInCasino, debitWithdrawalInCasino, sendDepositIntent, casinoLiveForAccount, casinoCvuForAccount, ensureCasinoUser, casinoPlayerPassword } from "../lib/casino-cashier.js"; // puente casino (key por cuenta)
 import { verifyPartnerSignature, isCallbackTimestampFresh } from "../lib/casino-callback.js"; // firma del callback (modelo B)
-import { casinoCvu } from "../lib/casino-partner.js"; // CVU de la recaudadora (modelo B)
 import { notify } from "../lib/notifications.js"; // aviso al operador (campana) ante montos ambiguos
 
 // Router del OPERADOR (se monta bajo requireAuth): gestión de links de invitación.
@@ -694,10 +693,10 @@ chatPublicRouter.post("/me/deposit/help", requireChatClient, async (req, res) =>
   // usuario en ganamos y mostramos el CVU de la recaudadora (endpoint /cvu, no los datos manuales). El
   // crédito lo dispara el comprobante que sube el jugador (→ intent → callback). Si el alta o el CVU
   // fallan, avisamos y NO lo mandamos a transferir a ciegas (cuenta muerta o sin usuario en ganamos).
-  if (casinoLiveForAccount(req.accountId!)) {
+  if (await casinoLiveForAccount(req.accountId!)) {
     const player = await prisma.chatPlayer.findUnique({ where: { id: req.chatPlayerId! }, select: { casinoUsername: true } });
-    const u = player ? await ensureCasinoUser(player.casinoUsername) : { ok: false, errorCode: "sin_jugador" };
-    const cvu = u.ok ? await casinoCvu() : { ok: false as const, errorCode: u.errorCode };
+    const u = player ? await ensureCasinoUser(req.accountId!, player.casinoUsername) : { ok: false, errorCode: "sin_jugador" };
+    const cvu = u.ok ? await casinoCvuForAccount(req.accountId!) : { ok: false as const, errorCode: u.errorCode };
     if (!u.ok || !cvu.ok) {
       const errBody = "En este momento no podemos procesar cargas 😔. Probá de nuevo en unos minutos.";
       const em = await prisma.chatMessage.create({ data: { userId: req.accountId!, conversationId: conv.id, senderType: "system", body: errBody, metadata: { bot: true, alert: true } }, select: { id: true, senderType: true, body: true, createdAt: true } });
@@ -1404,7 +1403,7 @@ async function postCargaCreds(userId: string, playerId: string) {
   ]);
   if (!player || !conv) return;
   const username = player.casinoUsername;
-  const clave = casinoLiveForAccount(userId) ? casinoPlayerPassword() : null;
+  const clave = (await casinoLiveForAccount(userId)) ? casinoPlayerPassword() : null;
   const url = acc?.chatPlatformUrl?.trim() || null;
   const lines = ["¡Listo, ya podés jugar! 🎰 Tus datos para entrar:", "", `👤 Usuario: ${username}`];
   if (clave) lines.push(`🔑 Clave: ${clave}`);
@@ -1488,7 +1487,7 @@ chatPublicRouter.post("/me/deposit", requireChatClient, async (req, res) => {
   emitChat(`chat:${req.accountId}`, "chat:cashier", { type: "deposit", id: dep.id });
   // Con modelo B (auto-carga) seteamos la expectativa de tiempo: la acreditación es automática pero puede
   // demorar hasta ~1 min (worker frío del socio). Sin B, lo verifica el operador (no prometemos tiempo).
-  const cargaMsg = casinoLiveForAccount(req.accountId!)
+  const cargaMsg = (await casinoLiveForAccount(req.accountId!))
     ? `🧾 Recibimos tu carga de ${ars(dep.amount)}. La estamos acreditando — puede demorar hasta 1 minuto. 🙌`
     : `🧾 Registraste una carga de ${ars(dep.amount)} (${dep.method}). La estamos verificando.`;
   await postCashierMsg(req.accountId!, req.chatPlayerId!, cargaMsg, "player").catch(() => undefined);
