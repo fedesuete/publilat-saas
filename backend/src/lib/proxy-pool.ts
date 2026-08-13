@@ -24,8 +24,11 @@ function newSession(): string {
 // Sesión sticky ESTABLE derivada del id de la línea: la MISMA línea → la MISMA session → la MISMA IP
 // residencial AR persistente (IPRoyal, lifetime 7d). NO cambia entre reasignaciones/reinicios (a
 // diferencia de newSession(), que da una IP nueva cada vez). Solo hex (compat con cualquier proxy).
-function stableSession(lineId: string): string {
-  return crypto.createHash("sha256").update(`iproyal:${lineId}`).digest("hex").slice(0, 16);
+// `attempt` (Fase 2): candidato alternativo, también determinista, para cuando la IP del intento 0 no
+// sale por AR o no es estable → probamos otra sin perder la propiedad "estable por línea".
+function stableSession(lineId: string, attempt = 0): string {
+  const salt = attempt > 0 ? `:${attempt}` : "";
+  return crypto.createHash("sha256").update(`iproyal:${lineId}${salt}`).digest("hex").slice(0, 16);
 }
 
 // Proveedor MÓVIL de DataImpulse: pool CHICO (~80 IPs AR) = tier PREMIUM, NO pool de masa. El
@@ -182,11 +185,16 @@ export async function assignProxyPreferred(lineId: string): Promise<{ ok: boolea
   return assignProxy(lineId, { excludeProviders: reservedProviders() }); // cualquier sano de volumen; nunca móvil ni IPRoyal (reservados)
 }
 
-// Asigna la línea al proxy IPRoyal residencial AR con su sesión sticky ESTABLE (test shadow). El
-// auto-asignar general nunca elige IPRoyal (reservado) → esto NO toca las 9 líneas viejas. La Fase 6 lo
-// usa para levantar las 2-3 líneas de prueba. Requiere el proxy IPRoyal cargado y sano en el pool.
-export async function assignIproyalProxy(lineId: string): Promise<{ ok: boolean; proxyId?: string; reason?: string }> {
-  return assignProxy(lineId, { provider: IPROYAL_PROVIDER });
+// Asigna la línea al proxy IPRoyal residencial AR con su sesión sticky ESTABLE y VERIFICA país/IP
+// (Fase 2) antes de darla por buena. El auto-asignar general nunca elige IPRoyal (reservado) → esto NO
+// toca las 9 líneas viejas. La Fase 6 lo usa para levantar las 2-3 líneas de prueba. Requiere el proxy
+// IPRoyal cargado y sano en el pool. Si no sale por AR estable, la línea queda waiting_proxy (verify).
+export async function assignIproyalProxy(lineId: string): Promise<{ ok: boolean; proxyId?: string; ip?: string; reason?: string }> {
+  const a = await assignProxy(lineId, { provider: IPROYAL_PROVIDER });
+  if (!a.ok) return a;
+  const v = await verifyIproyalLine(lineId);
+  if (!v.ok) return { ok: false, proxyId: a.proxyId, reason: v.reason ?? "verify_failed" };
+  return { ok: true, proxyId: a.proxyId, ip: v.ip };
 }
 
 // Fallback JERÁRQUICO (watchdog, Fase 4): 1) otra IP del MISMO proveedor, 2) proveedor de CONTINGENCIA
@@ -383,6 +391,76 @@ export async function probeProxy(proxy: Proxy, timeoutMs = 9_000): Promise<{ ok:
   } catch {
     return { ok: false };
   }
+}
+
+// FASE 2 — probe de IP + PAÍS por un proxy AUTENTICADO DIRECTO (como conecta Baileys/NOWEB: CONNECT
+// con Proxy-Authorization al gateway, sin túnel local). Pega a ipinfo.io/json → { ip, country(ISO2) }.
+// Valida la MISMA session sticky que usará la línea. Best-effort: cualquier fallo = { ok:false }.
+function probeIpCountry(cfg: ProxyConfig, timeoutMs = 9_000): Promise<{ ok: boolean; ip?: string; country?: string }> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (v: { ok: boolean; ip?: string; country?: string }) => { if (!settled) { settled = true; resolve(v); } };
+    const target = "ipinfo.io";
+    const auth = cfg.username ? "Basic " + Buffer.from(`${cfg.username}:${cfg.password ?? ""}`).toString("base64") : undefined;
+    const req = http.request({
+      host: cfg.host, port: Number(cfg.port), method: "CONNECT", path: `${target}:443`, timeout: timeoutMs,
+      headers: auth ? { "Proxy-Authorization": auth } : {},
+    });
+    const timer = setTimeout(() => { try { req.destroy(); } catch { /* noop */ } finish({ ok: false }); }, timeoutMs);
+    req.on("connect", (res, socket) => {
+      if (res.statusCode !== 200) { clearTimeout(timer); try { socket.destroy(); } catch { /* noop */ } return finish({ ok: false }); }
+      const t = tls.connect({ socket, servername: target }, () => {
+        t.write(`GET /json HTTP/1.1\r\nHost: ${target}\r\nUser-Agent: curl/8\r\nAccept: application/json\r\nConnection: close\r\n\r\n`);
+      });
+      let data = "";
+      t.on("data", (d) => (data += d.toString()));
+      t.on("end", () => {
+        clearTimeout(timer);
+        const body = data.split("\r\n\r\n").slice(1).join("\r\n\r\n");
+        const ip = body.match(/"ip"\s*:\s*"([^"]+)"/)?.[1];
+        const country = body.match(/"country"\s*:\s*"([^"]+)"/)?.[1];
+        finish(ip ? { ok: true, ip, country } : { ok: false });
+      });
+      t.on("error", () => { clearTimeout(timer); finish({ ok: false }); });
+    });
+    req.on("timeout", () => { try { req.destroy(); } catch { /* noop */ } finish({ ok: false }); });
+    req.on("error", () => { clearTimeout(timer); finish({ ok: false }); });
+    req.end();
+  });
+}
+
+// FASE 2 — al asignar IPRoyal a una línea, verifica que sale por Argentina y que la IP es ESTABLE
+// (2 requests → misma IP = sticky OK). Si un candidato no es AR o no es estable, prueba OTRA session
+// determinista (attempt++) y PERSISTE en la línea la primera que sirve. Si ninguna sirve en `maxAttempts`,
+// deja la línea en waiting_proxy (no conecta por una IP no-AR/inestable). Devuelve la IP AR final.
+export async function verifyIproyalLine(lineId: string, maxAttempts = 4): Promise<{ ok: boolean; ip?: string; country?: string; reason?: string }> {
+  const line = await prisma.waLine.findUnique({ where: { id: lineId }, select: { proxyId: true, provider: true } });
+  if (!line || line.provider === "cloud" || !line.proxyId) return { ok: false, reason: "no_proxy" };
+  const proxy = await prisma.proxy.findUnique({ where: { id: line.proxyId } });
+  if (!proxy || !isIproyal(proxy.provider)) return { ok: false, reason: "not_iproyal" };
+  const wantCc = (proxy.country || "ar").toLowerCase();
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const session = stableSession(lineId, attempt);
+    let cfg: ProxyConfig;
+    try { cfg = buildProxyConfig(proxy, session); } catch { break; }
+    const r1 = await probeIpCountry(cfg);
+    if (!r1.ok || !r1.ip) { await logProxyEvent(lineId, proxy.id, "proxy_unhealthy", `iproyal probe falló (intento ${attempt})`); continue; }
+    if ((r1.country ?? "").toLowerCase() !== wantCc) {
+      await logProxyEvent(lineId, proxy.id, "proxy_unhealthy", `iproyal país=${r1.country ?? "?"} != ${wantCc} ip=${r1.ip} (intento ${attempt})`);
+      continue;
+    }
+    const r2 = await probeIpCountry(cfg); // 2ª request: misma IP = sticky estable
+    if (!r2.ok || r2.ip !== r1.ip) {
+      await logProxyEvent(lineId, proxy.id, "proxy_unhealthy", `iproyal IP inestable ${r1.ip}->${r2.ip ?? "?"} (intento ${attempt})`);
+      continue;
+    }
+    // OK: país AR + IP estable → persistimos ESTA session como la de la línea (queda fija por línea).
+    await prisma.waLine.update({ where: { id: lineId }, data: { proxySession: session, proxyWait: false } }).catch(() => undefined);
+    await logProxyEvent(lineId, proxy.id, "assigned", `iproyal OK ip=${r1.ip} country=${r1.country} session=${session}`);
+    return { ok: true, ip: r1.ip, country: r1.country };
+  }
+  await setLineWaitingProxy(lineId, `iproyal: sin IP AR estable tras ${maxAttempts} intentos`);
+  return { ok: false, reason: "no_stable_ar" };
 }
 
 // Libera el proxy de una línea (al banear el número): el cupo queda para otra línea.
