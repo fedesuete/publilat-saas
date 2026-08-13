@@ -21,11 +21,27 @@ function newSession(): string {
   return crypto.randomBytes(6).toString("hex");
 }
 
+// Sesión sticky ESTABLE derivada del id de la línea: la MISMA línea → la MISMA session → la MISMA IP
+// residencial AR persistente (IPRoyal, lifetime 7d). NO cambia entre reasignaciones/reinicios (a
+// diferencia de newSession(), que da una IP nueva cada vez). Solo hex (compat con cualquier proxy).
+function stableSession(lineId: string): string {
+  return crypto.createHash("sha256").update(`iproyal:${lineId}`).digest("hex").slice(0, 16);
+}
+
 // Proveedor MÓVIL de DataImpulse: pool CHICO (~80 IPs AR) = tier PREMIUM, NO pool de masa. El
 // auto-asignar general NUNCA lo usa; se reserva para líneas de alto valor (asignación manual admin).
 export const MOBILE_PROVIDER = "dataimpulse_mobile";
 // Ambos planes de DataImpulse (residencial y móvil) usan el MISMO formato de username sticky.
 const isDataImpulse = (provider: string) => provider === "dataimpulse" || provider === MOBILE_PROVIDER;
+
+// IPRoyal RESIDENCIAL Argentina, sticky por LÍNEA hasta 7 días. A diferencia de DataImpulse/Webshare,
+// el país + la sesión sticky + el lifetime van en la PASSWORD (no en el username): la IP AR sólo cambia
+// cuando el peer se cae, NO por timer → mata el flapping. La session es ESTABLE por línea (stableSession).
+export const IPROYAL_PROVIDER = "iproyal_residential_ar";
+const isIproyal = (provider: string) => provider === IPROYAL_PROVIDER;
+// Proveedores RESERVADOS: el auto-asignar general NUNCA los elige (se asignan por su flujo dedicado).
+// MÓVIL = premium chico (manual admin); IPRoyal = test shadow, AISLADO de las 9 líneas viejas.
+function reservedProviders(): string[] { return [MOBILE_PROVIDER, IPROYAL_PROVIDER]; }
 
 // Arma el ProxyConfig para el motor (Evolution/WAHA), con el username sticky del proveedor.
 // DataImpulse (confirmado en docs.dataimpulse.com): LOGIN__cr.<país>;sessid.<sesión> en el puerto
@@ -33,8 +49,17 @@ const isDataImpulse = (provider: string) => provider === "dataimpulse" || provid
 // fija; mandarlo rompe la auth). Una sesión ÚNICA por línea ⇒ una IP única por línea.
 export function buildProxyConfig(proxy: Proxy, session: string | null): ProxyConfig {
   let username = proxy.username;
+  let password = decryptSecret(proxy.password);
   const sess = session ?? "";
-  if (isDataImpulse(proxy.provider)) {
+  if (isIproyal(proxy.provider)) {
+    // IPRoyal residencial: país + sticky (session) + lifetime van en la PASSWORD, no en el username.
+    // password = <base>_country-<cc>_session-<sess>_lifetime-7d  → IP AR persistente por línea.
+    // Sin session sticky (ej. healthcheck): sólo el país (IP AR rotativa, para validar la cuenta).
+    const cc = (proxy.country || "ar").toLowerCase();
+    password = proxy.sticky && sess
+      ? `${password}_country-${cc}_session-${sess}_lifetime-7d`
+      : `${password}_country-${cc}`;
+  } else if (isDataImpulse(proxy.provider)) {
     if (proxy.country) username += `__cr.${proxy.country.toLowerCase()}`;
     if (proxy.sticky && sess) username += `;sessid.${sess}`;
   } else if (proxy.sticky && sess) {
@@ -46,7 +71,7 @@ export function buildProxyConfig(proxy: Proxy, session: string | null): ProxyCon
     port: String(proxy.port),
     protocol: proxy.protocol,
     username,
-    password: decryptSecret(proxy.password),
+    password,
   };
 }
 
@@ -103,7 +128,7 @@ export function primaryProvider(): string {
   return (process.env.PROXY_PRIMARY_PROVIDER ?? "webshare").trim().toLowerCase();
 }
 
-export interface AssignOpts { excludeProxyId?: string; provider?: string; excludeProvider?: string }
+export interface AssignOpts { excludeProxyId?: string; provider?: string; excludeProvider?: string; excludeProviders?: string[] }
 
 // Asigna a la línea el proxy active+healthy con MENOS líneas (least-loaded, respeta maxLines) y le
 // genera su sesión sticky única. Filtros opcionales: excluir un proxy, exigir/excluir un proveedor
@@ -120,8 +145,9 @@ export async function assignProxy(lineId: string, opts: AssignOpts = {}): Promis
       ...(opts.excludeProxyId ? { id: { not: opts.excludeProxyId } } : {}),
       ...(opts.provider ? { provider: opts.provider } : {}),
       ...(opts.excludeProvider ? { provider: { not: opts.excludeProvider } } : {}),
+      ...(opts.excludeProviders?.length ? { provider: { notIn: opts.excludeProviders } } : {}),
     },
-    select: { id: true, maxLines: true, _count: { select: { lines: true } } },
+    select: { id: true, provider: true, maxLines: true, _count: { select: { lines: true } } },
   });
   const withCap = proxies
     .filter((p) => p._count.lines < p.maxLines)
@@ -137,7 +163,8 @@ export async function assignProxy(lineId: string, opts: AssignOpts = {}): Promis
     return { ok: false, reason: "pool_full" };
   }
   const chosen = withCap[0];
-  const session = newSession();
+  // IPRoyal: sesión ESTABLE por línea (misma IP AR persistente). El resto: sesión nueva (una IP por línea).
+  const session = isIproyal(chosen.provider) ? stableSession(lineId) : newSession();
   await prisma.waLine.update({
     where: { id: lineId },
     data: { proxyId: chosen.id, proxySession: session, proxyAssignedAt: new Date() },
@@ -152,7 +179,14 @@ export async function assignProxy(lineId: string, opts: AssignOpts = {}): Promis
 export async function assignProxyPreferred(lineId: string): Promise<{ ok: boolean; proxyId?: string; reason?: string }> {
   const primary = await assignProxy(lineId, { provider: primaryProvider() });
   if (primary.ok) return primary;
-  return assignProxy(lineId, { excludeProvider: MOBILE_PROVIDER }); // cualquier sano de volumen, nunca el móvil
+  return assignProxy(lineId, { excludeProviders: reservedProviders() }); // cualquier sano de volumen; nunca móvil ni IPRoyal (reservados)
+}
+
+// Asigna la línea al proxy IPRoyal residencial AR con su sesión sticky ESTABLE (test shadow). El
+// auto-asignar general nunca elige IPRoyal (reservado) → esto NO toca las 9 líneas viejas. La Fase 6 lo
+// usa para levantar las 2-3 líneas de prueba. Requiere el proxy IPRoyal cargado y sano en el pool.
+export async function assignIproyalProxy(lineId: string): Promise<{ ok: boolean; proxyId?: string; reason?: string }> {
+  return assignProxy(lineId, { provider: IPROYAL_PROVIDER });
 }
 
 // Fallback JERÁRQUICO (watchdog, Fase 4): 1) otra IP del MISMO proveedor, 2) proveedor de CONTINGENCIA
@@ -167,8 +201,9 @@ export async function assignFallback(lineId: string, curProxyId: string | null):
   const onMobile = curProvider === MOBILE_PROVIDER;
   const exclude = curProxyId ?? undefined;
   // Una línea de VOLUMEN nunca cae al pool MÓVIL (chico/premium). Una que YA está en móvil sí puede
-  // caer a volumen como último recurso (mejor conectada por otra IP que esperando).
-  const volumeOnly = onMobile ? {} : { excludeProvider: MOBILE_PROVIDER };
+  // caer a volumen como último recurso (mejor conectada por otra IP que esperando). IPRoyal queda
+  // SIEMPRE excluido (reservado al test shadow) — jamás lo hereda una línea vieja por fallback.
+  const volumeOnly = onMobile ? { excludeProviders: [IPROYAL_PROVIDER] } : { excludeProviders: reservedProviders() };
   if (curProvider) {
     const same = await assignProxy(lineId, { excludeProxyId: exclude, provider: curProvider });
     if (same.ok) return same;
