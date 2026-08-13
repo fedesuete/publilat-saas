@@ -426,12 +426,30 @@ model ProxyEvent {
   id        String   @id @default(cuid())
   lineId    String
   proxyId   String?
-  type      String   // assigned | rotated | line_down | reconnected | banned | proxy_unhealthy
+  type      String   // assigned | rotated | line_down | reconnected | banned | proxy_unhealthy | unstable
   detail    String?
   createdAt DateTime @default(now())
 
   @@index([lineId])
   @@index([createdAt])
+}
+
+// Monitor de estabilidad de proxy (Fase 4, test IPRoyal). Un sample cada 5 min por línea de prueba:
+// IP de salida por su proxy + estado de la sesión + errores + flaps (reconexiones desde el sample
+// anterior). Con esto se mide en 24h cuántas veces cambia/cae la IP por línea. Aditivo, aislado.
+model ProxyHealthSample {
+  id           String   @id @default(cuid())
+  lineId       String
+  proxyId      String?
+  ip           String?  // IP pública de salida vista por el proxy (null = no salió a internet)
+  country      String?  // ISO2 (esperado AR)
+  ipChanged    Boolean  @default(false) // la IP difiere del sample anterior
+  sessionState String?  // WORKING | STARTING | SCAN_QR_CODE | FAILED | STOPPED | open | close | ...
+  errorCode    String?  // none | disconnected | 515_restricted | probe_fail
+  flaps        Int      @default(0)     // reconexiones contadas desde el sample anterior
+  createdAt    DateTime @default(now())
+
+  @@index([lineId, createdAt])
 }
 
 // Crédito prepago: "días disponibles" (1 día = 1 línea activa 24h).

@@ -14,13 +14,24 @@ const COOLDOWN_MS = 2 * 60 * 60 * 1000; // no auto-rotar la misma línea más de
 const buckets = new Map<string, number[]>(); // lineId -> timestamps de reconexión
 const lastRotate = new Map<string, number>(); // lineId -> ts del último auto-rotate
 
+// FASE 4 (monitor) — flaps por línea desde el último sample. Independiente del autorotate: cuenta SIEMPRE
+// (aunque PROXY_AUTOROTATE esté off), para medir la estabilidad. El sample de 5 min lo lee y resetea.
+const monitorFlaps = new Map<string, number>();
+export function takeMonitorFlaps(lineId: string): number {
+  const n = monitorFlaps.get(lineId) ?? 0;
+  monitorFlaps.set(lineId, 0);
+  return n;
+}
+
 function enabled(): boolean {
   return (process.env.PROXY_AUTOROTATE ?? "on").trim().toLowerCase() !== "off";
 }
 
 // Se llama en CADA connection.update donde la línea NO quedó conectada (drop/reconnecting). Best-effort.
 export function recordProxyFlap(line: { id: string; proxyId: string | null }): void {
-  if (!enabled() || !line.proxyId) return; // sin proxy gestionado no hay nada que rotar
+  if (!line.proxyId) return; // sin proxy gestionado no hay nada que medir ni rotar
+  monitorFlaps.set(line.id, (monitorFlaps.get(line.id) ?? 0) + 1); // contador del monitor (siempre)
+  if (!enabled()) return; // autorotate apagado: contamos igual, pero no rotamos
   const now = Date.now();
   const arr = (buckets.get(line.id) ?? []).filter((t) => now - t < WINDOW_MS);
   arr.push(now);

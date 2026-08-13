@@ -648,6 +648,7 @@ export async function initQueues(): Promise<void> {
         if (job.name === "proxy-recover") return recoverProxyLine(job.data.lineId as string);
         if (job.name === "proxy-watch") return watchProxyRegistration(job.data.lineId as string, (job.data.attempt as number) ?? 1);
         if (job.name === "proxy-waiting") return recoverWaitingProxyLines();
+        if (job.name === "proxy-monitor") { const { sampleProxyHealth } = await import("./proxy-monitor.js"); return sampleProxyHealth(); }
         if (job.name === "waha-cleanup") return cleanupOrphanWahaSessions();
         if (job.name === "flow-resume") {
           const { resumeFlowRun } = await import("./flow-engine.js");
@@ -668,6 +669,7 @@ export async function initQueues(): Promise<void> {
     await queue.add("wa-version-check", {}, { repeat: { every: 43_200_000 }, jobId: "wa-version-check-repeat", removeOnComplete: true, removeOnFail: 50 });
     await queue.add("proxy-health", {}, { repeat: { every: 360_000 }, jobId: "proxy-health-repeat", removeOnComplete: true, removeOnFail: 50 });
     await queue.add("proxy-waiting", {}, { repeat: { every: 120_000 }, jobId: "proxy-waiting-repeat", removeOnComplete: true, removeOnFail: 50 });
+    await queue.add("proxy-monitor", {}, { repeat: { every: 300_000 }, jobId: "proxy-monitor-repeat", removeOnComplete: true, removeOnFail: 50 });
     await queue.add("waha-cleanup", {}, { repeat: { every: 1_800_000 }, jobId: "waha-cleanup-repeat", removeOnComplete: true, removeOnFail: 50 });
     console.log("[queue] BullMQ listo (vencimiento 60s + CAPI 5min + salud 5min + saldo 30min + versión WA Web 12h + proxies 6min + waiting_proxy 2min + limpieza WAHA 30min)");
   } catch (e) {

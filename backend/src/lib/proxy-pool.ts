@@ -463,6 +463,15 @@ export async function verifyIproyalLine(lineId: string, maxAttempts = 4): Promis
   return { ok: false, reason: "no_stable_ar" };
 }
 
+// FASE 4 (monitor) — IP + país de salida REAL de una línea por su proxy (con su sesión sticky actual),
+// sin tocar nada. Lo usa el sample cada 5 min. Devuelve { ok:false } si la línea no tiene proxy o no
+// sale a internet.
+export async function probeLineExitIp(lineId: string): Promise<{ ok: boolean; ip?: string; country?: string }> {
+  const cfg = await resolveLineProxy(lineId);
+  if (!cfg) return { ok: false };
+  return probeIpCountry(cfg);
+}
+
 // Libera el proxy de una línea (al banear el número): el cupo queda para otra línea.
 export async function releaseProxy(lineId: string): Promise<void> {
   const line = await prisma.waLine.findUnique({ where: { id: lineId }, select: { proxyId: true } });
