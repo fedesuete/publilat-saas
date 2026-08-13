@@ -32,7 +32,19 @@ export async function recoverSession(): Promise<boolean> {
     const { data } = await api.get<{ token: string; accountSlug: string | null }>("/api/chat/session");
     if (!data?.token) return false;
     setToken(data.token);
-    if (data.accountSlug) localStorage.setItem("publilat_session_slug", data.accountSlug);
+    if (data.accountSlug) {
+      localStorage.setItem("publilat_session_slug", data.accountSlug);
+      // App instalada (storage AISLADO / vacío): si no hay branding guardado para esta cuenta, lo
+      // traemos y aplicamos por el slug de sesión. Sin esto la app instalada arranca con el estilo
+      // default (verde) en vez de la marca del cliente (violeta/logo). Best-effort.
+      const saved = loadBranding();
+      if (!saved || saved.accountSlug !== data.accountSlug) {
+        try {
+          const { data: pub } = await api.get<{ branding: Branding }>(`/api/chat/public/${data.accountSlug}`);
+          if (pub?.branding) { applyBranding(pub.branding); saveBranding(data.accountSlug, pub.branding); }
+        } catch { /* noop */ }
+      }
+    }
     return true;
   } catch {
     return false;

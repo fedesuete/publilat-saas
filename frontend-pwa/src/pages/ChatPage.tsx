@@ -24,7 +24,9 @@ export default function ChatPage() {
   // ícono roto. Se resetea cuando llega branding fresco del server (logo nuevo).
   const [logoBroken, setLogoBroken] = useState(false);
   useEffect(() => {
-    const slug = branding?.accountSlug;
+    // Fallback al slug de sesión: en la app instalada (storage aislado) loadBranding() puede venir
+    // vacío, pero recoverSession dejó el slug de la cuenta → igual traemos y aplicamos la marca.
+    const slug = branding?.accountSlug || localStorage.getItem("publilat_session_slug") || undefined;
     if (!slug) return;
     api.get<{ branding: Branding }>(`/api/chat/public/${slug}`)
       .then(({ data }) => { if (data?.branding) { applyBranding(data.branding); saveBranding(slug, data.branding); setBranding({ accountSlug: slug, ...data.branding }); setLogoBroken(false); } })

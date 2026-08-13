@@ -67,7 +67,10 @@ async function boot() {
   // no hay cookie válida, /session responde 401 al toque y seguimos como visitante sin sesión.
   // Si YA hay token, igual pegamos a /session en segundo plano: renueva/backfillea la cookie httpOnly
   // (los jugadores que ya estaban logueados aún no la tienen) y hace rodar la sesión otros 90 días.
-  if (!getToken()) await recoverSession();
+  // Sin token: recuperar sesión ANTES de pintar (evita duplicar cuenta). Con token pero SIN branding
+  // guardado (app instalada, storage aislado): también esperamos, así recoverSession resuelve el slug
+  // de sesión y aplica la marca del cliente antes de pintar (si no, arranca con el estilo default).
+  if (!getToken() || !loadBranding()) await recoverSession();
   else void recoverSession();
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
