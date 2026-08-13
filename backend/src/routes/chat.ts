@@ -1675,10 +1675,11 @@ chatPublicRouter.post("/pay/webhook", async (req, res) => {
       await applyCasinoCallbackCredit(depositId, referencia, typeof b.movementId === "string" ? b.movementId : null);
     } else if (status === "failed" || status === "expired") {
       await failCasinoCallbackDeposit(depositId, referencia, status, typeof b.error === "string" ? b.error : null);
-    } else if (status === "unknown" || status === "queued") {
-      // queued = ganamos aún no aplicó; unknown = no sabe si aplicó (timeout/proxy). NO acreditamos y NO
-      // reemitimos con otra referencia (cargaría dos veces). Esperamos el callback FINAL (credited/failed/
-      // expired) o se consulta GET /intent?referencia=X. Ackeamos 200 para no reintentar el intermedio.
+    } else if (status === "unknown" || status === "queued" || status === "ambiguous") {
+      // Estados INTERMEDIOS (contrato del socio, confirmado 2026-08-13): queued = aún no aplicó; unknown =
+      // no sabe si aplicó (timeout/proxy); ambiguous = no pudo confirmar. NO acreditamos y NO reemitimos con
+      // otra referencia (cargaría dos veces). Esperamos el callback FINAL (credited/failed/expired) o se
+      // consulta GET /intent?referencia=X. Ackeamos 200 para no reintentar el intermedio.
       console.warn(`[pay/webhook] status "${status}" para ${referencia} — no acredito, espero el estado final`);
     }
     return res.json({ ok: true }); // 2xx = procesado (idempotente). Si devolvemos != 2xx, Eduardo reintenta.

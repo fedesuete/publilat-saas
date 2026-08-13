@@ -55,21 +55,9 @@ export default function SetupPage() {
   const [pwError, setPwError] = useState<string | null>(null);
   const [pwOk, setPwOk] = useState(false);
 
-  // Sonido de notificación del panel: solo 2 opciones — "new" (el sonido nuevo) u "original" (el ding).
-  const [soundMode, setSoundMode] = useState<"new" | "original">("new");
-  const [soundBusy, setSoundBusy] = useState(false);
-  const [soundMsg, setSoundMsg] = useState<string | null>(null);
-  useEffect(() => { void api.get<{ mode: "new" | "original" }>("/api/setup/notif-sound").then(({ data }) => setSoundMode(data.mode)).catch(() => undefined); }, []);
-  const chooseSound = async (mode: "new" | "original") => {
-    setSoundMsg(null); setError(null); setSoundBusy(true);
-    try {
-      await api.put("/api/setup/notif-sound", { mode });
-      setSoundMode(mode);
-      setSoundMsg(mode === "new" ? "✓ Sonido nuevo activado." : "✓ Sonido original (ding) activado.");
-      window.dispatchEvent(new Event("notif-sound-changed"));
-    } catch (e) { setError(apiError(e)); } finally { setSoundBusy(false); }
-  };
-  const testNewSound = () => { try { void new Audio("/notif.mp3").play(); } catch { /* noop */ } };
+  // El sonido especial (sonido.mp3.mp3) suena SOLO cuando llega un comprobante (un cliente compra); los
+  // mensajes comunes suenan un "ding". Botón para escuchar el sonido de compra.
+  const testReceiptSound = () => { try { void new Audio("/notif.mp3").play(); } catch { /* noop */ } };
 
   const changePassword = async () => {
     setPwError(null);
@@ -266,34 +254,14 @@ export default function SetupPage() {
             {savedMsg && <p className="mt-2 text-xs text-emerald-300">{savedMsg}</p>}
           </Card>
 
-          {/* Sonido de notificación del panel */}
+          {/* Sonidos del panel */}
           <Card>
-            <div className="mb-1 text-sm font-semibold text-slate-200">🔔 Sonido de notificación</div>
-            <p className="mb-3 text-xs text-slate-500">Elegí qué sonido suena en el panel cuando entra un mensaje nuevo.</p>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                disabled={soundBusy}
-                onClick={() => void chooseSound("new")}
-                className={`rounded-md border p-3 text-left transition ${soundMode === "new" ? "border-wa-green bg-wa-green/10" : "border-slate-700 bg-slate-900/40 hover:border-slate-600"}`}
-              >
-                <div className="text-sm font-semibold text-slate-100">Sonido nuevo {soundMode === "new" && <span className="text-wa-green">✓</span>}</div>
-                <div className="mt-0.5 text-xs text-slate-500">La campana nueva (por defecto).</div>
-              </button>
-              <button
-                type="button"
-                disabled={soundBusy}
-                onClick={() => void chooseSound("original")}
-                className={`rounded-md border p-3 text-left transition ${soundMode === "original" ? "border-wa-green bg-wa-green/10" : "border-slate-700 bg-slate-900/40 hover:border-slate-600"}`}
-              >
-                <div className="text-sm font-semibold text-slate-100">Original {soundMode === "original" && <span className="text-wa-green">✓</span>}</div>
-                <div className="mt-0.5 text-xs text-slate-500">El "ding" clásico del panel.</div>
-              </button>
-            </div>
-            <div className="mt-2">
-              <Button variant="secondary" onClick={testNewSound}>▶ Escuchar el nuevo</Button>
-            </div>
-            {soundMsg && <p className="mt-2 text-xs text-emerald-300">{soundMsg}</p>}
+            <div className="mb-1 text-sm font-semibold text-slate-200">🔔 Sonidos del panel</div>
+            <p className="mb-3 text-xs text-slate-500">
+              Los mensajes comunes suenan un <b>“ding”</b> simple. Cuando un cliente manda un{" "}
+              <b>comprobante</b> (una compra), suena un <b>sonido especial</b> para que lo notes al toque.
+            </p>
+            <Button variant="secondary" onClick={testReceiptSound}>▶ Escuchar el sonido de compra</Button>
           </Card>
 
           {/* Cambiar contraseña (self-service) */}

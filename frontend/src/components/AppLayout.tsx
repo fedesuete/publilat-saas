@@ -71,16 +71,13 @@ function playPing() {
   o.stop(t + 0.34);
 }
 
-// Sonido de notificación: 2 opciones. Por DEFECTO (todas las cuentas) el archivo empaquetado /notif.mp3;
-// el operador puede elegir el "original" (ding generado) en Configuración. Si el navegador bloquea el
-// audio (autoplay), cae al ding igual.
-const defaultAudio = new Audio("/notif.mp3");
-defaultAudio.preload = "auto";
-let useOriginalDing = false; // el operador eligió el ding original en vez del sonido nuevo
-function setSoundMode(mode: "new" | "original") { useOriginalDing = mode === "original"; }
-function playPingOrCustom() {
-  if (useOriginalDing) { playPing(); return; }
-  try { defaultAudio.currentTime = 0; void defaultAudio.play().catch(() => playPing()); return; } catch { playPing(); }
+// Sonido ESPECIAL (sonido.mp3.mp3, empaquetado como /notif.mp3): suena SOLO cuando llega un comprobante
+// (la IA lo lee = un cliente compró). Los mensajes comunes suenan el "ding" simple. Si el navegador
+// bloquea el mp3 (autoplay), cae al "cha-ching" de caja.
+const receiptAudio = new Audio("/notif.mp3");
+receiptAudio.preload = "auto";
+function playReceiptSound() {
+  try { receiptAudio.currentTime = 0; void receiptAudio.play().catch(() => playCashRegister()); } catch { playCashRegister(); }
 }
 
 // "Cha-ching" de caja registradora 💰: cuando entra una imagen/PDF (comprobante de pago).
@@ -208,7 +205,7 @@ export default function AppLayout() {
   };
 
   // Sonidos + contador de no-leídos, en cualquier pantalla del panel:
-  // comprobante (imagen/PDF) = caja registradora 💰; mensaje común = ding.
+  // comprobante (imagen/PDF, un cliente compró) = sonido especial sonido.mp3.mp3; mensaje común = ding.
   useEffect(() => {
     void refreshUnread();
     // Chrome bloquea el audio hasta el primer gesto del usuario: desbloqueamos el
@@ -224,8 +221,8 @@ export default function AppLayout() {
     const socket = getSocket();
     const onMsg = (p: InboxMessagePayload) => {
       if (p.message?.direction === "in") {
-        if (looksLikeReceipt(p.message.mediaUrl)) playCashRegister();
-        else playPingOrCustom();
+        if (looksLikeReceipt(p.message.mediaUrl)) playReceiptSound();
+        else playPing();
       }
       // Refresca el contador con un pequeño debounce (los mensajes vienen en ráfaga).
       window.clearTimeout(unreadTimer.current);
@@ -240,26 +237,16 @@ export default function AppLayout() {
     };
   }, []);
 
-  // Sonido custom del panel: lo cargamos al iniciar y lo recargamos cuando el operador lo cambia en
-  // Configuración (evento "notif-sound-changed"). Sin sonido custom, suena el "ding" de siempre.
-  useEffect(() => {
-    const load = () => {
-      void api.get<{ mode: "new" | "original" }>("/api/setup/notif-sound").then(({ data }) => setSoundMode(data.mode)).catch(() => undefined);
-    };
-    load();
-    window.addEventListener("notif-sound-changed", load);
-    return () => window.removeEventListener("notif-sound-changed", load);
-  }, []);
-
   // Chat App: sonido + contador de no-leídos del operador, en CUALQUIER pantalla del panel.
   // Segundo socket al namespace /chat (cookie del operador), igual que ChatAppPage. Solo suena con
   // mensajes ENTRANTES del jugador (senderType "player") — no el eco de lo que manda el operador/bot.
   useEffect(() => {
     void refreshChatUnread();
     const socket: Socket = io(`${API_BASE}/chat`, { withCredentials: true });
-    const onChat = (p: { message?: { senderType?: string } }) => {
+    const onChat = (p: { message?: { senderType?: string; image?: string | null } }) => {
       if (p?.message?.senderType !== "player") return;
-      playPingOrCustom();
+      // Comprobante en el Chat App (el jugador manda una imagen = cargó/compró) → sonido especial; texto → ding.
+      if (p.message.image) playReceiptSound(); else playPing();
       window.clearTimeout(chatUnreadTimer.current);
       chatUnreadTimer.current = window.setTimeout(() => void refreshChatUnread(), 800);
     };
