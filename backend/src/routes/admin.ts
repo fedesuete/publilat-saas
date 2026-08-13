@@ -11,7 +11,7 @@ import { retryFailedCapi, enqueueProxyRecover } from "../lib/queue.js";
 import { hashPassword, signToken } from "../lib/auth.js";
 import { AUTH_COOKIE } from "../middleware/requireAuth.js";
 import { encryptSecret } from "../lib/crypto.js";
-import { assignProxy, rotateProxy, applyLineProxy, logProxyEvent, probeProxy, autoAssignEnabled, assignProxyPreferred, setLineWaitingProxy } from "../lib/proxy-pool.js";
+import { assignProxy, rotateProxy, applyLineProxy, logProxyEvent, probeProxy, autoAssignEnabled, assignProxyPreferred, setLineWaitingProxy, assignIproyalProxy, IPROYAL_PROVIDER } from "../lib/proxy-pool.js";
 import { buildProxyHealthSummary } from "../lib/proxy-report.js";
 import { getEngine } from "../lib/wa-engine.js";
 import { uniqueSlug } from "./auth.js";
@@ -763,12 +763,18 @@ adminRouter.post("/lines/:id/proxy", async (req, res) => {
   const proxyId = typeof req.body?.proxyId === "string" ? req.body.proxyId : null;
   let result: { ok: boolean; proxyId?: string; reason?: string };
   if (proxyId) {
-    const proxy = await prisma.proxy.findUnique({ where: { id: proxyId }, select: { active: true } });
+    const proxy = await prisma.proxy.findUnique({ where: { id: proxyId }, select: { active: true, provider: true } });
     if (!proxy || !proxy.active) return res.status(400).json({ error: "Proxy inexistente o inactivo" });
-    const session = crypto.randomBytes(6).toString("hex");
-    await prisma.waLine.update({ where: { id }, data: { proxyId, proxySession: session, proxyAssignedAt: new Date() } });
-    await logProxyEvent(id, proxyId, "assigned", "asignado por admin");
-    result = { ok: true, proxyId };
+    if (proxy.provider === IPROYAL_PROVIDER) {
+      // IPRoyal: sesión ESTABLE por línea + verificación país AR/IP (Fase 2). Si no sale por AR estable,
+      // queda waiting_proxy en vez de conectar por una IP mala. (Ignora el proxyId puntual: hay uno solo.)
+      result = await assignIproyalProxy(id);
+    } else {
+      const session = crypto.randomBytes(6).toString("hex");
+      await prisma.waLine.update({ where: { id }, data: { proxyId, proxySession: session, proxyAssignedAt: new Date() } });
+      await logProxyEvent(id, proxyId, "assigned", "asignado por admin");
+      result = { ok: true, proxyId };
+    }
   } else {
     result = await assignProxy(id);
   }
