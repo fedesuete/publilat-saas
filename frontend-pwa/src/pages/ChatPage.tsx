@@ -19,11 +19,14 @@ export default function ChatPage() {
   // Marca desde localStorage, pero la REFRESCAMOS del server al abrir para tomar cambios del
   // operador (tema/logo/colores) sin re-registrarse.
   const [branding, setBranding] = useState(loadBranding());
+  // Si el logo no carga (asset viejo/borrado/cache corrupto), mostramos el fallback limpio en vez del
+  // ícono roto. Se resetea cuando llega branding fresco del server (logo nuevo).
+  const [logoBroken, setLogoBroken] = useState(false);
   useEffect(() => {
     const slug = branding?.accountSlug;
     if (!slug) return;
     api.get<{ branding: Branding }>(`/api/chat/public/${slug}`)
-      .then(({ data }) => { if (data?.branding) { applyBranding(data.branding); saveBranding(slug, data.branding); setBranding({ accountSlug: slug, ...data.branding }); } })
+      .then(({ data }) => { if (data?.branding) { applyBranding(data.branding); saveBranding(slug, data.branding); setBranding({ accountSlug: slug, ...data.branding }); setLogoBroken(false); } })
       .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -198,7 +201,7 @@ export default function ChatPage() {
   return (
     <div className="chat-root flex h-full flex-col bg-[var(--c-bg)]" data-theme={branding?.chatTheme || "whatsapp"}>
       <header className="flex items-center gap-3 px-4 py-2.5 shadow" style={{ background: "var(--c-header)", color: "var(--c-header-text)" }}>
-        {branding?.logoUrl ? <img src={branding.logoUrl} alt="" className="h-9 w-9 rounded-full object-cover" /> : <div className="h-9 w-9 rounded-full bg-white/20" />}
+        {branding?.logoUrl && !logoBroken ? <img src={branding.logoUrl} alt="" onError={() => setLogoBroken(true)} className="h-9 w-9 rounded-full object-cover" /> : <div className="h-9 w-9 rounded-full bg-white/20" />}
         <div className="min-w-0">
           <div className="truncate font-semibold leading-tight">{branding?.brandName || "Chat"}</div>
           <div className="text-xs opacity-80">🟢 en línea</div>

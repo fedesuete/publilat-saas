@@ -1083,6 +1083,9 @@ chatPublicRouter.post("/login", async (req, res) => {
 // entrada abierta desde una landing). `active=false` = la cuenta no tiene día de WhatsApp vigente
 // -> el chat está apagado (no funciona hasta que recargue días).
 chatPublicRouter.get("/public/:slug", async (req, res) => {
+  // El branding se lee SIEMPRE fresco: sin esto el navegador podía servir una config vieja (logoUrl de
+  // un asset ya borrado) y quedaba el logo roto hasta limpiar caché. La imagen en sí es immutable por id.
+  res.set("Cache-Control", "no-store");
   const acc = await prisma.user.findUnique({
     where: { slug: req.params.slug },
     select: { id: true, slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, chatWaLink: true, chatPlatformUrl: true, chatInstallPromptEnabled: true },
