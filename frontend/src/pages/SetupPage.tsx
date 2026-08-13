@@ -55,6 +55,39 @@ export default function SetupPage() {
   const [pwError, setPwError] = useState<string | null>(null);
   const [pwOk, setPwOk] = useState(false);
 
+  // Sonido de notificación del panel (custom)
+  const [soundUrl, setSoundUrl] = useState<string | null>(null);
+  const [soundBusy, setSoundBusy] = useState(false);
+  const [soundMsg, setSoundMsg] = useState<string | null>(null);
+  useEffect(() => { void api.get<{ url: string | null }>("/api/setup/notif-sound").then(({ data }) => setSoundUrl(data.url)).catch(() => undefined); }, []);
+  const uploadSound = async (file: File) => {
+    setSoundMsg(null); setError(null);
+    if (file.size > 500 * 1024) { setError("El sonido supera 500 KB. Usá uno más corto/liviano."); return; }
+    setSoundBusy(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result));
+        r.onerror = () => reject(new Error("no se pudo leer el archivo"));
+        r.readAsDataURL(file);
+      });
+      const { data } = await api.post<{ url: string }>("/api/setup/notif-sound", { dataUrl });
+      setSoundUrl(data.url);
+      setSoundMsg("✓ Sonido guardado — ya suena con los mensajes nuevos.");
+      window.dispatchEvent(new Event("notif-sound-changed"));
+    } catch (e) { setError(apiError(e)); } finally { setSoundBusy(false); }
+  };
+  const testSound = () => { if (soundUrl) { try { void new Audio(soundUrl).play(); } catch { /* noop */ } } };
+  const removeSound = async () => {
+    setSoundBusy(true); setSoundMsg(null);
+    try {
+      await api.delete("/api/setup/notif-sound");
+      setSoundUrl(null);
+      setSoundMsg("Volviste al sonido por defecto.");
+      window.dispatchEvent(new Event("notif-sound-changed"));
+    } catch (e) { setError(apiError(e)); } finally { setSoundBusy(false); }
+  };
+
   const changePassword = async () => {
     setPwError(null);
     setPwOk(false);
@@ -248,6 +281,31 @@ export default function SetupPage() {
               {payMode !== savedPayMode && <span className="text-xs text-amber-300">Tenés cambios sin guardar</span>}
             </div>
             {savedMsg && <p className="mt-2 text-xs text-emerald-300">{savedMsg}</p>}
+          </Card>
+
+          {/* Sonido de notificación del panel */}
+          <Card>
+            <div className="mb-1 text-sm font-semibold text-slate-200">🔔 Sonido de notificación</div>
+            <p className="mb-3 text-xs text-slate-500">
+              El sonido que suena en el panel cuando entra un mensaje nuevo. Subí tu propio audio (MP3/OGG,
+              cortito, máx. 500 KB). {soundUrl ? "Tenés un sonido custom cargado." : "Ahora usás el sonido por defecto."}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className={`cursor-pointer rounded-md border border-slate-700 bg-slate-900/40 px-3 py-2 text-sm text-slate-200 hover:border-slate-600 ${soundBusy ? "opacity-50" : ""}`}>
+                {soundBusy ? "Subiendo…" : "📤 Subir sonido"}
+                <input
+                  type="file"
+                  accept="audio/*"
+                  className="hidden"
+                  disabled={soundBusy}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadSound(f); e.currentTarget.value = ""; }}
+                />
+              </label>
+              <Button variant="secondary" disabled={!soundUrl} onClick={testSound}>▶ Probar</Button>
+              {soundUrl && <Button variant="ghost" disabled={soundBusy} onClick={() => void removeSound()}>Volver al de por defecto</Button>}
+            </div>
+            {soundMsg && <p className="mt-2 text-xs text-emerald-300">{soundMsg}</p>}
+            <p className="mt-2 text-[11px] text-slate-500">💡 Bajá sonidos gratis de <b className="text-slate-400">notificationsounds.com</b>, <b className="text-slate-400">mixkit.co</b> o <b className="text-slate-400">pixabay.com</b> (buscá "notification"). Elegí uno de ~1 segundo.</p>
           </Card>
 
           {/* Cambiar contraseña (self-service) */}

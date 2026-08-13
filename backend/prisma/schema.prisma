@@ -51,6 +51,7 @@ model User {
   // --- Chat App (canal jugador↔cajero, módulo aislado): marca white-label por cuenta ---
   brandName       String?
   logoUrl         String?
+  notifSoundUrl   String?   // sonido custom del panel al llegar un mensaje nuevo (URL de un BrandingAsset)
   primaryColor    String?
   accentColor     String?
   chatTheme       String    @default("whatsapp") // diseño de la PWA del chat: whatsapp | midnight

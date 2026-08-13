@@ -71,6 +71,20 @@ function playPing() {
   o.stop(t + 0.34);
 }
 
+// Sonido CUSTOM del operador (subido en Configuración → Notificaciones): un archivo de audio en vez
+// del "ding" generado. Si no hay, o si el navegador lo bloquea, cae al ding de siempre.
+let customAudio: HTMLAudioElement | null = null;
+function setCustomSound(url: string | null) {
+  customAudio = url ? new Audio(url) : null;
+  if (customAudio) customAudio.preload = "auto";
+}
+function playPingOrCustom() {
+  if (customAudio) {
+    try { customAudio.currentTime = 0; void customAudio.play().catch(() => playPing()); return; } catch { /* cae al ding */ }
+  }
+  playPing();
+}
+
 // "Cha-ching" de caja registradora 💰: cuando entra una imagen/PDF (comprobante de pago).
 function playCashRegister() {
   const ctx = ensureCtx();
@@ -213,7 +227,7 @@ export default function AppLayout() {
     const onMsg = (p: InboxMessagePayload) => {
       if (p.message?.direction === "in") {
         if (looksLikeReceipt(p.message.mediaUrl)) playCashRegister();
-        else playPing();
+        else playPingOrCustom();
       }
       // Refresca el contador con un pequeño debounce (los mensajes vienen en ráfaga).
       window.clearTimeout(unreadTimer.current);
@@ -228,6 +242,17 @@ export default function AppLayout() {
     };
   }, []);
 
+  // Sonido custom del panel: lo cargamos al iniciar y lo recargamos cuando el operador lo cambia en
+  // Configuración (evento "notif-sound-changed"). Sin sonido custom, suena el "ding" de siempre.
+  useEffect(() => {
+    const load = () => {
+      void api.get<{ url: string | null }>("/api/setup/notif-sound").then(({ data }) => setCustomSound(data.url)).catch(() => undefined);
+    };
+    load();
+    window.addEventListener("notif-sound-changed", load);
+    return () => window.removeEventListener("notif-sound-changed", load);
+  }, []);
+
   // Chat App: sonido + contador de no-leídos del operador, en CUALQUIER pantalla del panel.
   // Segundo socket al namespace /chat (cookie del operador), igual que ChatAppPage. Solo suena con
   // mensajes ENTRANTES del jugador (senderType "player") — no el eco de lo que manda el operador/bot.
@@ -236,7 +261,7 @@ export default function AppLayout() {
     const socket: Socket = io(`${API_BASE}/chat`, { withCredentials: true });
     const onChat = (p: { message?: { senderType?: string } }) => {
       if (p?.message?.senderType !== "player") return;
-      playPing();
+      playPingOrCustom();
       window.clearTimeout(chatUnreadTimer.current);
       chatUnreadTimer.current = window.setTimeout(() => void refreshChatUnread(), 800);
     };
