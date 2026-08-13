@@ -194,6 +194,9 @@ export async function assignIproyalProxy(lineId: string): Promise<{ ok: boolean;
   if (!a.ok) return a;
   const v = await verifyIproyalLine(lineId);
   if (!v.ok) return { ok: false, proxyId: a.proxyId, reason: v.reason ?? "verify_failed" };
+  // Arrancó el test (línea IPRoyal viva): programa el reporte de las 24h (deduplicado por jobId; la 1ra
+  // línea lo agenda y las siguientes son no-op). El resumen diario 08:00 ART ya corre por su cuenta.
+  try { const { enqueueProxyReport } = await import("./queue.js"); enqueueProxyReport(24 * 3600_000, 24, "24h del test"); } catch { /* noop */ }
   return { ok: true, proxyId: a.proxyId, ip: v.ip };
 }
 
