@@ -860,6 +860,10 @@ chatPublicRouter.get("/branding/asset/:id", async (req, res) => {
   if (!asset) return res.status(404).json({ error: "No encontrado" });
   res.setHeader("Content-Type", asset.contentType);
   res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  // La PWA (chat.publi.lat) carga el logo desde app.publi.lat = CROSS-ORIGIN. Sin esto, el default de
+  // helmet (Cross-Origin-Resource-Policy: same-origin) BLOQUEA la imagen y el logo no aparece. Es un
+  // asset público (logo/branding), así que se permite embeder desde cualquier origen.
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   return res.send(Buffer.from(asset.data));
 });
 
