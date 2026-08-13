@@ -4,7 +4,8 @@
 // 610 "Connection Terminated" en una noche = 8x cualquier otra). Cuando una línea supera un umbral de
 // reconexiones en una ventana, se le ROTA el IP automáticamente + se avisa al admin. Cooldown para no
 // rotar en loop. Kill switch: PROXY_AUTOROTATE=off.
-import { rotateProxy, alertAdminProxy, logProxyEvent } from "./proxy-pool.js";
+import { prisma } from "./prisma.js";
+import { rotateProxy, alertAdminProxy, logProxyEvent, IPROYAL_PROVIDER } from "./proxy-pool.js";
 
 const WINDOW_MS = 20 * 60 * 1000; // ventana de 20 min
 const THRESHOLD = 60; // >60 reconexiones en 20 min = proxy inestable (una línea sana casi no reconecta)
@@ -33,6 +34,14 @@ export function recordProxyFlap(line: { id: string; proxyId: string | null }): v
 
 async function autoRotate(lineId: string, flaps: number): Promise<void> {
   try {
+    // IPRoyal (sticky 7d): NUNCA rotamos por flap. La IP AR sólo debe cambiar ante un ban real; ante una
+    // caída transitoria la línea se reconecta con la MISMA IP (recoverProxyLine ya lo hace, sin rotar).
+    // Rotar acá rompería el sticky = justo el flapping que queremos matar. Sólo lo registramos (Fase 4).
+    const l = await prisma.waLine.findUnique({ where: { id: lineId }, select: { proxyId: true, proxy: { select: { provider: true } } } });
+    if (l?.proxy?.provider === IPROYAL_PROVIDER) {
+      await logProxyEvent(lineId, l.proxyId, "unstable", `${flaps} reconexiones/20min — IPRoyal sticky: NO se rota (se reconecta con la misma IP)`);
+      return;
+    }
     await logProxyEvent(lineId, null, "unstable", `${flaps} reconexiones en 20 min: el proxy corta el WebSocket -> auto-rotando IP`);
     const r = await rotateProxy(lineId);
     await alertAdminProxy(

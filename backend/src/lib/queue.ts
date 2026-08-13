@@ -19,7 +19,7 @@ import { checkWaWebVersion } from "./wa-version.js";
 import { alertLineDown, alertLowBalance, lineRestrictedUntil, lineRawStatus } from "./line-alert.js";
 import { dedupeSameNumberLines } from "./dedupe-lines.js";
 import { alertCapiFailures } from "./capi-guard.js";
-import { rotateProxy, releaseProxy, applyLineProxy, logProxyEvent, alertAdminProxy, probeProxy, assignFallback, assignProxyPreferred, setLineWaitingProxy } from "./proxy-pool.js";
+import { rotateProxy, releaseProxy, applyLineProxy, logProxyEvent, alertAdminProxy, probeProxy, assignFallback, assignProxyPreferred, setLineWaitingProxy, verifyIproyalLine, IPROYAL_PROVIDER } from "./proxy-pool.js";
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const parsed = new URL(REDIS_URL);
@@ -533,6 +533,21 @@ export async function watchProxyRegistration(lineId: string, attempt = 1): Promi
     return;
   }
   // "close"/"unknown" = FAILED tras aplicar el proxy → el túnel de ESTE proxy falló en el registro.
+  // IPRoyal (test shadow): NO lo sacamos a otro proveedor (rompería la medición). Re-verificamos AR/IP
+  // sobre el MISMO proxy IPRoyal (prueba otra session estable); si no hay IP AR estable → waiting_proxy.
+  const px = await prisma.proxy.findUnique({ where: { id: line.proxyId }, select: { provider: true } });
+  if (px?.provider === IPROYAL_PROVIDER) {
+    if (attempt >= WATCH_MAX_ATTEMPTS) { await setLineWaitingProxy(lineId, `IPRoyal no llegó al QR tras ${attempt} intentos`); return; }
+    const v = await verifyIproyalLine(lineId);
+    if (!v.ok) return; // verifyIproyalLine ya dejó waiting_proxy si agotó los intentos
+    await applyLineProxy(inst, lineId).catch(() => undefined);
+    await getEngine().restartInstance(inst).catch(() => undefined);
+    await logProxyEvent(lineId, line.proxyId, "reconnected", `IPRoyal re-verificado (intento ${attempt}→${attempt + 1})`);
+    const freshIpr = await getEngine().connectInstance(inst).catch(() => ({} as { base64?: string }));
+    if (freshIpr.base64) emitToUser(line.userId, "wa:qr", { lineId, qr: freshIpr.base64 });
+    enqueueProxyWatch(lineId, attempt + 1);
+    return;
+  }
   if (attempt >= WATCH_MAX_ATTEMPTS) {
     await setLineWaitingProxy(lineId, `no llegó al QR por el proxy tras ${attempt} intentos`);
     return; // la sesión queda FAILED (no conectada por ninguna IP); la reconecta recoverWaitingProxyLines
