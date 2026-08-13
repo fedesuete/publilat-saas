@@ -436,8 +436,9 @@ interface Brand {
   chatInstallMsg1: string | null; chatInstallMsg2: string | null; chatInstallMsg3: string | null; chatTutIosImg: string | null; chatTutAndroidImg: string | null;
   chatDirectWelcome: string | null;
   chatInstallPromptEnabled: boolean;
+  chatNotifTitle: string | null; chatNotifText: string | null;
 }
-const EMPTY_BRAND: Brand = { brandName: null, logoUrl: null, primaryColor: null, accentColor: null, chatTheme: "whatsapp", welcomeText: null, welcomeMsgText: null, welcomeMsgImage: null, chatWaLink: null, chatPlatformUrl: null, chatPayCbu: null, chatPayAlias: null, chatPayTitular: null, chatInstallMsg1: null, chatInstallMsg2: null, chatInstallMsg3: null, chatTutIosImg: null, chatTutAndroidImg: null, chatDirectWelcome: null, chatInstallPromptEnabled: false };
+const EMPTY_BRAND: Brand = { brandName: null, logoUrl: null, primaryColor: null, accentColor: null, chatTheme: "whatsapp", welcomeText: null, welcomeMsgText: null, welcomeMsgImage: null, chatWaLink: null, chatPlatformUrl: null, chatPayCbu: null, chatPayAlias: null, chatPayTitular: null, chatInstallMsg1: null, chatInstallMsg2: null, chatInstallMsg3: null, chatTutIosImg: null, chatTutAndroidImg: null, chatDirectWelcome: null, chatInstallPromptEnabled: false, chatNotifTitle: null, chatNotifText: null };
 
 // Diseños disponibles del chat (mini-preview en el selector). "brand" = usa el color del cliente.
 const CHAT_THEMES = [
@@ -639,6 +640,18 @@ function BrandingTab() {
             <span className="text-sm text-slate-200">{form.chatInstallPromptEnabled ? "Cartel “Instalá la app” ACTIVADO en el chat 🟢" : "Cartel “Instalá la app” apagado"}</span>
           </label>
           <p className="mb-3 text-xs text-slate-500">Es el cartel automático “📲 Instalá la app” que aparece dentro del chat del cliente. Apagado por defecto.</p>
+
+          <div className="mb-2 mt-4 text-sm font-semibold text-slate-100">Modal “Activá las notificaciones”</div>
+          <p className="mb-3 text-xs text-slate-500">El cartel grande que le pide al cliente activar las notificaciones al abrir la app. Si dejás estos campos vacíos, usa un texto neutro por defecto.</p>
+
+          <label className="mb-1 block text-xs text-slate-400">Título del cartel (opcional)</label>
+          <Input value={form.chatNotifTitle ?? ""} onChange={(e) => set("chatNotifTitle", e.target.value || null)}
+            placeholder="Activá las notificaciones" className="mb-3" />
+
+          <label className="mb-1 block text-xs text-slate-400">Texto del cartel (opcional)</label>
+          <textarea value={form.chatNotifText ?? ""} onChange={(e) => set("chatNotifText", e.target.value || null)} rows={2} maxLength={200}
+            placeholder="Enterate al instante cuando te respondan. Sin notificaciones podés perderte mensajes importantes."
+            className="mb-4 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
 
           <p className="mb-3 text-xs text-slate-400">Abajo, los mensajes guardados que enviás a mano desde el chat (botón 📲) después de una carga. El mensaje 2 le muestra al cliente un botón <b>INSTALAR APP</b>.</p>
 

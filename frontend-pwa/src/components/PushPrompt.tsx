@@ -47,6 +47,11 @@ export default function PushPrompt({
   const brand = branding?.brandName?.trim();
   const logo = branding?.logoUrl?.trim();
   const badge = isStandalone() ? "⚡ App instalada" : brand || "Notificaciones";
+  // Copy branded por cuenta con fallback NEUTRO (el shell es producto nuestro; §9.3).
+  const title = branding?.chatNotifTitle?.trim() || "Activá las notificaciones";
+  const text =
+    branding?.chatNotifText?.trim() ||
+    "Enterate al instante cuando te respondan. Sin notificaciones podés perderte mensajes importantes.";
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-5 backdrop-blur-sm" onClick={dismiss}>
@@ -80,10 +85,10 @@ export default function PushPrompt({
         </div>
 
         <h2 className="text-2xl font-extrabold leading-tight" style={{ textShadow: "0 1px 2px rgba(0,0,0,0.25)" }}>
-          Activá las notificaciones
+          {title}
         </h2>
         <p className="mx-auto mt-2 max-w-xs text-sm text-white/85">
-          Enterate al instante cuando te respondan. Sin notificaciones podés perderte mensajes importantes.
+          {text}
         </p>
 
         <button

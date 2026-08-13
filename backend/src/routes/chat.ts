@@ -522,9 +522,9 @@ chatRouter.get("/broadcasts", async (req, res) => {
 
 // Solo estos campos del User son "branding" del Chat App. El PATCH NUNCA toca otra cosa
 // (nada de plan, tokenVersion, líneas de WhatsApp, etc.).
-const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "chatTheme", "welcomeText", "welcomeMsgText", "welcomeMsgImage", "chatWaLink", "chatPlatformUrl", "chatPayCbu", "chatPayAlias", "chatPayTitular", "chatInstallMsg1", "chatInstallMsg2", "chatInstallMsg3", "chatTutIosImg", "chatTutAndroidImg", "chatDirectWelcome", "chatInstallPromptEnabled"] as const;
+const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "chatTheme", "welcomeText", "welcomeMsgText", "welcomeMsgImage", "chatWaLink", "chatPlatformUrl", "chatPayCbu", "chatPayAlias", "chatPayTitular", "chatInstallMsg1", "chatInstallMsg2", "chatInstallMsg3", "chatTutIosImg", "chatTutAndroidImg", "chatDirectWelcome", "chatInstallPromptEnabled", "chatNotifTitle", "chatNotifText"] as const;
 // Select del branding del OPERADOR (incluye los campos de instalación; NO se exponen al jugador).
-const BRANDING_SELECT = { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true, chatPayCbu: true, chatPayAlias: true, chatPayTitular: true, chatInstallMsg1: true, chatInstallMsg2: true, chatInstallMsg3: true, chatTutIosImg: true, chatTutAndroidImg: true, chatDirectWelcome: true, chatInstallPromptEnabled: true } as const;
+const BRANDING_SELECT = { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true, chatPayCbu: true, chatPayAlias: true, chatPayTitular: true, chatInstallMsg1: true, chatInstallMsg2: true, chatInstallMsg3: true, chatTutIosImg: true, chatTutAndroidImg: true, chatDirectWelcome: true, chatInstallPromptEnabled: true, chatNotifTitle: true, chatNotifText: true } as const;
 
 // GET /api/chat/branding — branding actual de la cuenta (para poblar el formulario del panel).
 chatRouter.get("/branding", async (req, res) => {
@@ -558,6 +558,8 @@ const brandingSchema = z.object({
   chatTutAndroidImg: z.string().url().max(600).nullish(),
   chatDirectWelcome: z.string().max(1000).nullish(),
   chatInstallPromptEnabled: z.boolean().optional(),
+  chatNotifTitle: z.string().max(60).nullish(), // título del modal de notificaciones (branded)
+  chatNotifText: z.string().max(200).nullish(), // bajada del modal de notificaciones (branded)
 });
 
 // PATCH /api/chat/branding — actualiza SOLO los campos de branding del User del token.
@@ -875,7 +877,7 @@ chatPublicRouter.get("/branding/:code", async (req, res) => {
   if (!invite) return res.status(404).json({ error: "Link inválido" });
   const acc = await prisma.user.findUnique({
     where: { id: invite.userId },
-    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, chatWaLink: true, chatPlatformUrl: true },
+    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, chatWaLink: true, chatPlatformUrl: true, chatNotifTitle: true, chatNotifText: true },
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   return res.json({
@@ -888,6 +890,7 @@ chatPublicRouter.get("/branding/:code", async (req, res) => {
       accentColor: acc.accentColor,
       welcomeText: acc.welcomeText,
       chatWaLink: acc.chatWaLink, chatPlatformUrl: acc.chatPlatformUrl,
+      chatNotifTitle: acc.chatNotifTitle, chatNotifText: acc.chatNotifText,
     },
   });
 });
@@ -1093,7 +1096,7 @@ chatPublicRouter.get("/public/:slug", async (req, res) => {
   res.set("Cache-Control", "no-store");
   const acc = await prisma.user.findUnique({
     where: { slug: req.params.slug },
-    select: { id: true, slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, chatWaLink: true, chatPlatformUrl: true, chatInstallPromptEnabled: true },
+    select: { id: true, slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, chatWaLink: true, chatPlatformUrl: true, chatInstallPromptEnabled: true, chatNotifTitle: true, chatNotifText: true },
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   return res.json({
@@ -1103,6 +1106,7 @@ chatPublicRouter.get("/public/:slug", async (req, res) => {
       brandName: acc.brandName, logoUrl: acc.logoUrl,
       primaryColor: acc.primaryColor, accentColor: acc.accentColor, welcomeText: acc.welcomeText, chatWaLink: acc.chatWaLink, chatPlatformUrl: acc.chatPlatformUrl,
       chatInstallPromptEnabled: acc.chatInstallPromptEnabled,
+      chatNotifTitle: acc.chatNotifTitle, chatNotifText: acc.chatNotifText,
     },
   });
 });

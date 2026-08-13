@@ -54,6 +54,8 @@ export interface Branding {
   chatWaLink?: string | null; // CTA "Escribinos por WhatsApp" (registro un-tap)
   chatPlatformUrl?: string | null; // botón "Entrar a la plataforma"
   chatInstallPromptEnabled?: boolean; // muestra el cartel "Instalá la app" dentro del chat
+  chatNotifTitle?: string | null; // título del modal de notificaciones (branded; default neutro)
+  chatNotifText?: string | null; // bajada del modal de notificaciones (branded; default neutro)
 }
 
 export function saveBranding(accountSlug: string, b: Branding) {
