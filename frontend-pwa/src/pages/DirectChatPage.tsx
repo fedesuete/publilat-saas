@@ -38,7 +38,10 @@ export default function DirectChatPage() {
           navigate("/chat", { replace: true });
           return;
         }
-        // 3) Sin sesión de esta cuenta: preguntamos antes de crear (no auto-creamos = no duplicamos).
+        // 3) redblack = chat estilo WhatsApp (sin casino self-service): el link del cliente entra DERECHO
+        //    a la conversación, sin gate ni registro. La cookie de sesión evita duplicar en el regreso.
+        if (pub.data.branding?.chatTheme === "redblack") { await enterAsNew(pub.data.accountSlug); return; }
+        // 3b) Resto (cuentas casino): preguntamos antes de crear (no auto-creamos = no duplicamos ganamos).
         setPhase("gate");
       } catch (e) {
         const code = (e as { response?: { data?: { code?: string } } })?.response?.data?.code;
@@ -48,14 +51,15 @@ export default function DirectChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
 
-  // "Soy nuevo": crea el jugador anónimo + la conversación con el 1er mensaje del bot.
-  const createNew = async () => {
+  // "Soy nuevo" (o entrada directa de redblack): crea el jugador anónimo + la conversación con el 1er
+  // mensaje del bot. Recibe el slug por parámetro (en la entrada automática el state todavía no se asentó).
+  const enterAsNew = async (accSlug: string) => {
     setPhase("creating");
     setError(null);
     try {
-      const { data } = await api.post("/api/chat/direct", { accountSlug });
+      const { data } = await api.post("/api/chat/direct", { accountSlug: accSlug });
       setToken(data.token);
-      localStorage.setItem(SESSION_SLUG_KEY, accountSlug);
+      localStorage.setItem(SESSION_SLUG_KEY, accSlug);
       navigate("/chat", { replace: true });
     } catch (e) {
       const code = (e as { response?: { data?: { code?: string } } })?.response?.data?.code;
@@ -84,7 +88,7 @@ export default function DirectChatPage() {
             Sí, entrar con mi usuario y clave
           </button>
           <button
-            onClick={() => void createNew()}
+            onClick={() => void enterAsNew(accountSlug)}
             className="mt-2 w-full rounded-xl border border-white/15 py-3 text-sm font-semibold text-slate-200 hover:bg-white/5"
           >
             Soy nuevo, entrar al chat
