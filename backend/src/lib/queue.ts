@@ -186,6 +186,26 @@ export async function checkLineHealth(): Promise<void> {
               await notify(line.userId, "line_quality", `Calidad de línea ${quality === "RED" ? "ROJA" : "AMARILLA"}`,
                 `La calidad de "${line.label ?? line.phone}" bajó a ${quality}. Cuidá la frecuencia/contenido para no perder el número.`);
             }
+            // Recuperación: la calidad volvió a GREEN desde un estado malo → avisamos que pasó el riesgo.
+            if (quality === "GREEN" && (prev === "RED" || prev === "YELLOW")) {
+              await notify(line.userId, "line_quality", `Calidad de línea recuperada 🟢`,
+                `La calidad de "${line.label ?? line.phone}" volvió a GREEN. Pasó el riesgo 🙌`);
+            }
+          }
+          // Restricción/desconexión del número Cloud (status ≠ CONNECTED): Meta lo flageó, restringió,
+          // rate-limiteó o baneó. La calidad sola no lo capta → avisamos aparte. Dedupe por notificación
+          // reciente (6 h) para no repetir en cada chequeo mientras dure el estado malo.
+          const st = (q?.status ?? "").toUpperCase();
+          const MALOS = ["FLAGGED", "RESTRICTED", "RATE_LIMITED", "BANNED", "DISCONNECTED", "DELETED"];
+          if (MALOS.includes(st)) {
+            const yaAviso = await prisma.notification.findFirst({
+              where: { userId: line.userId, type: "line_down", createdAt: { gte: new Date(Date.now() - 6 * 60 * 60 * 1000) } },
+              select: { id: true },
+            });
+            if (!yaAviso) {
+              await notify(line.userId, "line_down", `Número ${st === "BANNED" ? "BANEADO" : "RESTRINGIDO"} por WhatsApp`,
+                `Meta puso "${line.label ?? line.phone}" en estado ${st}. Revisá la línea en el panel — puede dejar de enviar/recibir.`);
+            }
           }
         }
       } else {

@@ -42,10 +42,14 @@ export default function NotificationBell() {
     }
   };
 
+  // Alerta de LÍNEA sin leer (caída/restricción/calidad): pinta la campana de rojo + pulso, para
+  // distinguirla de un lead o una venta. Se apaga al abrir la campana (marca todo leído).
+  const hasLineAlert = items.some((n) => !n.read && (n.type === "line_down" || n.type === "line_quality"));
+
   return (
     <div className="relative">
-      <button onClick={() => void toggle()} title="Notificaciones" className="relative rounded-md p-1.5 text-slate-300 hover:bg-slate-800 hover:text-white">
-        <Bell className="h-5 w-5" />
+      <button onClick={() => void toggle()} title={hasLineAlert ? "⚠️ Alerta de línea — abrí para ver" : "Notificaciones"} className={`relative rounded-md p-1.5 hover:bg-slate-800 hover:text-white ${hasLineAlert ? "text-rose-500" : "text-slate-300"}`}>
+        <Bell className={`h-5 w-5 ${hasLineAlert ? "animate-pulse" : ""}`} fill={hasLineAlert ? "currentColor" : "none"} />
         {unread > 0 && (
           <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
             {unread > 9 ? "9+" : unread}
