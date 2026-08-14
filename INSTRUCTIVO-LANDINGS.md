@@ -48,6 +48,40 @@ botón (el `/go`). Si lo ponés doble, **duplicás**.
 > Si en vez de HTML propio usás el editor **"por campos"** de Publi.lat, el pixel y el botón se arman
 > solos — no tenés que tocar nada. Esta guía es para cuando querés un diseño custom.
 
+---
+
+## 🔬 Que los eventos LLEGUEN a tu Facebook (modelo: la landing de valentinolocal)
+
+La landing de **valentinolocal** (`publi-1`) es el modelo de referencia: mide bien y factura. Esto es
+lo que hace — y lo que TIENE que tener cualquier landing para que los eventos lleguen a **tu** pixel:
+
+**1) El Pixel del navegador tiene que ser TU pixel real.** El error #1 (le pasó a mrchcod): quedó el
+pixel de **EJEMPLO** `893375649719739` (el placeholder gris del panel) en vez del pixel propio. Si la
+landing dispara al pixel de ejemplo, **los eventos van a un pixel que no es tuyo → nunca los ves en tu
+Facebook.** El editor "por campos" pone tu pixel solo; en HTML propio, pegá TU ID.
+
+**2) Cargaste/cambiaste tu pixel DESPUÉS de crear la landing → RE-PUBLICÁ.** Al re-publicar, el sistema
+inyecta tu pixel VIGENTE (fix 2026-08-14). Si no re-publicás, la versión online sigue con el pixel viejo.
+
+**3) La landing tiene que MANDAR `_fbp` y `_fbc` al destino** (por la URL). Esas cookies las deja el
+pixel en el dominio de la landing y **NO cruzan** a WhatsApp ni a `chat.publi.lat`. Si no las reenviás,
+el evento del servidor (CAPI: Lead/Registro/Compra) queda **sin identificadores → matchea mal**. El
+editor lo hace solo, tanto para `/go` (WhatsApp) como para `/r/<slug>` (Chat App). (Fix 2026-08-14: el
+botón de Chat App no reenviaba `_fbp/_fbc`; ya corregido.) En HTML propio, usá el script de
+auto-redirect de más abajo, que ya copia `fbclid` + `_fbp` + `_fbc`.
+
+**4) Un solo `Lead`, con `eventID`.** El `PageView` sale al cargar; el `Lead` sale al tocar el botón,
+con un `eventID` para deduplicar con el Lead del servidor. No agregues `fbq('track','Lead')` sueltos.
+
+> **Chat App (`/r/<slug>`):** mismo criterio que `/go` — el botón manda `fbclid` + `_fbp` + `_fbc` al
+> registro y ahí el Chat App dispara Lead + Registro + Compra por CAPI a tu pixel (mismo `external_id`).
+
+**Chequeo rápido (2 min):** abrí tu landing publicada → F12 → pestaña **Network** → filtrá
+`facebook.com/tr` → tenés que ver `id=<TU_PIXEL>` (¡no el de ejemplo!) y un `PageView`. Tocá el botón:
+tiene que salir un `Lead`. Si el `id` no es el tuyo, **RE-PUBLICÁ**.
+
+---
+
 ## ♻️ Actualizar una landing que ya tiene anuncios corriendo (no se rompe nada)
 
 Podés editar y **re-publicar** una landing **con los anuncios activos, sin miedo**:

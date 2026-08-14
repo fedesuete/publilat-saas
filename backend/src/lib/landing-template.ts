@@ -183,12 +183,18 @@ src="https://www.facebook.com/tr?id=${esc(cfg.pixelId)}&ev=PageView&noscript=1"/
     var target = CFG.goBase + '/go?' + p.toString();
     setTimeout(function(){ window.location.href = target; }, 300);
   }
-  // Destino Chat App: dispara Lead y va al registro de un tap /r/<slug>, reenviando la atribución
-  // (fbclid/utm) por la URL para que el registro matchee el pixel del cliente.
+  // Destino Chat App: dispara Lead (con eventID para dedup) y va al registro de un tap /r/<slug>,
+  // reenviando la atribución por la URL. CLAVE: las cookies _fbp/_fbc del pixel viven en el dominio de
+  // ESTA landing y NO cruzan a chat.publi.lat, así que hay que MANDARLAS por la URL — si no, el CAPI del
+  // chat (Lead/Registro/Compra) queda sin fbp/fbc y matchea mal. (Igual que goToWhatsApp.)
   function goToChat(){
     if (redirected) return; redirected = true;
-    try { fbq('track', 'Lead'); } catch(e){}
+    var eid = newEid();
+    try { fbq('track', 'Lead', {}, { eventID: eid }); } catch(e){}
     var p = new URLSearchParams();
+    p.set('eid', eid);
+    var fbp = getCookie('_fbp'); if (fbp) p.set('fbp', fbp);
+    var fbc = getCookie('_fbc'); if (fbc) p.set('fbc', fbc);
     var here = new URLSearchParams(location.search);
     ['fbclid','campaign','ad','src','utm_source','utm_medium','utm_campaign'].forEach(function(k){
       var v = here.get(k); if (v) p.set(k, v);
