@@ -101,10 +101,17 @@ async function call(path: string, method: "post" | "get", payload: Record<string
 // ALTA del jugador en ganamos. Devuelve `playerId`. Si el usuario ya existe, Eduardo responde failed
 // (ej. "username-taken") → se puede seguir operando con ese mismo usuario igual.
 export async function casinoRegister(args: { usuario: string; password: string }, creds?: CasinoCreds): Promise<PartnerResult> {
-  // El ALTA del lado del socio hace login + trae el template del agente + crea el jugador (3 llamadas
-  // secuenciales por su proxy residencial) → puede tardar ~13s y spikear. Timeout ALTO (25s) para no
-  // cortarnos antes y creer que "no registró" cuando el usuario SÍ se creó (499 en el socio). Idempotente.
-  return call("/register", "post", { usuario: args.usuario, password: args.password }, creds, 25000);
+  // El ALTA del lado del socio hace login + template del agente + crea el jugador (alta Playwright por su
+  // proxy residencial) → puede tardar 20-24s y spikear. Timeout ALTO (30s) para no cortarnos antes.
+  const r = await call("/register", "post", { usuario: args.usuario, password: args.password }, creds, 30000);
+  // El register es IDEMPOTENTE: un 2xx del socio = el usuario quedó CREADO o YA EXISTÍA. A veces devuelve
+  // 200 SIN ok:true (usuario que ya existe / respuesta parcial del alta) y nuestro call() lo marcaba como
+  // "HTTP 200" → ensureCasinoUser fallaba → se cortaba la carga (no se creaba el depósito → no salía el
+  // intent → nadie se acreditaba). Un 2xx lo tomamos como OK para no bloquear. (credit/debit NO usan esto.)
+  if (!r.ok && typeof r.httpStatus === "number" && r.httpStatus >= 200 && r.httpStatus < 300) {
+    return { ...r, ok: true, status: r.status ?? "completed" };
+  }
+  return r;
 }
 
 // CARGA: acredita fichas al jugador. `monto` entero en ARS. Si da PLAYER_NOT_FOUND → registrar primero.
