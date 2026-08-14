@@ -32,6 +32,9 @@ export default function PixelPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testCode, setTestCode] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const editing = form.id !== null;
 
@@ -93,6 +96,31 @@ export default function PixelPage() {
     }
   };
 
+  const testEvent = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const { data } = await api.post<{ ok: boolean; error?: string; live?: boolean }>(
+        "/api/pixels/test",
+        testCode.trim() ? { testEventCode: testCode.trim() } : {},
+      );
+      if (data.ok) {
+        setTestResult({
+          ok: true,
+          msg: testCode.trim()
+            ? "✓ Meta recibió el evento de prueba. Miralo en vivo en Meta → Administrador de eventos → Eventos de prueba."
+            : "✓ Meta recibió el evento (Lead real). Aparece en Administrador de eventos → Actividad del pixel (puede tardar unos minutos).",
+        });
+      } else {
+        setTestResult({ ok: false, msg: data.error ?? "Meta no aceptó el evento." });
+      }
+    } catch (err) {
+      setTestResult({ ok: false, msg: apiError(err) });
+    } finally {
+      setTesting(false);
+    }
+  };
+
   const remove = async (p: Pixel) => {
     if (!confirm(`¿Borrar el pixel ${p.pixelId}?`)) return;
     setError(null);
@@ -115,6 +143,33 @@ export default function PixelPage() {
       </p>
 
       {health && <HealthBanner health={health} />}
+
+      {pixels.length > 0 && (
+        <div className="mb-4">
+          <Card>
+            <div className="mb-1 text-sm font-semibold text-slate-200">🧪 Probar un evento</div>
+            <p className="mb-3 text-xs text-slate-500">
+              Manda un evento <b className="text-slate-300">Lead</b> de prueba a Meta con tu pixel, para confirmar en el acto
+              que tu token anda. Poné el <b className="text-slate-300">código de prueba</b> de Meta (Administrador de eventos →
+              Eventos de prueba) para verlo ahí en vivo sin ensuciar tus datos. Sin código, se manda como un Lead real.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                value={testCode}
+                onChange={(e) => setTestCode(e.target.value)}
+                placeholder="Código de prueba (opcional, ej: TEST12345)"
+                className="max-w-xs"
+              />
+              <Button variant="secondary" onClick={() => void testEvent()} disabled={testing}>
+                {testing ? "Enviando…" : "Probar evento"}
+              </Button>
+            </div>
+            {testResult && (
+              <p className={`mt-2 text-xs ${testResult.ok ? "text-emerald-300" : "text-rose-300"}`}>{testResult.msg}</p>
+            )}
+          </Card>
+        </div>
+      )}
 
       {error && (
         <div className="mb-4">

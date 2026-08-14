@@ -4,7 +4,8 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { encryptSecret, decryptSecret, maskSecret } from "../lib/crypto.js";
-import { validatePixelCreds } from "../lib/meta-capi.js";
+import { validatePixelCreds, sendCapiEvent } from "../lib/meta-capi.js";
+import { resolveUserPixel } from "../lib/pixel.js";
 
 export const pixelRouter = Router();
 
@@ -67,6 +68,34 @@ pixelRouter.get("/health", async (req, res) => {
   else if (!lastSent) status = "warning"; // pixel cargado pero todavía sin eventos
   else status = "ok";
   return res.json({ hasPixel, lastSent, sent24h, failed24h, noPixel24h, status });
+});
+
+// POST /api/pixels/test — dispara un evento de PRUEBA (Lead) por CAPI con el pixel del usuario, para que
+// confirme en el acto que su Pixel + token andan. Con `testEventCode` (de Meta → Administrador de eventos
+// → Eventos de prueba) el evento aparece ahí EN VIVO y NO ensucia los datos reales; sin código, va como un
+// Lead real. Devuelve si Meta lo recibió (events_received) o el error puntual de Meta.
+const testSchema = z.object({ testEventCode: z.string().trim().max(60).optional() });
+pixelRouter.post("/test", async (req, res) => {
+  const parsed = testSchema.safeParse(req.body ?? {});
+  const testEventCode = parsed.success && parsed.data.testEventCode ? parsed.data.testEventCode : undefined;
+  const px = await resolveUserPixel(req.userId!, "Lead");
+  if (!px) return res.status(400).json({ ok: false, error: "Todavía no tenés un Pixel configurado. Cargá tu Pixel ID + token de Conversions API arriba y probá de nuevo." });
+  try {
+    const r = await sendCapiEvent({
+      eventName: "Lead",
+      externalId: `pixeltest-${req.userId}`,
+      pixelId: px.pixelId,
+      capiToken: px.capiToken,
+      testEventCode,
+      eventId: `pixeltest-${req.userId}-${Date.now()}`,
+    });
+    const received = typeof (r.response as { events_received?: number })?.events_received === "number"
+      ? (r.response as { events_received: number }).events_received : 0;
+    return res.json({ ok: received > 0, pixelId: r.pixelId, eventsReceived: received, live: !testEventCode });
+  } catch (e) {
+    const meta = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
+    return res.json({ ok: false, error: meta ?? (e instanceof Error ? e.message : "No se pudo enviar el evento a Meta.") });
+  }
 });
 
 // POST /api/pixels — crea un pixel (cifra el token).
