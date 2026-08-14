@@ -44,7 +44,7 @@ export interface PartnerResult {
   retryable: boolean;
 }
 
-async function call(path: string, method: "post" | "get", payload: Record<string, unknown>, creds?: CasinoCreds): Promise<PartnerResult> {
+async function call(path: string, method: "post" | "get", payload: Record<string, unknown>, creds?: CasinoCreds, timeoutMs = 15000): Promise<PartnerResult> {
   if (!casinoPartnerEnabled(creds)) {
     return { ok: false, errorCode: "not_configured", errorMessage: "CASINO_API_URL/KEY no configurados", retryable: false };
   }
@@ -59,7 +59,7 @@ async function call(path: string, method: "post" | "get", payload: Record<string
         "Content-Type": "application/json",
         ...(referencia ? { "Idempotency-Key": referencia } : {}),
       },
-      timeout: 15000,
+      timeout: timeoutMs,
       validateStatus: () => true, // los códigos los mapeamos nosotros
     });
     const data = (res.data ?? {}) as Record<string, unknown>;
@@ -101,7 +101,10 @@ async function call(path: string, method: "post" | "get", payload: Record<string
 // ALTA del jugador en ganamos. Devuelve `playerId`. Si el usuario ya existe, Eduardo responde failed
 // (ej. "username-taken") → se puede seguir operando con ese mismo usuario igual.
 export async function casinoRegister(args: { usuario: string; password: string }, creds?: CasinoCreds): Promise<PartnerResult> {
-  return call("/register", "post", { usuario: args.usuario, password: args.password }, creds);
+  // El ALTA del lado del socio hace login + trae el template del agente + crea el jugador (3 llamadas
+  // secuenciales por su proxy residencial) → puede tardar ~13s y spikear. Timeout ALTO (25s) para no
+  // cortarnos antes y creer que "no registró" cuando el usuario SÍ se creó (499 en el socio). Idempotente.
+  return call("/register", "post", { usuario: args.usuario, password: args.password }, creds, 25000);
 }
 
 // CARGA: acredita fichas al jugador. `monto` entero en ARS. Si da PLAYER_NOT_FOUND → registrar primero.
