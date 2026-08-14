@@ -4,7 +4,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { resolveUserPixel } from "../lib/pixel.js";
-import { renderTrackedLanding, injectGoTracking, injectInAppEscape, type LandingConfig } from "../lib/landing-template.js";
+import { renderTrackedLanding, injectGoTracking, injectCurrentPixel, injectInAppEscape, type LandingConfig } from "../lib/landing-template.js";
 import { publishToS3, uploadHtml, s3Enabled } from "../lib/s3.js";
 import { ensureClientCdn, reprovisionClientDomain, invalidate } from "../lib/cloudfront.js";
 import { slugify } from "../lib/auth.js";
@@ -170,7 +170,12 @@ landingsRouter.post("/:id/publish", async (req, res) => {
   let host: string;
   // Inyecta el tracking antes de subir (custom HTML): los links a /go pasan eventID + fbclid/fbc/fbp,
   // y se fuerza el origen del /go al backend (la landing vive en CloudFront, que no tiene /go).
-  const outHtml = injectGoTracking(landing.html, process.env.APP_BASE_URL ?? "");
+  const goHtml = injectGoTracking(landing.html, process.env.APP_BASE_URL ?? "");
+  // Inyecta el pixel VIGENTE de la cuenta: si el cliente cargó/cambió su pixel DESPUÉS de crear la landing,
+  // la versión publicada en CloudFront (estática) quedaba pegada al pixel viejo/de ejemplo del HTML guardado.
+  // Ahora cada publicación toma el pixel actual (igual que el serve local /p/:slug). Best-effort.
+  const cur = await resolveUserPixel(req.userId!, "Lead").catch(() => undefined);
+  const outHtml = cur?.pixelId ? injectCurrentPixel(goHtml, cur.pixelId) : goHtml;
   const cdn = await ensureClientCdn(req.userId!); // null si AWS no está configurado
   if (cdn) {
     const ok = await uploadHtml(`${cdn.s3Prefix}/${landing.slug}/index.html`, outHtml);
