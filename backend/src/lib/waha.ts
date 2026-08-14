@@ -82,8 +82,12 @@ function serializeId(x: any): string | undefined {
 }
 
 // id serializado del mensaje enviado (los acks llegan con ESTA forma; hay que guardarla).
+// NOWEB (Baileys) devuelve el id dentro de `data.key` ({ id / _serialized }); WEBJS lo traía en `data.id`.
+// Desde la migración a NOWEB, mirar sólo `data.id` daba undefined → el mensaje se guardaba SIN waMessageId
+// → el ACK de WhatsApp (webhook, que matchea por key.id) no encontraba el mensaje → nunca aparecían las
+// tildes de entrega/leído en el Inbox. Probamos ambas formas para no perder el id en ningún motor.
 function sentId(data: any): string | undefined {
-  return serializeId(data?.id);
+  return serializeId(data?.id) ?? serializeId(data?.key);
 }
 
 async function fetchQr(instanceName: string): Promise<string | undefined> {
