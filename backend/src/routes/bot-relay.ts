@@ -45,6 +45,11 @@ botRelayRouter.post("/send", requireBotToken, async (req, res) => {
       contact = await prisma.contact.create({
         data: { userId: line.userId, externalId: crypto.randomUUID(), phone: digits, lineId: line.id, source: "wa", stage: "CONTACTADO" },
       });
+    } else if (contact.lineId !== line.id) {
+      // Multi-línea: el bot pide responder por la línea por la que el jugador escribió ÚLTIMO.
+      // sendToContact manda por contact.lineId, así que re-pineamos el contacto a la línea pedida
+      // (si no, el contacto quedaba pegado a su primera línea y la respuesta salía por otro número).
+      contact = await prisma.contact.update({ where: { id: contact.id }, data: { lineId: line.id } });
     }
     const ok = await sendToContact(line.userId, contact.id, message);
     return res.json({ ok });
