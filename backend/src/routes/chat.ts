@@ -237,12 +237,14 @@ async function postWelcomeCreds(userId: string, conversationId: string, intro: s
   if (password) lines.push(`🔑 Clave: ${password}`);
   lines.push("", "📌 Guardá tu usuario y clave: son los que te dejan volver a entrar si cerrás la app.");
   const body = lines.join("\n");
-  const metadata = platformUrl ? { link: { label: "🎮 Entrar a la plataforma", url: platformUrl } } : {};
+  const copy = { label: "📋 Copiar usuario", value: username };
+  const metadata: { copy: { label: string; value: string }; link?: { label: string; url: string } } =
+    platformUrl ? { copy, link: { label: "🎮 Entrar a la plataforma", url: platformUrl } } : { copy };
   const msg = await prisma.chatMessage.create({ data: { userId, conversationId, senderType: "system", body, metadata }, select: { id: true, senderType: true, body: true, metadata: true, createdAt: true } });
   // unreadOperator: 1 -> el operador ve el cliente nuevo flagueado en la lista.
   await prisma.chatConversation.update({ where: { id: conversationId }, data: { lastMessageAt: new Date(), lastMessagePreview: body.slice(0, 120), unreadPlayer: 1, unreadOperator: { increment: 1 } } });
   // Aviso EN VIVO al operador: aparece la conversación nueva sin refrescar.
-  const payload = { conversationId, message: { id: msg.id, senderType: msg.senderType, body: msg.body, image: null, buttons: null, link: (msg.metadata as { link?: { label: string; url: string } })?.link ?? null, createdAt: msg.createdAt } };
+  const payload = { conversationId, message: { id: msg.id, senderType: msg.senderType, body: msg.body, image: null, buttons: null, link: (msg.metadata as { link?: { label: string; url: string } })?.link ?? null, copy, createdAt: msg.createdAt } };
   emitChat(`chat:${userId}`, "chat:message", payload);
 }
 
