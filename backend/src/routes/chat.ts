@@ -705,11 +705,16 @@ chatPublicRouter.post("/me/deposit/help", requireChatClient, async (req, res) =>
   // fallan, avisamos y NO lo mandamos a transferir a ciegas (cuenta muerta o sin usuario en ganamos).
   if (await casinoLiveForAccount(req.accountId!)) {
     const player = await prisma.chatPlayer.findUnique({ where: { id: req.chatPlayerId! }, select: { casinoUsername: true } });
-    // Pre-alta BEST-EFFORT: si el socio tarda/cuelga (su alta Playwright a veces >30s) NO bloqueamos la
-    // carga — el usuario casi siempre YA existe y sendDepositIntent lo re-registra al subir el comprobante.
-    // Bloqueamos SOLO si el CVU falla (ahí no hay a dónde transferir). Un pre-alta caído se avisa al
-    // operador, no corta al jugador (antes esto trababa toda la carga → plata en limbo sin intent).
-    const u = player ? await ensureCasinoUser(req.accountId!, player.casinoUsername) : { ok: false, errorCode: "sin_jugador" };
+    // Pre-alta en BACKGROUND: NO bloquea el CVU (se muestra al instante, no espera el alta ~4s ni un
+    // cuelgue >30s del socio). El usuario casi siempre YA existe y sendDepositIntent lo re-registra al
+    // subir el comprobante. Si el alta falla, avisa al operador (no corta al jugador). Bloqueamos SOLO si
+    // el CVU falla (ahí no hay a dónde transferir).
+    if (player?.casinoUsername) {
+      const usr = player.casinoUsername;
+      void ensureCasinoUser(req.accountId!, usr).then((u) => {
+        if (!u.ok) void notify(req.accountId!, "system", "⚠️ Alta de casino lenta/falló", `El alta de ${usr} tardó o falló (${u.errorCode}). El CVU se mostró igual (el usuario suele ya existir); si esta carga no acredita sola, revisalo a mano.`).catch(() => undefined);
+      }).catch(() => undefined);
+    }
     const cvu = await casinoCvuForAccount(req.accountId!);
     if (!cvu.ok) {
       const errBody = "En este momento no podemos procesar cargas 😔. Probá de nuevo en unos minutos.";
@@ -720,7 +725,6 @@ chatPublicRouter.post("/me/deposit/help", requireChatClient, async (req, res) =>
       emitChat(`chat:${req.accountId}`, "chat:message", { conversationId: conv.id, message: eo });
       return res.json({ message: eo });
     }
-    if (!u.ok) void notify(req.accountId!, "system", "⚠️ Alta de casino lenta/falló", `El alta de ${player?.casinoUsername ?? "?"} tardó o falló (${u.errorCode}). Mostré el CVU igual (el usuario suele ya existir); si esta carga no acredita sola, revisalo a mano.`).catch(() => undefined);
     pay = { cbu: cvu.cvu ?? null, alias: cvu.alias ?? null, titular: cvu.titular ?? null };
     botInfo = null;
   }
@@ -1506,7 +1510,7 @@ chatPublicRouter.post("/me/deposit", requireChatClient, async (req, res) => {
   // Con modelo B (auto-carga) seteamos la expectativa de tiempo: la acreditación es automática pero puede
   // demorar hasta ~1 min (worker frío del socio). Sin B, lo verifica el operador (no prometemos tiempo).
   const cargaMsg = (await casinoLiveForAccount(req.accountId!))
-    ? `🧾 Recibimos tu carga de ${ars(dep.amount)}. La estamos acreditando — puede demorar hasta 1 minuto. 🙌`
+    ? `🧾 Recibimos tu carga de ${ars(dep.amount)}. La estamos acreditando — puede demorar unos minutos. Te avisamos apenas entre 🙌`
     : `🧾 Registraste una carga de ${ars(dep.amount)} (${dep.method}). La estamos verificando.`;
   await postCashierMsg(req.accountId!, req.chatPlayerId!, cargaMsg, "player").catch(() => undefined);
   // Si subió comprobante: la IA lo lee y (1) manda el Purchase a Meta una sola vez (cierra el loop del

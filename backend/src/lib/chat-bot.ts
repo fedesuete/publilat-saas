@@ -119,11 +119,13 @@ export async function runChatBot(accountId: string, convId: string, playerId: st
     // 2) mostrar el CVU de la recaudadora (del endpoint, no hardcodeado). El crédito lo dispara el
     // comprobante que sube el jugador (→ intent → callback). No usa "Ya pagué" ni al cajero.
     if ((await casinoLiveForAccount(accountId)) && conv.player?.casinoUsername) {
-      // Pre-alta BEST-EFFORT: si el socio tarda/cuelga (alta Playwright a veces >30s) NO bloqueamos la
-      // carga — el usuario casi siempre YA existe y sendDepositIntent lo re-registra al subir el
-      // comprobante. Bloqueamos SOLO si el CVU falla (no habría a dónde transferir). El pre-alta caído se
-      // avisa al cajero, no corta al jugador (antes esto trababa la carga → plata en limbo sin intent).
-      const u = await ensureCasinoUser(accountId, conv.player.casinoUsername);
+      // Pre-alta en BACKGROUND: NO bloquea el CVU (se muestra al instante, no espera el alta ~4s ni un
+      // cuelgue >30s del socio). El usuario casi siempre YA existe y sendDepositIntent lo re-registra al
+      // subir el comprobante. Bloqueamos SOLO si el CVU falla. El pre-alta caído se avisa al cajero.
+      const usr = conv.player.casinoUsername;
+      void ensureCasinoUser(accountId, usr).then((u) => {
+        if (!u.ok) void alertCajero(accountId, convId, `⚠️ El alta de ${usr} en el casino tardó/falló (${u.errorCode ?? "error"}). El CVU se mostró igual (el usuario suele ya existir); si esta carga no acredita sola, revisalo.`).catch(() => undefined);
+      }).catch(() => undefined);
       const cvu = await casinoCvuForAccount(accountId);
       if (!cvu.ok) {
         await setStep(null, null);
@@ -131,7 +133,6 @@ export async function runChatBot(accountId: string, convId: string, playerId: st
         await alertCajero(accountId, convId, `⚠️ La recaudadora no dio CVU (${cvu.errorCode ?? "error"}) — saturada o desactivada. Avisar a ganamos.`);
         return;
       }
-      if (!u.ok) await alertCajero(accountId, convId, `⚠️ El alta de ${conv.player.casinoUsername} en el casino tardó/falló (${u.errorCode ?? "error"}). Mostré el CVU igual (el usuario suele ya existir); si esta carga no acredita sola, revisalo.`);
       await setStep(null, null);
       await botSay(
         accountId, convId, playerId,
