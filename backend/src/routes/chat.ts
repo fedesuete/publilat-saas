@@ -756,14 +756,16 @@ const playerSendSchema = z.object({
 chatPublicRouter.post("/me/messages", requireChatClient, async (req, res) => {
   const parsed = playerSendSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
-  const conv = await prisma.chatConversation.findFirst({ where: { userId: req.accountId!, playerId: req.chatPlayerId! }, select: { id: true } });
+  const conv = await prisma.chatConversation.findFirst({ where: { userId: req.accountId!, playerId: req.chatPlayerId! }, select: { id: true, botStep: true, botAmount: true } });
   if (!conv) return res.status(404).json({ error: "Conversación no encontrada" });
 
   const body = parsed.data.body?.trim() || null;
   const image = parsed.data.image;
+  let comprobanteData: Buffer | null = null, comprobanteType: string | null = null;
   if (image) {
-    const bytes = Buffer.from(image.slice(image.indexOf(",") + 1), "base64").length;
-    if (bytes > 700 * 1024) return res.status(413).json({ error: "La imagen supera 700 KB. Sacá una foto más liviana." });
+    comprobanteType = image.slice(5, image.indexOf(";"));
+    comprobanteData = Buffer.from(image.slice(image.indexOf(",") + 1), "base64");
+    if (comprobanteData.length > 700 * 1024) return res.status(413).json({ error: "La imagen supera 700 KB. Sacá una foto más liviana." });
   }
   const metadata = image ? { image } : {};
   const msg = await prisma.chatMessage.create({
@@ -775,10 +777,26 @@ chatPublicRouter.post("/me/messages", requireChatClient, async (req, res) => {
     data: { lastMessageAt: new Date(), lastMessagePreview: (image ? "📷 " : "") + (body ?? "Imagen").slice(0, 118), unreadOperator: { increment: 1 } },
   });
 
-  const outMsg = { id: msg.id, senderType: msg.senderType, body: msg.body, image: (msg.metadata as { image?: string })?.image ?? null, createdAt: msg.createdAt };
+  // Payload con `image` aplanado (PWA) Y `metadata` (panel del cajero lee metadata.image) → la imagen que
+  // manda el jugador aparece EN VIVO en el chat del cajero, no sólo al recargar.
+  const outMsg = { id: msg.id, senderType: msg.senderType, body: msg.body, image: (msg.metadata as { image?: string })?.image ?? null, metadata: msg.metadata, createdAt: msg.createdAt };
   const payload = { conversationId: conv.id, message: outMsg };
   emitChat(`chat:${req.accountId}`, "chat:message", payload);                              // al operador
   emitChat(`chat:${req.accountId}:player:${req.chatPlayerId}`, "chat:message", payload);   // al jugador (otros dispositivos)
+
+  // Si mandó una IMAGEN y la cuenta usa el cajero (bot prendido o casino en vivo): la leemos con IA y, si es
+  // un comprobante, registramos la carga (pending) → aparece en la pestaña Cajero + dispara Purchase/intent.
+  // NO acredita fichas (§9.2). Si lo tomó como comprobante, cerramos el paso del bot y no re-preguntamos.
+  if (comprobanteData) {
+    const acc = await prisma.user.findUnique({ where: { id: req.accountId! }, select: { botEnabled: true } });
+    const cashierOn = acc?.botEnabled || (await casinoLiveForAccount(req.accountId!));
+    if (cashierOn && (await handlePlayerComprobante(req.accountId!, req.chatPlayerId!, comprobanteType ?? "image/jpeg", comprobanteData, conv.botAmount ?? null))) {
+      if (conv.botStep === "carga_pago" || conv.botStep === "carga_monto") {
+        await prisma.chatConversation.update({ where: { id: conv.id }, data: { botStep: null, botAmount: null } });
+      }
+      return res.status(201).json({ message: outMsg });
+    }
+  }
 
   // Bot de carga/descarga (Fase 1): responde solo si la cuenta lo tiene PRENDIDO. Best-effort y
   // aislado: sin bot es no-op; un error del bot no afecta el envío del jugador.
@@ -1414,6 +1432,84 @@ async function postCashierMsg(userId: string, playerId: string, body: string, se
   emitChat(`chat:${userId}`, "chat:message", payload);
 }
 
+// Postea el COMPROBANTE que subió el jugador (por el form "Cargar fichas" → /me/deposit) como un mensaje
+// con imagen en la conversación. Así el comprobante QUEDA EN EL CHAT (PWA) y el cajero lo ve dentro de la
+// conversación, no sólo en la pestaña Cajero. La imagen se guarda como BrandingAsset (URL corta pública,
+// mismo mecanismo que el resto de las imágenes del chat) para no inflar el row del mensaje con el data URL.
+// Sale del lado del jugador (senderType "player") y flaguea al operador. Best-effort: si falla no corta la carga.
+async function postComprobanteImage(userId: string, playerId: string, comprobanteType: string, comprobanteData: Buffer) {
+  try {
+    const conv = await prisma.chatConversation.findFirst({ where: { userId, playerId }, select: { id: true } });
+    if (!conv) return;
+    const asset = await prisma.brandingAsset.create({ data: { userId, contentType: comprobanteType, data: comprobanteData }, select: { id: true } });
+    const base = (process.env.APP_BASE_URL ?? "http://localhost:4000").replace(/\/$/, "");
+    const url = `${base}/api/chat/branding/asset/${asset.id}`;
+    const msg = await prisma.chatMessage.create({
+      data: { userId, conversationId: conv.id, senderType: "player", senderId: playerId, body: null, metadata: { image: url, comprobante: true } },
+      select: { id: true, senderType: true, body: true, createdAt: true },
+    });
+    await prisma.chatConversation.update({ where: { id: conv.id }, data: { lastMessageAt: new Date(), lastMessagePreview: "📷 Comprobante", unreadOperator: { increment: 1 } } });
+    // Payload con AMBOS: `image` aplanado (lo lee la PWA del jugador) y `metadata.image` (lo lee el panel
+    // del cajero, ChatAppPage) → la imagen aparece EN VIVO en los dos lados sin recargar.
+    const message = { id: msg.id, senderType: msg.senderType, body: msg.body, image: url, metadata: { image: url, comprobante: true }, createdAt: msg.createdAt };
+    emitChat(`chat:${userId}`, "chat:message", { conversationId: conv.id, message });
+    emitChat(`chat:${userId}:player:${playerId}`, "chat:message", { conversationId: conv.id, message });
+  } catch (e) {
+    console.error("[chat] postComprobanteImage:", e instanceof Error ? e.message : String(e));
+  }
+}
+
+// El jugador manda el COMPROBANTE como imagen suelta en el chat (el bot le dice "subí el comprobante 📎
+// acá") en vez de por el form "Cargar fichas". Lo leemos con IA y, si es un comprobante real, registramos
+// la carga (pending) → la IA dispara Purchase + intent y aparece en la pestaña Cajero (dashboard). NUNCA
+// acredita fichas: eso sigue SOLO en approve manual / callback firmado (§9.2). La imagen ya quedó en el
+// chat (la posteó /me/messages). Devuelve true si lo tomó como comprobante (para que el bot no re-pregunte
+// "Ya pagué"). Best-effort y aislado.
+async function handlePlayerComprobante(accountId: string, playerId: string, comprobanteType: string, comprobanteData: Buffer, botAmount: number | null): Promise<boolean> {
+  try {
+    if (!aiEnabled() || !/image/i.test(comprobanteType)) return false;
+    const receipt = await analyzeReceipt(comprobanteData.toString("base64"), comprobanteType);
+    if (!receipt || !receipt.isReceipt || receipt.confidence < 0.5) return false; // la IA dice que no es un comprobante
+    // Dedup: si el jugador ya tiene una carga pending reciente (usó también el form "Cargar fichas"), no
+    // creamos otra — evita doble Purchase / doble intent. El comprobante ya quedó igual en el chat.
+    const recent = await prisma.chatDeposit.findFirst({
+      where: { userId: accountId, playerId, status: "pending", createdAt: { gte: new Date(Date.now() - 15 * 60 * 1000) } },
+      select: { id: true },
+    });
+    if (recent) return true;
+    const ocr = receipt.amount && receipt.amount > 0 ? Math.round(receipt.amount) : null;
+    if (!ocr) {
+      // Es un comprobante pero no pudimos leer el monto: avisamos al cajero (la imagen ya está en el chat).
+      await notify(accountId, "system", "🧾 Comprobante sin monto legible",
+        "Un jugador mandó un comprobante y no pudimos leer el monto. Revisalo en el chat y cargalo a mano si corresponde.").catch(() => undefined);
+      await postCashierMsg(accountId, playerId, "🧾 Recibimos tu comprobante. Un cajero lo está verificando 🙌", "system").catch(() => undefined);
+      return true;
+    }
+    const declared = botAmount && botAmount > 0 ? Math.round(botAmount / 100) : null; // lo que dijo en el flujo del bot
+    const amount = declared && declared !== ocr ? declared : ocr; // si difieren confiamos en lo declarado
+    if (declared && ocr && declared !== ocr) {
+      await notify(accountId, "system", "⚠️ Monto: comprobante ≠ declarado",
+        `El jugador dijo ${ars(declared)} pero el comprobante se leyó ${ars(ocr)}. Usamos ${ars(declared)} para la carga; verificá que la transferencia real coincida.`).catch(() => undefined);
+    }
+    const dep = await prisma.chatDeposit.create({
+      data: { userId: accountId, playerId, amount, method: "Transferencia", comprobanteType, comprobanteData, status: "pending" },
+      select: { id: true, amount: true },
+    });
+    emitChat(`chat:${accountId}`, "chat:cashier", { type: "deposit", id: dep.id }); // aparece en la pestaña Cajero
+    const cargaMsg = (await casinoLiveForAccount(accountId))
+      ? `🧾 Recibimos tu carga de ${ars(dep.amount)}. La estamos acreditando — puede demorar unos minutos. Te avisamos apenas entre 🙌`
+      : `🧾 Registramos tu carga de ${ars(dep.amount)}. La estamos verificando.`;
+    await postCashierMsg(accountId, playerId, cargaMsg, "system").catch(() => undefined);
+    // La IA relee el comprobante → Purchase a Meta (marketing, una vez) + intent a ganamos (modelo B). Reusa
+    // el OCR que ya hicimos. NO acredita fichas.
+    void readReceiptAndFirePurchase(dep.id, { sendIntent: true, receipt });
+    return true;
+  } catch (e) {
+    console.error("[chat] handlePlayerComprobante:", e instanceof Error ? e.message : String(e));
+    return false;
+  }
+}
+
 // Tras acreditar una carga, le RE-mandamos al jugador sus credenciales + link a la plataforma, con un
 // botón para COPIAR el usuario (lo pega directo al loguear). La clave sólo se muestra en cuentas modelo
 // B (ganamos), donde es la clave por defecto conocida; en el resto no la tenemos en claro (bcrypt).
@@ -1505,6 +1601,9 @@ chatPublicRouter.post("/me/deposit", requireChatClient, async (req, res) => {
     data: { userId: req.accountId!, playerId: req.chatPlayerId!, amount, method: parsed.data.method ?? "Transferencia", comprobanteType, comprobanteData, status: "pending" },
     select: { id: true, amount: true, method: true, status: true, createdAt: true },
   });
+  // El comprobante QUEDA EN EL CHAT: lo posteamos como mensaje con imagen (antes del aviso de carga) para
+  // que el jugador lo vea en su conversación y el cajero lo vea dentro del chat, no sólo en la pestaña Cajero.
+  if (comprobanteData) await postComprobanteImage(req.accountId!, req.chatPlayerId!, comprobanteType ?? "image/jpeg", comprobanteData);
   // Aviso al operador (en vivo, para la sección Cajero) — NO acredita.
   emitChat(`chat:${req.accountId}`, "chat:cashier", { type: "deposit", id: dep.id });
   // Con modelo B (auto-carga) seteamos la expectativa de tiempo: la acreditación es automática pero puede
