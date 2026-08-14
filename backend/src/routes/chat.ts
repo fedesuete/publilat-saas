@@ -892,6 +892,7 @@ chatPublicRouter.get("/branding/:code", async (req, res) => {
     branding: {
       brandName: acc.brandName,
       logoUrl: acc.logoUrl,
+      chatTheme: acc.chatTheme,
       primaryColor: acc.primaryColor,
       accentColor: acc.accentColor,
       welcomeText: acc.welcomeText,
@@ -1109,7 +1110,7 @@ chatPublicRouter.get("/public/:slug", async (req, res) => {
     accountSlug: acc.slug,
     active: await canOperateChat(acc.id),
     branding: {
-      brandName: acc.brandName, logoUrl: acc.logoUrl,
+      brandName: acc.brandName, logoUrl: acc.logoUrl, chatTheme: acc.chatTheme,
       primaryColor: acc.primaryColor, accentColor: acc.accentColor, welcomeText: acc.welcomeText, chatWaLink: acc.chatWaLink, chatPlatformUrl: acc.chatPlatformUrl,
       chatInstallPromptEnabled: acc.chatInstallPromptEnabled,
       chatNotifTitle: acc.chatNotifTitle, chatNotifText: acc.chatNotifText,
