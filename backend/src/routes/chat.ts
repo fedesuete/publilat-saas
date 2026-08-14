@@ -705,9 +705,13 @@ chatPublicRouter.post("/me/deposit/help", requireChatClient, async (req, res) =>
   // fallan, avisamos y NO lo mandamos a transferir a ciegas (cuenta muerta o sin usuario en ganamos).
   if (await casinoLiveForAccount(req.accountId!)) {
     const player = await prisma.chatPlayer.findUnique({ where: { id: req.chatPlayerId! }, select: { casinoUsername: true } });
+    // Pre-alta BEST-EFFORT: si el socio tarda/cuelga (su alta Playwright a veces >30s) NO bloqueamos la
+    // carga — el usuario casi siempre YA existe y sendDepositIntent lo re-registra al subir el comprobante.
+    // Bloqueamos SOLO si el CVU falla (ahí no hay a dónde transferir). Un pre-alta caído se avisa al
+    // operador, no corta al jugador (antes esto trababa toda la carga → plata en limbo sin intent).
     const u = player ? await ensureCasinoUser(req.accountId!, player.casinoUsername) : { ok: false, errorCode: "sin_jugador" };
-    const cvu = u.ok ? await casinoCvuForAccount(req.accountId!) : { ok: false as const, errorCode: u.errorCode };
-    if (!u.ok || !cvu.ok) {
+    const cvu = await casinoCvuForAccount(req.accountId!);
+    if (!cvu.ok) {
       const errBody = "En este momento no podemos procesar cargas 😔. Probá de nuevo en unos minutos.";
       const em = await prisma.chatMessage.create({ data: { userId: req.accountId!, conversationId: conv.id, senderType: "system", body: errBody, metadata: { bot: true, alert: true } }, select: { id: true, senderType: true, body: true, createdAt: true } });
       await prisma.chatConversation.update({ where: { id: conv.id }, data: { lastMessageAt: new Date(), lastMessagePreview: errBody.slice(0, 120), unreadOperator: { increment: 1 } } });
@@ -716,6 +720,7 @@ chatPublicRouter.post("/me/deposit/help", requireChatClient, async (req, res) =>
       emitChat(`chat:${req.accountId}`, "chat:message", { conversationId: conv.id, message: eo });
       return res.json({ message: eo });
     }
+    if (!u.ok) void notify(req.accountId!, "system", "⚠️ Alta de casino lenta/falló", `El alta de ${player?.casinoUsername ?? "?"} tardó o falló (${u.errorCode}). Mostré el CVU igual (el usuario suele ya existir); si esta carga no acredita sola, revisalo a mano.`).catch(() => undefined);
     pay = { cbu: cvu.cvu ?? null, alias: cvu.alias ?? null, titular: cvu.titular ?? null };
     botInfo = null;
   }
