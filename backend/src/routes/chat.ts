@@ -374,6 +374,26 @@ const installSendSchema = z.object({
   which: z.enum(["sequence", "msg1", "msg2", "msg3", "tut_ios", "tut_android"]),
 });
 
+// Fotos de instalación EFECTIVAS de una cuenta: las propias si las cargó; si no, las del ADMIN (default
+// global). Las instrucciones de iPhone/Android son GENÉRICAS → el admin las sube UNA sola vez en su panel
+// (Marca) y TODAS las cuentas las heredan, sin recargarlas por cuenta. Cada cuenta puede igual subir las
+// suyas para pisar el default. Resuelve iOS y Android por separado.
+async function resolveInstallImages(userId: string): Promise<{ ios: string[]; android: string | null }> {
+  const tutSelect = { chatTutIosImg: true, chatTutIosImg2: true, chatTutIosImg3: true, chatTutIosImg4: true, chatTutAndroidImg: true } as const;
+  const pickIos = (u: { chatTutIosImg: string | null; chatTutIosImg2: string | null; chatTutIosImg3: string | null; chatTutIosImg4: string | null } | null) =>
+    [u?.chatTutIosImg, u?.chatTutIosImg2, u?.chatTutIosImg3, u?.chatTutIosImg4].filter((x): x is string => Boolean(x && x.trim()));
+  const own = await prisma.user.findUnique({ where: { id: userId }, select: tutSelect });
+  const ownIos = pickIos(own);
+  const ownAndroid = own?.chatTutAndroidImg?.trim() || null;
+  if (ownIos.length > 0 && ownAndroid) return { ios: ownIos, android: ownAndroid };
+  // Falta iOS o Android propio → heredamos del admin (el default global). El admin más viejo, determinístico.
+  const admin = await prisma.user.findFirst({ where: { role: "ADMIN" }, orderBy: { createdAt: "asc" }, select: tutSelect });
+  return {
+    ios: ownIos.length > 0 ? ownIos : pickIos(admin),
+    android: ownAndroid ?? (admin?.chatTutAndroidImg?.trim() || null),
+  };
+}
+
 // POST /api/chat/messages/install — el operador manda mensajes GUARDADOS de la secuencia de
 // instalación (o una foto de tutorial). El msg2 lleva metadata.install -> botón "INSTALAR APP" en la PWA.
 chatRouter.post("/messages/install", requireActiveLine, async (req, res) => {
@@ -395,16 +415,19 @@ chatRouter.post("/messages/install", requireActiveLine, async (req, res) => {
     case "msg2": items.push({ body: m2, metadata: { install: true } }); break;
     case "msg3": items.push({ body: m3, metadata: {} }); break;
     case "tut_ios": {
-      // Manda TODAS las fotos de iPhone cargadas (paso 1→4) en orden, como una secuencia de pasos.
-      const iosImgs = [acc?.chatTutIosImg, acc?.chatTutIosImg2, acc?.chatTutIosImg3, acc?.chatTutIosImg4].filter((u): u is string => Boolean(u && u.trim()));
-      if (iosImgs.length === 0) return res.status(400).json({ error: "Cargá primero las fotos de instalación de iPhone en el panel (Marca)." });
-      iosImgs.forEach((img, i) => items.push({ body: i === 0 ? "📱 Cómo instalar en iPhone:" : `Paso ${i + 1}`, metadata: { image: img } }));
+      // Manda TODAS las fotos de iPhone (paso 1→4) en orden. Usa las de la cuenta o, si no cargó, las del
+      // admin (default global) → funciona desde CUALQUIER panel sin recargarlas por cuenta.
+      const { ios } = await resolveInstallImages(req.userId!);
+      if (ios.length === 0) return res.status(400).json({ error: "Todavía no hay fotos de instalación de iPhone. Cargalas en tu panel (Marca) — o el admin las sube una vez y valen para todas las cuentas." });
+      ios.forEach((img, i) => items.push({ body: i === 0 ? "📱 Cómo instalar en iPhone:" : `Paso ${i + 1}`, metadata: { image: img } }));
       break;
     }
-    case "tut_android":
-      if (!acc?.chatTutAndroidImg) return res.status(400).json({ error: "Cargá primero la foto de instalación de Android en el panel (Marca)." });
-      items.push({ body: "🤖 Instalación en Android:", metadata: { image: acc.chatTutAndroidImg } });
+    case "tut_android": {
+      const { android } = await resolveInstallImages(req.userId!);
+      if (!android) return res.status(400).json({ error: "Todavía no hay foto de instalación de Android. Cargala en tu panel (Marca) — o el admin la sube una vez y vale para todas las cuentas." });
+      items.push({ body: "🤖 Instalación en Android:", metadata: { image: android } });
       break;
+    }
   }
 
   const out = [];
@@ -547,7 +570,7 @@ const brandingSchema = z.object({
   logoUrl: z.string().url().max(600).nullish(),
   primaryColor: hexColor.nullish(),
   accentColor: hexColor.nullish(),
-  chatTheme: z.enum(["whatsapp", "midnight"]).optional(),
+  chatTheme: z.enum(["whatsapp", "midnight", "redblack"]).optional(),
   welcomeText: z.string().max(300).nullish(),
   welcomeMsgText: z.string().max(1000).nullish(),
   welcomeMsgImage: z.string().url().max(600).nullish(),

@@ -42,6 +42,10 @@ html, body, #root {
   --c-input: #0b1220; --c-muted: #94a3b8; --c-border: #334155;
   --c-pill-bg: #1e293b; --c-pill-text: #93c5fd;
 }
+/* "redblack" (Valentino): WhatsApp común y PELADO — mismos colores que el tema whatsapp (los del
+   .chat-root base: header teal, fondo beige, burbujas verdes), sin ningún botón del casino (el modo
+   "bare" lo maneja ChatPage). No define colores propios: hereda el default a propósito, para que sea
+   idéntico a un WhatsApp normal. */
 
 /* Efecto de "resalte" para el CTA principal (botón violeta "Entrar a la plataforma"). */
 @keyframes brandGlow {

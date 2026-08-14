@@ -56,7 +56,7 @@ model User {
                             // cuenta opera su propio tenant; si no, cae a la key global del .env (legacy).
   primaryColor    String?
   accentColor     String?
-  chatTheme       String    @default("whatsapp") // diseño de la PWA del chat: whatsapp | midnight
+  chatTheme       String    @default("whatsapp") // diseño de la PWA del chat: whatsapp | midnight | redblack (WhatsApp pelado, sin botones)
   welcomeText     String?   // texto de bienvenida en la PWA
   welcomeMsgText  String?   // primer mensaje automático de la conversación
   welcomeMsgImage String?

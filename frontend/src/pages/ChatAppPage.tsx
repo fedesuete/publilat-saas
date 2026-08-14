@@ -442,9 +442,11 @@ interface Brand {
 const EMPTY_BRAND: Brand = { brandName: null, logoUrl: null, primaryColor: null, accentColor: null, chatTheme: "whatsapp", welcomeText: null, welcomeMsgText: null, welcomeMsgImage: null, chatWaLink: null, chatPlatformUrl: null, chatPayCbu: null, chatPayAlias: null, chatPayTitular: null, chatInstallMsg1: null, chatInstallMsg2: null, chatInstallMsg3: null, chatTutIosImg: null, chatTutIosImg2: null, chatTutIosImg3: null, chatTutIosImg4: null, chatTutAndroidImg: null, chatDirectWelcome: null, chatInstallPromptEnabled: false, chatNotifTitle: null, chatNotifText: null };
 
 // Diseños disponibles del chat (mini-preview en el selector). "brand" = usa el color del cliente.
+// bare = WhatsApp pelado (sin botones del casino): el preview no muestra el botón CARGAR.
 const CHAT_THEMES = [
-  { id: "whatsapp", label: "WhatsApp (actual)", header: "#0b7d6e", headerText: "#ffffff", bg: "#e5ddd5", op: "#ffffff", opText: "#1e293b", me: "#d9fdd3", accent: "#1fa855" },
-  { id: "midnight", label: "Oscuro", header: "#0f172a", headerText: "#ffffff", bg: "#0b1220", op: "#1e293b", opText: "#e2e8f0", me: "brand", accent: "brand" },
+  { id: "whatsapp", label: "WhatsApp (actual)", header: "#0b7d6e", headerText: "#ffffff", bg: "#e5ddd5", op: "#ffffff", opText: "#1e293b", me: "#d9fdd3", accent: "#1fa855", bare: false },
+  { id: "midnight", label: "Oscuro", header: "#0f172a", headerText: "#ffffff", bg: "#0b1220", op: "#1e293b", opText: "#e2e8f0", me: "brand", accent: "brand", bare: false },
+  { id: "redblack", label: "WhatsApp pelado (sin botones)", header: "#0b7d6e", headerText: "#ffffff", bg: "#e5ddd5", op: "#ffffff", opText: "#1e293b", me: "#d9fdd3", accent: "#1fa855", bare: true },
 ];
 
 function BrandingTab() {
@@ -572,7 +574,9 @@ function BrandingTab() {
                     <div className="space-y-1 p-2">
                       <div className="w-3/4 rounded px-1.5 py-1 text-[9px]" style={{ background: t.op, color: t.opText }}>operador</div>
                       <div className="ml-auto w-2/3 rounded px-1.5 py-1 text-right text-[9px] text-white" style={{ background: me }}>cliente</div>
-                      <div className="mt-1 rounded py-1 text-center text-[9px] font-bold text-white" style={{ background: accent }}>CARGAR</div>
+                      {t.bare
+                        ? <div className="mt-1 text-center text-[8px] italic opacity-50" style={{ color: t.opText }}>chat pelado · sin botones</div>
+                        : <div className="mt-1 rounded py-1 text-center text-[9px] font-bold text-white" style={{ background: accent }}>CARGAR</div>}
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 text-xs font-medium text-slate-200">

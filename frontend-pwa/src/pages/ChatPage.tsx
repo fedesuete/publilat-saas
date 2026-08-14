@@ -201,6 +201,12 @@ export default function ChatPage() {
   // si el operador no cargó datos estructurados, el form igual se ancla al último mensaje de datos.
   if (!lastPayId) { for (let i = messages.length - 1; i >= 0; i--) { if (messages[i].pay) { lastPayId = messages[i].id; break; } } }
 
+  // "redblack" = diseño WhatsApp PELADO (Valentino): un chat común y corriente. Esconde TODO lo del
+  // casino (saldo, pill de estado, barra Cargar/Retirar, chips del bot, botones dentro de mensajes,
+  // popup/install/push) y deja solo: header + mensajes + barra de escribir (con 📎 para el comprobante,
+  // que la IA lee igual). El cajero opera hablando, como en un WhatsApp real.
+  const bare = (branding?.chatTheme || "whatsapp") === "redblack";
+
   return (
     <div className="chat-root flex h-full flex-col bg-[var(--c-bg)]" data-theme={branding?.chatTheme || "whatsapp"}>
       <header className="flex items-center gap-3 px-4 py-2.5 shadow" style={{ background: "var(--c-header)", color: "var(--c-header-text)" }}>
@@ -209,20 +215,23 @@ export default function ChatPage() {
           <div className="truncate font-semibold leading-tight">{branding?.brandName || "Chat"}</div>
           <div className="text-xs opacity-80">🟢 en línea</div>
         </div>
-        {wallet && <div className="ml-auto rounded-full bg-white/20 px-3 py-1 text-sm font-bold">💰 {money(wallet.balance)}</div>}
+        {wallet && !bare && <div className="ml-auto rounded-full bg-white/20 px-3 py-1 text-sm font-bold">💰 {money(wallet.balance)}</div>}
       </header>
 
-      {/* Pill "conectado" (estilo competencia): redondeada, flotando sobre el fondo. */}
-      <div className="flex justify-center px-4 pt-3 pb-1">
-        <div className="rounded-full px-4 py-1.5 text-center text-xs font-medium shadow-sm" style={{ background: "var(--c-pill-bg)", color: "var(--c-pill-text)" }}>
-          Conectado. Escribinos y te respondemos.
+      {/* Pill "conectado" (estilo competencia): redondeada, flotando sobre el fondo. En redblack se
+          esconde (WhatsApp pelado no tiene esa pill). */}
+      {!bare && (
+        <div className="flex justify-center px-4 pt-3 pb-1">
+          <div className="rounded-full px-4 py-1.5 text-center text-xs font-medium shadow-sm" style={{ background: "var(--c-pill-bg)", color: "var(--c-pill-text)" }}>
+            Conectado. Escribinos y te respondemos.
+          </div>
         </div>
-      </div>
+      )}
 
       {/* El link a la plataforma va SOLO en el primer mensaje (welcome), no en una barra arriba. */}
 
-      {/* Popup/promo al entrar (imagen + texto + link), configurable por el operador. */}
-      {popup && (
+      {/* Popup/promo al entrar (imagen + texto + link), configurable por el operador. Oculto en redblack. */}
+      {popup && !bare && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={closePopup}>
           <div className="w-full max-w-sm overflow-hidden rounded-2xl border border-slate-700 bg-slate-900" onClick={(e) => e.stopPropagation()}>
             {popup.image && <img src={popup.image} alt="" className="max-h-[45vh] w-full object-cover" />}
@@ -243,12 +252,12 @@ export default function ChatPage() {
 
       {/* Instalar la app (post-registro, ya con sesión) -> al abrir la app instalada entra directo.
           Solo si el operador lo activó en el panel (apagado por defecto). */}
-      {branding?.chatInstallPromptEnabled && <InstallPrompt />}
+      {branding?.chatInstallPromptEnabled && !bare && <InstallPrompt />}
 
       {/* Modal GRANDE para activar notificaciones (solo si el navegador las soporta y aún no decidió).
-          Branded por cuenta; se posterga unos días al tocar "Ahora no". */}
-      {push === "default" && <PushPrompt branding={branding} onEnable={enablePush} busy={pushBusy} />}
-      {push === "denied" && (
+          Branded por cuenta; se posterga unos días al tocar "Ahora no". Oculto en redblack (chat pelado). */}
+      {push === "default" && !bare && <PushPrompt branding={branding} onEnable={enablePush} busy={pushBusy} />}
+      {push === "denied" && !bare && (
         <div className="px-4 py-2 text-center text-xs" style={{ background: "var(--c-surface)", color: "var(--c-muted)" }}>
           Notificaciones bloqueadas. Podés activarlas desde los ajustes del navegador.
         </div>
@@ -293,17 +302,17 @@ export default function ChatPage() {
           const showForm = m.id === lastPayId;  // el form persiste en el último mensaje de datos (no se achica al enviar)
           // Cards con botón (bienvenida con link + datos de pago + instalar) usan el MISMO ancho, para
           // que todos los botones tengan las mismas proporciones y el chat no se "descuadre".
-          const isWide = hasPay || !!m.pay || !!m.link || !!m.install || !!m.copy;
+          const isWide = !bare && (hasPay || !!m.pay || !!m.link || !!m.install || !!m.copy);
           return (
             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
               <div className={`px-2.5 py-1.5 text-sm shadow-sm ${isWide ? "w-[88%] max-w-[88%]" : "max-w-[82%]"} ${mine ? "rounded-lg rounded-tr-sm" : "rounded-lg rounded-tl-sm"}`}
                 style={mine ? { background: "var(--c-me)", color: "var(--c-me-text)" } : { background: "var(--c-surface)", color: "var(--c-surface-text)" }}>
                 {img}
                 {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
-                {copyBtn}
-                {linkBtn}
-                {installBtn}
-                {(hasPay || showForm) && (
+                {!bare && copyBtn}
+                {!bare && linkBtn}
+                {!bare && installBtn}
+                {!bare && (hasPay || showForm) && (
                   <div className="mt-1.5">
                     {hasPay ? (
                       <>
@@ -346,8 +355,8 @@ export default function ChatPage() {
 
       {error && <div className="px-4 py-1 text-center text-xs text-rose-600">{error}</div>}
 
-      {/* Botones del bot (chips): tocar = mandar ese texto. Muestra los del último mensaje. */}
-      {messages[messages.length - 1]?.buttons?.length ? (
+      {/* Botones del bot (chips): tocar = mandar ese texto. Muestra los del último mensaje. Ocultos en redblack. */}
+      {!bare && messages[messages.length - 1]?.buttons?.length ? (
         <div className="flex flex-wrap gap-2 px-3 pt-2.5" style={{ background: "var(--c-surface)" }}>
           {messages[messages.length - 1]!.buttons!.map((b) => (
             <button key={b} type="button" disabled={sending} onClick={() => void sendBody(b)}
@@ -358,8 +367,9 @@ export default function ChatPage() {
         </div>
       ) : null}
 
-      {/* Barra del cajero: cargar / retirar / soporte (E3). Botones full-width "fichas" (estilo maqueta). */}
-      {wallet && (
+      {/* Barra del cajero: cargar / retirar / soporte (E3). Botones full-width "fichas" (estilo maqueta).
+          En redblack NO va (chat pelado): el cajero maneja carga/retiro hablando, como en WhatsApp. */}
+      {wallet && !bare && (
         <div className="flex flex-col gap-2 px-3 pt-3 pb-1" style={{ background: "var(--c-bg)" }}>
           <button onClick={() => void openDeposit()}
             className="flex w-full items-center justify-center gap-2 rounded-lg py-3 text-sm font-extrabold shadow-sm"
