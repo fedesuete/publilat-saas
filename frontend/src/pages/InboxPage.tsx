@@ -107,7 +107,9 @@ export default function InboxPage() {
   const loadConvs = async () => {
     try {
       const { data } = await api.get<{ conversations: Conversation[] }>("/api/inbox/conversations");
-      setConvs(data.conversations);
+      // La conversación ABIERTA la estás leyendo: la dejamos en 0 aunque el backend la recalcule, para
+      // que NO "vuelva a verde" cuando llega un mensaje mientras la mirás.
+      setConvs(data.conversations.map((c) => (c.id === selectedRef.current ? { ...c, unread: 0 } : c)));
     } catch (err) { setListError(apiError(err)); }
   };
   const loadQuick = async () => {
@@ -160,12 +162,16 @@ export default function InboxPage() {
   const send = async (e?: { preventDefault?: () => void }) => {
     e?.preventDefault?.();
     if (!selected || !draft.trim()) return;
+    const target = selected; // contacto destino al MOMENTO de enviar (evita el cruce si cambiás de chat)
     setSending(true); setChatError(null);
     const body = draft.trim();
     try {
-      const { data } = await api.post<{ message: Msg }>(`/api/inbox/${selected}/messages`, { body });
-      setMessages((prev) => appendUnique(prev, data.message));
-      setDraft(""); setShowEmoji(false); setShowQuick(false); setShowAudios(false);
+      const { data } = await api.post<{ message: Msg }>(`/api/inbox/${target}/messages`, { body });
+      // Solo pintamos el mensaje si seguís en ESE chat; si ya te fuiste, se ve al volver (GET /messages).
+      if (selectedRef.current === target) {
+        setMessages((prev) => appendUnique(prev, data.message));
+        setDraft(""); setShowEmoji(false); setShowQuick(false); setShowAudios(false);
+      }
       void loadConvs();
     } catch (err) {
       setChatError(apiError(err));
@@ -186,12 +192,15 @@ export default function InboxPage() {
 
   const sendTemplate = async (t: Tpl, params: string[]) => {
     if (!selected) return;
+    const target = selected;
     try {
-      const { data } = await api.post<{ message: Msg }>(`/api/inbox/${selected}/template`, {
+      const { data } = await api.post<{ message: Msg }>(`/api/inbox/${target}/template`, {
         name: t.name, language: t.language, params: params.length ? params : undefined,
       });
-      setMessages((prev) => appendUnique(prev, data.message));
-      setNeedTemplate(false); setTemplates([]); setDraft("");
+      if (selectedRef.current === target) {
+        setMessages((prev) => appendUnique(prev, data.message));
+        setNeedTemplate(false); setTemplates([]); setDraft("");
+      }
       void loadConvs();
     } catch (err) { setChatError(apiError(err)); }
   };
@@ -227,10 +236,11 @@ export default function InboxPage() {
           fr.readAsDataURL(blob);
         });
         if (recTargetRef.current === "lib") { await saveClip(dataUrl); return; }
-        if (!selectedRef.current) return;
+        const target = selectedRef.current;
+        if (!target) return;
         try {
-          const { data } = await api.post<{ message: Msg }>(`/api/inbox/${selectedRef.current}/audio`, { audio: dataUrl });
-          setMessages((prev) => appendUnique(prev, data.message));
+          const { data } = await api.post<{ message: Msg }>(`/api/inbox/${target}/audio`, { audio: dataUrl });
+          if (selectedRef.current === target) setMessages((prev) => appendUnique(prev, data.message));
           void loadConvs();
         } catch (err) { setChatError(apiError(err)); }
       };
@@ -301,11 +311,12 @@ export default function InboxPage() {
   };
   const sendAudioClip = async (clipId: string) => {
     if (!selected) return;
+    const target = selected; // contacto destino al momento de tocar Enviar
     setChatError(null); setSending(true);
     try {
-      const { data } = await api.post<{ message: Msg }>(`/api/inbox/${selected}/audio-clip`, { clipId });
-      setMessages((prev) => appendUnique(prev, data.message));
-      setShowAudios(false);
+      const { data } = await api.post<{ message: Msg }>(`/api/inbox/${target}/audio-clip`, { clipId });
+      // Solo lo pintamos si seguís en ese chat; si cambiaste, ya se envió al contacto correcto (se ve al volver).
+      if (selectedRef.current === target) { setMessages((prev) => appendUnique(prev, data.message)); setShowAudios(false); }
       void loadConvs();
     } catch (err) { setChatError(apiError(err)); }
     finally { setSending(false); }

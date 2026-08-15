@@ -107,8 +107,12 @@ export default function ChatAppPage() {
   selectedRef.current = selected;
 
   const loadConvs = async () => {
-    try { const { data } = await api.get<{ conversations: Conv[] }>("/api/chat/conversations"); setConvs(data.conversations); }
-    catch (e) { setError(apiError(e)); }
+    try {
+      const { data } = await api.get<{ conversations: Conv[] }>("/api/chat/conversations");
+      // La conversación ABIERTA la estás leyendo: la dejamos en 0 aunque llegue un mensaje mientras la mirás
+      // (evita que el contador "reviva" en verde con 99+/2 estando abierta).
+      setConvs(data.conversations.map((c) => (c.id === selectedRef.current ? { ...c, unread: 0 } : c)));
+    } catch (e) { setError(apiError(e)); }
   };
   const openConv = async (id: string) => {
     setSelected(id); setError(null);
@@ -135,6 +139,8 @@ export default function ChatAppPage() {
       if (p.message?.senderType === "player") playChatPing();
       if (p.conversationId === selectedRef.current) {
         setMessages((prev) => appendUnique(prev, p.message)); // dedup por id
+        // La estás mirando: marcala leída en el backend para que el contador no reviva al recargar convs.
+        void api.post(`/api/chat/conversations/${p.conversationId}/read`).catch(() => undefined);
       }
       void loadConvs(); // refresca previews / no-leídos
     };
@@ -146,11 +152,11 @@ export default function ChatAppPage() {
     e.preventDefault();
     const body = draft.trim();
     if (!body || !selected) return;
+    const target = selected; // conversación destino al momento de enviar (evita el cruce si cambiás de chat)
     setSending(true); setError(null);
     try {
-      const { data } = await api.post<{ message: Msg }>("/api/chat/messages", { conversationId: selected, body });
-      setMessages((prev) => appendUnique(prev, data.message)); // optimistic; el echo del socket se deduplica
-      setDraft("");
+      const { data } = await api.post<{ message: Msg }>("/api/chat/messages", { conversationId: target, body });
+      if (selectedRef.current === target) { setMessages((prev) => appendUnique(prev, data.message)); setDraft(""); }
       void loadConvs();
     } catch (e) { setError(apiError(e)); } finally { setSending(false); }
   };
@@ -161,13 +167,14 @@ export default function ChatAppPage() {
   const sendImage = async (file: File) => {
     if (!selected) return;
     if (file.size > 700 * 1024) { setError("La imagen supera 700 KB. Usá una más liviana."); return; }
+    const target = selected;
     setSending(true); setError(null);
     try {
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const r = new FileReader(); r.onload = () => resolve(String(r.result ?? "")); r.onerror = reject; r.readAsDataURL(file);
       });
-      const { data } = await api.post<{ message: Msg }>("/api/chat/messages/image", { conversationId: selected, image: dataUrl });
-      setMessages((prev) => appendUnique(prev, data.message));
+      const { data } = await api.post<{ message: Msg }>("/api/chat/messages/image", { conversationId: target, image: dataUrl });
+      if (selectedRef.current === target) setMessages((prev) => appendUnique(prev, data.message));
       void loadConvs();
     } catch (e) { setError(apiError(e)); } finally { setSending(false); if (imgRef.current) imgRef.current.value = ""; }
   };
@@ -175,10 +182,11 @@ export default function ChatAppPage() {
   // Secuencia de instalación / fotos guardadas (mensajes con el botón INSTALAR APP).
   const sendInstall = async (which: "sequence" | "msg2" | "tut_ios" | "tut_android") => {
     if (!selected) return;
+    const target = selected;
     setSending(true); setError(null);
     try {
-      const { data } = await api.post<{ messages: Msg[] }>("/api/chat/messages/install", { conversationId: selected, which });
-      setMessages((prev) => data.messages.reduce((acc, m) => appendUnique(acc, m), prev));
+      const { data } = await api.post<{ messages: Msg[] }>("/api/chat/messages/install", { conversationId: target, which });
+      if (selectedRef.current === target) setMessages((prev) => data.messages.reduce((acc, m) => appendUnique(acc, m), prev));
       void loadConvs();
     } catch (e) { setError(apiError(e)); } finally { setSending(false); }
   };

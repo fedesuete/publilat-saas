@@ -327,6 +327,18 @@ chatRouter.get("/conversations/:id/messages", async (req, res) => {
   return res.json({ messages });
 });
 
+// POST /api/chat/conversations/:id/read — marca leída (unreadOperator=0) SIN traer el historial. La usa el
+// panel cuando llega un mensaje a la conversación que el operador tiene ABIERTA, para que el contador no
+// reviva (el jugador escribió, pero el operador lo está leyendo en vivo).
+chatRouter.post("/conversations/:id/read", async (req, res) => {
+  const upd = await prisma.chatConversation.updateMany({
+    where: { id: req.params.id, userId: req.userId! },
+    data: { unreadOperator: 0 },
+  });
+  if (upd.count === 0) return res.status(404).json({ error: "Conversación no encontrada" });
+  return res.json({ ok: true });
+});
+
 const opSendSchema = z.object({ conversationId: z.string().min(1), body: z.string().min(1).max(4000) });
 
 // POST /api/chat/messages — el operador responde. CÓDIGO PROPIO del chat: NO pasa por
