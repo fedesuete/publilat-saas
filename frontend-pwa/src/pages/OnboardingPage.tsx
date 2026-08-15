@@ -162,7 +162,7 @@ export default function OnboardingPage() {
             <p className="mt-2 text-sm text-slate-400">Ya tenés una cuenta en {name}.</p>
             <button onClick={() => navigate("/chat", { replace: true })}
               className="mt-5 w-full rounded-xl py-3.5 text-base font-extrabold text-white transition active:scale-[.98]"
-              style={{ background: "#22c55e", boxShadow: "0 12px 30px -10px #22c55e" }}>
+              style={{ background: primary, boxShadow: "0 12px 30px -10px var(--brand-primary, #7c3aed)" }}>
               Entrar a mi cuenta
             </button>
             <button onClick={() => { clearToken(); localStorage.removeItem(SESSION_SLUG_KEY); setStep("form"); }}
@@ -173,8 +173,8 @@ export default function OnboardingPage() {
         ) : step === "done" && creds ? (
           /* --------- PASO: cuenta creada --------- */
           <>
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500 text-3xl font-bold text-white"
-              style={{ boxShadow: "0 0 30px -4px #22c55e" }}>✓</div>
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full text-3xl font-bold text-white"
+              style={{ background: primary, boxShadow: "0 0 30px -4px var(--brand-primary, #7c3aed)" }}>✓</div>
             <h1 className="text-2xl font-extrabold tracking-tight">¡CUENTA CREADA!</h1>
             <div className="mt-5 space-y-2">
               <Field label="USUARIO" value={creds.username} />
@@ -182,7 +182,7 @@ export default function OnboardingPage() {
             </div>
             <button onClick={() => navigate("/chat", { replace: true })}
               className="mt-5 w-full rounded-xl py-3.5 text-base font-extrabold text-white transition active:scale-[.98]"
-              style={{ background: "#22c55e", boxShadow: "0 12px 30px -10px #22c55e" }}>
+              style={{ background: primary, boxShadow: "0 12px 30px -10px var(--brand-primary, #7c3aed)" }}>
               JUGAR YA!
             </button>
             <p className="mt-3 text-xs text-slate-500">Guardá tus datos para volver a entrar cuando quieras.</p>
