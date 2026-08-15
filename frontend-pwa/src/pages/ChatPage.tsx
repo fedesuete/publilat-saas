@@ -208,7 +208,10 @@ export default function ChatPage() {
   const bare = (branding?.chatTheme || "whatsapp") === "redblack";
 
   return (
-    <div className="chat-root flex h-full flex-col bg-[var(--c-bg)]" data-theme={branding?.chatTheme || "whatsapp"}>
+    <div className="chat-root flex h-full flex-col" data-theme={branding?.chatTheme || "whatsapp"}
+      style={bare
+        ? { backgroundColor: "var(--c-bg)", backgroundImage: "url(/chat-bg-redblack.jpg)", backgroundSize: "cover", backgroundPosition: "center" }
+        : { backgroundColor: "var(--c-bg)" }}>
       {bare ? (
         /* Header estilo WhatsApp: flecha ← + avatar + nombre + "en línea" + videollamada + llamada. */
         <header className="flex items-center gap-2.5 px-2.5 py-2 shadow-sm" style={{ background: "var(--c-header)", color: "var(--c-header-text)" }}>
