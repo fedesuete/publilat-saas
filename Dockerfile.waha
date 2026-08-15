@@ -1,0 +1,16 @@
+# WAHA con parche de PAÍS en el handshake de Baileys.
+#
+# POR QUÉ: el Baileys embebido en WAHA declara el país HARDCODEADO como "US" en el payload de login
+# (Defaults `countryCode: 'US'`; lo usa validate-connection.js -> localeCountryIso31661Alpha2). El motor
+# NOWEB de WAHA nunca lo setea (solo WEBJS lo referencia), así que TODAS nuestras líneas +54 se
+# presentaban ante WhatsApp diciendo "soy de Estados Unidos": SIM argentina + handshake US = mismatch
+# geo sistemático a nivel protocolo (confirmado 2026-08-15; el pool de proxies no lo arregla).
+#
+# QUÉ HACE: deriva de la imagen pineada y cambia el default a 'AR'. El grep final ROMPE el build si una
+# imagen nueva de WAHA cambia la ruta o la forma del default (mejor fallar fuerte en el build que volver
+# a "US" en silencio). Al actualizar WAHA (deploy/update-waha.sh) el parche se re-aplica solo porque el
+# compose construye SIEMPRE desde este Dockerfile.
+ARG WAHA_BASE=devlikeapro/waha@sha256:dc134637dfa0bd65202010a65e4ff8176101791699176c75bb37d5aa9daf487c
+FROM ${WAHA_BASE}
+RUN sed -i "s/countryCode: 'US'/countryCode: 'AR'/g" /app/node_modules/@adiwajshing/baileys/lib/Defaults/index.js \
+ && grep -q "countryCode: 'AR'" /app/node_modules/@adiwajshing/baileys/lib/Defaults/index.js

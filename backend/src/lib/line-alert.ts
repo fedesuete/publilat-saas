@@ -68,6 +68,29 @@ export async function lineRestrictedUntil(instanceName: string): Promise<number 
   }
 }
 
+// Señal INEQUÍVOCA de logout/ban de WhatsApp, o null si no la hay. La API de WAHA NO expone el motivo
+// de una caída (un FAILED por proxy caído se ve igual que uno por ban), pero un logout REAL deja una
+// huella verificable: Baileys BORRA las credenciales del dispositivo ("Session has been logged out",
+// "do not reconnect") → la sesión que ESTABA vinculada vuelve a pedir QR (SCAN_QR_CODE) o queda
+// FAILED/STOPPED sin identidad (`me` vacío). Se usa en la recuperación (recoverProxyLine), que corre
+// SOLO sobre líneas que estaban conectadas y se cayeron — en ese contexto "volvió a pedir QR" = WhatsApp
+// desvinculó el dispositivo (unpaired). Best-effort (una llamada a WAHA).
+export async function lineBanSignal(instanceName: string): Promise<string | null> {
+  const base = process.env.WAHA_BASE_URL, key = process.env.WAHA_API_KEY;
+  if ((process.env.WA_ENGINE ?? "").toLowerCase() !== "waha" || !base || !key) return null;
+  try {
+    const r = await fetch(`${base}/api/sessions/${instanceName}`, { headers: { "X-Api-Key": key } });
+    if (!r.ok) return null;
+    const s = (await r.json()) as { status?: string; me?: { id?: string } | null };
+    const status = (s.status ?? "").toUpperCase();
+    if (status === "SCAN_QR_CODE") return "unpaired: la sesión vinculada volvió a pedir QR (WhatsApp desvinculó el dispositivo)";
+    if ((status === "FAILED" || status === "STOPPED") && !s.me?.id) return `${status} sin identidad (WhatsApp invalidó las credenciales)`;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // Status CRUDO de la sesión en WAHA (WORKING | STARTING | SCAN_QR_CODE | FAILED | STOPPED) o null si no
 // aplica / falla. `connectionState` colapsa STARTING y SCAN_QR_CODE en "connecting"; acá los separamos
 // para que checkLineHealth reinicie SOLO las TRABADAS en STARTING (no las que legítimamente esperan que

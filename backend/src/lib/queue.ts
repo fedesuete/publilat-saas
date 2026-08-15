@@ -16,7 +16,7 @@ import { decryptSecret } from "./crypto.js";
 import { notify } from "./notifications.js";
 import { sendAdminMail } from "./mailer.js";
 import { checkWaWebVersion } from "./wa-version.js";
-import { alertLineDown, alertLowBalance, lineRestrictedUntil, lineRawStatus } from "./line-alert.js";
+import { alertLineDown, alertLowBalance, lineRestrictedUntil, lineRawStatus, lineBanSignal } from "./line-alert.js";
 import { dedupeSameNumberLines } from "./dedupe-lines.js";
 import { alertCapiFailures } from "./capi-guard.js";
 import { rotateProxy, releaseProxy, applyLineProxy, logProxyEvent, alertAdminProxy, probeProxy, assignFallback, assignProxyPreferred, setLineWaitingProxy, verifyIproyalLine, IPROYAL_PROVIDER } from "./proxy-pool.js";
@@ -212,6 +212,13 @@ export async function checkLineHealth(): Promise<void> {
         const inst = line.sessionId ?? `line_${line.id}`;
         const state = await getEngine().connectionState(inst);
         connected = state === "open";
+        // Autocorrección de falso ban: si una línea marcada "baneada" está WORKING, el ban fue un falso
+        // positivo (p.ej. el dueño estaba re-escaneando el QR justo cuando la recuperación miró la sesión,
+        // y después la vinculó bien) → se destilda sola; nadie más que el admin podía limpiarla a mano.
+        if (line.banned && connected) {
+          await prisma.waLine.update({ where: { id: line.id }, data: { banned: false } }).catch(() => undefined);
+          console.log(`[line-health] línea ${line.id} conectada pero marcada baneada -> se limpia (falso positivo)`);
+        }
         // TRABADA en STARTING: una sesión sana llega a WORKING en segundos; si sigue en STARTING entre dos
         // chequeos (5 min) quedó colgada (típico tras un update del motor). El auto-recupero normal NO la
         // agarra porque solo dispara en la CAÍDA (line.connected && !connected). La reiniciamos igual (mismo
@@ -404,6 +411,7 @@ export async function recoverProxyLine(lineId: string): Promise<void> {
     }
   }
   let sawRealBan = false;
+  let banDetail = "";
   for (let attempt = 1; attempt <= RECOVER_BACKOFFS.length; attempt++) {
     const line = await prisma.waLine.findUnique({
       where: { id: lineId },
@@ -433,9 +441,12 @@ export async function recoverProxyLine(lineId: string): Promise<void> {
       await logProxyEvent(lineId, line.proxyId, "reconnected", `intento ${attempt}`);
       return;
     }
-    // Ban INEQUÍVOCO = WhatsApp lo dijo. "close"/"unknown"/"failed" NO son ban (transitorios o 404 de la
-    // API de WAHA) → no marcamos baneado por eso.
-    if (/logout|logged.?out|401|403|unpaired/i.test(state)) { sawRealBan = true; break; }
+    // Ban INEQUÍVOCO = WhatsApp lo dijo. OJO: la señal NO está en `state` (connectionState solo devuelve
+    // open/connecting/close/unknown — el regex que buscaba "logout|401|403" acá adentro no podía matchear
+    // NUNCA, por eso el sistema jamás detectó un ban). La señal real está en la sesión de WAHA: deslogueada
+    // = vuelve a pedir QR o pierde la identidad (lineBanSignal). "close"/"unknown" siguen sin ser ban.
+    const banSignal = await lineBanSignal(inst);
+    if (banSignal) { sawRealBan = true; banDetail = banSignal; break; }
   }
 
   const line = await prisma.waLine.findUnique({
@@ -447,11 +458,11 @@ export async function recoverProxyLine(lineId: string): Promise<void> {
   if ((await getEngine().connectionState(inst).catch(() => "")) === "open") return; // reconectó en el ínterin
 
   if (sawRealBan) {
-    // SOLO acá marcamos baneado: WhatsApp dio una señal inequívoca (logout/401/403/unpaired).
+    // SOLO acá marcamos baneado: WhatsApp dio una señal inequívoca (deslogueó/desvinculó el dispositivo).
     await prisma.waLine.update({ where: { id: lineId }, data: { banned: true, connected: false, status: "inactive" } }).catch(() => undefined);
-    await logProxyEvent(lineId, line.proxyId, "banned", "WhatsApp dio logout/401/403");
+    await logProxyEvent(lineId, line.proxyId, "banned", banDetail || "WhatsApp deslogueó el dispositivo");
     await releaseProxy(lineId); // libera el cupo del proxy para otra línea
-    await alertAdminProxy("Número baneado", `La línea "${line.label ?? line.phone}" recibió logout/ban de WhatsApp. Se marcó BANEADA y se liberó su proxy.`, "banned", { lineId });
+    await alertAdminProxy("Número baneado", `La línea "${line.label ?? line.phone}" recibió logout/ban de WhatsApp (${banDetail || "sesión deslogueada"}). Se marcó BANEADA y se liberó su proxy.`, "banned", { lineId });
   } else {
     // No reconectó en la ventana, pero WhatsApp NUNCA dijo ban → NO la marcamos baneada (falsa baja =
     // corta servicio a un cliente sano) ni tocamos su proxy. Queda caída para reintento/reconexión manual.

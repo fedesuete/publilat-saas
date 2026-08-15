@@ -12,8 +12,10 @@ docker pull devlikeapro/waha:latest >/dev/null
 NEW=$(docker inspect --format '{{index .RepoDigests 0}}' devlikeapro/waha:latest)
 echo "[waha-update] imagen nueva: $NEW"
 
-echo "[waha-update] recreando WAHA con la imagen nueva..."
-WAHA_IMAGE="devlikeapro/waha:latest" $C up -d waha
+echo "[waha-update] recreando WAHA con la imagen nueva (re-aplica el parche countryCode AR)..."
+# --build: el servicio waha se construye desde Dockerfile.waha (parche countryCode US->AR sobre la
+# base). Si el build FALLA acá, la imagen nueva cambió el default de Baileys -> revisar Dockerfile.waha.
+WAHA_IMAGE="devlikeapro/waha:latest" $C up -d --build waha
 
 echo "[waha-update] esperando reconexión de sesiones (~80s)..."
 sleep 80

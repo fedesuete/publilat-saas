@@ -151,13 +151,19 @@ services:
   # la red interna y los clientes pasan por el panel. OJO: WEBJS corre un Chromium por
   # línea (más RAM/CPU que Baileys) — monitorear memoria al sumar líneas.
   waha:
-    # PIN a una versión probada (WAHA 2026.7.1, WEBJS). NO usar :latest -> un build nuevo puede
-    # venir ROTO (ej. bug parseMessageIdSerialized que frenó TODOS los mensajes entrantes el
-    # 2026-07-15, con la sesión igual en WORKING). Y una imagen vieja también se rompe cuando
-    # WhatsApp cambia su protocolo -> hay que ACTUALIZAR a mano cuando pase (ver RUNBOOK.md):
-    #   docker compose -f docker-compose.vps.yml pull  (con :latest temporal)  y luego up -d waha
-    #   -> anotar el digest nuevo acá. Síntoma: mensajes entrantes no llegan + parseMessageIdSerialized.
-    image: ${WAHA_IMAGE:-devlikeapro/waha@sha256:dc134637dfa0bd65202010a65e4ff8176101791699176c75bb37d5aa9daf487c}
+    # Se CONSTRUYE desde Dockerfile.waha: imagen pineada + parche countryCode US->AR en el Baileys
+    # embebido (las líneas +54 se presentaban como "US" en el login — mismatch geo a nivel protocolo).
+    # PIN a una versión probada (base en el ARG de Dockerfile.waha, overrideable con WAHA_IMAGE).
+    # NO usar :latest -> un build nuevo puede venir ROTO (ej. bug parseMessageIdSerialized que frenó
+    # TODOS los mensajes entrantes el 2026-07-15, con la sesión igual en WORKING). Y una imagen vieja
+    # también se rompe cuando WhatsApp cambia su protocolo -> ACTUALIZAR a mano cuando pase (ver
+    # RUNBOOK.md): bash deploy/update-waha.sh -> anotar el digest nuevo en Dockerfile.waha.
+    # Síntoma: mensajes entrantes no llegan + parseMessageIdSerialized.
+    build:
+      context: .
+      dockerfile: Dockerfile.waha
+      args:
+        WAHA_BASE: ${WAHA_IMAGE:-devlikeapro/waha@sha256:dc134637dfa0bd65202010a65e4ff8176101791699176c75bb37d5aa9daf487c}
     restart: unless-stopped
     dns:  # resolver público para los hosts de proxy (ver nota en el servicio app)
       - 8.8.8.8
