@@ -139,6 +139,23 @@ export default function ChatAppPage() {
     } catch (e) { setError(apiError(e)); } finally { setSending(false); }
   };
 
+  // Adjuntar FOTO (ej. comprobante de un retiro): lee el archivo como dataURL y lo manda por la ruta
+  // /messages/image. Límite 700 KB (igual que el resto del chat). Aislado del envío de texto.
+  const imgRef = useRef<HTMLInputElement>(null);
+  const sendImage = async (file: File) => {
+    if (!selected) return;
+    if (file.size > 700 * 1024) { setError("La imagen supera 700 KB. Usá una más liviana."); return; }
+    setSending(true); setError(null);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader(); r.onload = () => resolve(String(r.result ?? "")); r.onerror = reject; r.readAsDataURL(file);
+      });
+      const { data } = await api.post<{ message: Msg }>("/api/chat/messages/image", { conversationId: selected, image: dataUrl });
+      setMessages((prev) => appendUnique(prev, data.message));
+      void loadConvs();
+    } catch (e) { setError(apiError(e)); } finally { setSending(false); if (imgRef.current) imgRef.current.value = ""; }
+  };
+
   // Secuencia de instalación / fotos guardadas (mensajes con el botón INSTALAR APP).
   const sendInstall = async (which: "sequence" | "msg2" | "tut_ios" | "tut_android") => {
     if (!selected) return;
@@ -260,6 +277,11 @@ export default function ChatAppPage() {
                   <button onClick={() => void sendInstall("tut_android")} disabled={sending || !activeLine} className="rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50">🤖 Foto Android</button>
                 </div>
                 <form onSubmit={send} className="flex items-center gap-2 border-t border-slate-800 p-3">
+                  <input ref={imgRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) void sendImage(f); }} />
+                  <button type="button" title="Adjuntar foto (ej. comprobante)" disabled={sending || !selected || !activeLine}
+                    onClick={() => imgRef.current?.click()}
+                    className="shrink-0 rounded-lg border border-slate-600 px-3 py-2 text-lg text-slate-200 hover:bg-slate-800 disabled:opacity-50">📎</button>
                   <Input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Escribí un mensaje…" className="flex-1" />
                   <Button type="submit" disabled={sending || !draft.trim()}>{sending ? "…" : "Enviar"}</Button>
                 </form>

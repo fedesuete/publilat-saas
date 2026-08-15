@@ -363,6 +363,46 @@ chatRouter.post("/messages", requireActiveLine, async (req, res) => {
   return res.status(201).json({ message: msg });
 });
 
+// POST /api/chat/messages/image — el operador manda una FOTO al jugador (ej. el comprobante de un
+// retiro). Ruta SEPARADA de /messages (texto) para no tocar ese flujo. Mismo mecanismo que las
+// imágenes del jugador (/me/messages): dataURL guardado en metadata.image, límite 700 KB, emitido con
+// `image` aplanado (lo lee el PWA) + `metadata` (lo lee el panel). senderType "operator".
+const opImageSchema = z.object({
+  conversationId: z.string().min(1),
+  image: z.string().regex(/^data:image\/(png|jpeg|jpg|webp|gif);base64,/, "Imagen inválida"),
+  body: z.string().max(4000).optional(),
+});
+chatRouter.post("/messages/image", requireActiveLine, async (req, res) => {
+  const parsed = opImageSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const image = parsed.data.image;
+  const bytes = Buffer.from(image.slice(image.indexOf(",") + 1), "base64");
+  if (bytes.length > 700 * 1024) return res.status(413).json({ error: "La imagen supera 700 KB. Sacá una foto más liviana." });
+  const conv = await prisma.chatConversation.findFirst({
+    where: { id: parsed.data.conversationId, userId: req.userId! },
+    select: { id: true, playerId: true },
+  });
+  if (!conv) return res.status(404).json({ error: "Conversación no encontrada" });
+  const body = parsed.data.body?.trim() || null;
+  const msg = await prisma.chatMessage.create({
+    data: { userId: req.userId!, conversationId: conv.id, senderType: "operator", senderId: req.userId!, body, metadata: { image } },
+    select: { id: true, senderType: true, body: true, metadata: true, createdAt: true },
+  });
+  await prisma.chatConversation.update({
+    where: { id: conv.id },
+    data: { lastMessageAt: new Date(), lastMessagePreview: "📷 " + (body ?? "Imagen").slice(0, 118), unreadPlayer: { increment: 1 } },
+  });
+  const outMsg = { id: msg.id, senderType: msg.senderType, body: msg.body, image: (msg.metadata as { image?: string })?.image ?? null, metadata: msg.metadata, createdAt: msg.createdAt };
+  const payload = { conversationId: conv.id, message: outMsg };
+  emitChat(`chat:${req.userId}:player:${conv.playerId}`, "chat:message", payload); // al jugador
+  emitChat(`chat:${req.userId}`, "chat:message", payload);                          // al operador (otras pestañas)
+  if (!(await playerHasLiveSocket(req.userId!, conv.playerId))) {
+    void enqueuePlayerPush(req.userId!, conv.playerId, { title: "Nuevo mensaje", body: "📷 Imagen", url: "/chat" })
+      .catch((e) => console.error("[chat] push falló:", e instanceof Error ? e.message : String(e)));
+  }
+  return res.status(201).json({ message: outMsg });
+});
+
 // Textos por defecto de la secuencia de instalación (el operador puede editarlos en el panel).
 const DEFAULT_INSTALL = {
   msg1: "¡Hola! 🎉 Ya tenemos tu carga. Para acreditártela necesitás instalar nuestra app.",
