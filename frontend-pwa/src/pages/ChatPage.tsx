@@ -209,14 +209,34 @@ export default function ChatPage() {
 
   return (
     <div className="chat-root flex h-full flex-col bg-[var(--c-bg)]" data-theme={branding?.chatTheme || "whatsapp"}>
-      <header className="flex items-center gap-3 px-4 py-2.5 shadow" style={{ background: "var(--c-header)", color: "var(--c-header-text)" }}>
-        {branding?.logoUrl && !logoBroken ? <img src={branding.logoUrl} alt="" onError={() => setLogoBroken(true)} className="h-9 w-9 rounded-full object-cover" /> : <div className="h-9 w-9 rounded-full bg-white/20" />}
-        <div className="min-w-0">
-          <div className="truncate font-semibold leading-tight">{branding?.brandName || "Chat"}</div>
-          <div className="text-xs opacity-80">🟢 en línea</div>
-        </div>
-        {wallet && !bare && <div className="ml-auto rounded-full bg-white/20 px-3 py-1 text-sm font-bold">💰 {money(wallet.balance)}</div>}
-      </header>
+      {bare ? (
+        /* Header estilo WhatsApp: flecha ← + avatar + nombre + "en línea" + videollamada + llamada. */
+        <header className="flex items-center gap-2.5 px-2.5 py-2 shadow-sm" style={{ background: "var(--c-header)", color: "var(--c-header-text)" }}>
+          <span className="flex h-8 w-5 shrink-0 items-center justify-center opacity-90" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+          </span>
+          {branding?.logoUrl && !logoBroken ? <img src={branding.logoUrl} alt="" onError={() => setLogoBroken(true)} className="h-9 w-9 rounded-full object-cover" /> : <div className="h-9 w-9 rounded-full bg-white/25" />}
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[15px] font-semibold leading-tight">{branding?.brandName || "Chat"}</div>
+            <div className="text-[11px] leading-tight opacity-80">en línea</div>
+          </div>
+          <span className="flex h-9 w-8 items-center justify-center opacity-95" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="23" height="23" fill="currentColor"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z" /></svg>
+          </span>
+          <span className="flex h-9 w-8 items-center justify-center opacity-95" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2a1 1 0 0 1 1.02-.24 11.36 11.36 0 0 0 3.57.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1.02l-2.2 2.2z" /></svg>
+          </span>
+        </header>
+      ) : (
+        <header className="flex items-center gap-3 px-4 py-2.5 shadow" style={{ background: "var(--c-header)", color: "var(--c-header-text)" }}>
+          {branding?.logoUrl && !logoBroken ? <img src={branding.logoUrl} alt="" onError={() => setLogoBroken(true)} className="h-9 w-9 rounded-full object-cover" /> : <div className="h-9 w-9 rounded-full bg-white/20" />}
+          <div className="min-w-0">
+            <div className="truncate font-semibold leading-tight">{branding?.brandName || "Chat"}</div>
+            <div className="text-xs opacity-80">🟢 en línea</div>
+          </div>
+          {wallet && <div className="ml-auto rounded-full bg-white/20 px-3 py-1 text-sm font-bold">💰 {money(wallet.balance)}</div>}
+        </header>
+      )}
 
       {/* Pill "conectado" (estilo competencia): redondeada, flotando sobre el fondo. En redblack se
           esconde (WhatsApp pelado no tiene esa pill). */}
@@ -391,14 +411,26 @@ export default function ChatPage() {
           </div>
         )}
         <div className="flex items-center gap-2">
-          <label className="flex h-11 w-9 shrink-0 cursor-pointer items-center justify-center text-2xl opacity-50" aria-label="Adjuntar imagen">
-            📎
+          <label className={`flex shrink-0 cursor-pointer items-center justify-center ${bare ? "h-10 w-8" : "h-11 w-9 text-2xl opacity-50"}`} aria-label="Adjuntar imagen" style={bare ? { color: "var(--c-muted)" } : undefined}>
+            {bare
+              ? <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.49" /></svg>
+              : "📎"}
             <input type="file" accept="image/*" className="hidden" onChange={onChatImage} />
           </label>
           <input ref={inputRef} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Escribí un mensaje…"
             className="flex-1 rounded-full border px-4 py-2.5 outline-none placeholder:opacity-50" style={{ background: "var(--c-input)", color: "var(--c-surface-text)", borderColor: "var(--c-border)" }} />
-          <button type="submit" disabled={sending || (!draft.trim() && !chatImage)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-lg disabled:opacity-50" style={{ background: "var(--c-accent)", color: "var(--c-accent-text)" }}>
-            ➤
+          {bare && (
+            <label className="flex h-10 w-8 shrink-0 cursor-pointer items-center justify-center" aria-label="Cámara" style={{ color: "var(--c-muted)" }}>
+              <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
+              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={onChatImage} />
+            </label>
+          )}
+          <button type="submit" disabled={bare ? sending : (sending || (!draft.trim() && !chatImage))} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-lg disabled:opacity-50" style={{ background: "var(--c-accent)", color: "var(--c-accent-text)" }}>
+            {bare
+              ? ((draft.trim() || chatImage)
+                  ? <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M3 20.5L21 12 3 3.5V10l12 2-12 2z" /></svg>
+                  : <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" /><path d="M19 11a7 7 0 0 1-14 0" /><line x1="12" y1="18" x2="12" y2="22" /></svg>)
+              : "➤"}
           </button>
         </div>
       </form>
