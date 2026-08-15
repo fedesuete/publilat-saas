@@ -12,7 +12,7 @@ import { sendCapiEvent } from "../lib/meta-capi.js"; // reuso el CAPI existente,
 import { resolveUserPixel } from "../lib/pixel.js";
 import { analyzeReceipt, aiEnabled } from "../lib/ai-receipt.js"; // lectura de comprobante con IA
 import { emitChat, playerHasLiveSocket } from "../lib/io.js";
-import { pushEnabled, publicVapidKey, enqueuePlayerPush, enqueueAccountBroadcast } from "../lib/chat-push.js";
+import { pushEnabled, publicVapidKey, enqueuePlayerPush, enqueueAccountBroadcast, enqueueOperatorPush } from "../lib/chat-push.js";
 import { s3Enabled } from "../lib/s3.js";
 import { runChatBot } from "../lib/chat-bot.js";
 import { canOperateChat, consumeChatDayAndActivate, getAvailableDays } from "../lib/access.js";
@@ -858,6 +858,8 @@ chatPublicRouter.post("/me/messages", requireChatClient, async (req, res) => {
   const payload = { conversationId: conv.id, message: outMsg };
   emitChat(`chat:${req.accountId}`, "chat:message", payload);                              // al operador
   emitChat(`chat:${req.accountId}:player:${req.chatPlayerId}`, "chat:message", payload);   // al jugador (otros dispositivos)
+  // Push al OPERADOR (celu, panel cerrado): un jugador le escribió. Best-effort, no bloquea.
+  void enqueueOperatorPush(req.accountId!, { title: "💬 Nuevo mensaje", body: (body ?? "📷 Imagen").slice(0, 140), url: "/chat" }).catch(() => undefined);
 
   // Si mandó una IMAGEN y la cuenta usa el cajero (bot prendido o casino en vivo): la leemos con IA y, si es
   // un comprobante, registramos la carga (pending) → aparece en la pestaña Cajero + dispara Purchase/intent.
@@ -928,6 +930,21 @@ chatPublicRouter.post("/push/subscribe", requireChatClient, async (req, res) => 
     where: { userId_endpoint: { userId: req.accountId!, endpoint } },
     create: { userId: req.accountId!, playerId: req.chatPlayerId!, endpoint, p256dh: keys.p256dh, auth: keys.auth, userAgent },
     update: { playerId: req.chatPlayerId!, p256dh: keys.p256dh, auth: keys.auth, userAgent },
+  });
+  return res.status(201).json({ ok: true });
+});
+
+// POST /api/chat/operator/push/subscribe — suscripción push del OPERADOR (panel). playerId=null lo distingue
+// del jugador. Le suena en el celu aunque tenga el panel CERRADO cuando un jugador le escribe/carga.
+chatRouter.post("/operator/push/subscribe", async (req, res) => {
+  const parsed = subscribeSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  if (!pushEnabled()) return res.status(503).json({ error: "Web Push no está configurado" });
+  const { endpoint, keys, userAgent } = parsed.data;
+  await prisma.chatPushSub.upsert({
+    where: { userId_endpoint: { userId: req.userId!, endpoint } },
+    create: { userId: req.userId!, playerId: null, endpoint, p256dh: keys.p256dh, auth: keys.auth, userAgent },
+    update: { playerId: null, p256dh: keys.p256dh, auth: keys.auth, userAgent },
   });
   return res.status(201).json({ ok: true });
 });
@@ -1681,6 +1698,7 @@ chatPublicRouter.post("/me/deposit", requireChatClient, async (req, res) => {
   if (comprobanteData) await postComprobanteImage(req.accountId!, req.chatPlayerId!, comprobanteType ?? "image/jpeg", comprobanteData);
   // Aviso al operador (en vivo, para la sección Cajero) — NO acredita.
   emitChat(`chat:${req.accountId}`, "chat:cashier", { type: "deposit", id: dep.id });
+  void enqueueOperatorPush(req.accountId!, { title: "🧾 Nueva carga", body: `Un jugador informó una carga de ${ars(dep.amount)}`, url: "/chat" }).catch(() => undefined);
   // Con modelo B (auto-carga) seteamos la expectativa de tiempo: la acreditación es automática pero puede
   // demorar hasta ~1 min (worker frío del socio). Sin B, lo verifica el operador (no prometemos tiempo).
   const cargaMsg = (await casinoLiveForAccount(req.accountId!))
@@ -1708,6 +1726,7 @@ chatPublicRouter.post("/me/withdrawal", requireChatClient, async (req, res) => {
     select: { id: true, amount: true, destino: true, status: true, createdAt: true },
   });
   emitChat(`chat:${req.accountId}`, "chat:cashier", { type: "withdrawal", id: w.id });
+  void enqueueOperatorPush(req.accountId!, { title: "🏧 Nuevo retiro", body: `Un jugador pidió retirar ${ars(w.amount)}`, url: "/chat" }).catch(() => undefined);
   await postCashierMsg(req.accountId!, req.chatPlayerId!, `🏧 Pediste un retiro de ${ars(w.amount)}. Lo estamos procesando.`, "player").catch(() => undefined);
   return res.status(201).json({ withdrawal: w });
 });

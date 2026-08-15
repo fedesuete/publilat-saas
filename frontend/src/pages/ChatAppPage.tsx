@@ -6,6 +6,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import { api, apiError } from "../lib/api";
 import { API_BASE } from "../lib/config";
 import { fmtDate } from "../lib/format";
+import { subscribeOperatorPush, opushPermission } from "../lib/opush";
 import { Button, Input, Card, ErrorMsg } from "../components/ui";
 import OnboardingTour, { type TourStep } from "../components/OnboardingTour";
 import { GraduationCap } from "lucide-react";
@@ -105,6 +106,14 @@ export default function ChatAppPage() {
   const selectedRef = useRef<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   selectedRef.current = selected;
+
+  // Web Push del operador: avisos con sonido en el celu cuando un jugador escribe/carga, aunque el panel
+  // esté CERRADO. Si ya dio permiso, re-suscribimos en silencio al abrir (refresca el endpoint).
+  const [pushState, setPushState] = useState<NotificationPermission | "unsupported">(opushPermission());
+  const enableOpush = async () => { try { setPushState(await subscribeOperatorPush()); } catch { setPushState("denied"); } };
+  useEffect(() => {
+    if (opushPermission() === "granted") void subscribeOperatorPush().then(setPushState).catch(() => undefined);
+  }, []);
 
   const loadConvs = async () => {
     try {
@@ -250,6 +259,13 @@ export default function ChatAppPage() {
           {/* Lista: full en el celu; se oculta al abrir un chat. Al costado en desktop. */}
           <div className={`w-full shrink-0 flex-col overflow-hidden rounded-lg border border-slate-800 lg:flex lg:w-80 ${selected ? "hidden lg:flex" : "flex"}`}>
             <div className="border-b border-slate-800 px-4 py-3 text-xs text-slate-500">{convs.length} conversaciones</div>
+            {pushState !== "granted" && pushState !== "unsupported" && (
+              <button type="button" onClick={() => void enableOpush()}
+                className="flex w-full items-center gap-2 border-b border-emerald-800/40 bg-emerald-900/20 px-4 py-2.5 text-left text-xs text-emerald-300 transition hover:bg-emerald-900/30">
+                <span className="text-base">🔔</span>
+                <span><b>Activá los avisos en este celular</b> — te suena cuando un jugador escribe o carga, aunque tengas la app cerrada.</span>
+              </button>
+            )}
             <div className="flex-1 overflow-y-auto">
               {convs.length === 0 ? <p className="p-4 text-sm text-slate-500">Todavía no hay clientes. Creá un acceso en la pestaña "Accesos".</p> :
                 convs.map((c) => (

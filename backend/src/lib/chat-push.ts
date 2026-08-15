@@ -65,6 +65,16 @@ export async function enqueueAccountBroadcast(userId: string, payload: PushPaylo
   return subs.length;
 }
 
+// Encola push al OPERADOR de una cuenta (suscripciones con playerId=null): le suena en el celu, con el
+// PANEL cerrado, cuando un jugador le escribe o carga. Reusa el mismo modelo/cola que el push del jugador
+// — el playerId nulo distingue "sub del operador" de "sub de un jugador".
+export async function enqueueOperatorPush(userId: string, payload: PushPayload): Promise<number> {
+  if (!pushEnabled()) return 0;
+  const subs = await prisma.chatPushSub.findMany({ where: { userId, playerId: null }, select: { id: true } });
+  await Promise.all(subs.map((s) => enqueue(s.id, payload)));
+  return subs.length;
+}
+
 async function enqueue(subId: string, payload: PushPayload): Promise<void> {
   if (queue) {
     await queue.add("push", { subId, payload }, { removeOnComplete: true, removeOnFail: 100, attempts: 3, backoff: { type: "exponential", delay: 3000 } });

@@ -17,6 +17,7 @@ export default defineConfig({
       workbox: {
         globPatterns: ["**/*.{js,css,html,png,svg,ico,woff2}"],
         navigateFallbackDenylist: [/^\/api/], // /api = backend, jamás cachear
+        importScripts: ["push-sw.js"], // handler de Web Push del operador (public/push-sw.js)
         cleanupOutdatedCaches: true,
         skipWaiting: true,
         clientsClaim: true,
