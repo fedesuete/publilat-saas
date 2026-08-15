@@ -104,12 +104,23 @@ export default function InboxPage() {
   const pendingStopRef = useRef(false); // pidieron stop mientras el grabador aún arrancaba (permiso)
   selectedRef.current = selected;
 
+  // "Leído hasta" por contacto (localStorage). El no-leído del Inbox es "mensajes desde tu última
+  // respuesta", así que un chat que ABRISTE pero no respondiste seguía en verde. Guardamos cuándo lo
+  // abriste/leíste y NO mostramos el badge si su último mensaje es anterior a esa marca. (Por dispositivo.)
+  const READ_KEY = "inbox_read_v1";
+  const [readMap, setReadMap] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem(READ_KEY) || "{}") as Record<string, string>; } catch { return {}; }
+  });
+  const markRead = (contactId: string) => setReadMap((prev) => {
+    const next = { ...prev, [contactId]: new Date().toISOString() };
+    try { localStorage.setItem(READ_KEY, JSON.stringify(next)); } catch { /* storage lleno / privado */ }
+    return next;
+  });
+
   const loadConvs = async () => {
     try {
       const { data } = await api.get<{ conversations: Conversation[] }>("/api/inbox/conversations");
-      // La conversación ABIERTA la estás leyendo: la dejamos en 0 aunque el backend la recalcule, para
-      // que NO "vuelva a verde" cuando llega un mensaje mientras la mirás.
-      setConvs(data.conversations.map((c) => (c.id === selectedRef.current ? { ...c, unread: 0 } : c)));
+      setConvs(data.conversations); // el badge se calcula en el render con readMap (leído hasta por chat)
     } catch (err) { setListError(apiError(err)); }
   };
   const loadQuick = async () => {
@@ -126,7 +137,7 @@ export default function InboxPage() {
   useEffect(() => {
     const socket = getSocket();
     const onMessage = (payload: InboxMessagePayload) => {
-      if (payload.contactId === selectedRef.current) setMessages((prev) => appendUnique(prev, payload.message));
+      if (payload.contactId === selectedRef.current) { setMessages((prev) => appendUnique(prev, payload.message)); markRead(selectedRef.current); }
       void loadConvs();
     };
     // Ack real de WhatsApp (entregado / leído / rechazado) sobre un mensaje ya mostrado.
@@ -141,6 +152,7 @@ export default function InboxPage() {
 
   useEffect(() => {
     if (!selected) return;
+    markRead(selected); // lo abriste = leído (persiste en localStorage, no revive en verde)
     setChatError(null); setMessages([]); setShowEmoji(false); setShowQuick(false); setShowAudios(false); setNeedTemplate(false); setTemplates([]);
     setConvs((prev) => prev.map((c) => (c.id === selected ? { ...c, unread: 0 } : c)));
     api.get<{ messages: Msg[] }>(`/api/inbox/${selected}/messages`)
@@ -357,11 +369,15 @@ export default function InboxPage() {
           <div className="flex-1 overflow-y-auto">
             {convs.length === 0 ? (
               <p className="p-4 text-sm text-slate-500">No hay conversaciones aún.</p>
-            ) : convs.map((c) => (
+            ) : convs.map((c) => {
+              // Badge efectivo: si ya lo leíste (marca de lectura >= último mensaje) va gris con la inicial,
+              // aunque el backend siga contando "mensajes desde tu última respuesta".
+              const unread = readMap[c.id] && c.lastAt <= readMap[c.id] ? 0 : c.unread;
+              return (
               <button key={c.id} onClick={() => setSelected(c.id)}
                 className={`flex w-full items-start gap-3 border-b border-slate-800/60 px-4 py-3 text-left transition ${selected === c.id ? "bg-slate-800" : "hover:bg-slate-800/50"}`}>
-                <span className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${c.unread > 0 ? "bg-wa-green text-slate-900" : "bg-slate-700 text-slate-200"}`}>
-                  {c.unread > 0 ? c.unread : (c.name || c.number || "?").charAt(0).toUpperCase()}
+                <span className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${unread > 0 ? "bg-wa-green text-slate-900" : "bg-slate-700 text-slate-200"}`}>
+                  {unread > 0 ? unread : (c.name || c.number || "?").charAt(0).toUpperCase()}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center justify-between gap-2">
@@ -373,7 +389,8 @@ export default function InboxPage() {
                   <span className="mt-0.5 block truncate text-xs text-slate-400">{c.preview || "—"}</span>
                 </span>
               </button>
-            ))}
+              );
+            })}
           </div>
       </div>
 
