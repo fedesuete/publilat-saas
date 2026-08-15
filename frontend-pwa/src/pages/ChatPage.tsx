@@ -410,29 +410,50 @@ export default function ChatPage() {
             <button type="button" onClick={() => setChatImage(null)} className="ml-auto px-2 opacity-60" aria-label="Quitar imagen">✕</button>
           </div>
         )}
-        <div className="flex items-center gap-2">
-          <label className={`flex shrink-0 cursor-pointer items-center justify-center ${bare ? "h-10 w-8" : "h-11 w-9 text-2xl opacity-50"}`} aria-label="Adjuntar imagen" style={bare ? { color: "var(--c-muted)" } : undefined}>
-            {bare
-              ? <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.49" /></svg>
-              : "📎"}
-            <input type="file" accept="image/*" className="hidden" onChange={onChatImage} />
-          </label>
-          <input ref={inputRef} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Escribí un mensaje…"
-            className="flex-1 rounded-full border px-4 py-2.5 outline-none placeholder:opacity-50" style={{ background: "var(--c-input)", color: "var(--c-surface-text)", borderColor: "var(--c-border)" }} />
-          {bare && (
-            <label className="flex h-10 w-8 shrink-0 cursor-pointer items-center justify-center" aria-label="Cámara" style={{ color: "var(--c-muted)" }}>
-              <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
-              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={onChatImage} />
+        {bare ? (
+          /* Barra estilo WhatsApp: + (adjuntar) · campo redondeado con sticker adentro · (vacío) cámara +
+             micrófono / (escribiendo) botón enviar. Iconos con los colores del tema (var --c-*). */
+          <div className="flex items-center gap-1.5">
+            <label className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center" aria-label="Adjuntar" style={{ color: "var(--c-muted)" }}>
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+              <input type="file" accept="image/*" className="hidden" onChange={onChatImage} />
             </label>
-          )}
-          <button type="submit" disabled={bare ? sending : (sending || (!draft.trim() && !chatImage))} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-lg disabled:opacity-50" style={{ background: "var(--c-accent)", color: "var(--c-accent-text)" }}>
-            {bare
-              ? ((draft.trim() || chatImage)
-                  ? <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M3 20.5L21 12 3 3.5V10l12 2-12 2z" /></svg>
-                  : <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" /><path d="M19 11a7 7 0 0 1-14 0" /><line x1="12" y1="18" x2="12" y2="22" /></svg>)
-              : "➤"}
-          </button>
-        </div>
+            <div className="relative flex-1">
+              <input ref={inputRef} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Mensaje"
+                className="w-full rounded-full border py-2.5 pl-4 pr-11 outline-none placeholder:opacity-50" style={{ background: "var(--c-input)", color: "var(--c-surface-text)", borderColor: "var(--c-border)" }} />
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" style={{ color: "var(--c-muted)" }} aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8l-6 6H6a2 2 0 0 1-2-2V6z" /><path d="M14 20v-4a2 2 0 0 1 2-2h4" /></svg>
+              </span>
+            </div>
+            {(draft.trim() || chatImage) ? (
+              <button type="submit" disabled={sending} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full disabled:opacity-50" style={{ background: "var(--c-accent)", color: "var(--c-accent-text)" }} aria-label="Enviar">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M3 20.5L21 12 3 3.5V10l12 2-12 2z" /></svg>
+              </button>
+            ) : (
+              <>
+                <label className="flex h-9 w-8 shrink-0 cursor-pointer items-center justify-center" aria-label="Cámara" style={{ color: "var(--c-muted)" }}>
+                  <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
+                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={onChatImage} />
+                </label>
+                <span className="flex h-9 w-7 shrink-0 items-center justify-center" style={{ color: "var(--c-muted)" }} aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" /><path d="M19 11a7 7 0 0 1-14 0" /><line x1="12" y1="18" x2="12" y2="22" /></svg>
+                </span>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <label className="flex h-11 w-9 shrink-0 cursor-pointer items-center justify-center text-2xl opacity-50" aria-label="Adjuntar imagen">
+              📎
+              <input type="file" accept="image/*" className="hidden" onChange={onChatImage} />
+            </label>
+            <input ref={inputRef} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Escribí un mensaje…"
+              className="flex-1 rounded-full border px-4 py-2.5 outline-none placeholder:opacity-50" style={{ background: "var(--c-input)", color: "var(--c-surface-text)", borderColor: "var(--c-border)" }} />
+            <button type="submit" disabled={sending || (!draft.trim() && !chatImage)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-lg disabled:opacity-50" style={{ background: "var(--c-accent)", color: "var(--c-accent-text)" }}>
+              ➤
+            </button>
+          </div>
+        )}
       </form>
 
       {/* Modal RETIRAR */}
