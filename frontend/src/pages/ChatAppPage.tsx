@@ -30,6 +30,34 @@ function appendUnique(list: Msg[], m: Msg): Msg[] {
   return [...list, m];
 }
 
+// Sonido sintético PROPIO del Chat App (distinto del "cha-ching" del Inbox de WhatsApp): dos notas
+// ascendentes suaves cuando un JUGADOR escribe, para distinguir de oído de qué canal entró el mensaje.
+// 100% aislado y best-effort: cualquier error se traga en silencio, NUNCA afecta el chat.
+let chatPingCtx: AudioContext | null = null;
+function playChatPing(): void {
+  try {
+    const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return;
+    chatPingCtx = chatPingCtx || new Ctor();
+    const ctx = chatPingCtx;
+    if (ctx.state === "suspended") void ctx.resume();
+    const t0 = ctx.currentTime;
+    const notes: Array<[number, number]> = [[784, 0], [1046.5, 0.11]]; // Sol5 → Do6, campanita ascendente
+    for (const [freq, delay] of notes) {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type = "sine";
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, t0 + delay);
+      g.gain.exponentialRampToValueAtTime(0.22, t0 + delay + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + delay + 0.24);
+      o.start(t0 + delay);
+      o.stop(t0 + delay + 0.26);
+    }
+  } catch { /* best-effort: nunca romper el chat por el sonido */ }
+}
+
 export default function ChatAppPage() {
   const [tab, setTab] = useState<"chats" | "invites" | "brand" | "avisos" | "bot" | "cajero">("chats");
   const [convs, setConvs] = useState<Conv[]>([]);
@@ -87,6 +115,8 @@ export default function ChatAppPage() {
   useEffect(() => {
     const socket: Socket = io(`${API_BASE}/chat`, { withCredentials: true });
     const onMsg = (p: { conversationId: string; message: Msg }) => {
+      // Sonido SOLO cuando escribe el jugador (no el eco de lo que manda el operador ni mensajes system).
+      if (p.message?.senderType === "player") playChatPing();
       if (p.conversationId === selectedRef.current) {
         setMessages((prev) => appendUnique(prev, p.message)); // dedup por id
       }
