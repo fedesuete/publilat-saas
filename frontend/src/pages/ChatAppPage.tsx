@@ -30,11 +30,12 @@ function appendUnique(list: Msg[], m: Msg): Msg[] {
   return [...list, m];
 }
 
-// Sonido sintético PROPIO del Chat App (distinto del "cha-ching" del Inbox de WhatsApp): dos notas
-// ascendentes suaves cuando un JUGADOR escribe, para distinguir de oído de qué canal entró el mensaje.
-// 100% aislado y best-effort: cualquier error se traga en silencio, NUNCA afecta el chat.
+// Aviso PROPIO del Chat App cuando escribe un JUGADOR: una VOZ que dice "hey!" (síntesis del navegador),
+// bien distinto del "cha-ching" del Inbox de WhatsApp para no confundir de qué canal entró el mensaje.
+// Si el navegador no soporta voz, cae a un tono sintético. 100% aislado y best-effort: cualquier error
+// se traga en silencio, NUNCA afecta el chat.
 let chatPingCtx: AudioContext | null = null;
-function playChatPing(): void {
+function playTone(): void {
   try {
     const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctor) return;
@@ -55,7 +56,22 @@ function playChatPing(): void {
       o.start(t0 + delay);
       o.stop(t0 + delay + 0.26);
     }
-  } catch { /* best-effort: nunca romper el chat por el sonido */ }
+  } catch { /* best-effort */ }
+}
+function playChatPing(): void {
+  try {
+    const synth = window.speechSynthesis;
+    if (synth && typeof SpeechSynthesisUtterance !== "undefined") {
+      const u = new SpeechSynthesisUtterance("hey!");
+      u.lang = "es-AR";
+      u.rate = 1; u.pitch = 1.25; u.volume = 1;
+      u.onerror = () => playTone(); // si la voz falla en el momento, suena el tono
+      synth.cancel(); // corta cualquier locución encolada previa
+      synth.speak(u);
+      return;
+    }
+  } catch { /* cae al tono */ }
+  playTone();
 }
 
 export default function ChatAppPage() {
