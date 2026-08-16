@@ -9,6 +9,7 @@ import { Button, StageBadge, ErrorMsg } from "../components/ui";
 interface Conversation {
   id: string;
   name: string | null;
+  alias: string | null; // nombre que le puso el operador (agenda)
   number: string;
   label: string;
   stage: Stage;
@@ -116,6 +117,17 @@ export default function InboxPage() {
     try { localStorage.setItem(READ_KEY, JSON.stringify(next)); } catch { /* storage lleno / privado */ }
     return next;
   });
+
+  // "Agendar": el operador le pone un nombre propio al contacto (persiste server-side, sincroniza).
+  const renameContact = async (contactId: string, currentName: string) => {
+    const input = window.prompt("Nombre para este contacto (agenda):", currentName);
+    if (input === null) return; // canceló
+    const alias = input.trim() || null;
+    try {
+      await api.patch(`/api/inbox/${contactId}/alias`, { alias });
+      setConvs((prev) => prev.map((c) => (c.id === contactId ? { ...c, alias } : c)));
+    } catch (err) { setChatError(apiError(err)); }
+  };
 
   const loadConvs = async () => {
     try {
@@ -377,11 +389,11 @@ export default function InboxPage() {
               <button key={c.id} onClick={() => setSelected(c.id)}
                 className={`flex w-full items-start gap-3 border-b border-slate-800/60 px-4 py-3 text-left transition ${selected === c.id ? "bg-slate-800" : "hover:bg-slate-800/50"}`}>
                 <span className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${unread > 0 ? "bg-wa-green text-slate-900" : "bg-slate-700 text-slate-200"}`}>
-                  {unread > 0 ? unread : (c.name || c.number || "?").charAt(0).toUpperCase()}
+                  {unread > 0 ? unread : (c.alias || c.name || c.number || "?").charAt(0).toUpperCase()}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center justify-between gap-2">
-                    <span className="truncate text-sm font-medium text-slate-100">{c.name || c.number || "Sin nombre"}</span>
+                    <span className="truncate text-sm font-medium text-slate-100">{c.alias || c.name || c.number || "Sin nombre"}</span>
                     <span className="shrink-0 text-[10px] text-slate-500">{shortTime(c.lastAt)}</span>
                   </span>
                   {c.name && c.number && <span className="block truncate text-[10px] text-slate-500">{c.number}</span>}
@@ -419,7 +431,13 @@ export default function InboxPage() {
                 </button>
               )}
               <div className="min-w-0 flex-1">
-                <div className="truncate font-semibold">{current?.name || current?.number || "Conversación"}</div>
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate font-semibold">{current?.alias || current?.name || current?.number || "Conversación"}</span>
+                  {current && (
+                    <button type="button" onClick={() => void renameContact(current.id, current.alias || current.name || "")}
+                      title="Ponerle un nombre (agenda)" className="shrink-0 rounded px-1 text-sm leading-none text-slate-500 transition hover:bg-slate-800 hover:text-slate-200">✏️</button>
+                  )}
+                </div>
                 <div className="truncate text-xs text-slate-500">
                   {current?.number}{current?.line ? ` · vía ${current.line}` : ""}
                 </div>

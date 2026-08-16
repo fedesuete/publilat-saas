@@ -477,7 +477,8 @@ model Contact {
   externalId  String   @unique          // se envía a Meta (hasheado) para el match
   phone       String?
   waJid       String?                   // JID crudo de WhatsApp (soporta @lid) para responder
-  name        String?
+  name        String?                   // nombre que manda WhatsApp (pushName) — lo pisa el webhook
+  alias       String?                   // nombre que le pone el OPERADOR (agenda). Solo visual: NO toca la atribución
   source      String?                   // fb | ig | an | ...
   campaignId  String?                   // id de campaña de Meta
   adId        String?

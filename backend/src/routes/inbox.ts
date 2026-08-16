@@ -168,10 +168,11 @@ inboxRouter.get("/conversations", async (req, res) => {
       const number = displayNumber(c);
       return {
         id: c.id,
-        // alias = nombre de WhatsApp; si no lo tenemos, mostramos el número/código.
+        // Display: primero el alias que le puso el operador (agenda), si no el nombre de WhatsApp, si no el nº.
         name: c.name || null,
+        alias: c.alias || null,
         number,
-        label: c.name || number || c.externalId.slice(0, 8),
+        label: c.alias || c.name || number || c.externalId.slice(0, 8),
         stage: c.stage,
         line: c.line ? c.line.label || c.line.phone : null,
         preview,
@@ -182,6 +183,21 @@ inboxRouter.get("/conversations", async (req, res) => {
     .sort((a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime());
 
   return res.json({ conversations, count: conversations.length });
+});
+
+const aliasSchema = z.object({ alias: z.string().max(60).nullish() });
+
+// PATCH /api/inbox/:contactId/alias — el operador le pone un nombre propio al contacto ("agenda").
+// SOLO visual: escribe Contact.alias, un campo aparte de `name` (que lo pisa el webhook de WhatsApp).
+// NO toca la atribución: el match con Meta usa externalId/fbclid/fbp/fbc, nunca el nombre.
+inboxRouter.patch("/:contactId/alias", async (req, res) => {
+  const parsed = aliasSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const contact = await getOwnedContact(req.userId!, req.params.contactId);
+  if (!contact) return res.status(404).json({ error: "Contacto no encontrado" });
+  const alias = parsed.data.alias?.trim() || null;
+  await prisma.contact.update({ where: { id: contact.id }, data: { alias } });
+  return res.json({ ok: true, alias });
 });
 
 // GET /api/inbox/:contactId/messages — historial de la conversación.
