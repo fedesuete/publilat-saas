@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { pixelHead, goHref, footer18, fill } from "./shared.js";
+import { TEMPLATES, getTemplate, renderTemplate } from "./index.js";
 import type { TplCtx, TplDef } from "./types.js";
 
 const CTX: TplCtx = { pixelId: "123", userSlug: "matias", goBase: "https://app.publi.lat", values: {} };
@@ -35,4 +36,39 @@ describe("shared", () => {
     expect(fill(def, { brand: "<script>alert(1)</script>" }).brand).toBe("&lt;scri");
     expect(fill(def, { accent: "red" }).accent).toBe("#25d366"); // color inválido → default
   });
+});
+
+// Invariantes que TODA plantilla del registro (presente y futura) tiene que cumplir.
+// Si alguien agrega una plantilla que dispara Lead browser o pierde el +18, esto la frena.
+describe("invariantes de TODAS las plantillas", () => {
+  const ctx: TplCtx = { pixelId: "777", userSlug: "matias", goBase: "https://app.publi.lat", line: "555", values: {} };
+
+  it("hay 4 y los ids son únicos", () => {
+    expect(TEMPLATES.length).toBe(4);
+    expect(new Set(TEMPLATES.map((t) => t.id)).size).toBe(4);
+  });
+
+  for (const name of ["casino-simple", "casino-bono", "casino-urgencia", "casino-vip"]) {
+    it(`${name} existe en el registro`, () => expect(getTemplate(name)).toBeDefined());
+  }
+
+  it("getTemplate inexistente → undefined", () => expect(getTemplate("nope")).toBeUndefined());
+
+  for (const t of TEMPLATES) {
+    describe(t.id, () => {
+      const html = () => renderTemplate(t, ctx);
+      it("NO dispara Lead browser", () => expect(html()).not.toMatch(/fbq\(\s*['"]track['"]\s*,\s*['"]Lead['"]/));
+      it("SÍ trae PageView del pixel", () => expect(html()).toContain("fbq('track','PageView')"));
+      it("CTA apunta a /go con u y line", () => {
+        expect(html()).toContain("https://app.publi.lat/go?u=matias");
+        expect(html()).toContain("&line=555");
+      });
+      it("footer +18 presente", () => expect(html()).toContain("El juego compulsivo es perjudicial"));
+      it("inputs con <script> quedan escapados", () => {
+        const out = renderTemplate(t, { ...ctx, values: { headline: "<script>x()</script>" } });
+        expect(out).not.toContain("<script>x()");
+      });
+      it("viewport mobile presente", () => expect(html()).toContain("width=device-width"));
+    });
+  }
 });
