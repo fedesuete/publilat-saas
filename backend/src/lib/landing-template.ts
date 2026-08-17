@@ -19,7 +19,7 @@ export interface LandingConfig {
   line?: string; // línea FIJA para esta landing (etiqueta/id/teléfono → &line=). Vacío = rota.
 }
 
-const esc = (s: string) =>
+export const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 // Inyecta el tracking en landings de HTML PROPIO (custom): cualquier <a> que apunte a /go se
