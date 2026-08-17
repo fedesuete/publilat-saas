@@ -78,7 +78,12 @@ function templates(slug: string, pixelId: string): Tpl[] {
   ];
 }
 
-interface LandingConfig { title?: string; headline?: string; subtitle?: string; buttonText?: string; msg?: string; autoRedirect?: boolean; destino?: "whatsapp" | "chatapp"; line?: string }
+interface LandingConfig { title?: string; headline?: string; subtitle?: string; buttonText?: string; msg?: string; autoRedirect?: boolean; destino?: "whatsapp" | "chatapp"; line?: string; template?: string; values?: Record<string, string> }
+
+// Plantillas SERVER-SIDE (registro del backend): el usuario completa campos, el server hornea
+// el HTML con tracking + compliance irrompibles. Distintas de las client-side de templates().
+interface SrvTplField { key: string; label: string; type: "text" | "textarea" | "color"; max: number; required?: boolean; placeholder?: string; default: string }
+interface SrvTpl { id: string; name: string; desc: string; category: string; fields: SrvTplField[] }
 interface Landing { id: string; name: string; slug: string; config: LandingConfig | null; isPrimary: boolean; published: boolean; publishedUrl: string | null; createdAt: string }
 
 const landingUrl = (slug: string) => `${API_BASE}/p/${slug}`;
@@ -314,8 +319,29 @@ export default function LandingsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [waLines, setWaLines] = useState<Array<{ id: string; label: string | null; phone: string }>>([]); // líneas del cliente para fijar por landing
-  const [mode, setMode] = useState<"fields" | "html">("html");
+  const [mode, setMode] = useState<"fields" | "html" | "template">("html");
   const [html, setHtml] = useState("");
+  // Plantillas server-side: registro + selección + valores + URL de preview (con debounce).
+  const [srvTpls, setSrvTpls] = useState<SrvTpl[]>([]);
+  const [selTpl, setSelTpl] = useState<SrvTpl | null>(null);
+  const [tplValues, setTplValues] = useState<Record<string, string>>({});
+  const [tplPreviewUrl, setTplPreviewUrl] = useState("");
+  useEffect(() => {
+    api.get<{ templates: SrvTpl[] }>("/api/landing-templates")
+      .then(({ data }) => setSrvTpls(data.templates ?? []))
+      .catch(() => undefined);
+  }, []);
+  // El preview de plantilla va por iframe src directo (misma origin + cookie httpOnly = autentica solo).
+  useEffect(() => {
+    if (mode !== "template" || !selTpl) return;
+    const t = window.setTimeout(() => {
+      const params = new URLSearchParams(tplValues);
+      if (form.line) params.set("line", form.line);
+      setTplPreviewUrl(`${API_BASE}/api/landing-templates/${selTpl.id}/preview?${params.toString()}`);
+    }, 400);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, selTpl, tplValues, form.line]);
   const [saving, setSaving] = useState(false);
   const [dupBusy, setDupBusy] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -326,7 +352,9 @@ export default function LandingsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const current = landings.find((l) => l.id === editingId) ?? null;
-  const curSnapshot = mode === "html" ? `h|${form.name}|${html}` : `f|${form.name}|${JSON.stringify(form)}`;
+  const curSnapshot = mode === "html" ? `h|${form.name}|${html}`
+    : mode === "template" ? `t|${form.name}|${selTpl?.id}|${JSON.stringify(tplValues)}|${form.line}`
+    : `f|${form.name}|${JSON.stringify(form)}`;
   const dirty = editingId === null ? true : curSnapshot !== snapshot;
   const previewHtml = mode === "html" ? html : previewFromFields(slug, form);
 
@@ -345,12 +373,24 @@ export default function LandingsPage() {
 
   const startCreate = () => {
     setEditingId(null); setForm(EMPTY_FORM); setMode("html");
+    setSelTpl(null); setTplValues({}); setTplPreviewUrl("");
     setHtml(tpls[0].html); setSnapshot("");
   };
 
   const startEdit = async (l: Landing) => {
     setEditingId(l.id); setError(null);
     const c = (l.config ?? {}) as LandingConfig & { raw?: boolean };
+    // Landing creada desde plantilla server-side: rehidratar el form de campos.
+    const srvTpl = c.template ? srvTpls.find((t) => t.id === c.template) : undefined;
+    if (srvTpl) {
+      setMode("template"); setSelTpl(srvTpl); setHtml("");
+      const vals = Object.fromEntries(srvTpl.fields.map((f) => [f.key, c.values?.[f.key] ?? f.default]));
+      setTplValues(vals);
+      const f: FormState = { ...EMPTY_FORM, name: l.name, line: c.line ?? "" };
+      setForm(f);
+      setSnapshot(`t|${l.name}|${srvTpl.id}|${JSON.stringify(vals)}|${c.line ?? ""}`);
+      return;
+    }
     if (c.raw) {
       setMode("html"); setForm({ ...EMPTY_FORM, name: l.name });
       let body = "";
@@ -374,7 +414,9 @@ export default function LandingsPage() {
     setDupBusy(true); setError(null);
     try {
       const name = `${form.name.trim()} (copia)`;
-      const payload = mode === "html" ? { name, html } : { name, config: buildConfig() };
+      const payload = mode === "html" ? { name, html }
+        : mode === "template" && selTpl ? { name, config: { template: selTpl.id, values: tplValues, line: form.line || undefined } }
+        : { name, config: buildConfig() };
       const { data } = await api.post<{ landing: Landing }>("/api/landings", payload);
       await load();
       void startEdit(data.landing);
@@ -387,7 +429,9 @@ export default function LandingsPage() {
     if (mode === "html" && !html.trim()) { setError("El HTML no puede estar vacío."); return; }
     setSaving(true); setError(null);
     try {
-      const payload = mode === "html" ? { name: form.name.trim(), html } : { name: form.name.trim(), config: buildConfig() };
+      const payload = mode === "html" ? { name: form.name.trim(), html }
+        : mode === "template" && selTpl ? { name: form.name.trim(), config: { template: selTpl.id, values: tplValues, line: form.line || undefined } }
+        : { name: form.name.trim(), config: buildConfig() };
       if (editingId) await api.put<{ landing: Landing }>(`/api/landings/${editingId}`, payload);
       else { const { data } = await api.post<{ landing: Landing }>("/api/landings", payload); setEditingId(data.landing.id); }
       setSnapshot(curSnapshot);
@@ -431,6 +475,13 @@ export default function LandingsPage() {
   };
 
   const useTemplate = (t: Tpl) => { setMode("html"); setHtml(t.html); if (!form.name) setForm((f) => ({ ...f, name: t.name })); setShowTpl(false); };
+  // Plantilla server-side elegida: modo template con los defaults de sus campos.
+  const useSrvTemplate = (t: SrvTpl) => {
+    setMode("template"); setSelTpl(t); setHtml("");
+    setTplValues(Object.fromEntries(t.fields.map((f) => [f.key, f.default])));
+    if (!form.name) setForm((f) => ({ ...f, name: t.name }));
+    setShowTpl(false);
+  };
   type TextKey = "name" | "title" | "headline" | "subtitle" | "buttonText" | "msg";
   const setField = (k: TextKey, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
@@ -562,12 +613,49 @@ export default function LandingsPage() {
             <Card className="flex flex-col p-0">
               <div className="flex items-center gap-2 border-b border-slate-800 px-3 py-2">
                 <div className="inline-flex rounded-md bg-slate-900 p-1 text-xs">
+                  {selTpl && (
+                    <button onClick={() => setMode("template")} className={`rounded px-3 py-1 font-medium ${mode === "template" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>🎰 Plantilla</button>
+                  )}
                   <button onClick={() => setMode("fields")} className={`rounded px-3 py-1 font-medium ${mode === "fields" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Campos</button>
                   <button onClick={() => setMode("html")} className={`rounded px-3 py-1 font-medium ${mode === "html" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>HTML</button>
                 </div>
-                <span className="text-xs text-slate-500">{mode === "html" ? "Editá el HTML libremente" : "Editor por campos (rápido)"}</span>
+                <span className="text-xs text-slate-500">{mode === "html" ? "Editá el HTML libremente" : mode === "template" ? "Completá los campos — el tracking va incluido" : "Editor por campos (rápido)"}</span>
               </div>
-              {mode === "fields" ? (
+              {mode === "template" && selTpl ? (
+                <div className="space-y-3 p-4">
+                  <div className="rounded-md border border-wa-green/30 bg-wa-green/5 p-2.5 text-xs leading-relaxed text-slate-300">
+                    🎰 Plantilla <b className="text-wa-green">{selTpl.name}</b>. Completá los campos y listo:
+                    el pixel, el seguimiento del botón y el aviso +18 ya van incluidos y <b>no se pueden romper</b>.
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-400">Línea de WhatsApp</label>
+                    <select value={form.line} onChange={(e) => setForm((p) => ({ ...p, line: e.target.value }))}
+                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200">
+                      <option value="">Rotar entre todas (automático)</option>
+                      {waLines.map((l) => (
+                        <option key={l.id} value={l.label || l.phone}>{l.label || l.phone}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {selTpl.fields.map((f) => (
+                    <div key={f.key}>
+                      <label className="mb-1 block text-xs text-slate-400">{f.label}</label>
+                      {f.type === "textarea" ? (
+                        <textarea value={tplValues[f.key] ?? ""} maxLength={f.max} rows={2}
+                          onChange={(e) => setTplValues((p) => ({ ...p, [f.key]: e.target.value }))}
+                          className="w-full resize-none rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200" />
+                      ) : f.type === "color" ? (
+                        <input type="color" value={tplValues[f.key] ?? f.default}
+                          onChange={(e) => setTplValues((p) => ({ ...p, [f.key]: e.target.value }))}
+                          className="h-9 w-16 cursor-pointer rounded-md border border-slate-700 bg-slate-900" />
+                      ) : (
+                        <Input value={tplValues[f.key] ?? ""} maxLength={f.max} placeholder={f.placeholder ?? f.label}
+                          onChange={(e) => setTplValues((p) => ({ ...p, [f.key]: e.target.value }))} />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : mode === "fields" ? (
                 <div className="space-y-3 p-4">
                   <div>
                     <label className="mb-1 block text-xs text-slate-400">Destino del botón</label>
@@ -619,7 +707,11 @@ export default function LandingsPage() {
 
             <Card className="flex flex-col p-0">
               <div className="border-b border-slate-800 px-3 py-2 text-xs text-slate-400">Vista previa en tiempo real</div>
-              <iframe title="preview" srcDoc={previewHtml} sandbox="allow-scripts" className="h-[28rem] w-full rounded-b-lg bg-white" />
+              {mode === "template" ? (
+                <iframe title="preview" src={tplPreviewUrl || undefined} className="h-[28rem] w-full rounded-b-lg bg-white" />
+              ) : (
+                <iframe title="preview" srcDoc={previewHtml} sandbox="allow-scripts" className="h-[28rem] w-full rounded-b-lg bg-white" />
+              )}
             </Card>
           </div>
 
@@ -637,6 +729,28 @@ export default function LandingsPage() {
               <h2 className="text-lg font-bold">Elegir plantilla</h2>
               <button onClick={() => setShowTpl(false)} className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white"><X className="h-5 w-5" /></button>
             </div>
+            {srvTpls.length > 0 && (
+              <div className="mb-5">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-wa-green">🎰 Casino — recomendadas (solo completás campos)</div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {srvTpls.map((t) => (
+                    <div key={t.id} className="overflow-hidden rounded-xl border border-wa-green/40 bg-slate-950">
+                      <div className="relative h-36 overflow-hidden border-b border-slate-800">
+                        {/* SIN sandbox: sandbox genera origen opaco y la cookie httpOnly no viaja → 401. Es HTML propio del server. */}
+                        <iframe title={t.name} src={`${API_BASE}/api/landing-templates/${t.id}/preview`} tabIndex={-1}
+                          className="pointer-events-none absolute left-0 top-0 origin-top-left"
+                          style={{ width: "333%", height: "333%", transform: "scale(0.3)" }} />
+                      </div>
+                      <div className="p-3">
+                        <div className="text-sm font-semibold text-slate-100">{t.name}</div>
+                        <p className="mt-0.5 mb-3 text-xs text-slate-400">{t.desc}</p>
+                        <Button className="w-full" onClick={() => useSrvTemplate(t)}>Usar esta</Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {(["simple", "full"] as TplCat[]).map((cat) => (
               <div key={cat} className="mb-5">
                 <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{cat === "simple" ? "Simples" : "Diseños completos"}</div>
