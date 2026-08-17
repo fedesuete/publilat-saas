@@ -4,6 +4,7 @@
 import { prisma } from "./prisma.js";
 import { IPROYAL_PROVIDER } from "./proxy-pool.js";
 import { sendMail } from "./mailer.js";
+import { fetchIproyalBalance, IPROYAL_LOW_GB } from "./iproyal-balance.js";
 
 const REPORT_EMAIL = process.env.PROXY_REPORT_EMAIL ?? "federicobogado1997@gmail.com";
 
@@ -67,9 +68,16 @@ export async function sendProxyHealthReport(windowHours = 24, tag = ""): Promise
       );
     })
     .join("\n\n");
+  // Saldo de GB de la cuenta IPRoyal (si hay token). Va arriba del reporte para verlo de un vistazo.
+  const bal = await fetchIproyalBalance();
+  const balLine = bal
+    ? `💾 Saldo IPRoyal: ${bal.availableGb.toFixed(2)} GB restantes` +
+      (bal.availableGb < IPROYAL_LOW_GB ? `  ⚠️ BAJO (umbral ${IPROYAL_LOW_GB} GB) — cargá pronto` : "") +
+      `\n\n`
+    : "";
   const subject = `📡 Reporte proxies IPRoyal (${windowHours}h)${tag ? ` — ${tag}` : ""}`;
   const text =
-    `Test IPRoyal residencial AR (sticky 7d) — últimas ${windowHours}h\n\n${body}\n\n` +
+    `Test IPRoyal residencial AR (sticky 7d) — últimas ${windowHours}h\n\n${balLine}${body}\n\n` +
     `Cuantos menos "Cambios de IP" y "Caídas", mejor: IPRoyal sticky debería mantener la MISMA IP AR.\n` +
     `Detalle + timeline por línea en el panel: /admin/proxy-health\n`;
   return sendMail(REPORT_EMAIL, subject, text);
