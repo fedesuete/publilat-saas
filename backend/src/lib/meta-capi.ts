@@ -87,7 +87,13 @@ export async function sendCapiEvent(input: CapiEventInput): Promise<CapiResult> 
   if (input.fbp) userData.fbp = input.fbp;          // fbp/fbc NO se hashean
   if (input.fbc) userData.fbc = input.fbc;
   if (input.phone) userData.ph = sha256(input.phone);
-  if (input.firstName) { const fn = input.firstName.trim().split(/\s+/)[0]; if (fn) userData.fn = sha256(fn); } // primer nombre
+  if (input.firstName) {
+    // fn = primer nombre, ln = último apellido: dos claves de match en vez de una (Meta
+    // matchea fn y ln por separado; el apellido descartado era EMQ regalado).
+    const parts = input.firstName.trim().split(/\s+/);
+    if (parts[0]) userData.fn = sha256(parts[0]);
+    if (parts.length > 1) userData.ln = sha256(parts[parts.length - 1]);
+  }
   if (input.clientIp) userData.client_ip_address = input.clientIp;
   if (input.userAgent) userData.client_user_agent = input.userAgent;
   if (isMessaging && input.ctwaClid) userData.ctwa_clid = input.ctwaClid; // NO se hashea

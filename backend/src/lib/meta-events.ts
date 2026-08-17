@@ -26,6 +26,8 @@ export interface EventContact {
   name?: string | null;
   ctwaClid?: string | null;
   landingUrl?: string | null;
+  clientIp?: string | null;        // IP del visitante capturada en el clic de /go
+  clientUserAgent?: string | null; // UA del visitante capturado en el clic de /go
 }
 
 export interface FireMetaOpts {
@@ -96,7 +98,9 @@ export async function fireMetaEvent(
       fbp: contact.fbp ?? undefined,
       fbc: contact.fbc ?? undefined,
       phone: contact.phone ?? undefined,
-      firstName: contact.name ?? undefined,          // fn hasheado → sube el Event Match Quality
+      firstName: contact.name ?? undefined,          // fn/ln hasheados → sube el Event Match Quality
+      clientIp: contact.clientIp ?? undefined,       // IP/UA del clic guardados en el contacto:
+      userAgent: contact.clientUserAgent ?? undefined, // mismos que ya manda el Purchase
       ...(opts.value != null ? { value: opts.value, currency: opts.currency ?? "ARS" } : {}),
       eventId,
       eventSourceUrl: opts.eventSourceUrl ?? contact.landingUrl ?? undefined,
