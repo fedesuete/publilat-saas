@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { resolveUserPixel } from "../lib/pixel.js";
 import { renderTrackedLanding, injectGoTracking, injectCurrentPixel, injectInAppEscape, type LandingConfig } from "../lib/landing-template.js";
+import { getTemplate, renderTemplate } from "../lib/landing-templates/index.js";
 import { publishToS3, uploadHtml, s3Enabled } from "../lib/s3.js";
 import { ensureClientCdn, reprovisionClientDomain, invalidate } from "../lib/cloudfront.js";
 import { slugify } from "../lib/auth.js";
@@ -21,8 +22,14 @@ const configSchema = z.object({
   autoRedirect: z.boolean().optional(), // pasa 1 seg por la landing y redirige
   destino: z.enum(["whatsapp", "chatapp"]).optional(), // a dónde va el botón (default whatsapp)
   line: z.string().max(60).optional(), // línea FIJA de esta landing (etiqueta/id/teléfono). Vacío = rota.
+  // Modo plantilla server-side: template = id del registro (lib/landing-templates), values =
+  // campos del usuario. El HTML lo hornea el server; el usuario nunca toca HTML.
+  template: z.string().max(40).optional(),
+  values: z.record(z.string().max(400)).optional(),
 });
 type Cfg = z.infer<typeof configSchema>;
+// Sub-schema exportado para test (templates.test.ts valida template+values sin montar Express).
+export const configTemplateFields = configSchema.pick({ template: true, values: true });
 
 // Slug único para la Landing a partir del nombre.
 async function uniqueLandingSlug(base: string): Promise<string> {
@@ -38,6 +45,19 @@ async function uniqueLandingSlug(base: string): Promise<string> {
 // Construye el HTML a partir de la config + datos del usuario.
 async function buildHtml(userId: string, userSlug: string, cfg: Cfg): Promise<string> {
   const creds = await resolveUserPixel(userId, "Lead");
+  // Modo plantilla server-side: id desconocido => tpl undefined => cae al camino legacy.
+  const tpl = cfg.template ? getTemplate(cfg.template) : undefined;
+  if (tpl) {
+    return injectInAppEscape(
+      renderTemplate(tpl, {
+        pixelId: creds?.pixelId ?? process.env.META_PIXEL_ID ?? "",
+        userSlug,
+        goBase: process.env.APP_BASE_URL ?? "",
+        line: cfg.line || undefined,
+        values: cfg.values ?? {},
+      })
+    );
+  }
   const full: LandingConfig = {
     pixelId: creds?.pixelId ?? process.env.META_PIXEL_ID ?? "",
     userSlug,

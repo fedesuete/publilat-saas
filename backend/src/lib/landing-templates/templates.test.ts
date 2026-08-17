@@ -1,7 +1,16 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { pixelHead, goHref, footer18, fill } from "./shared.js";
 import { TEMPLATES, getTemplate, renderTemplate } from "./index.js";
 import type { TplCtx, TplDef } from "./types.js";
+
+// Mocks para poder importar routes/landings.js (el runner de tests no tiene el prisma
+// client generado y no queremos side-effects reales de S3/CloudFront en tests).
+vi.mock("../prisma.js", () => ({ prisma: {} }));
+vi.mock("../pixel.js", () => ({ resolveUserPixel: vi.fn(async () => undefined), resolveShadowPixels: vi.fn(async () => []) }));
+vi.mock("../s3.js", () => ({ publishToS3: vi.fn(), uploadHtml: vi.fn(), s3Enabled: () => false }));
+vi.mock("../cloudfront.js", () => ({ ensureClientCdn: vi.fn(), reprovisionClientDomain: vi.fn(), invalidate: vi.fn() }));
+vi.mock("../auth.js", () => ({ slugify: (s: string) => s.toLowerCase() }));
+vi.mock("../access.js", () => ({ getAvailableDays: vi.fn(async () => 0) }));
 
 const CTX: TplCtx = { pixelId: "123", userSlug: "matias", goBase: "https://app.publi.lat", values: {} };
 
@@ -35,6 +44,14 @@ describe("shared", () => {
     // clamp del RAW primero ("<scri"), esc después: el límite protege la UI, no parte entidades.
     expect(fill(def, { brand: "<script>alert(1)</script>" }).brand).toBe("&lt;scri");
     expect(fill(def, { accent: "red" }).accent).toBe("#25d366"); // color inválido → default
+  });
+});
+
+describe("config del CRUD acepta modo plantilla", () => {
+  it("template+values válidos pasan; values gigantes no", async () => {
+    const { configTemplateFields } = await import("../../routes/landings.js");
+    expect(configTemplateFields.safeParse({ template: "casino-bono", values: { brand: "X" } }).success).toBe(true);
+    expect(configTemplateFields.safeParse({ values: { brand: "y".repeat(401) } }).success).toBe(false);
   });
 });
 
