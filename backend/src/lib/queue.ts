@@ -692,6 +692,7 @@ export async function initQueues(): Promise<void> {
         if (job.name === "proxy-waiting") return recoverWaitingProxyLines();
         if (job.name === "proxy-monitor") { const { sampleProxyHealth } = await import("./proxy-monitor.js"); return sampleProxyHealth(); }
         if (job.name === "proxy-report-daily") { const { sendProxyHealthReport } = await import("./proxy-report.js"); await sendProxyHealthReport(24, "resumen diario 08:00 ART"); return; }
+        if (job.name === "iproyal-balance") { const { checkIproyalBalance } = await import("./iproyal-balance.js"); return checkIproyalBalance(); }
         if (job.name === "proxy-report") { const { sendProxyHealthReport } = await import("./proxy-report.js"); await sendProxyHealthReport((job.data.windowHours as number) ?? 24, (job.data.tag as string) ?? ""); return; }
         if (job.name === "waha-cleanup") return cleanupOrphanWahaSessions();
         if (job.name === "flow-resume") {
@@ -714,6 +715,8 @@ export async function initQueues(): Promise<void> {
     await queue.add("proxy-health", {}, { repeat: { every: 360_000 }, jobId: "proxy-health-repeat", removeOnComplete: true, removeOnFail: 50 });
     await queue.add("proxy-waiting", {}, { repeat: { every: 120_000 }, jobId: "proxy-waiting-repeat", removeOnComplete: true, removeOnFail: 50 });
     await queue.add("proxy-monitor", {}, { repeat: { every: 300_000 }, jobId: "proxy-monitor-repeat", removeOnComplete: true, removeOnFail: 50 });
+    // Saldo IPRoyal: chequeo cada 1h → avisa (email + campanita) si quedan pocos GB. No-op sin IPROYAL_API_TOKEN.
+    await queue.add("iproyal-balance", {}, { repeat: { every: 3_600_000 }, jobId: "iproyal-balance-repeat", removeOnComplete: true, removeOnFail: 20 });
     // Reporte diario de proxies IPRoyal a las 08:00 ART (no-op si no hay líneas de prueba ni SMTP).
     await queue.add("proxy-report-daily", {}, { repeat: { pattern: "0 8 * * *", tz: "America/Argentina/Buenos_Aires" }, jobId: "proxy-report-daily-repeat", removeOnComplete: true, removeOnFail: 20 });
     await queue.add("waha-cleanup", {}, { repeat: { every: 1_800_000 }, jobId: "waha-cleanup-repeat", removeOnComplete: true, removeOnFail: 50 });

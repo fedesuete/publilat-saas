@@ -35,9 +35,12 @@ function uptimeColor(pct: number): string {
   return "text-rose-400";
 }
 
+interface IproyalBalance { enabled: boolean; availableGb?: number; lowThreshold: number; low?: boolean; subusers?: number; error?: string }
+
 export default function AdminProxyHealth() {
   const [hours, setHours] = useState(24);
   const [lines, setLines] = useState<LineHealth[]>([]);
+  const [balance, setBalance] = useState<IproyalBalance | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -51,6 +54,11 @@ export default function AdminProxyHealth() {
     } finally {
       setLoading(false);
     }
+    // Saldo de GB de la cuenta IPRoyal (best-effort, no bloquea el panel).
+    try {
+      const { data } = await api.get<IproyalBalance>(`/api/admin/iproyal-balance`);
+      setBalance(data);
+    } catch { /* no-op */ }
   }, [hours]);
 
   useEffect(() => {
@@ -80,6 +88,39 @@ export default function AdminProxyHealth() {
       </div>
 
       {error && <ErrorMsg>{error}</ErrorMsg>}
+
+      {/* Saldo de tráfico IPRoyal (GB restantes). Verde/ámbar/rojo según el umbral. */}
+      {balance?.enabled && (
+        <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4 ${
+          balance.availableGb == null
+            ? "border-slate-700 bg-slate-900/60"
+            : balance.low
+              ? "border-rose-500/50 bg-rose-950/30"
+              : balance.availableGb < balance.lowThreshold * 2
+                ? "border-amber-500/40 bg-amber-950/20"
+                : "border-emerald-600/40 bg-emerald-950/20"
+        }`}>
+          <div>
+            <div className="text-xs uppercase tracking-wide text-slate-400">Saldo IPRoyal (tráfico)</div>
+            {balance.availableGb == null ? (
+              <div className="text-sm text-slate-400">{balance.error ?? "No se pudo leer el saldo"}</div>
+            ) : (
+              <div className="flex items-baseline gap-2">
+                <span className={`text-3xl font-bold ${balance.low ? "text-rose-400" : balance.availableGb < balance.lowThreshold * 2 ? "text-amber-400" : "text-emerald-400"}`}>
+                  {balance.availableGb.toFixed(2)}
+                </span>
+                <span className="text-sm text-slate-400">GB restantes</span>
+              </div>
+            )}
+          </div>
+          {balance.low && (
+            <a href="https://dashboard.iproyal.com" target="_blank" rel="noreferrer"
+              className="rounded-lg bg-rose-500 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-400">
+              ⚠️ Cargar GB (bajo umbral {balance.lowThreshold} GB)
+            </a>
+          )}
+        </div>
+      )}
 
       {!loading && lines.length === 0 && (
         <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-8 text-center text-sm text-slate-400">

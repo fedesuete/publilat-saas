@@ -13,6 +13,7 @@ import { AUTH_COOKIE } from "../middleware/requireAuth.js";
 import { encryptSecret } from "../lib/crypto.js";
 import { assignProxy, rotateProxy, applyLineProxy, logProxyEvent, probeProxy, autoAssignEnabled, assignProxyPreferred, setLineWaitingProxy, assignIproyalProxy, IPROYAL_PROVIDER } from "../lib/proxy-pool.js";
 import { buildProxyHealthSummary } from "../lib/proxy-report.js";
+import { fetchIproyalBalance, IPROYAL_LOW_GB, iproyalBalanceEnabled } from "../lib/iproyal-balance.js";
 import { getEngine } from "../lib/wa-engine.js";
 import { uniqueSlug } from "./auth.js";
 
@@ -751,6 +752,21 @@ adminRouter.get("/proxy-health", async (req, res) => {
   const hours = Math.min(168, Math.max(1, Number(req.query.hours) || 24));
   const lines = await buildProxyHealthSummary(hours, true);
   return res.json({ hours, lines });
+});
+
+// GET /api/admin/iproyal-balance — saldo de tráfico IPRoyal en vivo (GB restantes). Para el panel.
+// { enabled, availableGb, lowThreshold, low, subusers } | enabled:false si no hay token configurado.
+adminRouter.get("/iproyal-balance", async (_req, res) => {
+  if (!iproyalBalanceEnabled()) return res.json({ enabled: false, lowThreshold: IPROYAL_LOW_GB });
+  const bal = await fetchIproyalBalance();
+  if (!bal) return res.json({ enabled: true, error: "no se pudo leer el saldo", lowThreshold: IPROYAL_LOW_GB });
+  return res.json({
+    enabled: true,
+    availableGb: bal.availableGb,
+    subusers: bal.subusers,
+    lowThreshold: IPROYAL_LOW_GB,
+    low: bal.availableGb < IPROYAL_LOW_GB,
+  });
 });
 
 // POST /api/admin/lines/:id/proxy — asigna/cambia el proxy. body { proxyId? } (sin proxyId = auto
