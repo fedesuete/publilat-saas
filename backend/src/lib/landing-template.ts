@@ -1,6 +1,8 @@
 // Generador de HTML de landing rastreada (compartido por la demo /l/:slug y las
-// landings guardadas /p/:slug del editor). Hornea el Pixel del navegador + un CTA que
-// dispara Lead por browser y redirige a /go con el mismo eventID (dedup browser+server).
+// landings guardadas /p/:slug del editor). Hornea el Pixel del navegador (PageView) + un CTA
+// que captura eventID/fbp/fbc y redirige a /go. El Lead NO se dispara en el navegador: quedó
+// 100% server-side en el primer inbound (BUG 1 fix) — un Lead browser por clic re-mete la señal
+// de clics-que-no-escriben que ese fix eliminó, y genera el warning de cobertura de Meta.
 
 export interface LandingConfig {
   pixelId: string;
@@ -21,9 +23,10 @@ const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 // Inyecta el tracking en landings de HTML PROPIO (custom): cualquier <a> que apunte a /go se
-// enriquece al hacer clic con eventID + fbp/fbc/fbclid/campaña, y dispara el Lead del navegador
-// con ese MISMO eventID (dedup browser+server). Así el cliente NO tiene que cablearlo a mano
-// (era el bug de Joaco: botón con /go pelado -> se duplicaba y perdía el fbclid). Idempotente.
+// enriquece al hacer clic con eventID + fbp/fbc/fbclid/campaña. Así el cliente NO tiene que
+// cablearlo a mano (era el bug de Joaco: botón con /go pelado -> se duplicaba y perdía el
+// fbclid). El eventID viaja igual aunque el navegador ya no dispare Lead: es el event_id del
+// Lead de CAPI. Idempotente.
 const GO_TRACKING_MARK = "pl-go-tracking";
 export function injectGoTracking(html: string, goBase = ""): string {
   if (!html || html.indexOf(GO_TRACKING_MARK) >= 0) return html;
@@ -37,7 +40,7 @@ export function injectGoTracking(html: string, goBase = ""): string {
     "function eid(){try{return crypto.randomUUID();}catch(e){return 'e'+Date.now()+Math.round(Math.random()*1e9);}}" +
     "document.addEventListener('click',function(ev){var t=ev.target;var a=(t&&t.closest)?t.closest('a[href]'):null;if(!a)return;" +
     "var u;try{u=new URL(a.href,location.href);}catch(e){return;}if(u.pathname.indexOf('/go')<0)return;ev.preventDefault();" +
-    "var p=u.searchParams;var id=p.get('eid')||eid();try{if(window.fbq)fbq('track','Lead',{},{eventID:id});}catch(e){}" +
+    "var p=u.searchParams;var id=p.get('eid')||eid();" +
     "if(!p.get('eid'))p.set('eid',id);var fbp=ck('_fbp');if(fbp&&!p.get('fbp'))p.set('fbp',fbp);" +
     "var fbc=ck('_fbc');if(fbc&&!p.get('fbc'))p.set('fbc',fbc);var h=new URLSearchParams(location.search);" +
     "['fbclid','campaign','ad','src'].forEach(function(k){var v=h.get(k);if(v&&!p.get(k))p.set(k,v);});" +
@@ -168,7 +171,6 @@ src="https://www.facebook.com/tr?id=${esc(cfg.pixelId)}&ev=PageView&noscript=1"/
   function goToWhatsApp(){
     if (redirected) return; redirected = true;
     var eid = newEid();
-    try { fbq('track', 'Lead', {}, { eventID: eid }); } catch(e){}
     var p = new URLSearchParams();
     p.set('u', CFG.slug);
     p.set('msg', CFG.msg);
@@ -183,14 +185,13 @@ src="https://www.facebook.com/tr?id=${esc(cfg.pixelId)}&ev=PageView&noscript=1"/
     var target = CFG.goBase + '/go?' + p.toString();
     setTimeout(function(){ window.location.href = target; }, 300);
   }
-  // Destino Chat App: dispara Lead (con eventID para dedup) y va al registro de un tap /r/<slug>,
-  // reenviando la atribución por la URL. CLAVE: las cookies _fbp/_fbc del pixel viven en el dominio de
-  // ESTA landing y NO cruzan a chat.publi.lat, así que hay que MANDARLAS por la URL — si no, el CAPI del
-  // chat (Lead/Registro/Compra) queda sin fbp/fbc y matchea mal. (Igual que goToWhatsApp.)
+  // Destino Chat App: va al registro de un tap /r/<slug>, reenviando la atribución por la URL.
+  // CLAVE: las cookies _fbp/_fbc del pixel viven en el dominio de ESTA landing y NO cruzan a
+  // chat.publi.lat, así que hay que MANDARLAS por la URL — si no, el CAPI del chat
+  // (Lead/Registro/Compra) queda sin fbp/fbc y matchea mal. (Igual que goToWhatsApp.)
   function goToChat(){
     if (redirected) return; redirected = true;
     var eid = newEid();
-    try { fbq('track', 'Lead', {}, { eventID: eid }); } catch(e){}
     var p = new URLSearchParams();
     p.set('eid', eid);
     var fbp = getCookie('_fbp'); if (fbp) p.set('fbp', fbp);
