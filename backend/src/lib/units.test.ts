@@ -105,9 +105,13 @@ describe("renderTrackedLanding", () => {
     buttonText: "Click",
     msg: "Hola",
   });
-  it("incluye el pixel y el evento Lead deduplicado", () => {
+  it("incluye el pixel (PageView) y el eid para el CAPI, SIN Lead de navegador", () => {
     expect(html).toContain("fbq('init', '123456')");
-    expect(html).toContain("fbq('track', 'Lead', {}, { eventID: eid })");
+    expect(html).toContain("fbq('track', 'PageView')");
+    // Desde aaf0636 el clic NO dispara Lead por navegador (Lead = 100% server-side en el
+    // primer inbound); el eventID igual viaja al /go como event_id del Lead de CAPI.
+    expect(html).not.toContain("fbq('track', 'Lead'");
+    expect(html).toContain("p.set('eid', eid)");
   });
   it("escapa HTML en el contenido (anti-XSS)", () => {
     expect(html).toContain("Hola &lt;b&gt;");
