@@ -842,7 +842,19 @@ chatPublicRouter.post("/me/messages", requireChatClient, async (req, res) => {
     comprobanteData = Buffer.from(image.slice(image.indexOf(",") + 1), "base64");
     if (comprobanteData.length > 700 * 1024) return res.status(413).json({ error: "La imagen supera 700 KB. Sacá una foto más liviana." });
   }
-  const metadata = image ? { image } : {};
+  // La imagen se guarda como BrandingAsset (URL corta), NO como data URL dentro del mensaje: un data URL
+  // (~950KB por foto) infla el row Y la respuesta de GET /messages → una conversación con varias fotos pesa
+  // varios MB y el chat "no carga". La URL corta la sirve /branding/asset bajo demanda (mismo mecanismo que
+  // los comprobantes del form). Best-effort: si el asset falla, no guardamos imagen rota.
+  let imageUrl: string | null = null;
+  if (image && comprobanteData && comprobanteType) {
+    try {
+      const asset = await prisma.brandingAsset.create({ data: { userId: req.accountId!, contentType: comprobanteType, data: comprobanteData }, select: { id: true } });
+      const base = (process.env.APP_BASE_URL ?? "http://localhost:4000").replace(/\/$/, "");
+      imageUrl = `${base}/api/chat/branding/asset/${asset.id}`;
+    } catch (e) { console.error("[chat] guardar imagen del jugador:", e instanceof Error ? e.message : String(e)); }
+  }
+  const metadata = imageUrl ? { image: imageUrl } : {};
   const msg = await prisma.chatMessage.create({
     data: { userId: req.accountId!, conversationId: conv.id, senderType: "player", senderId: req.chatPlayerId!, body, metadata },
     select: { id: true, senderType: true, body: true, metadata: true, createdAt: true },
