@@ -12,6 +12,10 @@ interface Integration {
   onPurchase: boolean;
   enabled: boolean;
   inboundPurchaseUrl?: string | null;
+  // Conexión nativa con Kommo (webhooks nativos + API): sin Salesbot, todo automático.
+  kommoBaseUrl?: string | null;
+  kommoTokenSet?: boolean;
+  kommoWebhookUrl?: string | null;
 }
 
 const MODE_HELP: Record<Mode, string> = {
@@ -57,6 +61,14 @@ export default function IntegrationsPage() {
   const [enabled, setEnabled] = useState(false);
   const [inboundUrl, setInboundUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // Conexión nativa con Kommo
+  const [kommoUrl, setKommoUrl] = useState("");
+  const [kommoToken, setKommoToken] = useState("");
+  const [kommoTokenSet, setKommoTokenSet] = useState(false);
+  const [kommoWebhook, setKommoWebhook] = useState<string | null>(null);
+  const [kommoSaving, setKommoSaving] = useState(false);
+  const [kommoCopied, setKommoCopied] = useState(false);
+  const [kommoOk, setKommoOk] = useState<string | null>(null);
 
   const applyIntegration = (i: Integration) => {
     setMode(i.mode);
@@ -66,6 +78,29 @@ export default function IntegrationsPage() {
     setOnPurchase(i.onPurchase);
     setEnabled(i.enabled);
     setInboundUrl(i.inboundPurchaseUrl ?? null);
+    setKommoUrl(i.kommoBaseUrl ?? "");
+    setKommoTokenSet(Boolean(i.kommoTokenSet));
+    setKommoWebhook(i.kommoWebhookUrl ?? null);
+  };
+
+  const saveKommo = async () => {
+    setKommoSaving(true);
+    setError(null);
+    setKommoOk(null);
+    try {
+      const { data } = await api.put<{ integration: Integration }>("/api/integrations", {
+        kommoBaseUrl: kommoUrl.trim() ? kommoUrl.trim() : null,
+        // El token solo se manda si el usuario escribió uno nuevo (vacío = no tocar el guardado).
+        ...(kommoToken.trim() ? { kommoToken: kommoToken.trim() } : {}),
+      });
+      applyIntegration(data.integration);
+      setKommoToken("");
+      setKommoOk("Guardado. Ahora pegá el webhook en Kommo (paso 3).");
+    } catch (err) {
+      setError(apiError(err));
+    } finally {
+      setKommoSaving(false);
+    }
   };
 
   const load = async () => {
@@ -216,6 +251,85 @@ export default function IntegrationsPage() {
               </Button>
             </div>
           </form>
+        </Card>
+      )}
+
+      {/* Conexión NATIVA con Kommo (automática, estilo ScaleOS): URL + token y un webhook. */}
+      {!loading && (
+        <Card className="mt-6 max-w-lg">
+          <div className="mb-1 text-sm font-semibold text-slate-100">
+            Conexión con Kommo (automática) {kommoTokenSet && <span className="text-emerald-400">· conectada ✓</span>}
+          </div>
+          <ol className="mb-4 list-decimal space-y-1 pl-4 text-xs text-slate-400">
+            <li>
+              En Kommo: <b>Configuración → Integraciones → API</b> → creá un{" "}
+              <b>token de larga duración</b> (lectura de leads, contactos y mensajes).
+            </li>
+            <li>Pegá acá tu URL de Kommo y ese token, y guardá.</li>
+            <li>
+              En Kommo: <b>Configuración → Webhooks → Agregar webhook</b> → pegá la URL de abajo.
+            </li>
+            <li>
+              Tildá los eventos <b>“Etapa del lead modificada”</b> y <b>“Mensaje entrante”</b>.
+            </li>
+            <li>
+              Listo: cuando un lead pase a una etapa <b>ganada/compró</b>, la venta se registra sola y
+              se envía el <b>Purchase</b> a Meta con la atribución del anuncio.
+            </li>
+          </ol>
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-xs text-slate-400">URL de tu Kommo</label>
+              <Input
+                type="url"
+                value={kommoUrl}
+                onChange={(e) => setKommoUrl(e.target.value)}
+                placeholder="https://tuempresa.kommo.com"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-slate-400">
+                Token de larga duración {kommoTokenSet && <span className="text-emerald-400">(ya cargado — pegá uno nuevo solo para reemplazarlo)</span>}
+              </label>
+              <Input
+                type="password"
+                value={kommoToken}
+                onChange={(e) => setKommoToken(e.target.value)}
+                placeholder={kommoTokenSet ? "••••••••••••" : "pegá el token acá"}
+              />
+            </div>
+            <Button type="button" disabled={kommoSaving} onClick={() => void saveKommo()}>
+              {kommoSaving ? "Guardando…" : "Guardar conexión"}
+            </Button>
+            {kommoOk && <p className="text-xs text-emerald-300">{kommoOk}</p>}
+          </div>
+          {kommoWebhook && (
+            <div className="mt-4">
+              <label className="mb-1 block text-xs text-slate-400">Webhook para pegar en Kommo (paso 3)</label>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 break-all rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs text-slate-200">
+                  {kommoWebhook}
+                </code>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(kommoWebhook);
+                    setKommoCopied(true);
+                    setTimeout(() => setKommoCopied(false), 1500);
+                  }}
+                >
+                  {kommoCopied ? "¡Listo!" : "Copiar"}
+                </Button>
+              </div>
+              <p className="mt-2 text-[11px] text-slate-500">
+                El monto de la venta sale del <b>presupuesto (precio)</b> del lead en Kommo — cargalo antes
+                de moverlo a la etapa ganada. Detectamos como “ganada” la etapa <i>Logrado con éxito</i> de
+                Kommo o cualquier etapa cuyo nombre incluya <i>ganado / compró / venta / aprobado / pagado</i>.
+                La URL lleva tu token secreto — no la compartas.
+              </p>
+            </div>
+          )}
         </Card>
       )}
 

@@ -567,8 +567,25 @@ model Integration {
   onLead     Boolean  @default(true)
   onPurchase Boolean  @default(true)
   enabled    Boolean  @default(false)
+  kommoBaseUrl String?                   // https://<subdominio>.kommo.com (solo ese dominio, guard SSRF)
+  kommoToken   String?                   // token larga duración de la API de Kommo (cifrado en reposo)
   createdAt  DateTime @default(now())
   user       User     @relation(fields: [userId], references: [id])
+}
+
+// Vínculo lead de Kommo ↔ contacto nuestro. Lo crea el webhook de MENSAJE ENTRANTE cuando el primer
+// mensaje trae el ref:CODIGO del /go (la forma precisa de atar la venta al clic del anuncio aunque el
+// WhatsApp lo atienda Kommo y nunca veamos el inbound). El webhook de ETAPA lo usa para matchear
+// directo por kommoLeadId, sin depender del teléfono.
+model KommoLink {
+  id          String   @id @default(cuid())
+  userId      String
+  kommoLeadId String
+  kommoContactId String?
+  contactId   String
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, kommoLeadId])
 }
 
 // Pago de días/tokens (Fase 5). Real con pasarela (MercadoPago) o stub en dev.

@@ -223,3 +223,40 @@ describe("textSignalsPayment", () => {
     expect(textSignalsPayment("")).toBe(false);
   });
 });
+
+// ============ Integración Kommo (estilo ScaleOS) ============
+describe("kommo", () => {
+  it("normalizeKommoBase: solo https en *.kommo.com (guard SSRF)", async () => {
+    const { normalizeKommoBase } = await import("./kommo.js");
+    expect(normalizeKommoBase("https://miempresa.kommo.com")).toBe("https://miempresa.kommo.com");
+    expect(normalizeKommoBase("https://MiEmpresa.kommo.com/algo?x=1")).toBe("https://miempresa.kommo.com");
+    expect(normalizeKommoBase("http://miempresa.kommo.com")).toBeNull();       // sin TLS no
+    expect(normalizeKommoBase("https://kommo.com.evil.io")).toBeNull();        // dominio ajeno
+    expect(normalizeKommoBase("https://localhost")).toBeNull();                // host interno
+    expect(normalizeKommoBase("https://169.254.169.254")).toBeNull();          // metadata AWS
+    expect(normalizeKommoBase("no es una url")).toBeNull();
+  });
+
+  it("isWonStageName: etapas ganadas sí, perdidas no", async () => {
+    const { isWonStageName } = await import("./kommo.js");
+    expect(isWonStageName("Ganado")).toBe(true);
+    expect(isWonStageName("Compró")).toBe(true);
+    expect(isWonStageName("Venta cerrada")).toBe(true);
+    expect(isWonStageName("Closed - won")).toBe(true);
+    expect(isWonStageName("Pagado ✔")).toBe(true);
+    expect(isWonStageName("Logrado con éxito")).toBe(true);
+    expect(isWonStageName("Cerrado perdido")).toBe(false); // "cerrad" pero PERDIDO
+    expect(isWonStageName("Closed - lost")).toBe(false);
+    expect(isWonStageName("Contacto inicial")).toBe(false);
+    expect(isWonStageName("Negociación")).toBe(false);
+  });
+
+  it("extractRefFromText: agarra el (ref: XXXX) del /go en sus variantes", async () => {
+    const { extractRefFromText } = await import("./kommo.js");
+    expect(extractRefFromText("Hola! Quiero el bono (ref: 28C4B1A2)")).toBe("28C4B1A2");
+    expect(extractRefFromText("hola ref:ab12cd34")).toBe("AB12CD34");
+    expect(extractRefFromText("REF #F00DBEEF llegó")).toBe("F00DBEEF");
+    expect(extractRefFromText("Hola, quiero más información")).toBeNull();
+    expect(extractRefFromText("prefiero el otro")).toBeNull(); // "ref" adentro de palabra NO cuenta
+  });
+});
