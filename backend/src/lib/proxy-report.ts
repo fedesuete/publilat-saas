@@ -68,6 +68,18 @@ export async function sendProxyHealthReport(windowHours = 24, tag = ""): Promise
       );
     })
     .join("\n\n");
+  // Resumen de un vistazo: cuántas líneas, uptime promedio, y el total de cambios de IP / caídas.
+  // Es la métrica de MEJORA: con IPRoyal cada línea mantiene su IP AR fija, así que pocos cambios de
+  // IP y pocas caídas = la operación de los clientes está estable (antes rotaba cada ~30 min y cortaba).
+  const n = rows.length;
+  const avgUptime = n ? Math.round((rows.reduce((a, r) => a + r.uptimePct, 0) / n) * 10) / 10 : 0;
+  const totIpChanges = rows.reduce((a, r) => a + r.ipChanges, 0);
+  const totFlaps = rows.reduce((a, r) => a + r.flaps, 0);
+  const conectadas = rows.filter((r) => r.currentState === "WORKING" || r.currentState === "open").length;
+  const summary =
+    `📊 RESUMEN (${windowHours}h): ${conectadas}/${n} líneas conectadas · uptime promedio ${avgUptime}% · ` +
+    `${totIpChanges} cambios de IP · ${totFlaps} caídas\n` +
+    `   → menos cambios de IP y menos caídas = clientes más estables (IPRoyal mantiene la MISMA IP AR por línea).\n\n`;
   // Saldo de GB de la cuenta IPRoyal (si hay token). Va arriba del reporte para verlo de un vistazo.
   const bal = await fetchIproyalBalance();
   const balLine = bal
@@ -77,8 +89,8 @@ export async function sendProxyHealthReport(windowHours = 24, tag = ""): Promise
     : "";
   const subject = `📡 Reporte proxies IPRoyal (${windowHours}h)${tag ? ` — ${tag}` : ""}`;
   const text =
-    `Test IPRoyal residencial AR (sticky 7d) — últimas ${windowHours}h\n\n${balLine}${body}\n\n` +
-    `Cuantos menos "Cambios de IP" y "Caídas", mejor: IPRoyal sticky debería mantener la MISMA IP AR.\n` +
+    `Evolución de las líneas de clientes en IPRoyal residencial AR (sticky 7d) — últimas ${windowHours}h\n\n${summary}${balLine}${body}\n\n` +
+    `Cuantos menos "Cambios de IP" y "Caídas", mejor: IPRoyal sticky mantiene la MISMA IP AR por línea.\n` +
     `Detalle + timeline por línea en el panel: /admin/proxy-health\n`;
   return sendMail(REPORT_EMAIL, subject, text);
 }

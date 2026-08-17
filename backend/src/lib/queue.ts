@@ -692,6 +692,7 @@ export async function initQueues(): Promise<void> {
         if (job.name === "proxy-waiting") return recoverWaitingProxyLines();
         if (job.name === "proxy-monitor") { const { sampleProxyHealth } = await import("./proxy-monitor.js"); return sampleProxyHealth(); }
         if (job.name === "proxy-report-daily") { const { sendProxyHealthReport } = await import("./proxy-report.js"); await sendProxyHealthReport(24, "resumen diario 08:00 ART"); return; }
+        if (job.name === "proxy-report-3h") { const { sendProxyHealthReport } = await import("./proxy-report.js"); await sendProxyHealthReport(3, "evolución cada 3h"); return; }
         if (job.name === "iproyal-balance") { const { checkIproyalBalance } = await import("./iproyal-balance.js"); return checkIproyalBalance(); }
         if (job.name === "proxy-report") { const { sendProxyHealthReport } = await import("./proxy-report.js"); await sendProxyHealthReport((job.data.windowHours as number) ?? 24, (job.data.tag as string) ?? ""); return; }
         if (job.name === "waha-cleanup") return cleanupOrphanWahaSessions();
@@ -719,6 +720,8 @@ export async function initQueues(): Promise<void> {
     await queue.add("iproyal-balance", {}, { repeat: { every: 3_600_000 }, jobId: "iproyal-balance-repeat", removeOnComplete: true, removeOnFail: 20 });
     // Reporte diario de proxies IPRoyal a las 08:00 ART (no-op si no hay líneas de prueba ni SMTP).
     await queue.add("proxy-report-daily", {}, { repeat: { pattern: "0 8 * * *", tz: "America/Argentina/Buenos_Aires" }, jobId: "proxy-report-daily-repeat", removeOnComplete: true, removeOnFail: 20 });
+    // Reporte cada 3h (00,03,06,…21 ART) con la evolución de las líneas de clientes en IPRoyal (pedido del dueño).
+    await queue.add("proxy-report-3h", {}, { repeat: { pattern: "0 */3 * * *", tz: "America/Argentina/Buenos_Aires" }, jobId: "proxy-report-3h-repeat", removeOnComplete: true, removeOnFail: 20 });
     await queue.add("waha-cleanup", {}, { repeat: { every: 1_800_000 }, jobId: "waha-cleanup-repeat", removeOnComplete: true, removeOnFail: 50 });
     console.log("[queue] BullMQ listo (vencimiento 60s + CAPI 5min + salud 5min + saldo 30min + versión WA Web 12h + proxies 6min + waiting_proxy 2min + limpieza WAHA 30min)");
   } catch (e) {
