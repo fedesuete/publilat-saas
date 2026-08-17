@@ -249,8 +249,11 @@ describe("kommo", () => {
     expect(isWonStageName("Closed - won")).toBe(true);
     expect(isWonStageName("Pagado ✔")).toBe(true);
     expect(isWonStageName("Logrado con éxito")).toBe(true);
+    expect(isWonStageName("CARGADO $$$")).toBe(true);   // jerga casino: depositó
+    expect(isWonStageName("Acreditado")).toBe(true);
     expect(isWonStageName("Cerrado perdido")).toBe(false); // "cerrad" pero PERDIDO
     expect(isWonStageName("Closed - lost")).toBe(false);
+    expect(isWonStageName("NO CARGO")).toBe(false);     // los que NO depositaron
     expect(isWonStageName("Contacto inicial")).toBe(false);
     expect(isWonStageName("Negociación")).toBe(false);
   });

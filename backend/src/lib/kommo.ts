@@ -72,13 +72,22 @@ export async function kommoContactPhone(baseUrl: string, token: string, contactI
   return value || null;
 }
 
-// Nombre de una etapa del pipeline (para la heurística de "ganado").
+// Nombre de una etapa del pipeline (para la heurística de "ganado"). Con cache en memoria (10 min):
+// cada movimiento de lead dispara un webhook y sin cache le pegaríamos a la API de Kommo por CADA
+// arrastre de tarjeta en embudos con miles de leads.
+const statusNameCache = new Map<string, { name: string | null; at: number }>();
+const STATUS_CACHE_MS = 10 * 60 * 1000;
 export async function kommoStatusName(baseUrl: string, token: string, pipelineId: string, statusId: string): Promise<string | null> {
+  const key = `${baseUrl}|${pipelineId}|${statusId}`;
+  const hit = statusNameCache.get(key);
+  if (hit && Date.now() - hit.at < STATUS_CACHE_MS) return hit.name;
   const data = (await kommoGet(
     baseUrl, token,
     `/api/v4/leads/pipelines/${encodeURIComponent(pipelineId)}/statuses/${encodeURIComponent(statusId)}`
   )) as { name?: string } | null;
-  return data?.name ?? null;
+  const name = data?.name ?? null;
+  if (name !== null) statusNameCache.set(key, { name, at: Date.now() }); // los fallos no se cachean
+  return name;
 }
 
 // En Kommo/amoCRM los ids 142/143 son UNIVERSALES: 142 = "Closed - won", 143 = "Closed - lost".
@@ -89,8 +98,10 @@ export const KOMMO_LOST_STATUS_ID = 143;
 // Con guard negativo: "cerrado PERDIDO" no es venta aunque contenga "cerrad".
 export function isWonStageName(name: string): boolean {
   if (/perdid|lost|rechazad|cancelad/i.test(name)) return false;
-  // "Logrado con éxito" es la etapa ganada DEFAULT de Kommo en español.
-  return /ganad|compr[oó]|venta|vendid|won|cerrad|aprobad|pagad|logrado|[ée]xito/i.test(name);
+  // "Logrado con éxito" es la etapa ganada DEFAULT de Kommo en español. "cargad/acredit" = jerga
+  // casino ("CARGADO $$$" en el embudo de Fortune): el jugador depositó. OJO: "NO CARGO" no matchea
+  // /cargad/ (termina en "cargo"), así que la columna de los que NO depositaron queda afuera.
+  return /ganad|compr[oó]|venta|vendid|won|cerrad|aprobad|pagad|logrado|[ée]xito|cargad|acredit/i.test(name);
 }
 
 // Extrae el código de referencia (ref:XXXX del /go) del texto de un mensaje. Mismo espíritu que el

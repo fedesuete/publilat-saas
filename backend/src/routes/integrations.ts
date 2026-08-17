@@ -280,11 +280,16 @@ async function processKommoStatus(userId: string, creds: KommoCreds, events: Rec
     if (!kommoLeadId) continue;
     const statusId = Number(s.status_id ?? 0);
     let won = statusId === KOMMO_WON_STATUS_ID; // 142 = "Closed - won" universal de Kommo
+    let stageName: string | null = null;
     if (!won && creds && statusId) {
-      const name = await kommoStatusName(creds.baseUrl, creds.token, String(s.pipeline_id ?? ""), String(statusId));
-      won = name ? isWonStageName(name) : false;
+      stageName = await kommoStatusName(creds.baseUrl, creds.token, String(s.pipeline_id ?? ""), String(statusId));
+      won = stageName ? isWonStageName(stageName) : false;
     }
-    if (!won) continue;
+    if (!won) {
+      console.log(`[kommo] lead ${kommoLeadId} -> etapa "${stageName ?? statusId}" (no es ganada, se ignora)`);
+      continue;
+    }
+    console.log(`[kommo] lead ${kommoLeadId} -> etapa GANADA "${stageName ?? statusId}"`);
 
     // Monto: el price viene en el propio webhook; si falta, lo pedimos a la API.
     let amount = parseInboundAmount(s.price);
@@ -343,8 +348,13 @@ inboundIntegrationsRouter.post("/kommo", express.urlencoded({ extended: true, li
   const leads = (body.leads ?? {}) as Record<string, unknown>;
   const message = (body.message ?? {}) as Record<string, unknown>;
   const creds = kommoCreds(integ);
+  const statusEvents = toArray(leads.status);
+  const messageEvents = toArray(message.add);
+  // Visibilidad: un renglón por webhook (sin esto, un evento ignorado no deja rastro y el debug es a ciegas).
+  const otros = Object.keys(body).filter((k) => k !== "leads" && k !== "message" && k !== "account");
+  console.log(`[kommo] webhook (user ${integ.userId}): ${statusEvents.length} etapa(s), ${messageEvents.length} mensaje(s)${otros.length ? `, otros: ${otros.join(",")}` : ""}`);
   void (async () => {
-    await processKommoMessages(integ.userId, creds, toArray(message.add));
-    await processKommoStatus(integ.userId, creds, toArray(leads.status));
+    await processKommoMessages(integ.userId, creds, messageEvents);
+    await processKommoStatus(integ.userId, creds, statusEvents);
   })().catch((e) => console.error("[kommo] error procesando webhook:", e instanceof Error ? e.message : e));
 });
