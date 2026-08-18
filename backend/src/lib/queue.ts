@@ -208,6 +208,30 @@ export async function checkLineHealth(): Promise<void> {
             }
           }
         }
+        // Caída SILENCIOSA de una línea CLOUD: sigue "active" y con quality GREEN, pero dejó de RECIBIR
+        // mensajes — Meta a veces deja de entregar sin bajar quality/status en la Graph API, así que el
+        // chequeo de calidad no lo capta (antes esta detección era SOLO para Baileys → una línea Cloud
+        // podía caerse sin ningún aviso; caso 17/08). Señal inequívoca: llegaron clics del /go a la
+        // landing pero CERO mensajes entrantes en la ventana. Solo AVISA (las Cloud no se reconectan).
+        // Dedupe: 1 aviso por 6 h.
+        if (line.status === "active") {
+          const since = new Date(Date.now() - SILENT_WINDOW_H * 60 * 60 * 1000);
+          const [clics, inbound] = await Promise.all([
+            prisma.contact.count({ where: { lineId: line.id, createdAt: { gte: since } } }),
+            prisma.message.count({ where: { lineId: line.id, direction: "in", createdAt: { gte: since } } }),
+          ]);
+          if (clics >= SILENT_MIN_CLICKS && inbound === 0) {
+            const recent = await prisma.notification.findFirst({
+              where: { userId: line.userId, type: "line_down", createdAt: { gte: new Date(Date.now() - 6 * 60 * 60 * 1000) } },
+              select: { id: true },
+            });
+            if (!recent) {
+              console.warn(`[line-health] línea CLOUD ${line.id}: posible caída SILENCIOSA (${clics} clics, 0 mensajes en ${SILENT_WINDOW_H}h) -> alerta`);
+              await notify(line.userId, "line_down", `⚠️ Línea sin recibir mensajes`,
+                `"${line.label ?? line.phone}" recibió clientes pero NO entra ningún mensaje hace ${SILENT_WINDOW_H}h. Puede estar caída — revisala en el panel (Reconectar webhook) o usá otro número.`);
+            }
+          }
+        }
       } else {
         const inst = line.sessionId ?? `line_${line.id}`;
         const state = await getEngine().connectionState(inst);
