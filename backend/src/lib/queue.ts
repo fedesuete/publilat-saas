@@ -724,8 +724,12 @@ export async function initQueues(): Promise<void> {
           const { resumeFlowRun } = await import("./flow-engine.js");
           return resumeFlowRun(job.data.runId as string);
         }
-        await expireChatDays().catch((e) => console.error("[chat-day] expire:", e instanceof Error ? e.message : String(e)));
-        return expireLines();
+        // Renovar las LÍNEAS primero, DESPUÉS el día de Chat App: si el cliente tiene una línea con día
+        // vigente, el Chat App queda cubierto por esa línea (hasActiveWaLine) y NO consume un día aparte.
+        // Al revés (chat antes que líneas) se cobraba DOBLE: cuando línea+chat vencían en el mismo minuto,
+        // veía la línea vencida (aún sin renovar), cobraba el día de chat, y luego renovaba la línea → 2x1.
+        await expireLines().catch((e) => console.error("[lines] expire:", e instanceof Error ? e.message : String(e)));
+        return expireChatDays().catch((e) => console.error("[chat-day] expire:", e instanceof Error ? e.message : String(e)));
       },
       { connection }
     );
