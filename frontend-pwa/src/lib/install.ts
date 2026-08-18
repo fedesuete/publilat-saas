@@ -18,6 +18,10 @@ function sessionParams(): string | null {
 // logueada — iOS usa el start_url del manifest para lanzar la app. Se setea desde el load (main.tsx)
 // y al montar el chat, para que al "Agregar a inicio" iOS lea el manifest con la sesión actual.
 export function pointManifestToSession(): void {
+  // SOLO iOS: en Android cambiar el <link rel="manifest"> hace que Chrome re-evalúe la instalabilidad
+  // y NO dispare el beforeinstallprompt (el prompt nativo) → el usuario no puede instalar de un toque.
+  // En Android no hace falta (storage compartido: la app instalada ya tiene la sesión).
+  if (!isIos()) return;
   const qs = sessionParams();
   if (!qs) return;
   try {

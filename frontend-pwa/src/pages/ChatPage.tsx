@@ -2,9 +2,9 @@ import { useEffect, useRef, useState, type FormEvent, type ChangeEvent } from "r
 import { io, type Socket } from "socket.io-client";
 import { api, apiError, API_BASE, getToken, clearToken, loadBranding, saveBranding, applyBranding, type Branding } from "../lib/api";
 import { subscribeToPush, pushSupported, pushPermission } from "../lib/push";
-import InstallPrompt, { InstallGuide } from "../components/InstallPrompt";
+import InstallPrompt, { InstallGuide, AndroidInstallGuide } from "../components/InstallPrompt";
 import PushPrompt from "../components/PushPrompt";
-import { promptInstall, onInstallAvailable, bakeSessionIntoUrl, pointManifestToSession, isStandalone } from "../lib/install";
+import { promptInstall, onInstallAvailable, bakeSessionIntoUrl, pointManifestToSession, isStandalone, isIos } from "../lib/install";
 
 interface Pay { cbu: string | null; alias: string | null; titular: string | null }
 interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; image?: string | null; buttons?: string[] | null; link?: { label: string; url: string } | null; copy?: { label: string; value: string } | null; pay?: Pay | null; install?: boolean; createdAt: string }
@@ -54,11 +54,17 @@ export default function ChatPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   // Instalación (botón "INSTALAR APP" en mensajes) + clip para adjuntar imagen.
   const [canInstall, setCanInstall] = useState(false);
-  const [showGuide, setShowGuide] = useState(false);
+  const [guide, setGuide] = useState<"ios" | "android" | null>(null); // qué guía de instalación mostrar
   const [chatImage, setChatImage] = useState<string | null>(null);
   useEffect(() => onInstallAvailable(setCanInstall), []);
   useEffect(() => { pointManifestToSession(); }, []); // manifest por sesión -> instalar en iPhone abre logueado
-  const doInstall = () => { if (canInstall) { void promptInstall(); } else { bakeSessionIntoUrl(); setShowGuide(true); } };
+  // Instalar: si llegó el prompt nativo (Android/Chrome) lo usamos; si no, mostramos la guía SEGÚN la
+  // plataforma (iPhone: Compartir→Agregar; Android/otros: menú ⋮→Instalar app). Antes caía siempre a iOS.
+  const doInstall = () => {
+    if (canInstall) { void promptInstall(); return; }
+    bakeSessionIntoUrl();
+    setGuide(isIos() ? "ios" : "android");
+  };
   // Banner de instalar en modo bare (redblack): estilo WhatsApp, arriba del chat. Se cierra y no vuelve.
   const [installHidden, setInstallHidden] = useState(() => localStorage.getItem("publilat_install_hidden") === "1");
   const dismissInstall = () => { localStorage.setItem("publilat_install_hidden", "1"); setInstallHidden(true); };
@@ -501,7 +507,8 @@ export default function ChatPage() {
       )}
 
       {/* Guía de instalación en iPhone (al tocar "INSTALAR APP" cuando no hay instalador nativo). */}
-      {showGuide && <InstallGuide onClose={() => setShowGuide(false)} />}
+      {guide === "ios" && <InstallGuide onClose={() => setGuide(null)} />}
+      {guide === "android" && <AndroidInstallGuide onClose={() => setGuide(null)} />}
     </div>
   );
 }
