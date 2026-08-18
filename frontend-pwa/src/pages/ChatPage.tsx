@@ -4,7 +4,7 @@ import { api, apiError, API_BASE, getToken, clearToken, loadBranding, saveBrandi
 import { subscribeToPush, pushSupported, pushPermission } from "../lib/push";
 import InstallPrompt, { InstallGuide, AndroidInstallGuide } from "../components/InstallPrompt";
 import PushPrompt from "../components/PushPrompt";
-import { promptInstall, onInstallAvailable, bakeSessionIntoUrl, pointManifestToSession, isStandalone, isIos } from "../lib/install";
+import { promptInstall, onInstallAvailable, bakeSessionIntoUrl, pointManifestToSession, isStandalone, isIos, waitForInstallPrompt } from "../lib/install";
 
 interface Pay { cbu: string | null; alias: string | null; titular: string | null }
 interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; image?: string | null; buttons?: string[] | null; link?: { label: string; url: string } | null; copy?: { label: string; value: string } | null; pay?: Pay | null; install?: boolean; createdAt: string }
@@ -58,10 +58,11 @@ export default function ChatPage() {
   const [chatImage, setChatImage] = useState<string | null>(null);
   useEffect(() => onInstallAvailable(setCanInstall), []);
   useEffect(() => { pointManifestToSession(); }, []); // manifest por sesión -> instalar en iPhone abre logueado
-  // Instalar: si llegó el prompt nativo (Android/Chrome) lo usamos; si no, mostramos la guía SEGÚN la
-  // plataforma (iPhone: Compartir→Agregar; Android/otros: menú ⋮→Instalar app). Antes caía siempre a iOS.
-  const doInstall = () => {
-    if (canInstall) { void promptInstall(); return; }
+  // Instalar: en Android/Chrome usamos el INSTALADOR NATIVO (un tap, como quiere el negocio). Si el
+  // beforeinstallprompt todavía no llegó, esperamos un instante a que aparezca antes de rendirnos. Solo
+  // si de verdad no hay prompt nativo mostramos la guía manual (iPhone: Compartir→Agregar; Android: menú ⋮).
+  const doInstall = async () => {
+    if (canInstall || (!isIos() && (await waitForInstallPrompt(1800)))) { void promptInstall(); return; }
     bakeSessionIntoUrl();
     setGuide(isIos() ? "ios" : "android");
   };
@@ -257,7 +258,7 @@ export default function ChatPage() {
         <div className="flex items-center gap-2 px-3 py-2 text-sm shadow-sm" style={{ background: "rgba(255,255,255,0.97)", color: "#111b21" }}>
           <span className="text-base" aria-hidden="true">📲</span>
           <span className="min-w-0 flex-1 truncate font-medium">Instalá {branding?.brandName || "la app"} en tu teléfono</span>
-          <button onClick={doInstall} className="shrink-0 rounded-full px-4 py-1.5 text-xs font-bold text-white" style={{ background: "var(--brand-primary)" }}>Instalar</button>
+          <button onClick={() => void doInstall()} className="shrink-0 rounded-full px-4 py-1.5 text-xs font-bold text-white" style={{ background: "var(--brand-primary)" }}>Instalar</button>
           <button onClick={dismissInstall} aria-label="Cerrar" className="shrink-0 px-1 text-lg leading-none text-slate-400">×</button>
         </div>
       )}
@@ -334,7 +335,7 @@ export default function ChatPage() {
           // Botón "INSTALAR APP" (mensaje 2 de la secuencia de instalación): dispara el instalador
           // (Android) o la guía de iPhone.
           const installBtn = m.install && (
-            <button onClick={doInstall}
+            <button onClick={() => void doInstall()}
               className="btn-glow mt-2 flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-extrabold text-white"
               style={{ background: "var(--brand-primary, #7c2fd6)" }}>
               📲 INSTALAR APP

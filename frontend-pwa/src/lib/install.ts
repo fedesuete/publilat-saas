@@ -67,6 +67,19 @@ export async function promptInstall(): Promise<boolean> {
   return choice.outcome === "accepted";
 }
 
+// ¿Hay (o llega en `timeoutMs`) un prompt de instalación nativo? Chrome dispara el beforeinstallprompt
+// un instante después de cargar; si el usuario toca "Instalar" antes, esperamos un toque para poder
+// instalar de UN TAP en vez de caer a la guía manual. Resuelve true si el prompt está disponible.
+export function waitForInstallPrompt(timeoutMs = 1500): Promise<boolean> {
+  if (deferred) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v: boolean) => { if (done) return; done = true; off(); clearTimeout(timer); resolve(v); };
+    const off = onInstallAvailable((available) => { if (available) finish(true); });
+    const timer = setTimeout(() => finish(false), timeoutMs);
+  });
+}
+
 export function isIos(): boolean {
   return /iphone|ipad|ipod/i.test(navigator.userAgent);
 }
