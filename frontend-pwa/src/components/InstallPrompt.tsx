@@ -45,28 +45,22 @@ function Num({ children }: { children: React.ReactNode }) {
   return <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold text-slate-900" style={{ background: "var(--brand-primary)" }}>{children}</span>;
 }
 
-// Guía para instalar en Android cuando el prompt nativo no llegó (menú del navegador → Instalar app).
+// Guía para instalar en Android cuando el prompt nativo no llegó: texto corto + infografía de los pasos.
 export function AndroidInstallGuide({ onClose }: { onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 text-center text-lg font-bold text-slate-100">Instalá la app en Android</div>
-        <ol className="space-y-3 text-sm text-slate-300">
-          <li className="flex items-start gap-3">
-            <Num>1</Num>
-            <span>Tocá el menú <b className="text-slate-100">⋮</b> (tres puntos) arriba a la derecha de <b>Chrome</b>.</span>
-          </li>
-          <li className="flex items-start gap-3">
-            <Num>2</Num>
-            <span>Tocá <b className="text-slate-100">Instalar app</b> o <b className="text-slate-100">Agregar a pantalla de inicio</b>.</span>
-          </li>
-          <li className="flex items-start gap-3">
-            <Num>3</Num>
-            <span>Confirmá <b className="text-slate-100">Instalar</b>. Listo: queda el ícono en tu pantalla de inicio.</span>
-          </li>
-        </ol>
-        <p className="mt-3 text-xs text-slate-500">Instalada, la app abre en pantalla completa y puede enviarte notificaciones.</p>
-        <button onClick={onClose} className="mt-4 w-full rounded-full py-2.5 font-semibold text-slate-900" style={{ background: "var(--brand-primary)" }}>Entendido</button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3" onClick={onClose}>
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-4 text-center" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-1 text-lg font-bold text-slate-900">Instalá la app en Android</div>
+        <p className="mb-3 text-sm text-slate-700">
+          En <b>Chrome</b>: tocá el menú <b>⋮</b> (arriba a la derecha) → <b>Agregar a pantalla principal</b> → <b>Agregar</b>.
+        </p>
+        <img
+          src="/android-install.jpg"
+          alt="Pasos para instalar en Android: abrí Chrome, tocá los tres puntos (⋮), elegí «Agregar a pantalla principal» y confirmá «Agregar»."
+          className="w-full rounded-lg border border-slate-200"
+          loading="lazy"
+        />
+        <button onClick={onClose} className="mt-4 w-full rounded-full py-2.5 font-semibold text-white" style={{ background: "var(--brand-primary)" }}>Entendido</button>
       </div>
     </div>
   );
