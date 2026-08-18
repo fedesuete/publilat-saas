@@ -9,6 +9,7 @@ import { decryptSecret } from "../lib/crypto.js";
 import { checkWarmupGate } from "../lib/warmup.js";
 import { uniquifyAudio } from "../lib/audio-uniquify.js";
 import { maybeAutoRegister } from "../lib/meta-events.js";
+import { notifyBotOperatorActive } from "../lib/notify-bot.js";
 
 export const inboxRouter = Router();
 
@@ -293,6 +294,7 @@ inboxRouter.post("/:contactId/messages", async (req, res) => {
   // AUTO: si el operador mandó las credenciales (usuario/clave), dispara CompleteRegistration a Meta
   // (cuentas con leadOnInbound). Background best-effort: no demora la respuesta ni frena el envío.
   void maybeAutoRegister(req.userId!, contact.id, parsed.data.body);
+  notifyBotOperatorActive(line.id, contact.phone); // el bot cajero se calla 30 min (no pisa al operador)
   return res.status(201).json({ message: { id: message.id, direction: "out", body: message.body, status: message.status, createdAt: message.createdAt } });
 });
 
@@ -346,6 +348,7 @@ inboxRouter.post("/:contactId/template", async (req, res) => {
     contactId: contact.id,
     message: { id: message.id, direction: "out", body, createdAt: message.createdAt },
   });
+  notifyBotOperatorActive(line.id, contact.phone); // el bot cajero se calla 30 min (no pisa al operador)
   return res.status(201).json({ message: { id: message.id, direction: "out", body, createdAt: message.createdAt } });
 });
 
@@ -405,6 +408,7 @@ inboxRouter.post("/:contactId/audio", async (req, res) => {
     contactId: contact.id,
     message: { id: message.id, direction: "out", body: "", status: message.status, mediaUrl, createdAt: message.createdAt },
   });
+  notifyBotOperatorActive(line.id, contact.phone); // el bot cajero se calla 30 min (no pisa al operador)
   return res.status(201).json({ message: { id: message.id, direction: "out", body: "", status: message.status, mediaUrl, createdAt: message.createdAt } });
 });
 
@@ -469,5 +473,6 @@ inboxRouter.post("/:contactId/audio-clip", async (req, res) => {
     contactId: contact.id,
     message: { id: message.id, direction: "out", body: "", status: message.status, mediaUrl, createdAt: message.createdAt },
   });
+  notifyBotOperatorActive(line.id, contact.phone); // el bot cajero se calla 30 min (no pisa al operador)
   return res.status(201).json({ message: { id: message.id, direction: "out", body: "", status: message.status, mediaUrl, createdAt: message.createdAt } });
 });
