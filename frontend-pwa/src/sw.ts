@@ -10,10 +10,16 @@ precacheAndRoute(self.__WB_MANIFEST || []);
 cleanupOutdatedCaches(); // borra precaches de versiones anteriores
 
 self.addEventListener("install", () => {
-  void self.skipWaiting();
+  void self.skipWaiting(); // activa la versión nueva YA, sin esperar a cerrar pestañas
 });
 self.addEventListener("activate", (e) => {
-  e.waitUntil(self.clients.claim());
+  e.waitUntil((async () => {
+    // Forzar versión nueva: borrar CUALQUIER cache que no sea el precache actual de workbox (restos de
+    // versiones viejas / caches propios) para que nadie quede pegado a la versión anterior.
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((k) => !k.startsWith("workbox-precache")).map((k) => caches.delete(k)));
+    await self.clients.claim(); // toma el control de las pestañas abiertas (main.tsx recarga al tomar control)
+  })());
 });
 
 // Web Push: el backend manda { title, body, url, image }.

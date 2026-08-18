@@ -251,10 +251,11 @@ export default function ChatPage() {
         </header>
       )}
 
-      {/* Banner "Instalar app" para el chat bare (redblack): el modo pelado esconde la tarjeta de
-          instalar, así que acá va un botón propio estilo WhatsApp. Se muestra si el operador lo habilitó,
-          si NO está ya instalada y si no lo cerraron. Android abre el prompt nativo; iPhone, la guía. */}
-      {bare && branding?.chatInstallPromptEnabled && !isStandalone() && !installHidden && (
+      {/* Banner "Instalar app" para el chat bare (redblack). Se muestra SOLO cuando se puede instalar
+          DIRECTO: en Android cuando el instalador nativo de Chrome está listo (canInstall), en iPhone
+          siempre (ahí el único camino es Compartir→Agregar). Si el teléfono ya la tiene instalada, en
+          Android canInstall es false → el banner NO aparece (no confunde con una guía). */}
+      {bare && branding?.chatInstallPromptEnabled && !isStandalone() && !installHidden && (canInstall || isIos()) && (
         <div className="flex items-center gap-2 px-3 py-2 text-sm shadow-sm" style={{ background: "rgba(255,255,255,0.97)", color: "#111b21" }}>
           <span className="text-base" aria-hidden="true">📲</span>
           <span className="min-w-0 flex-1 truncate font-medium">Instalá {branding?.brandName || "la app"} en tu teléfono</span>
