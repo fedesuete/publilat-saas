@@ -4,7 +4,7 @@ import { api, apiError, API_BASE, getToken, clearToken, loadBranding, saveBrandi
 import { subscribeToPush, pushSupported, pushPermission } from "../lib/push";
 import InstallPrompt, { InstallGuide } from "../components/InstallPrompt";
 import PushPrompt from "../components/PushPrompt";
-import { promptInstall, onInstallAvailable, bakeSessionIntoUrl, pointManifestToSession } from "../lib/install";
+import { promptInstall, onInstallAvailable, bakeSessionIntoUrl, pointManifestToSession, isStandalone } from "../lib/install";
 
 interface Pay { cbu: string | null; alias: string | null; titular: string | null }
 interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; image?: string | null; buttons?: string[] | null; link?: { label: string; url: string } | null; copy?: { label: string; value: string } | null; pay?: Pay | null; install?: boolean; createdAt: string }
@@ -59,6 +59,9 @@ export default function ChatPage() {
   useEffect(() => onInstallAvailable(setCanInstall), []);
   useEffect(() => { pointManifestToSession(); }, []); // manifest por sesión -> instalar en iPhone abre logueado
   const doInstall = () => { if (canInstall) { void promptInstall(); } else { bakeSessionIntoUrl(); setShowGuide(true); } };
+  // Banner de instalar en modo bare (redblack): estilo WhatsApp, arriba del chat. Se cierra y no vuelve.
+  const [installHidden, setInstallHidden] = useState(() => localStorage.getItem("publilat_install_hidden") === "1");
+  const dismissInstall = () => { localStorage.setItem("publilat_install_hidden", "1"); setInstallHidden(true); };
   const money = (n: number) => "$" + n.toLocaleString("es-AR");
   const copy = async (label: string, value: string) => {
     try { await navigator.clipboard.writeText(value); setCopied(label); setTimeout(() => setCopied(null), 1500); } catch { /* algunos webviews bloquean */ }
@@ -239,6 +242,18 @@ export default function ChatPage() {
           </div>
           {wallet && <div className="ml-auto rounded-full bg-white/20 px-3 py-1 text-sm font-bold">💰 {money(wallet.balance)}</div>}
         </header>
+      )}
+
+      {/* Banner "Instalar app" para el chat bare (redblack): el modo pelado esconde la tarjeta de
+          instalar, así que acá va un botón propio estilo WhatsApp. Se muestra si el operador lo habilitó,
+          si NO está ya instalada y si no lo cerraron. Android abre el prompt nativo; iPhone, la guía. */}
+      {bare && branding?.chatInstallPromptEnabled && !isStandalone() && !installHidden && (
+        <div className="flex items-center gap-2 px-3 py-2 text-sm shadow-sm" style={{ background: "rgba(255,255,255,0.97)", color: "#111b21" }}>
+          <span className="text-base" aria-hidden="true">📲</span>
+          <span className="min-w-0 flex-1 truncate font-medium">Instalá {branding?.brandName || "la app"} en tu teléfono</span>
+          <button onClick={doInstall} className="shrink-0 rounded-full px-4 py-1.5 text-xs font-bold text-white" style={{ background: "var(--brand-primary)" }}>Instalar</button>
+          <button onClick={dismissInstall} aria-label="Cerrar" className="shrink-0 px-1 text-lg leading-none text-slate-400">×</button>
+        </div>
       )}
 
       {/* Pill "conectado" (estilo competencia): redondeada, flotando sobre el fondo. En redblack se
