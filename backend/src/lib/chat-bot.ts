@@ -145,10 +145,12 @@ export async function runChatBot(accountId: string, convId: string, playerId: st
         `Perfecto, cargás *$${amount}* ✅\n\nTransferí desde tu banco a:\n\n💳 CVU: *${cvu.cvu}*\n🏷️ Alias: *${cvu.alias}*\n👤 Titular: ${cvu.titular}\n\nCuando transfieras, subí el *comprobante* 📎 acá y te acreditamos las fichas solo 🚀`,
         ["Cajero"],
       );
+      await prisma.chatConversation.update({ where: { id: convId }, data: { cargaPendingAt: new Date() } }); // carga iniciada → habilita el recordatorio
       return;
     }
     // Semi-automático (sin modelo B): datos de pago manuales (botPaymentInfo) + aviso al cajero.
     await setStep("carga_pago", amount * 100);
+    await prisma.chatConversation.update({ where: { id: convId }, data: { cargaPendingAt: new Date() } }); // carga iniciada → habilita el recordatorio
     const pay = acc.botPaymentInfo?.trim() || "En un momento un cajero te pasa los datos de pago.";
     await botSay(accountId, convId, playerId, `Perfecto, cargás *$${amount}* ✅\n\nPagá así:\n${pay}\n\nCuando pagues, tocá *Ya pagué* y te acreditamos en minutos 🚀`, ["Ya pagué", "Cajero"]);
     return;
@@ -195,4 +197,46 @@ export async function runChatBot(accountId: string, convId: string, playerId: st
 
   const welcome = acc.botWelcome?.trim() ? acc.botWelcome.trim() + "\n\n" : "";
   await botSay(accountId, convId, playerId, `${welcome}¿Qué querés hacer? Tocá una opción 👇`, MENU);
+}
+
+// Recordatorio de CARGA ABANDONADA: si un jugador empezó una carga (se le mostró el CVU) y pasaron
+// >10 min sin subir el comprobante, le mandamos un aviso (mensaje en el chat + Web Push) para que la
+// termine y no se pierda el contacto. Lo corre el job "carga-reminder" cada 5 min. One-shot: al avisar
+// limpia cargaPendingAt para no re-molestar. Si ya subió el comprobante, cierra la carga sin avisar.
+const CARGA_IDLE_MIN = 10;   // minutos de espera antes de recordar
+const CARGA_MAX_HOURS = 12;  // no recordar cargas más viejas que esto
+export async function remindAbandonedCargas(): Promise<number> {
+  const now = Date.now();
+  const convs = await prisma.chatConversation.findMany({
+    where: {
+      cargaPendingAt: { gte: new Date(now - CARGA_MAX_HOURS * 3600_000), lte: new Date(now - CARGA_IDLE_MIN * 60_000) },
+      user: { is: { botEnabled: true } },
+    },
+    select: { id: true, userId: true, playerId: true, botAmount: true, cargaPendingAt: true },
+  });
+  let sent = 0;
+  for (const c of convs) {
+    try {
+      // ¿ya subió el comprobante DESPUÉS de que se le mostró el CVU? → no molestar, cerrar la carga.
+      const paid = await prisma.chatMessage.count({
+        where: { conversationId: c.id, senderType: "player", createdAt: { gt: c.cargaPendingAt! }, metadata: { path: ["comprobante"], equals: true } },
+      });
+      if (paid > 0) {
+        await prisma.chatConversation.update({ where: { id: c.id }, data: { cargaPendingAt: null } });
+        continue;
+      }
+      const monto = c.botAmount ? `de *$${Math.round(c.botAmount / 100)}* ` : "";
+      await botSay(
+        c.userId, c.id, c.playerId,
+        `¡Hola! 👋 Vi que empezaste una carga ${monto}pero no la terminaste. ¿Ya transferiste? Subí el *comprobante* 📎 acá y te acredito las fichas al toque 🎰`,
+        ["Cajero"],
+      );
+      await prisma.chatConversation.update({ where: { id: c.id }, data: { cargaPendingAt: null } }); // one-shot
+      sent++;
+    } catch (e) {
+      console.error("[carga-reminder] falló", c.id, e instanceof Error ? e.message : String(e));
+    }
+  }
+  if (sent) console.log(`[carga-reminder] recordadas ${sent} carga(s) abandonada(s)`);
+  return sent;
 }

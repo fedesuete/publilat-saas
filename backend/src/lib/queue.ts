@@ -718,6 +718,7 @@ export async function initQueues(): Promise<void> {
         if (job.name === "proxy-report-daily") { const { sendProxyHealthReport } = await import("./proxy-report.js"); await sendProxyHealthReport(24, "resumen diario 08:00 ART"); return; }
         if (job.name === "proxy-report-3h") { const { sendProxyHealthReport } = await import("./proxy-report.js"); await sendProxyHealthReport(3, "evolución cada 3h"); return; }
         if (job.name === "iproyal-balance") { const { checkIproyalBalance } = await import("./iproyal-balance.js"); return checkIproyalBalance(); }
+        if (job.name === "carga-reminder") { const { remindAbandonedCargas } = await import("./chat-bot.js"); return remindAbandonedCargas(); }
         if (job.name === "proxy-report") { const { sendProxyHealthReport } = await import("./proxy-report.js"); await sendProxyHealthReport((job.data.windowHours as number) ?? 24, (job.data.tag as string) ?? ""); return; }
         if (job.name === "waha-cleanup") return cleanupOrphanWahaSessions();
         if (job.name === "flow-resume") {
@@ -746,6 +747,8 @@ export async function initQueues(): Promise<void> {
     await queue.add("proxy-monitor", {}, { repeat: { every: 300_000 }, jobId: "proxy-monitor-repeat", removeOnComplete: true, removeOnFail: 50 });
     // Saldo IPRoyal: chequeo cada 1h → avisa (email + campanita) si quedan pocos GB. No-op sin IPROYAL_API_TOKEN.
     await queue.add("iproyal-balance", {}, { repeat: { every: 3_600_000 }, jobId: "iproyal-balance-repeat", removeOnComplete: true, removeOnFail: 20 });
+    // Recordatorio de carga abandonada (Chat App): cada 5 min avisa a los jugadores que empezaron una carga y no la terminaron.
+    await queue.add("carga-reminder", {}, { repeat: { every: 300_000 }, jobId: "carga-reminder-repeat", removeOnComplete: true, removeOnFail: 50 });
     // Reporte diario de proxies IPRoyal a las 08:00 ART (no-op si no hay líneas de prueba ni SMTP).
     await queue.add("proxy-report-daily", {}, { repeat: { pattern: "0 8 * * *", tz: "America/Argentina/Buenos_Aires" }, jobId: "proxy-report-daily-repeat", removeOnComplete: true, removeOnFail: 20 });
     // Reporte cada 3h (00,03,06,…21 ART) con la evolución de las líneas de clientes en IPRoyal (pedido del dueño).
