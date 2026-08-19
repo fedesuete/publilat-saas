@@ -8,13 +8,15 @@ import { sendMail } from "./mailer.js";
 const NOTIFY_PHONE = (process.env.SIGNUP_NOTIFY_PHONE ?? "595975112248").replace(/\D/g, "");
 const NOTIFY_EMAIL = process.env.SIGNUP_NOTIFY_EMAIL ?? "federicobogado1997@gmail.com";
 
-export async function notifyNewSignup(u: { name?: string | null; email: string; phone?: string | null }): Promise<void> {
+export async function notifyNewSignup(u: { name?: string | null; email: string; phone?: string | null; interests?: string[] }): Promise<void> {
+  const interesa = u.interests && u.interests.length ? `\n🔎 Le interesa: ${u.interests.join(" · ")}` : "";
   const text =
     `🆕 *Nuevo cliente en Publi.lat*\n\n` +
     `👤 ${u.name?.trim() || "(sin nombre)"}\n` +
     `✉️ ${u.email}\n` +
-    `📱 ${u.phone?.trim() || "(sin teléfono)"}\n\n` +
-    `Contactalo para ayudarlo a arrancar 🚀`;
+    `📱 ${u.phone?.trim() || "(sin teléfono)"}` +
+    interesa +
+    `\n\nContactalo para ayudarlo a arrancar 🚀`;
 
   // Email (best-effort)
   void sendMail(NOTIFY_EMAIL, "🆕 Nuevo cliente en Publi.lat", text.replace(/\*/g, "")).catch(() => undefined);

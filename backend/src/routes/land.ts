@@ -20,13 +20,14 @@ const signupSchema = z.object({
   password: z.string().min(6).max(200),
   phone: z.string().trim().min(5).max(40),
   ref: z.string().optional(),
+  interests: z.array(z.string().max(60)).max(8).optional(), // qué le interesó en la landing (para el aviso)
 });
 
 // POST /api/land/signup — crea la cuenta y devuelve { ok, autologinUrl }.
 landRouter.post("/signup", async (req, res) => {
   const parsed = signupSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Completá nombre, email, teléfono y una clave (mínimo 6 caracteres)." });
-  const { name, email, password, phone, ref } = parsed.data;
+  const { name, email, password, phone, ref, interests } = parsed.data;
   try {
     const slug = await uniqueSlug(name || email.split("@")[0]);
     const referredById = ref ? await resolveReferrerByCode(ref) : null;
@@ -43,7 +44,7 @@ landRouter.post("/signup", async (req, res) => {
       select: { id: true, email: true, tokenVersion: true },
     });
 
-    void notifyNewSignup({ name, email, phone }); // aviso al dueño (best-effort)
+    void notifyNewSignup({ name, email, phone, interests }); // aviso al dueño con lo que le interesó (best-effort)
 
     const token = signToken({ userId: user.id, tv: user.tokenVersion });
     const base = (process.env.APP_BASE_URL ?? "https://app.publi.lat").replace(/\/$/, "");
