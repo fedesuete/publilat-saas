@@ -396,8 +396,20 @@ chatRouter.post("/messages/image", requireActiveLine, async (req, res) => {
   });
   if (!conv) return res.status(404).json({ error: "Conversación no encontrada" });
   const body = parsed.data.body?.trim() || null;
+  // Guardar la imagen como BrandingAsset (URL corta) en vez del data URL gigante: el data URL vive
+  // dentro de metadata y, acumulado, infla el historial y TRABA la carga del chat. Igual que el
+  // comprobante del jugador. Fallback: si falla el asset, dejamos el data URL (no se pierde la imagen).
+  let imageRef = image;
+  try {
+    const contentType = image.slice(5, image.indexOf(";")); // "image/png" | "image/jpeg" | ...
+    const asset = await prisma.brandingAsset.create({ data: { userId: req.userId!, contentType, data: bytes }, select: { id: true } });
+    const base = (process.env.APP_BASE_URL ?? "http://localhost:4000").replace(/\/$/, "");
+    imageRef = `${base}/api/chat/branding/asset/${asset.id}`;
+  } catch (e) {
+    console.error("[chat] guardar imagen del operador:", e instanceof Error ? e.message : String(e));
+  }
   const msg = await prisma.chatMessage.create({
-    data: { userId: req.userId!, conversationId: conv.id, senderType: "operator", senderId: req.userId!, body, metadata: { image } },
+    data: { userId: req.userId!, conversationId: conv.id, senderType: "operator", senderId: req.userId!, body, metadata: { image: imageRef } },
     select: { id: true, senderType: true, body: true, metadata: true, createdAt: true },
   });
   await prisma.chatConversation.update({
