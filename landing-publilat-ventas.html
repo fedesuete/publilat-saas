@@ -17,7 +17,7 @@ fbq('init','1657845171960486');fbq('track','PageView');
 <style>
   :root{
     --bg:#06140e; --bg2:#0a1c14; --card:#0f261b; --line:#1c3a2b;
-    --text:#eafff4; --muted:#9fc4b2; --green:#28d17c; --green2:#12a85f; --gold:#f7cf5b; --gold2:#e0a324;
+    --text:#eafff4; --muted:#9fc4b2; --green:#28d17c; --green2:#12a85f; --gold:#f7cf5b; --gold2:#e0a324; --cyan:#38d9e0;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{scroll-behavior:smooth}
@@ -55,8 +55,9 @@ fbq('init','1657845171960486');fbq('track','PageView');
   /* WHAT YOU CAN DO */
   .can{margin:44px auto 0;display:grid;gap:12px}
   .can .row{display:flex;gap:13px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:15px;padding:15px 16px;text-align:left}
-  .can .ic{font-size:24px;line-height:1.1;flex-shrink:0}
-  .can h4{font-size:15.5px;font-weight:800;margin-bottom:2px}
+  .can .ic{font-size:26px;line-height:1.1;flex-shrink:0}
+  .can h4{font-family:'Anton',sans-serif;font-weight:400;letter-spacing:.4px;text-transform:uppercase;font-size:20px;margin-bottom:3px;line-height:1.05}
+  .can h4.c1{color:var(--green)} .can h4.c2{color:var(--gold)} .can h4.c3{color:var(--cyan)}
   .can p{color:var(--muted);font-size:13.5px}
   .section-t{font-family:'Anton',sans-serif;text-transform:uppercase;font-size:clamp(22px,6vw,30px);text-align:center;margin:52px 0 6px}
   .section-s{color:var(--muted);text-align:center;font-size:14px;max-width:440px;margin:0 auto}
@@ -95,12 +96,11 @@ fbq('init','1657845171960486');fbq('track','PageView');
   </header>
 
   <div class="section-t">Con Publi.lat vas a poder</div>
-  <p class="section-s">Todo lo que necesitás para vender por WhatsApp y saber qué anuncio te deja plata.</p>
   <div class="can">
-    <div class="row"><div class="ic">🎯</div><div><h4>Medir tus ventas de verdad</h4><p>Cada clic → chat → venta vuelve a Meta por CAPI. ROAS real, no estimado.</p></div></div>
-    <div class="row"><div class="ic">💬</div><div><h4>Ordenar tus chats en un CRM</h4><p>Inbox de WhatsApp + tablero por etapas, etiquetas y respuestas rápidas.</p></div></div>
-    <div class="row"><div class="ic">🔀</div><div><h4>Usar varias líneas sin quemarlas</h4><p>Rotación automática de números. Si una se cae, seguís vendiendo por las otras.</p></div></div>
-    <div class="row"><div class="ic">🧲</div><div><h4>Publicar landings que convierten</h4><p>Con el tracking ya horneado y un dominio descartable por campaña.</p></div></div>
+    <div class="row"><div class="ic">🚫</div><div><h4 class="c1">No dependas de WhatsApp</h4><p>Operá con tu propio canal. Si te bloquean WhatsApp, seguís trabajando igual.</p></div></div>
+    <div class="row"><div class="ic">🧲</div><div><h4 class="c2">Landings que traen compradores</h4><p>Con el pixel que le enseña a Meta quién te compra de verdad — y te trae más iguales.</p></div></div>
+    <div class="row"><div class="ic">📱</div><div><h4 class="c3">Tu propia aplicación</h4><p>Tu marca, tu app instalable, tus clientes adentro. Sin depender de terceros.</p></div></div>
+    <div class="row"><div class="ic">⚡</div><div><h4 class="c1">Cargas y retiros automatizados</h4><p>El sistema cobra y paga solo. Vos supervisás y listo.</p></div></div>
   </div>
 
   <div class="section-t" id="alta">Creá tu cuenta ahora</div>
