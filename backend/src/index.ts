@@ -87,6 +87,10 @@ app.use(
 // Access-Control-Allow-Origin y el navegador bloquea TODO POST JSON del jugador (registro/login/
 // mensaje/push). Con GET simple no se notaba (no hay preflight). Debe ir antes del cors() global.
 app.use("/api/chat", chatHttpCors);
+// Alta self-service desde landing EXTERNA (CloudFront, dominio descartable e imprevisible): CORS ABIERTO,
+// sin cookie (el token va en el body / autologin). Debe ir ANTES del cors() global, como /api/chat, o el
+// global (solo PANEL_BASE_URL) contesta el preflight SIN Access-Control-Allow-Origin y el navegador bloquea el POST.
+app.use("/api/land", cors({ origin: "*" }));
 app.use(cors({ origin: corsOrigin, credentials: true }));
 
 // Webhook de Stripe ANTES del json(): necesita el body crudo para validar la firma.
@@ -131,8 +135,8 @@ app.use("/", trackRouter);
 
 // Auth (público, rate-limit estricto contra fuerza bruta)
 app.use("/api/auth", authLimiter, authRouter);
-// Alta self-service desde landing EXTERNA (CloudFront, dominio descartable) → CORS abierto (sin cookie).
-app.use("/api/land", cors({ origin: "*" }), apiLimiter, landRouter);
+// Alta self-service desde landing EXTERNA (el CORS abierto se montó arriba, antes del cors global).
+app.use("/api/land", apiLimiter, landRouter);
 
 // Webhooks públicos (los llaman servicios externos, sin Bearer)
 app.use("/api/wa/cloud/webhook", cloudWebhookRouter); // WhatsApp Cloud API (CTWA)
