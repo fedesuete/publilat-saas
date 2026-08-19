@@ -1,5 +1,5 @@
 // Utilidades de instalación de la PWA (beforeinstallprompt + detección de iOS/standalone).
-import { getToken, loadBranding } from "./api";
+import { api, getToken, loadBranding } from "./api";
 
 export type InstallPrompt = { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
 
@@ -51,7 +51,23 @@ window.addEventListener("beforeinstallprompt", (e: Event) => {
 window.addEventListener("appinstalled", () => {
   deferred = null;
   listeners.forEach((l) => l(false));
+  reportAppInstalled(); // hito "📲 instaló la app" visible para el operador
 });
+
+// Reporta al server que la app quedó INSTALADA (mensaje de sistema en el hilo del operador).
+// Una vez por dispositivo (localStorage); el server igual dedupea por jugador, así que un
+// reinstalado o un segundo dispositivo no duplican el hito. Best-effort: sin token o sin red,
+// se limpia el flag y se reintenta en el próximo disparador.
+export function reportAppInstalled(): void {
+  try {
+    if (!getToken()) return; // sin sesión no hay a quién atribuirlo; se reintenta al abrir logueado
+    if (localStorage.getItem("pl_install_reported")) return;
+    localStorage.setItem("pl_install_reported", "1");
+    void api.post("/api/chat/app-installed").catch(() => {
+      try { localStorage.removeItem("pl_install_reported"); } catch { /* noop */ }
+    });
+  } catch { /* noop */ }
+}
 
 export function onInstallAvailable(cb: (available: boolean) => void): () => void {
   listeners.add(cb);

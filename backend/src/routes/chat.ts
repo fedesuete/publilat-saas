@@ -12,6 +12,7 @@ import { sendCapiEvent } from "../lib/meta-capi.js"; // reuso el CAPI existente,
 import { resolveUserPixel } from "../lib/pixel.js";
 import { analyzeReceipt, aiEnabled } from "../lib/ai-receipt.js"; // lectura de comprobante con IA
 import { emitChat, playerIsForeground } from "../lib/io.js";
+import { postPlayerMilestone } from "../lib/chat-milestones.js";
 import { pushEnabled, publicVapidKey, enqueuePlayerPush, enqueueAccountBroadcast, enqueueOperatorPush } from "../lib/chat-push.js";
 import { s3Enabled } from "../lib/s3.js";
 import { runChatBot } from "../lib/chat-bot.js";
@@ -956,7 +957,17 @@ chatPublicRouter.post("/push/subscribe", requireChatClient, async (req, res) => 
     create: { userId: req.accountId!, playerId: req.chatPlayerId!, endpoint, p256dh: keys.p256dh, auth: keys.auth, userAgent },
     update: { playerId: req.chatPlayerId!, p256dh: keys.p256dh, auth: keys.auth, userAgent },
   });
+  // Hito visible para el operador (una sola vez por jugador, dedupeado en el helper).
+  void postPlayerMilestone(req.accountId!, req.chatPlayerId!, "push_on", "🔔 El cliente activó las notificaciones de la app");
   return res.status(201).json({ ok: true });
+});
+
+// POST /api/chat/app-installed — la PWA avisa que el jugador INSTALÓ la app (appinstalled en
+// Android; primer arranque standalone en iOS, que no dispara appinstalled). Hito visible para el
+// operador en el hilo; dedupeado por jugador en el helper, así que repetir el POST es inocuo.
+chatPublicRouter.post("/app-installed", requireChatClient, async (req, res) => {
+  void postPlayerMilestone(req.accountId!, req.chatPlayerId!, "app_installed", "📲 El cliente instaló la app en su celu");
+  return res.json({ ok: true });
 });
 
 // POST /api/chat/operator/push/subscribe — suscripción push del OPERADOR (panel). playerId=null lo distingue

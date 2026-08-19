@@ -4,7 +4,7 @@ import { api, apiError, API_BASE, getToken, clearToken, loadBranding, saveBrandi
 import { subscribeToPush, pushSupported, pushPermission } from "../lib/push";
 import InstallPrompt, { InstallGuide, AndroidInstallGuide } from "../components/InstallPrompt";
 import PushPrompt from "../components/PushPrompt";
-import { promptInstall, onInstallAvailable, bakeSessionIntoUrl, pointManifestToSession, isStandalone, isIos, waitForInstallPrompt } from "../lib/install";
+import { promptInstall, onInstallAvailable, bakeSessionIntoUrl, pointManifestToSession, isStandalone, isIos, waitForInstallPrompt, reportAppInstalled } from "../lib/install";
 
 interface Pay { cbu: string | null; alias: string | null; titular: string | null }
 interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; image?: string | null; buttons?: string[] | null; link?: { label: string; url: string } | null; copy?: { label: string; value: string } | null; pay?: Pay | null; install?: boolean; createdAt: string }
@@ -106,6 +106,9 @@ export default function ChatPage() {
   const [chatImage, setChatImage] = useState<string | null>(null);
   useEffect(() => onInstallAvailable(setCanInstall), []);
   useEffect(() => { pointManifestToSession(); }, []); // manifest por sesión -> instalar en iPhone abre logueado
+  // Si el chat corre INSTALADO (standalone: Android post-install o iOS "Agregar a inicio", que no
+  // dispara appinstalled), reporta el hito "📲 instaló la app" al operador. Dedup en cliente y server.
+  useEffect(() => { if (isStandalone()) reportAppInstalled(); }, []);
   // Instalar: en Android/Chrome usamos el INSTALADOR NATIVO (un tap, como quiere el negocio). Si el
   // beforeinstallprompt todavía no llegó, esperamos un instante a que aparezca antes de rendirnos. Solo
   // si de verdad no hay prompt nativo mostramos la guía manual (iPhone: Compartir→Agregar; Android: menú ⋮).
