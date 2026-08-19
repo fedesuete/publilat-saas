@@ -6,7 +6,8 @@
 // no-op. No toca WhatsApp, ni el flujo actual del Chat App, ni la atribución.
 import crypto from "node:crypto";
 import { prisma } from "./prisma.js";
-import { emitChat } from "./io.js";
+import { emitChat, playerIsForeground } from "./io.js";
+import { enqueuePlayerPush } from "./chat-push.js"; // Web Push al jugador si tiene el chat cerrado/de fondo
 import { casinoLiveForAccount, casinoCvuForAccount, ensureCasinoUser, casinoPlayerPassword } from "./casino-cashier.js"; // modelo B (auto-carga, key por cuenta)
 
 // Usuario del jugador a partir de su nombre (apodo + dígitos), igual que el registro un-tap.
@@ -30,6 +31,11 @@ async function botSay(accountId: string, convId: string, playerId: string, body:
   const payload = { conversationId: convId, message: { ...msg, image: null, buttons: buttons ?? null, link: link ?? null } };
   emitChat(`chat:${accountId}:player:${playerId}`, "chat:message", payload); // al jugador
   emitChat(`chat:${accountId}`, "chat:message", payload);                    // al operador (para verlo en el inbox)
+  // Si el jugador NO tiene el chat en primer plano (cerrado o de fondo) → Web Push (best-effort, no bloquea).
+  if (!(await playerIsForeground(accountId, playerId))) {
+    void enqueuePlayerPush(accountId, playerId, { title: "Nuevo mensaje", body: body.slice(0, 140), url: "/chat" })
+      .catch((e) => console.error("[chat-bot] push falló:", e instanceof Error ? e.message : String(e)));
+  }
 }
 
 // Aviso al CAJERO dentro de la conversación (mensaje de sistema + no-leído del operador).

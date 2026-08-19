@@ -16,6 +16,54 @@ function appendUnique(list: Msg[], m: Msg): Msg[] {
   return list.some((x) => x.id === m.id) ? list : [...list, m];
 }
 
+// Campanita de mensaje entrante (WebAudio, mismo tono que el panel del operador). El AudioContext se
+// crea/reanuda en el primer gesto del jugador (unlockChatAudio) porque los navegadores —iOS sobre
+// todo— bloquean el audio sin una interacción previa del usuario.
+let chatPingCtx: AudioContext | null = null;
+function ensureCtx(): AudioContext | null {
+  const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctor) return null;
+  chatPingCtx = chatPingCtx || new Ctor();
+  if (chatPingCtx.state === "suspended") void chatPingCtx.resume();
+  return chatPingCtx;
+}
+function unlockChatAudio(): void { try { ensureCtx(); } catch { /* noop */ } }
+function playPing(): void {
+  try {
+    const ctx = ensureCtx();
+    if (!ctx) return;
+    const t0 = ctx.currentTime;
+    const notes: Array<[number, number]> = [[784, 0], [1046.5, 0.11]]; // Sol5 → Do6, campanita ascendente
+    for (const [freq, delay] of notes) {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type = "sine";
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, t0 + delay);
+      g.gain.exponentialRampToValueAtTime(0.22, t0 + delay + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + delay + 0.24);
+      o.start(t0 + delay);
+      o.stop(t0 + delay + 0.26);
+    }
+  } catch { /* best-effort */ }
+}
+
+// Convierte las URLs del texto en enlaces TOCABLES (estilo WhatsApp). Sin esto el body se muestra como
+// texto plano y "no deja entrar a los links" (ej. el link para jugar o "entrá a https://..."). Abre en
+// pestaña nueva. Aplica a todos los temas — clave en redblack, donde el botón de link está oculto.
+function renderBody(text: string) {
+  return text.split(/(https?:\/\/[^\s]+)/g).map((p, i) =>
+    /^https?:\/\//.test(p)
+      ? (
+        <a key={i} href={p} target="_blank" rel="noopener noreferrer" className="break-all font-semibold underline" style={{ color: "var(--c-accent)" }}>
+          {p}
+        </a>
+      )
+      : p,
+  );
+}
+
 export default function ChatPage() {
   // Marca desde localStorage, pero la REFRESCAMOS del server al abrir para tomar cambios del
   // operador (tema/logo/colores) sin re-registrarse.
@@ -69,6 +117,10 @@ export default function ChatPage() {
   // Banner de instalar en modo bare (redblack): estilo WhatsApp, arriba del chat. Se cierra y no vuelve.
   const [installHidden, setInstallHidden] = useState(() => localStorage.getItem("publilat_install_hidden") === "1");
   const dismissInstall = () => { localStorage.setItem("publilat_install_hidden", "1"); setInstallHidden(true); };
+  // Banner de notificaciones para el chat bare (redblack): el PushPrompt normal está oculto en bare, así
+  // que sin esto el jugador nunca ve el pedido y el push no le llega. Se cierra a mano y no vuelve.
+  const [pushHidden, setPushHidden] = useState(() => localStorage.getItem("publilat_push_hidden") === "1");
+  const dismissPush = () => { localStorage.setItem("publilat_push_hidden", "1"); setPushHidden(true); };
   const money = (n: number) => "$" + n.toLocaleString("es-AR");
   const copy = async (label: string, value: string) => {
     try { await navigator.clipboard.writeText(value); setCopied(label); setTimeout(() => setCopied(null), 1500); } catch { /* algunos webviews bloquean */ }
@@ -163,19 +215,51 @@ export default function ChatPage() {
     setPushBusy(false);
   };
 
+  // Desbloqueo del audio: el primer toque/tecla del jugador crea/reanuda el AudioContext para que la
+  // campanita pueda sonar después (autoplay policy de Android/iOS). Se registra una sola vez.
+  useEffect(() => {
+    const unlock = () => {
+      unlockChatAudio();
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+    window.addEventListener("pointerdown", unlock);
+    window.addEventListener("keydown", unlock);
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, []);
+
   // Socket al namespace /chat con el JWT client como auth (Bearer va aparte en las requests HTTP).
   useEffect(() => {
     const token = getToken();
     if (!token) return;
     const socket: Socket = io(`${API_BASE}/chat`, { auth: { token } });
-    const onMsg = (p: { message: Msg }) => setMessages((prev) => appendUnique(prev, p.message)); // dedup por id
+    const onMsg = (p: { message: Msg }) => {
+      setMessages((prev) => appendUnique(prev, p.message)); // dedup por id
+      if (p.message.senderType !== "player") playPing(); // campanita SOLO con respuesta del cajero/bot, no el eco propio
+    };
     const onWallet = (p: { balance: number }) => setWallet((w) => (w ? { ...w, balance: p.balance } : w));
     socket.on("chat:message", onMsg);
     socket.on("chat:wallet", onWallet);
+    // Presencia de PRIMER PLANO: le avisamos al server si el chat está visible o pasó a segundo plano,
+    // para que dispare Web Push cuando el chat NO está en primer plano (aunque el socket siga vivo).
+    const reportFg = () => { try { socket.emit("chat:fg", document.visibilityState === "visible"); } catch { /* noop */ } };
+    socket.on("connect", reportFg); // al conectar/reconectar, reporta el estado actual
+    document.addEventListener("visibilitychange", reportFg);
+    window.addEventListener("focus", reportFg);
+    window.addEventListener("blur", reportFg);
     // Al reconectar (el socket se cayó por segundo plano/red): traigo lo que me perdí mientras estuve
     // desconectado, porque socket.io NO reenvía los eventos emitidos cuando no había socket vivo.
     socket.io.on("reconnect", () => { void loadMessages(); void loadWallet(); });
-    return () => { socket.off("chat:message", onMsg); socket.off("chat:wallet", onWallet); socket.disconnect(); };
+    return () => {
+      socket.off("chat:message", onMsg); socket.off("chat:wallet", onWallet); socket.off("connect", reportFg);
+      document.removeEventListener("visibilitychange", reportFg);
+      window.removeEventListener("focus", reportFg);
+      window.removeEventListener("blur", reportFg);
+      socket.disconnect();
+    };
   }, []);
 
   const sendBody = async (body: string, image?: string) => {
@@ -261,6 +345,18 @@ export default function ChatPage() {
           <span className="min-w-0 flex-1 truncate font-medium">Instalá {branding?.brandName || "la app"} en tu teléfono</span>
           <button onClick={() => void doInstall()} className="shrink-0 rounded-full px-4 py-1.5 text-xs font-bold text-white" style={{ background: "var(--brand-primary)" }}>Instalar</button>
           <button onClick={dismissInstall} aria-label="Cerrar" className="shrink-0 px-1 text-lg leading-none text-slate-400">×</button>
+        </div>
+      )}
+
+      {/* Banner "Activar notificaciones" para el chat bare (redblack). El PushPrompt del tema normal
+          está oculto en bare, así que este es el ÚNICO pedido de push que ve el jugador de Red Black.
+          Solo si el navegador las soporta y aún no decidió (push==="default") y no lo cerró antes. */}
+      {bare && push === "default" && !pushHidden && pushSupported() && (
+        <div className="flex items-center gap-2 px-3 py-2 text-sm shadow-sm" style={{ background: "rgba(255,255,255,0.97)", color: "#111b21" }}>
+          <span className="text-base" aria-hidden="true">🔔</span>
+          <span className="min-w-0 flex-1 truncate font-medium">Activá las notificaciones para saber cuando te respondan</span>
+          <button onClick={() => void enablePush()} disabled={pushBusy} className="shrink-0 rounded-full px-4 py-1.5 text-xs font-bold text-white disabled:opacity-50" style={{ background: "var(--brand-primary)" }}>{pushBusy ? "…" : "Activar"}</button>
+          <button onClick={dismissPush} aria-label="Cerrar" className="shrink-0 px-1 text-lg leading-none text-slate-400">×</button>
         </div>
       )}
 
@@ -354,7 +450,7 @@ export default function ChatPage() {
               <div className={`px-2.5 py-1.5 text-sm shadow-sm ${isWide ? "w-[88%] max-w-[88%]" : "max-w-[82%]"} ${mine ? "rounded-lg rounded-tr-sm" : "rounded-lg rounded-tl-sm"}`}
                 style={mine ? { background: "var(--c-me)", color: "var(--c-me-text)" } : { background: "var(--c-surface)", color: "var(--c-surface-text)" }}>
                 {img}
-                {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
+                {m.body && <div className="whitespace-pre-wrap break-words">{renderBody(m.body)}</div>}
                 {!bare && copyBtn}
                 {!bare && linkBtn}
                 {!bare && installBtn}
@@ -437,8 +533,10 @@ export default function ChatPage() {
           </div>
         )}
         {bare ? (
-          /* Barra estilo WhatsApp: + (adjuntar) · campo redondeado con sticker adentro · (vacío) cámara +
-             micrófono / (escribiendo) botón enviar. Iconos con los colores del tema (var --c-*). */
+          /* Barra estilo WhatsApp: + (adjuntar) · campo redondeado · (vacío) cámara + micrófono /
+             (escribiendo) botón enviar. TODOS los íconos (+, iconito del campo, cámara, micrófono)
+             abren para mandar foto (el jugador manda el comprobante) — reusan onChatImage. La cámara
+             abre la cámara directo; los demás dejan elegir galería/cámara. Colores del tema (var --c-*). */
           <div className="flex items-center gap-1.5">
             <label className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center" aria-label="Adjuntar" style={{ color: "var(--c-muted)" }}>
               <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
@@ -447,9 +545,10 @@ export default function ChatPage() {
             <div className="relative flex-1">
               <input ref={inputRef} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Mensaje"
                 className="w-full rounded-full border py-2.5 pl-4 pr-11 outline-none placeholder:opacity-50" style={{ background: "var(--c-input)", color: "var(--c-surface-text)", borderColor: "var(--c-border)" }} />
-              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" style={{ color: "var(--c-muted)" }} aria-hidden="true">
+              <label className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 cursor-pointer items-center justify-center" style={{ color: "var(--c-muted)" }} aria-label="Enviar foto">
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8l-6 6H6a2 2 0 0 1-2-2V6z" /><path d="M14 20v-4a2 2 0 0 1 2-2h4" /></svg>
-              </span>
+                <input type="file" accept="image/*" className="hidden" onChange={onChatImage} />
+              </label>
             </div>
             {(draft.trim() || chatImage) ? (
               <button type="submit" disabled={sending} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full disabled:opacity-50" style={{ background: "var(--c-accent)", color: "var(--c-accent-text)" }} aria-label="Enviar">
@@ -461,9 +560,10 @@ export default function ChatPage() {
                   <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
                   <input type="file" accept="image/*" capture="environment" className="hidden" onChange={onChatImage} />
                 </label>
-                <span className="flex h-9 w-7 shrink-0 items-center justify-center" style={{ color: "var(--c-muted)" }} aria-hidden="true">
+                <label className="flex h-9 w-7 shrink-0 cursor-pointer items-center justify-center" style={{ color: "var(--c-muted)" }} aria-label="Enviar foto">
                   <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" /><path d="M19 11a7 7 0 0 1-14 0" /><line x1="12" y1="18" x2="12" y2="22" /></svg>
-                </span>
+                  <input type="file" accept="image/*" className="hidden" onChange={onChatImage} />
+                </label>
               </>
             )}
           </div>

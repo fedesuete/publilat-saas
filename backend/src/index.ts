@@ -291,7 +291,14 @@ chatNs.on("connection", (socket) => {
     // que es del operador: si el jugador entrara ahí recibiría los mensajes de TODOS los demás
     // jugadores de la cuenta (incluida su bienvenida con usuario/clave). Todas las respuestas al
     // jugador se emiten también a `:player:${playerId}`, así que no pierde nada.
-    socket.join(`chat:${c.accountId}:player:${c.playerId}`);
+    const playerRoom = `chat:${c.accountId}:player:${c.playerId}`;
+    socket.join(playerRoom);
+    // Presencia de PRIMER PLANO: el cliente avisa (evento "chat:fg") si el chat está visible o pasó a
+    // segundo plano. Arranca en primer plano al conectar; el push al jugador se dispara cuando NINGÚN
+    // socket suyo está en `:fg` (chat cerrado o de fondo). Ver playerIsForeground en io.ts.
+    const fgRoom = `${playerRoom}:fg`;
+    void socket.join(fgRoom);
+    socket.on("chat:fg", (on: unknown) => { if (on) void socket.join(fgRoom); else void socket.leave(fgRoom); });
   }
 });
 
