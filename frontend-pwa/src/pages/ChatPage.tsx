@@ -354,7 +354,7 @@ export default function ChatPage() {
       {/* Banner "Activar notificaciones" para el chat bare (redblack). El PushPrompt del tema normal
           está oculto en bare, así que este es el ÚNICO pedido de push que ve el jugador de Red Black.
           Solo si el navegador las soporta y aún no decidió (push==="default") y no lo cerró antes. */}
-      {bare && push === "default" && !pushHidden && pushSupported() && (
+      {bare && !branding?.chatNotifTitle?.trim() && push === "default" && !pushHidden && pushSupported() && (
         <div className="flex items-center gap-2 px-3 py-2 text-sm shadow-sm" style={{ background: "rgba(255,255,255,0.97)", color: "#111b21" }}>
           <span className="text-base" aria-hidden="true">🔔</span>
           <span className="min-w-0 flex-1 truncate font-medium">Activá las notificaciones para saber cuando te respondan</span>
@@ -401,7 +401,9 @@ export default function ChatPage() {
 
       {/* Modal GRANDE para activar notificaciones (solo si el navegador las soporta y aún no decidió).
           Branded por cuenta; se posterga unos días al tocar "Ahora no". Oculto en redblack (chat pelado). */}
-      {push === "default" && !bare && <PushPrompt branding={branding} onEnable={enablePush} busy={pushBusy} />}
+      {/* En bare (chat pelado) el modal solo aparece si la cuenta configuró un pitch propio
+          (chatNotifTitle en Marca) — ej. el bono por activar notis. Sin pitch, queda el banner chico. */}
+      {push === "default" && (!bare || !!branding?.chatNotifTitle?.trim()) && <PushPrompt branding={branding} onEnable={enablePush} busy={pushBusy} />}
       {push === "denied" && !bare && (
         <div className="px-4 py-2 text-center text-xs" style={{ background: "var(--c-surface)", color: "var(--c-muted)" }}>
           Notificaciones bloqueadas. Podés activarlas desde los ajustes del navegador.

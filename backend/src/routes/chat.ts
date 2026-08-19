@@ -13,6 +13,7 @@ import { resolveUserPixel } from "../lib/pixel.js";
 import { analyzeReceipt, aiEnabled } from "../lib/ai-receipt.js"; // lectura de comprobante con IA
 import { emitChat, playerIsForeground } from "../lib/io.js";
 import { postPlayerMilestone } from "../lib/chat-milestones.js";
+import { pushBonusFor, pushOnMilestoneBody, appInstalledMilestoneBody } from "../lib/push-bonus.js";
 import { pushEnabled, publicVapidKey, enqueuePlayerPush, enqueueAccountBroadcast, enqueueOperatorPush } from "../lib/chat-push.js";
 import { s3Enabled } from "../lib/s3.js";
 import { runChatBot } from "../lib/chat-bot.js";
@@ -433,10 +434,12 @@ const DEFAULT_INSTALL = {
   msg1: "¡Hola! 🎉 Ya tenemos tu carga. Para acreditártela necesitás instalar nuestra app.",
   msg2: "Instalá nuestra app para entrar más rápido y no perderte nada. Es un toque 👇",
   msg3: "Si no podés, decinos y te indicamos con dos fotitos cómo es, por favor 🙏",
+  // Gate de retiro/bono: el operador lo manda cuando el jugador quiere retirar o pide el bono grande.
+  bono: "🎁 Para retirar o recibir tu bono del 50% necesitás la app. Instalala acá 👇",
 };
 const installSendSchema = z.object({
   conversationId: z.string().min(1),
-  which: z.enum(["sequence", "msg1", "msg2", "msg3", "tut_ios", "tut_android"]),
+  which: z.enum(["sequence", "msg1", "msg2", "msg3", "bono", "tut_ios", "tut_android"]),
 });
 
 // Fotos de instalación EFECTIVAS de una cuenta: las propias si las cargó; si no, las del ADMIN (default
@@ -479,6 +482,7 @@ chatRouter.post("/messages/install", requireActiveLine, async (req, res) => {
     case "msg1": items.push({ body: m1, metadata: {} }); break;
     case "msg2": items.push({ body: m2, metadata: { install: true } }); break;
     case "msg3": items.push({ body: m3, metadata: {} }); break;
+    case "bono": items.push({ body: DEFAULT_INSTALL.bono, metadata: { install: true } }); break;
     case "tut_ios": {
       // Manda TODAS las fotos de iPhone (paso 1→4) en orden. Usa las de la cuenta o, si no cargó, las del
       // admin (default global) → funciona desde CUALQUIER panel sin recargarlas por cuenta.
@@ -958,7 +962,11 @@ chatPublicRouter.post("/push/subscribe", requireChatClient, async (req, res) => 
     update: { playerId: req.chatPlayerId!, p256dh: keys.p256dh, auth: keys.auth, userAgent },
   });
   // Hito visible para el operador (una sola vez por jugador, dedupeado en el helper).
-  void postPlayerMilestone(req.accountId!, req.chatPlayerId!, "push_on", "🔔 El cliente activó las notificaciones de la app");
+  // Redacción neutra (el chip lo ven jugador Y operador) + bono del piloto si la cuenta lo tiene.
+  void (async () => {
+    const acc = await prisma.user.findUnique({ where: { id: req.accountId! }, select: { slug: true } }).catch(() => null);
+    await postPlayerMilestone(req.accountId!, req.chatPlayerId!, "push_on", pushOnMilestoneBody(pushBonusFor(acc?.slug ?? "")));
+  })();
   return res.status(201).json({ ok: true });
 });
 
@@ -966,7 +974,7 @@ chatPublicRouter.post("/push/subscribe", requireChatClient, async (req, res) => 
 // Android; primer arranque standalone en iOS, que no dispara appinstalled). Hito visible para el
 // operador en el hilo; dedupeado por jugador en el helper, así que repetir el POST es inocuo.
 chatPublicRouter.post("/app-installed", requireChatClient, async (req, res) => {
-  void postPlayerMilestone(req.accountId!, req.chatPlayerId!, "app_installed", "📲 El cliente instaló la app en su celu");
+  void postPlayerMilestone(req.accountId!, req.chatPlayerId!, "app_installed", appInstalledMilestoneBody());
   return res.json({ ok: true });
 });
 

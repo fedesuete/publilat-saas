@@ -218,7 +218,7 @@ export default function ChatAppPage() {
   };
 
   // Secuencia de instalación / fotos guardadas (mensajes con el botón INSTALAR APP).
-  const sendInstall = async (which: "sequence" | "msg2" | "tut_ios" | "tut_android") => {
+  const sendInstall = async (which: "sequence" | "msg2" | "bono" | "tut_ios" | "tut_android") => {
     if (!selected) return;
     const target = selected;
     setSending(true); setError(null);
@@ -346,6 +346,7 @@ export default function ChatAppPage() {
                   <span className="text-xs text-slate-500">📲 Instalación:</span>
                   <button onClick={() => void sendInstall("sequence")} disabled={sending || !activeLine} className="rounded-full border border-wa-green px-2.5 py-1 text-xs font-medium text-wa-green hover:bg-wa-green/10 disabled:opacity-50">Enviar secuencia (3)</button>
                   <button onClick={() => void sendInstall("msg2")} disabled={sending || !activeLine} className="rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50">Solo botón instalar</button>
+                  <button onClick={() => void sendInstall("bono")} disabled={sending || !activeLine} title="Manda: para retirar o recibir tu bono del 50% necesitás la app + botón INSTALAR" className="rounded-full border border-amber-500/60 px-2.5 py-1 text-xs font-medium text-amber-300 hover:bg-amber-500/10 disabled:opacity-50">🎁 Retiro/Bono → App</button>
                   <button onClick={() => void sendInstall("tut_ios")} disabled={sending || !activeLine} className="rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50">📱 Foto iPhone</button>
                   <button onClick={() => void sendInstall("tut_android")} disabled={sending || !activeLine} className="rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50">🤖 Foto Android</button>
                 </div>
