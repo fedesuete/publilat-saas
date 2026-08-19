@@ -6,6 +6,7 @@ import { prisma } from "../lib/prisma.js";
 import { hashPassword, verifyPassword, signToken, slugify } from "../lib/auth.js";
 import { requireAuth, AUTH_COOKIE } from "../middleware/requireAuth.js";
 import { resolveReferrerByCode } from "../lib/referrals.js";
+import { notifyNewSignup } from "../lib/signup-notify.js";
 import type { Response } from "express";
 
 export const authRouter = Router();
@@ -71,6 +72,9 @@ authRouter.post("/register", async (req, res) => {
       },
       select: { id: true, email: true, slug: true, name: true, role: true, tokenVersion: true },
     });
+
+    // Aviso al dueño (WhatsApp + email) del cliente nuevo, para contactarlo. Best-effort, no bloquea.
+    void notifyNewSignup({ name, email, phone });
 
     const token = signToken({ userId: user.id, tv: user.tokenVersion });
     setAuthCookie(res, token);
