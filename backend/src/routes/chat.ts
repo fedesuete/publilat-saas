@@ -11,7 +11,7 @@ import { hashPassword, verifyPassword, verifyToken } from "../lib/auth.js";
 import { sendCapiEvent } from "../lib/meta-capi.js"; // reuso el CAPI existente, NO reimplemento
 import { resolveUserPixel } from "../lib/pixel.js";
 import { analyzeReceipt, aiEnabled } from "../lib/ai-receipt.js"; // lectura de comprobante con IA
-import { emitChat, playerHasLiveSocket } from "../lib/io.js";
+import { emitChat, playerIsForeground } from "../lib/io.js";
 import { pushEnabled, publicVapidKey, enqueuePlayerPush, enqueueAccountBroadcast, enqueueOperatorPush } from "../lib/chat-push.js";
 import { s3Enabled } from "../lib/s3.js";
 import { runChatBot } from "../lib/chat-bot.js";
@@ -367,7 +367,7 @@ chatRouter.post("/messages", requireActiveLine, async (req, res) => {
   emitChat(`chat:${req.userId}`, "chat:message", payload);                          // al operador (otras pestañas)
 
   // Sin socket vivo del jugador -> Web Push (best-effort, no bloquea la respuesta).
-  if (!(await playerHasLiveSocket(req.userId!, conv.playerId))) {
+  if (!(await playerIsForeground(req.userId!, conv.playerId))) {
     const preview = parsed.data.body.slice(0, 140);
     void enqueuePlayerPush(req.userId!, conv.playerId, { title: "Nuevo mensaje", body: preview, url: "/chat" })
       .catch((e) => console.error("[chat] push falló:", e instanceof Error ? e.message : String(e)));
@@ -408,7 +408,7 @@ chatRouter.post("/messages/image", requireActiveLine, async (req, res) => {
   const payload = { conversationId: conv.id, message: outMsg };
   emitChat(`chat:${req.userId}:player:${conv.playerId}`, "chat:message", payload); // al jugador
   emitChat(`chat:${req.userId}`, "chat:message", payload);                          // al operador (otras pestañas)
-  if (!(await playerHasLiveSocket(req.userId!, conv.playerId))) {
+  if (!(await playerIsForeground(req.userId!, conv.playerId))) {
     void enqueuePlayerPush(req.userId!, conv.playerId, { title: "Nuevo mensaje", body: "📷 Imagen", url: "/chat" })
       .catch((e) => console.error("[chat] push falló:", e instanceof Error ? e.message : String(e)));
   }
@@ -475,9 +475,10 @@ chatRouter.post("/messages/install", requireActiveLine, async (req, res) => {
       break;
     }
     case "tut_android": {
-      const { android } = await resolveInstallImages(req.userId!);
-      if (!android) return res.status(400).json({ error: "Todavía no hay foto de instalación de Android. Cargala en tu panel (Marca) — o el admin la sube una vez y vale para todas las cuentas." });
-      items.push({ body: "🤖 Instalación en Android:", metadata: { image: android } });
+      // Android instala de UN TOQUE con el botón "📲 Instalar la app" (prompt nativo de Chrome). Mandamos
+      // instrucciones de TEXTO en vez de la vieja foto del método manual (3 puntos → "Agregar a pantalla
+      // principal"), que ya no aplica con el botón de instalación directa.
+      items.push({ body: "🤖 *Instalar en Android:*\n\n1) Tocá el botón morado 📲 *Instalar la app* (arriba de todo)\n2) En el cartel que abre Chrome, tocá *Instalar*\n3) ¡Listo! Te queda el ícono en la pantalla de inicio 🎉", metadata: {} });
       break;
     }
   }
@@ -496,7 +497,7 @@ chatRouter.post("/messages/install", requireActiveLine, async (req, res) => {
     emitChat(`chat:${req.userId}`, "chat:message", payload);
     out.push(outMsg);
   }
-  if (!(await playerHasLiveSocket(req.userId!, conv.playerId))) {
+  if (!(await playerIsForeground(req.userId!, conv.playerId))) {
     void enqueuePlayerPush(req.userId!, conv.playerId, { title: "Nuevo mensaje", body: (items[0]?.body ?? "Instalá la app").slice(0, 140), url: "/chat" }).catch(() => undefined);
   }
   return res.status(201).json({ messages: out });

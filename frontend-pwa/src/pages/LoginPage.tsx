@@ -1,6 +1,15 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, apiError, setToken, loadBranding, saveBranding, applyBranding, type Branding } from "../lib/api";
+import {
+  promptInstall,
+  waitForInstallPrompt,
+  isIos,
+  isStandalone,
+  isInAppBrowser,
+  bakeSessionIntoUrl,
+} from "../lib/install";
+import { InstallGuide, AndroidInstallGuide } from "../components/InstallPrompt";
 
 // Entrada del jugador. Dos formas de llegar:
 //  - por link de invitación (/i/:code) -> ya dejó branding + cuenta guardados.
@@ -22,29 +31,27 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Instalar la app: capturamos el prompt nativo (Android/Chrome). Si ya está instalada (abierta
-  // como app / standalone) no mostramos el botón. En iOS no hay prompt -> se muestra el paso a mano.
-  const [deferred, setDeferred] = useState<(Event & { prompt: () => Promise<void>; userChoice: Promise<unknown> }) | null>(null);
-  const [installHelp, setInstallHelp] = useState(false);
-  const standalone =
-    window.matchMedia?.("(display-mode: standalone)").matches ||
-    (navigator as unknown as { standalone?: boolean }).standalone === true;
-  const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
-
-  useEffect(() => {
-    const onPrompt = (e: Event) => { e.preventDefault(); setDeferred(e as never); };
-    window.addEventListener("beforeinstallprompt", onPrompt);
-    return () => window.removeEventListener("beforeinstallprompt", onPrompt);
-  }, []);
+  // Instalar la app: usamos el helper global (lib/install.ts) que captura el prompt nativo de
+  // Android APENAS carga la app (a nivel módulo). El listener local de antes montaba tarde y se
+  // perdía el evento -> el botón caía siempre a la guía. Ahora:
+  //  - navegador dentro de otra app (WhatsApp/IG) -> no se puede instalar: avisamos abrir en Chrome.
+  //  - iPhone -> guía visual "Compartir -> Agregar a inicio" (única vía en iOS).
+  //  - Android/Chrome -> instala de UN TAP (esperamos un toque al prompt si aún no llegó).
+  const [showIosGuide, setShowIosGuide] = useState(false);
+  const [showAndroidGuide, setShowAndroidGuide] = useState(false);
 
   const installApp = async () => {
-    if (deferred) {
-      await deferred.prompt();
-      await Promise.resolve(deferred.userChoice).catch(() => undefined);
-      setDeferred(null);
-    } else {
-      setInstallHelp((v) => !v);
+    if (isIos()) {
+      bakeSessionIntoUrl();
+      setShowIosGuide(true);
+      return;
     }
+    const ready = await waitForInstallPrompt();
+    if (ready) {
+      await promptInstall();
+      return;
+    }
+    setShowAndroidGuide(true);
   };
 
   // Ocultamos el campo "cuenta" SIEMPRE por defecto: el jugador entra sólo con usuario + clave.
@@ -109,22 +116,25 @@ export default function LoginPage() {
   return (
     <div className="mx-auto flex min-h-full max-w-md flex-col items-center justify-center p-6 text-center">
       {/* Lo primero: instalar la app (salvo que ya esté abierta como app). */}
-      {!standalone && (
+      {!isStandalone() && (
         <div className="mb-7 w-full">
-          <button
-            onClick={() => void installApp()}
-            className="w-full rounded-full py-4 text-base font-bold text-slate-900 shadow-lg"
-            style={{ background: "var(--brand-primary, #25d366)" }}
-          >
-            📲 Instalar la app
-          </button>
-          <p className="mt-2 text-xs text-slate-500">Instalá la app y entrá desde ahí. Después usás tu usuario y clave.</p>
-          {installHelp && (
-            <p className="mt-2 rounded-lg bg-slate-800 px-3 py-2 text-xs text-slate-300">
-              {isIos
-                ? "En iPhone: tocá Compartir (⎋) abajo → “Agregar a inicio”."
-                : "Tocá el menú (⋮) del navegador arriba → “Instalar app” / “Agregar a pantalla de inicio”."}
-            </p>
+          {isInAppBrowser() ? (
+            <div className="rounded-lg border border-amber-600 bg-amber-900/30 p-3 text-left text-xs text-amber-100">
+              Estás en un navegador dentro de otra app. Para <b>instalar la app</b> y entrar, abrí este
+              link en <b>Chrome</b> (Android) o <b>Safari</b> (iPhone): tocá el menú <b>⋮ / •••</b> →{" "}
+              <b>Abrir en Chrome/Safari</b>.
+            </div>
+          ) : (
+            <>
+              <button
+                onClick={() => void installApp()}
+                className="w-full rounded-full py-4 text-base font-bold text-slate-900 shadow-lg"
+                style={{ background: "var(--brand-primary, #25d366)" }}
+              >
+                📲 Instalar la app
+              </button>
+              <p className="mt-2 text-xs text-slate-500">Instalá la app y entrá desde ahí. Después usás tu usuario y clave.</p>
+            </>
           )}
         </div>
       )}
@@ -173,6 +183,9 @@ export default function LoginPage() {
           {busy ? "Entrando…" : "Entrar"}
         </button>
       </form>
+
+      {showIosGuide && <InstallGuide onClose={() => setShowIosGuide(false)} />}
+      {showAndroidGuide && <AndroidInstallGuide onClose={() => setShowAndroidGuide(false)} />}
     </div>
   );
 }

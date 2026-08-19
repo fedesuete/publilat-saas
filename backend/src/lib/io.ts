@@ -35,3 +35,18 @@ export async function playerHasLiveSocket(userId: string, playerId: string): Pro
     return false;
   }
 }
+
+// ¿El jugador tiene el chat EN PRIMER PLANO (visible) en alguna conexión? El cliente reporta su
+// visibilidad (evento "chat:fg") uniéndose/saliendo de la room `:fg`. Si NINGÚN socket suyo está en
+// primer plano —chat cerrado, minimizado o en segundo plano— el mensaje entrante va por Web Push.
+// Es más preciso que playerHasLiveSocket: un socket vivo en background NO cuenta como "mirando".
+export async function playerIsForeground(userId: string, playerId: string): Promise<boolean> {
+  const ns = io?.of("/chat");
+  if (!ns) return false;
+  try {
+    const sockets = await ns.in(`chat:${userId}:player:${playerId}:fg`).fetchSockets();
+    return sockets.length > 0;
+  } catch {
+    return false;
+  }
+}
