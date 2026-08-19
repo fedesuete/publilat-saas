@@ -10,8 +10,9 @@ export default function LoginPage() {
   const [searchParams] = useSearchParams();
   const ref = searchParams.get("ref") || ""; // código de referido (/login?ref=CODE)
 
-  // Si vino con ?ref, arrancamos directo en "Crear cuenta".
-  const [mode, setMode] = useState<"login" | "register">(ref ? "register" : "login");
+  // Si vino con ?ref (referido) o ?signup=1 (desde la landing de ventas), arrancamos en "Crear cuenta".
+  const signupIntent = searchParams.get("signup") === "1" || searchParams.get("registro") === "1";
+  const [mode, setMode] = useState<"login" | "register">(ref || signupIntent ? "register" : "login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
