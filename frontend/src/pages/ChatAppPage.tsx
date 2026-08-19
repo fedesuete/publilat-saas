@@ -31,10 +31,9 @@ function appendUnique(list: Msg[], m: Msg): Msg[] {
   return [...list, m];
 }
 
-// Aviso PROPIO del Chat App cuando escribe un JUGADOR: una VOZ que dice "hey!" (síntesis del navegador),
+// Aviso PROPIO del Chat App cuando escribe un JUGADOR: motor de F1 sintetizado (ver playChatPing),
 // bien distinto del "cha-ching" del Inbox de WhatsApp para no confundir de qué canal entró el mensaje.
-// Si el navegador no soporta voz, cae a un tono sintético. 100% aislado y best-effort: cualquier error
-// se traga en silencio, NUNCA afecta el chat.
+// 100% aislado y best-effort: cualquier error se traga en silencio, NUNCA afecta el chat.
 let chatPingCtx: AudioContext | null = null;
 function playTone(): void {
   try {
@@ -59,20 +58,50 @@ function playTone(): void {
     }
   } catch { /* best-effort */ }
 }
+// Motor de FÓRMULA 1 sintetizado: dos sierras desafinadas + sub, con distorsión (growl), barrido
+// de vueltas que sube rápido y cae con efecto doppler (la pasada del auto). MÁS FUERTE que un
+// audio normal: ganancia 2.2x domada por un compresor para que no sature. Reemplaza al "hey!" por
+// voz (quedaba bajo y se confundía). Si WebAudio falla, cae a la campanita de siempre.
 function playChatPing(): void {
   try {
-    const synth = window.speechSynthesis;
-    if (synth && typeof SpeechSynthesisUtterance !== "undefined") {
-      const u = new SpeechSynthesisUtterance("hey!");
-      u.lang = "es-AR";
-      u.rate = 1; u.pitch = 1.25; u.volume = 1;
-      u.onerror = () => playTone(); // si la voz falla en el momento, suena el tono
-      synth.cancel(); // corta cualquier locución encolada previa
-      synth.speak(u);
-      return;
+    const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return playTone();
+    chatPingCtx = chatPingCtx || new Ctor();
+    const ctx = chatPingCtx;
+    if (ctx.state === "suspended") void ctx.resume();
+    const t0 = ctx.currentTime;
+    const dur = 1.15;
+    // Cadena: osciladores -> distorsión -> pasabanda (cuerpo del motor) -> compresor -> ganancia alta
+    const shaper = ctx.createWaveShaper();
+    const curve = new Float32Array(256);
+    for (let i = 0; i < 256; i++) curve[i] = Math.tanh(2.5 * (i / 128 - 1));
+    shaper.curve = curve;
+    const band = ctx.createBiquadFilter();
+    band.type = "bandpass"; band.Q.value = 1.2;
+    band.frequency.setValueAtTime(400, t0);
+    band.frequency.exponentialRampToValueAtTime(2400, t0 + 0.7);
+    band.frequency.exponentialRampToValueAtTime(900, t0 + dur);
+    const comp = ctx.createDynamicsCompressor();
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0.0001, t0);
+    master.gain.exponentialRampToValueAtTime(2.2, t0 + 0.12);
+    master.gain.setValueAtTime(2.2, t0 + 0.85);
+    master.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    shaper.connect(band); band.connect(comp); comp.connect(master); master.connect(ctx.destination);
+    // [multiplicador de octava, detune en cents]: 2 sierras (motor) + 1 cuadrada una octava abajo (sub)
+    for (const [mult, detune] of [[1, 0], [1, 12], [0.5, 0]] as Array<[number, number]>) {
+      const o = ctx.createOscillator();
+      o.type = mult === 0.5 ? "square" : "sawtooth";
+      o.detune.value = detune;
+      o.frequency.setValueAtTime(90 * mult, t0);
+      o.frequency.exponentialRampToValueAtTime(850 * mult, t0 + 0.72); // acelera (vueltas para arriba)
+      o.frequency.exponentialRampToValueAtTime(340 * mult, t0 + dur);  // pasa de largo (doppler)
+      const g = ctx.createGain();
+      g.gain.value = mult === 0.5 ? 0.25 : 0.5;
+      o.connect(g); g.connect(shaper);
+      o.start(t0); o.stop(t0 + dur);
     }
-  } catch { /* cae al tono */ }
-  playTone();
+  } catch { playTone(); }
 }
 
 export default function ChatAppPage() {
