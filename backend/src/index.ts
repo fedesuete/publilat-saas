@@ -11,6 +11,7 @@ import { Server as SocketServer } from "socket.io";
 import { goRouter } from "./routes/go.js";
 import { landingRouter } from "./routes/landing.js";
 import { authRouter } from "./routes/auth.js";
+import { landRouter } from "./routes/land.js";
 import { leadsRouter } from "./routes/leads.js";
 import { waRouter } from "./routes/wa.js";
 import { webhookRouter } from "./routes/webhook.js";
@@ -130,6 +131,8 @@ app.use("/", trackRouter);
 
 // Auth (público, rate-limit estricto contra fuerza bruta)
 app.use("/api/auth", authLimiter, authRouter);
+// Alta self-service desde landing EXTERNA (CloudFront, dominio descartable) → CORS abierto (sin cookie).
+app.use("/api/land", cors({ origin: "*" }), apiLimiter, landRouter);
 
 // Webhooks públicos (los llaman servicios externos, sin Bearer)
 app.use("/api/wa/cloud/webhook", cloudWebhookRouter); // WhatsApp Cloud API (CTWA)

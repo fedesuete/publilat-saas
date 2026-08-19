@@ -3,7 +3,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
-import { hashPassword, verifyPassword, signToken, slugify } from "../lib/auth.js";
+import { hashPassword, verifyPassword, signToken, slugify, verifyToken } from "../lib/auth.js";
 import { requireAuth, AUTH_COOKIE } from "../middleware/requireAuth.js";
 import { resolveReferrerByCode } from "../lib/referrals.js";
 import { notifyNewSignup } from "../lib/signup-notify.js";
@@ -89,6 +89,19 @@ authRouter.post("/register", async (req, res) => {
     console.error("[auth/register] error:", e);
     return res.status(500).json({ error: "Error al registrar" });
   }
+});
+
+// GET /api/auth/autologin?t=<jwt> — setea la cookie de sesión (same-site en app.publi.lat) y redirige
+// al panel logueado. Lo usa el alta desde la landing EXTERNA (donde no se puede setear la cookie
+// cross-site). El token se consume al instante y se limpia de la URL con el redirect.
+authRouter.get("/autologin", (req, res) => {
+  const t = typeof req.query.t === "string" ? req.query.t : "";
+  const panel = (process.env.PANEL_BASE_URL?.split(",")[0] ?? "https://app.publi.lat").replace(/\/$/, "");
+  let ok = false;
+  try { ok = !!(t && verifyToken(t)); } catch { ok = false; }
+  if (!ok) return res.redirect(`${panel}/login`);
+  setAuthCookie(res, t);
+  return res.redirect(`${panel}/`);
 });
 
 authRouter.post("/login", async (req, res) => {

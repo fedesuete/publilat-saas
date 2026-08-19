@@ -4,10 +4,10 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Publi.lat — Convertí tus anuncios de Meta en ventas por WhatsApp</title>
-<meta name="description" content="Publi.lat cierra el loop: rastrea el clic, la conversación y la venta por WhatsApp, y le devuelve a Meta los compradores reales para que tu pauta rinda más." />
+<meta name="description" content="Creá tu cuenta y cerrá el loop: rastrea el clic, la conversación y la venta por WhatsApp, y devolvele a Meta los compradores reales." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Montserrat:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
 <!-- Meta Pixel — Clientes-publilat -->
 <script>
 !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
@@ -16,131 +16,145 @@ fbq('init','1657845171960486');fbq('track','PageView');
 <noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1657845171960486&ev=PageView&noscript=1"/></noscript>
 <style>
   :root{
-    --bg:#0a0f0d; --surface:#0f1613; --card:#131c18; --line:#1f2c26;
-    --text:#eaf2ee; --muted:#9db0a8; --brand:#22c55e; --brand-2:#10b981; --gold:#f5c451;
+    --bg:#06140e; --bg2:#0a1c14; --card:#0f261b; --line:#1c3a2b;
+    --text:#eafff4; --muted:#9fc4b2; --green:#28d17c; --green2:#12a85f; --gold:#f7cf5b; --gold2:#e0a324;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{scroll-behavior:smooth}
-  body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;line-height:1.6;overflow-x:hidden}
-  h1,h2,h3{font-family:'Sora',sans-serif;line-height:1.12;letter-spacing:-.02em;text-wrap:balance}
+  body{background:var(--bg);color:var(--text);font-family:'Montserrat',system-ui,sans-serif;line-height:1.55;overflow-x:hidden}
+  .anton{font-family:'Anton',sans-serif;font-weight:400;letter-spacing:.5px;line-height:1}
   a{color:inherit;text-decoration:none}
-  .wrap{max-width:1080px;margin:0 auto;padding:0 22px}
-  .btn{display:inline-flex;align-items:center;gap:9px;background:linear-gradient(135deg,var(--brand),var(--brand-2));color:#04120a;font-weight:800;font-family:'Sora',sans-serif;
-    padding:15px 28px;border-radius:999px;font-size:16px;box-shadow:0 10px 30px rgba(34,197,94,.28);transition:transform .15s, box-shadow .15s}
-  .btn:hover{transform:translateY(-2px);box-shadow:0 16px 40px rgba(34,197,94,.4)}
-  .btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line);box-shadow:none;font-weight:600}
-  /* NAV */
-  nav{position:sticky;top:0;z-index:20;background:rgba(10,15,13,.82);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
-  .nav-in{display:flex;align-items:center;justify-content:space-between;height:64px}
-  .logo{font-family:'Sora',sans-serif;font-weight:800;font-size:20px;letter-spacing:-.02em}
-  .logo b{color:var(--brand)}
+  .wrap{max-width:560px;margin:0 auto;padding:0 20px}
+  .gold{background:linear-gradient(100deg,var(--gold),var(--gold2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  /* GLOW BG */
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background:radial-gradient(520px 300px at 50% -4%,rgba(247,207,91,.14),transparent 65%),radial-gradient(460px 340px at 12% 108%,rgba(40,209,124,.12),transparent 60%)}
+  .page{position:relative;z-index:1}
   /* HERO */
-  header{position:relative;padding:78px 0 64px;overflow:hidden}
-  header::before{content:"";position:absolute;inset:0;z-index:0;
-    background:radial-gradient(680px 340px at 78% -6%,rgba(34,197,94,.16),transparent 60%),radial-gradient(560px 360px at 8% 110%,rgba(16,185,129,.12),transparent 60%)}
-  .hero{position:relative;z-index:1;max-width:760px}
-  .pill{display:inline-flex;align-items:center;gap:8px;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.28);color:#8ef0b6;
-    font-weight:600;font-size:13px;padding:7px 14px;border-radius:999px;margin-bottom:22px}
-  .dot{width:7px;height:7px;border-radius:50%;background:var(--brand);box-shadow:0 0 0 4px rgba(34,197,94,.2)}
-  h1{font-size:clamp(34px,6vw,56px);font-weight:800}
-  h1 span{background:linear-gradient(120deg,var(--brand),var(--gold));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-  .sub{color:var(--muted);font-size:clamp(16px,2.4vw,20px);margin:20px 0 30px;max-width:620px}
-  .cta-row{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
-  .cta-note{color:var(--muted);font-size:13px;margin-top:14px}
-  /* LOOP STRIP */
-  .loop{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:52px}
-  .step{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px}
-  .step .n{font-family:'Sora',sans-serif;font-weight:800;color:var(--brand);font-size:13px;letter-spacing:.06em}
-  .step h4{font-family:'Sora',sans-serif;font-size:15px;margin:8px 0 4px}
-  .step p{color:var(--muted);font-size:13px}
-  /* SECTION */
-  section{padding:64px 0}
-  .eyebrow{color:var(--brand);font-weight:700;font-size:13px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:12px}
-  h2{font-size:clamp(26px,4vw,38px);font-weight:800;max-width:660px}
-  .lead{color:var(--muted);font-size:17px;max-width:640px;margin-top:14px}
-  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:40px}
-  .feat{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:24px}
-  .feat .ico{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;font-size:22px;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.22);margin-bottom:14px}
-  .feat h3{font-size:18px;margin-bottom:7px}
-  .feat p{color:var(--muted);font-size:14.5px}
-  /* PRICE */
-  .price{background:linear-gradient(180deg,var(--card),var(--surface));border:1px solid var(--line);border-radius:24px;padding:40px;text-align:center;max-width:520px;margin:0 auto;position:relative;overflow:hidden}
-  .price::before{content:"";position:absolute;inset:0;background:radial-gradient(420px 200px at 50% -20%,rgba(34,197,94,.14),transparent)}
-  .price>*{position:relative;z-index:1}
-  .price .amt{font-family:'Sora',sans-serif;font-weight:800;font-size:52px;margin:6px 0}
-  .price .amt small{font-size:18px;color:var(--muted);font-weight:600}
-  .price ul{list-style:none;text-align:left;max-width:320px;margin:22px auto 26px;display:grid;gap:10px}
-  .price li{display:flex;gap:10px;color:var(--text);font-size:15px}
-  .price li b{color:var(--brand)}
-  /* FINAL */
-  .final{text-align:center;background:radial-gradient(600px 300px at 50% 0,rgba(34,197,94,.12),transparent);border-top:1px solid var(--line)}
-  footer{border-top:1px solid var(--line);color:var(--muted);font-size:13px;text-align:center;padding:28px 0}
-  @media(max-width:760px){ .loop{grid-template-columns:1fr 1fr} .grid{grid-template-columns:1fr} .nav-in .btn{display:none} }
+  header{padding:44px 0 8px;text-align:center}
+  .brand{font-family:'Anton',sans-serif;font-size:24px;letter-spacing:1px;opacity:.95}
+  .brand b{color:var(--green)}
+  .badge{display:inline-flex;align-items:center;gap:8px;margin:20px 0 18px;padding:8px 16px;border-radius:999px;
+    background:rgba(40,209,124,.1);border:1px solid rgba(40,209,124,.3);color:#8ff2bf;font-weight:700;font-size:12.5px;letter-spacing:.04em}
+  .badge .dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 4px rgba(40,209,124,.2);animation:pulse 1.8s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  h1.anton{font-size:clamp(38px,10vw,60px);text-transform:uppercase}
+  .sub{color:var(--muted);font-size:16px;max-width:480px;margin:16px auto 0}
+  /* BIG NUMBER OFFER */
+  .offer{margin:26px auto 4px;max-width:420px}
+  .offer .big{font-family:'Anton',sans-serif;font-size:clamp(66px,20vw,120px);line-height:.86;text-transform:uppercase;
+    filter:drop-shadow(0 6px 22px rgba(247,207,91,.28))}
+  .offer .cap{font-family:'Anton',sans-serif;font-size:clamp(18px,5vw,26px);letter-spacing:2px;text-transform:uppercase;color:var(--text)}
+  /* CTA BUTTON */
+  .cta{display:block;width:100%;max-width:440px;margin:26px auto 0;background:linear-gradient(100deg,var(--green),var(--green2));
+    color:#04160c;font-family:'Anton',sans-serif;font-size:23px;letter-spacing:.6px;text-transform:uppercase;text-align:center;
+    padding:19px 20px;border:0;border-radius:16px;cursor:pointer;box-shadow:0 12px 34px rgba(40,209,124,.34);transition:transform .14s, box-shadow .14s}
+  .cta:hover{transform:translateY(-2px);box-shadow:0 18px 44px rgba(40,209,124,.46)}
+  .cta:active{transform:translateY(0)}
+  .cta.gold{background:linear-gradient(100deg,var(--gold),var(--gold2));box-shadow:0 12px 34px rgba(247,207,91,.34)}
+  /* WHAT YOU CAN DO */
+  .can{margin:44px auto 0;display:grid;gap:12px}
+  .can .row{display:flex;gap:13px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:15px;padding:15px 16px;text-align:left}
+  .can .ic{font-size:24px;line-height:1.1;flex-shrink:0}
+  .can h4{font-size:15.5px;font-weight:800;margin-bottom:2px}
+  .can p{color:var(--muted);font-size:13.5px}
+  .section-t{font-family:'Anton',sans-serif;text-transform:uppercase;font-size:clamp(22px,6vw,30px);text-align:center;margin:52px 0 6px}
+  .section-s{color:var(--muted);text-align:center;font-size:14px;max-width:440px;margin:0 auto}
+  /* FORM CARD */
+  .form-card{margin:34px auto 0;background:linear-gradient(180deg,var(--card),var(--bg2));border:1px solid var(--line);border-radius:22px;padding:26px 22px 24px;
+    box-shadow:0 20px 60px rgba(0,0,0,.35);position:relative;overflow:hidden}
+  .form-card::before{content:"";position:absolute;inset:0;background:radial-gradient(360px 160px at 50% -20%,rgba(247,207,91,.12),transparent);pointer-events:none}
+  .form-card>*{position:relative;z-index:1}
+  .form-card .t{font-family:'Anton',sans-serif;font-size:26px;text-transform:uppercase;text-align:center}
+  .form-card .st{color:var(--muted);text-align:center;font-size:13.5px;margin:6px 0 20px}
+  .field{margin-bottom:13px}
+  .field label{display:block;font-size:12.5px;font-weight:700;color:var(--muted);margin-bottom:6px;letter-spacing:.02em}
+  .field input{width:100%;background:#08170f;border:1px solid var(--line);border-radius:12px;color:var(--text);
+    font-size:16px;font-family:inherit;padding:14px 15px;outline:none;transition:border-color .15s}
+  .field input:focus{border-color:var(--green)}
+  .err{display:none;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);color:#ffb4b4;font-size:13.5px;border-radius:10px;padding:11px 13px;margin-bottom:13px}
+  .fine{color:var(--muted);font-size:11.5px;text-align:center;margin-top:12px}
+  footer{border-top:1px solid var(--line);color:var(--muted);font-size:12px;text-align:center;padding:26px 0;margin-top:48px}
 </style>
 </head>
 <body>
+<div class="page"><div class="wrap">
 
-<nav><div class="wrap nav-in">
-  <div class="logo">Publi<b>.lat</b></div>
-  <a class="btn" href="https://app.publi.lat/login?signup=1">Crear cuenta gratis</a>
-</div></nav>
+  <header>
+    <div class="brand">PUBLI<b>.LAT</b></div>
+    <div class="badge"><span class="dot"></span> ATRIBUCIÓN WHATSAPP → META ADS</div>
+    <h1 class="anton">Vendé más por <span class="gold">WhatsApp</span></h1>
+    <p class="sub">Que Meta deje de traerte curiosos y empiece a traerte <b>compradores reales</b>. Medí cada peso que invertís.</p>
 
-<header><div class="wrap hero">
-  <div class="pill"><span class="dot"></span> Atribución WhatsApp → Meta Ads</div>
-  <h1>Convertí tus anuncios de Meta en <span>ventas por WhatsApp</span> — y medí cada peso.</h1>
-  <p class="sub">Publi.lat cierra el loop: rastrea el clic, la conversación y la venta, y le devuelve a Meta los <b>compradores reales</b>. Meta deja de optimizar por “mensajes” y empieza a traerte gente que <b>compra</b>.</p>
-  <div class="cta-row">
-    <a class="btn" href="https://app.publi.lat/login?signup=1">Crear cuenta gratis →</a>
-    <a class="btn ghost" href="#como">Ver cómo funciona</a>
+    <div class="offer">
+      <div class="big gold">7 DÍAS</div>
+      <div class="cap">para probarlo con TUS anuncios</div>
+    </div>
+
+    <button class="cta" onclick="document.getElementById('alta').scrollIntoView({behavior:'smooth'})">👉 Crear mi cuenta gratis</button>
+  </header>
+
+  <div class="section-t">Con Publi.lat vas a poder</div>
+  <p class="section-s">Todo lo que necesitás para vender por WhatsApp y saber qué anuncio te deja plata.</p>
+  <div class="can">
+    <div class="row"><div class="ic">🎯</div><div><h4>Medir tus ventas de verdad</h4><p>Cada clic → chat → venta vuelve a Meta por CAPI. ROAS real, no estimado.</p></div></div>
+    <div class="row"><div class="ic">💬</div><div><h4>Ordenar tus chats en un CRM</h4><p>Inbox de WhatsApp + tablero por etapas, etiquetas y respuestas rápidas.</p></div></div>
+    <div class="row"><div class="ic">🔀</div><div><h4>Usar varias líneas sin quemarlas</h4><p>Rotación automática de números. Si una se cae, seguís vendiendo por las otras.</p></div></div>
+    <div class="row"><div class="ic">🧲</div><div><h4>Publicar landings que convierten</h4><p>Con el tracking ya horneado y un dominio descartable por campaña.</p></div></div>
   </div>
-  <p class="cta-note">Sin instalar nada. Creás tu cuenta en 1 minuto y empezás.</p>
 
-  <div class="loop">
-    <div class="step"><div class="n">01</div><h4>Anuncio → Landing</h4><p>El clic queda rastreado con su identidad de Meta.</p></div>
-    <div class="step"><div class="n">02</div><h4>Va a WhatsApp</h4><p>La conversación entra a tu CRM identificada.</p></div>
-    <div class="step"><div class="n">03</div><h4>Marcás la venta</h4><p>Con el monto real, en un clic.</p></div>
-    <div class="step"><div class="n">04</div><h4>Meta optimiza</h4><p>Recibe el comprador real y te trae más iguales.</p></div>
-  </div>
-</div></header>
+  <div class="section-t" id="alta">Creá tu cuenta ahora</div>
+  <p class="section-s">Cargás tus datos y ya quedás adentro para activar tus días.</p>
 
-<section id="como"><div class="wrap">
-  <div class="eyebrow">El problema que resolvemos</div>
-  <h2>Meta no sabe quién te compra. Nosotros se lo decimos.</h2>
-  <p class="lead">Si vendés por WhatsApp con tráfico de Meta, la pauta optimiza a ciegas: por “mensajes iniciados”, no por ventas. Publi.lat le devuelve a Meta el evento de <b>compra real</b> con el mismo identificador del clic — y ahí tu costo por venta baja.</p>
-  <div class="grid">
-    <div class="feat"><div class="ico">🎯</div><h3>Atribución de punta a punta</h3><p>Cada clic → conversación → venta, con el <b>Purchase</b> de vuelta a Meta por CAPI. ROAS real, no estimado.</p></div>
-    <div class="feat"><div class="ico">💬</div><h3>CRM + Inbox de WhatsApp</h3><p>Todas tus conversaciones en un tablero, con etapas (Kanban), etiquetas y respuestas rápidas.</p></div>
-    <div class="feat"><div class="ico">📊</div><h3>Dashboard de ROAS</h3><p>Cuánto invertís, cuánto vendés y qué anuncio te trae los compradores. Claro y en vivo.</p></div>
-    <div class="feat"><div class="ico">🔀</div><h3>Multi-línea con rotación</h3><p>Repartí los clics entre varias líneas de WhatsApp. Si una se cae, el tráfico sigue por las otras.</p></div>
-    <div class="feat"><div class="ico">🧲</div><h3>Landings rastreadas</h3><p>Publicá tus landings con el tracking ya horneado. Un dominio descartable por campaña.</p></div>
-    <div class="feat"><div class="ico">⚡</div><h3>Todo automático</h3><p>El Lead, el registro y la compra viajan solos a tu pixel. Vos vendés; el sistema mide.</p></div>
-  </div>
-</div></section>
+  <form class="form-card" id="signupForm" novalidate>
+    <div class="t gold">Empezá hoy</div>
+    <div class="st">1 minuto. Sin tarjeta para registrarte.</div>
+    <div class="err" id="err"></div>
+    <div class="field"><label>Tu nombre</label><input id="f-name" type="text" autocomplete="name" placeholder="Nombre y apellido" required /></div>
+    <div class="field"><label>Email</label><input id="f-email" type="email" autocomplete="email" placeholder="tucorreo@mail.com" required /></div>
+    <div class="field"><label>WhatsApp</label><input id="f-phone" type="tel" autocomplete="tel" placeholder="Ej: 549 11 1234 5678" required /></div>
+    <div class="field"><label>Elegí una clave</label><input id="f-pass" type="password" autocomplete="new-password" placeholder="Mínimo 6 caracteres" required /></div>
+    <button class="cta gold" id="submitBtn" type="submit">Crear mi cuenta →</button>
+    <p class="fine">Al crear la cuenta entrás directo al panel para activar tus 7 días.</p>
+  </form>
 
-<section><div class="wrap">
-  <div class="eyebrow" style="text-align:center">Empezá hoy</div>
-  <h2 style="text-align:center;margin:0 auto">Un precio simple. Sin sorpresas.</h2>
-  <div class="price" style="margin-top:34px">
-    <div class="eyebrow">Plan de arranque</div>
-    <div class="amt">7 <small>días</small></div>
-    <p style="color:var(--muted)">Activás el loop completo y probás con tus propios anuncios.</p>
-    <ul>
-      <li><b>✓</b> Atribución WhatsApp → Meta (CAPI)</li>
-      <li><b>✓</b> CRM + Inbox + Dashboard de ROAS</li>
-      <li><b>✓</b> Multi-línea + landings rastreadas</li>
-      <li><b>✓</b> Soporte para dejarte andando</li>
-    </ul>
-    <a class="btn" href="https://app.publi.lat/login?signup=1" style="width:100%;justify-content:center">Crear cuenta y empezar →</a>
-  </div>
-</div></section>
+  <footer>Publi.lat — Atribución WhatsApp → Meta Ads · CRM · Analytics</footer>
 
-<section class="final"><div class="wrap">
-  <h2 style="margin:0 auto">Dejá de adivinar. Empezá a medir lo que vendés.</h2>
-  <p class="lead" style="margin:14px auto 26px">Creá tu cuenta gratis y activá el loop en minutos.</p>
-  <a class="btn" href="https://app.publi.lat/login?signup=1">Crear cuenta gratis →</a>
-</div></section>
+</div></div>
 
-<footer><div class="wrap">Publi.lat — Atribución WhatsApp → Meta Ads · CRM · Analytics</div></footer>
-
+<script>
+  var API = "https://app.publi.lat";
+  var form = document.getElementById('signupForm');
+  var btn = document.getElementById('submitBtn');
+  var errBox = document.getElementById('err');
+  form.addEventListener('submit', async function(e){
+    e.preventDefault();
+    errBox.style.display = 'none';
+    var name = document.getElementById('f-name').value.trim();
+    var email = document.getElementById('f-email').value.trim();
+    var phone = document.getElementById('f-phone').value.trim();
+    var pass = document.getElementById('f-pass').value;
+    if(!name || !email || !phone || pass.length < 6){
+      errBox.textContent = 'Completá todos los datos y una clave de al menos 6 caracteres.';
+      errBox.style.display = 'block'; return;
+    }
+    btn.disabled = true; var prev = btn.textContent; btn.textContent = 'Creando tu cuenta…';
+    try{
+      try{ fbq('track','Lead'); }catch(_){}
+      var r = await fetch(API + '/api/land/signup', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ name:name, email:email, phone:phone, password:pass })
+      });
+      var d = await r.json().catch(function(){ return {}; });
+      if(!r.ok){ throw new Error(d.error || 'No pudimos crear la cuenta. Probá de nuevo.'); }
+      try{ fbq('track','CompleteRegistration'); }catch(_){}
+      window.location.href = d.autologinUrl; // auto-login → panel a activar los días
+    }catch(err){
+      errBox.textContent = err.message || 'Error al crear la cuenta.';
+      errBox.style.display = 'block';
+      btn.disabled = false; btn.textContent = prev;
+    }
+  });
+</script>
 </body>
 </html>
