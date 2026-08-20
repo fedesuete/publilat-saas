@@ -319,7 +319,7 @@ export default function BillingPage() {
             </div>
             {/* Atajos: 7 días es el paquete recomendado (semana de línea activa). */}
             <div className="mb-3 flex flex-wrap gap-2">
-              {[7, 15, 30].map((d) => (
+              {[2, 7, 15, 30].map((d) => (
                 <button
                   key={d}
                   type="button"

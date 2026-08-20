@@ -59,11 +59,6 @@ landRouter.post("/signup", async (req, res) => {
       clientIp: req.ip, userAgent: req.get("user-agent") ?? undefined,
     });
 
-    // 2 DÍAS GRATIS de arranque (sin tarjeta) — el gancho de la landing. Best-effort.
-    await prisma.credit
-      .create({ data: { userId: user.id, days: 2, ledger: { create: { delta: 2, reason: "2 días gratis (alta desde landing)" } } } })
-      .catch((e) => console.error("[land/signup] crédito 2d:", e instanceof Error ? e.message : String(e)));
-
     void notifyNewSignup({ name, email, phone, interests }); // aviso al dueño con lo que le interesó (best-effort)
 
     const token = signToken({ userId: user.id, tv: user.tokenVersion });
