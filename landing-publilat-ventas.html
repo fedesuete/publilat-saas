@@ -41,8 +41,8 @@ fbq('init','1657845171960486');fbq('track','PageView');
   h1.anton{font-size:clamp(38px,10vw,60px);text-transform:uppercase}
   .sub{color:var(--muted);font-size:16px;max-width:480px;margin:16px auto 0}
   /* BIG NUMBER OFFER */
-  .offer{margin:26px auto 4px;max-width:420px}
-  .offer .big{font-family:'Anton',sans-serif;font-size:clamp(66px,20vw,120px);line-height:.86;text-transform:uppercase;
+  .offer{margin:26px auto 4px;max-width:480px}
+  .offer .big{font-family:'Anton',sans-serif;font-size:clamp(46px,14vw,78px);line-height:.9;text-transform:uppercase;
     filter:drop-shadow(0 6px 22px rgba(247,207,91,.28))}
   .offer .cap{font-family:'Anton',sans-serif;font-size:clamp(18px,5vw,26px);letter-spacing:2px;text-transform:uppercase;color:var(--text)}
   /* CTA BUTTON */
@@ -51,7 +51,7 @@ fbq('init','1657845171960486');fbq('track','PageView');
     padding:19px 20px;border:0;border-radius:16px;cursor:pointer;box-shadow:0 12px 34px rgba(40,209,124,.34);transition:transform .14s, box-shadow .14s}
   .cta:hover{transform:translateY(-2px);box-shadow:0 18px 44px rgba(40,209,124,.46)}
   .cta:active{transform:translateY(0)}
-  .cta.gold{background:linear-gradient(100deg,var(--gold),var(--gold2));box-shadow:0 12px 34px rgba(247,207,91,.34)}
+  .cta-gold{background:linear-gradient(100deg,var(--gold),var(--gold2));color:#2a1a02;box-shadow:0 12px 34px rgba(247,207,91,.34)}
   /* WHAT YOU CAN DO */
   .can{margin:20px auto 0;display:grid;gap:12px}
   .can .row{display:flex;gap:13px;align-items:flex-start;background:var(--card);border:1.5px solid var(--line);border-radius:15px;padding:15px 16px;text-align:left;cursor:pointer;transition:border-color .15s, background .15s}
@@ -87,16 +87,16 @@ fbq('init','1657845171960486');fbq('track','PageView');
 
   <header>
     <div class="brand">PUBLI<b>.LAT</b></div>
-    <div class="badge"><span class="dot"></span> ATRIBUCIÓN WHATSAPP → META ADS</div>
-    <h1 class="anton">Vendé más por <span class="gold">WhatsApp</span></h1>
-    <p class="sub">Que Meta deje de traerte curiosos y empiece a traerte <b>compradores reales</b>. Medí cada peso que invertís.</p>
+    <div class="badge"><span class="dot"></span> TU PROPIA APP · SIN DEPENDER DE WHATSAPP</div>
+    <h1 class="anton">No dependas de <span class="gold">WhatsApp</span></h1>
+    <p class="sub">Se te caen los anuncios, te bloquean el número y perdés ventas. Con Publi.lat tenés <b>tu propia app</b> y seguís vendiendo pase lo que pase.</p>
 
     <div class="offer">
-      <div class="big gold">7 DÍAS</div>
-      <div class="cap">para probarlo con TUS anuncios</div>
+      <div class="big gold">2 DÍAS GRATIS</div>
+      <div class="cap">probalo sin poner tarjeta</div>
     </div>
 
-    <button class="cta" onclick="document.getElementById('empezar').scrollIntoView({behavior:'smooth'})">EMPEZAR AHORA →</button>
+    <button class="cta" onclick="document.getElementById('empezar').scrollIntoView({behavior:'smooth'})">REGISTRATE →</button>
   </header>
 
   <div class="section-t" id="empezar">¿Qué te interesa?</div>
@@ -110,14 +110,14 @@ fbq('init','1657845171960486');fbq('track','PageView');
 
   <form class="form-card" id="signupForm" novalidate>
     <div class="t gold">Creá tu cuenta</div>
-    <div class="st">Cargás tus datos → activás tus 7 días con tarjeta.</div>
+    <div class="st">Registrate y usá <b>2 días gratis</b>. Sin tarjeta.</div>
     <div class="err" id="err"></div>
     <div class="field"><label>Tu nombre</label><input id="f-name" type="text" autocomplete="name" placeholder="Nombre y apellido" required /></div>
     <div class="field"><label>Email</label><input id="f-email" type="email" autocomplete="email" placeholder="tucorreo@mail.com" required /></div>
     <div class="field"><label>WhatsApp</label><input id="f-phone" type="tel" autocomplete="tel" placeholder="Ej: 549 11 1234 5678" required /></div>
     <div class="field"><label>Elegí una clave</label><input id="f-pass" type="password" autocomplete="new-password" placeholder="Mínimo 6 caracteres" required /></div>
-    <button class="cta gold" id="submitBtn" type="submit">Crear cuenta y activar 7 días →</button>
-    <p class="fine">Al crear la cuenta te llevamos a poner la tarjeta y activar tus 7 días.</p>
+    <button class="cta cta-gold" id="submitBtn" type="submit">Registrarme — 2 días gratis →</button>
+    <p class="fine">Sin tarjeta para registrarte. Entrás y empezás a usar tus 2 días gratis.</p>
   </form>
 
   <footer>Publi.lat — Atribución WhatsApp → Meta Ads · CRM · Analytics</footer>

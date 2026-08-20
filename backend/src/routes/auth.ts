@@ -101,8 +101,8 @@ authRouter.get("/autologin", (req, res) => {
   try { ok = !!(t && verifyToken(t)); } catch { ok = false; }
   if (!ok) return res.redirect(`${panel}/login`);
   setAuthCookie(res, t);
-  // Va DIRECTO a comprar/activar los días (poner la tarjeta), que es el siguiente paso del embudo.
-  return res.redirect(`${panel}/billing`);
+  // Entra al panel a usar sus 2 días gratis (la landing da el trial sin tarjeta). Comprar más = /billing.
+  return res.redirect(`${panel}/`);
 });
 
 authRouter.post("/login", async (req, res) => {
