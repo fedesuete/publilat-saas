@@ -31,7 +31,12 @@ model User {
   suspended     Boolean   @default(false)
   isDemo        Boolean   @default(false)
   demoExpiresAt DateTime?
-  source        String?                    // cómo llegó la cuenta (demo, referido, etc.)
+  source        String?                    // cómo llegó la cuenta (demo, referido, landing, etc.)
+  // Identificadores del clic de Meta (landing de ventas de Publi.lat) para cerrar el loop del pixel
+  // Clientes-publilat: Lead al alta + Purchase al pagar, atados al anuncio. Nullable/aditivo.
+  fbp           String?
+  fbc           String?
+  fbclid        String?
   lastLoginAt   DateTime?
   // --- Referidos: 10% de la PRIMERA compra del referido, pagado en USDT a mano por el admin.
   // Solo clientes existentes (con ≥1 compra aprobada) pueden referir. Ver lib/referrals.ts. ---

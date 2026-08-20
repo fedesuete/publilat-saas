@@ -133,6 +133,10 @@ fbq('init','1657845171960486');fbq('track','PageView');
   document.querySelectorAll('.can .row').forEach(function(r){
     r.addEventListener('click', function(){ r.classList.toggle('sel'); });
   });
+  // Identificadores del clic de Meta, para cerrar el loop del pixel (Lead/Registro/Compra atribuibles).
+  function ck(n){var m=('; '+document.cookie).split('; '+n+'=');return m.length===2?decodeURIComponent(m.pop().split(';').shift()):'';}
+  function eid(){try{return crypto.randomUUID();}catch(e){return 'e'+Date.now()+Math.round(Math.random()*1e9);}}
+  var fbclidUrl = new URLSearchParams(location.search).get('fbclid') || '';
   form.addEventListener('submit', async function(e){
     e.preventDefault();
     errBox.style.display = 'none';
@@ -145,16 +149,17 @@ fbq('init','1657845171960486');fbq('track','PageView');
       errBox.style.display = 'block'; return;
     }
     var interests = Array.prototype.map.call(document.querySelectorAll('.can .row.sel'), function(r){ return r.getAttribute('data-interest'); });
+    var fbp = ck('_fbp'), fbc = ck('_fbc'), regEid = eid();
     btn.disabled = true; var prev = btn.textContent; btn.textContent = 'Creando tu cuenta…';
     try{
       try{ fbq('track','Lead'); }catch(_){}
       var r = await fetch(API + '/api/land/signup', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ name:name, email:email, phone:phone, password:pass, interests:interests })
+        body: JSON.stringify({ name:name, email:email, phone:phone, password:pass, interests:interests, fbp:fbp, fbc:fbc, fbclid:fbclidUrl, eventId:regEid })
       });
       var d = await r.json().catch(function(){ return {}; });
       if(!r.ok){ throw new Error(d.error || 'No pudimos crear la cuenta. Probá de nuevo.'); }
-      try{ fbq('track','CompleteRegistration'); }catch(_){}
+      try{ fbq('track','CompleteRegistration', {}, {eventID: regEid}); }catch(_){}
       window.location.href = d.autologinUrl; // auto-login → panel a activar los días
     }catch(err){
       errBox.textContent = err.message || 'Error al crear la cuenta.';

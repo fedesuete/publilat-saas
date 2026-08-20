@@ -14,6 +14,7 @@ import {
 } from "../lib/payments.js";
 import { sendAdminMail } from "../lib/mailer.js";
 import { settleReferralOnFirstPayment } from "../lib/referrals.js";
+import { fireMarketingEvent } from "../lib/marketing-capi.js";
 
 export const billingRouter = Router();
 // Webhooks públicos (los monta index.ts sin requireAuth).
@@ -50,6 +51,18 @@ async function approvePayment(paymentId: string, providerLabel: string): Promise
     },
   });
   console.log(`[billing] ${providerLabel}: +${payment.days} días a user ${payment.userId}`);
+  // Pixel Clientes-publilat: si la cuenta vino de la LANDING de ventas, dispara el Purchase (comprador
+  // real) con el valor → Meta optimiza el anuncio por compradores. Usa los IDs del clic guardados al alta.
+  void (async () => {
+    const u = await prisma.user.findUnique({ where: { id: payment.userId }, select: { source: true, phone: true, name: true, fbp: true, fbc: true } });
+    if (u?.source !== "landing") return;
+    await fireMarketingEvent({
+      eventName: "Purchase",
+      externalId: payment.userId,
+      fbp: u.fbp, fbc: u.fbc, phone: u.phone, firstName: u.name,
+      value: (payment.amount ?? 0) / 100, currency: payment.currency ?? "ARS",
+    });
+  })().catch(() => undefined);
   // Referidos: si esta cuenta fue referida por un cliente, su 1ra compra genera la comisión del
   // 10% (pending, USDT manual). Best-effort: nunca frena la acreditación del pago.
   void settleReferralOnFirstPayment(payment).catch(() => undefined);

@@ -11,6 +11,7 @@ import { hashPassword, signToken } from "../lib/auth.js";
 import { uniqueSlug } from "./auth.js";
 import { resolveReferrerByCode } from "../lib/referrals.js";
 import { notifyNewSignup } from "../lib/signup-notify.js";
+import { fireMarketingEvent } from "../lib/marketing-capi.js";
 
 export const landRouter = Router();
 
@@ -21,13 +22,17 @@ const signupSchema = z.object({
   phone: z.string().trim().min(5).max(40),
   ref: z.string().optional(),
   interests: z.array(z.string().max(60)).max(8).optional(), // qué le interesó en la landing (para el aviso)
+  fbp: z.string().max(255).optional(),     // identificadores del clic de Meta (para el loop del pixel)
+  fbc: z.string().max(600).optional(),
+  fbclid: z.string().max(600).optional(),
+  eventId: z.string().max(120).optional(), // dedup con el CompleteRegistration del navegador
 });
 
 // POST /api/land/signup — crea la cuenta y devuelve { ok, autologinUrl }.
 landRouter.post("/signup", async (req, res) => {
   const parsed = signupSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Completá nombre, email, teléfono y una clave (mínimo 6 caracteres)." });
-  const { name, email, password, phone, ref, interests } = parsed.data;
+  const { name, email, password, phone, ref, interests, fbp, fbc, fbclid, eventId } = parsed.data;
   try {
     const slug = await uniqueSlug(name || email.split("@")[0]);
     const referredById = ref ? await resolveReferrerByCode(ref) : null;
@@ -39,9 +44,19 @@ landRouter.post("/signup", async (req, res) => {
         phone,
         password: await hashPassword(password),
         source: referredById ? "referido" : "landing",
+        fbp: fbp ?? null,
+        fbc: fbc ?? null,
+        fbclid: fbclid ?? null,
         ...(referredById ? { referredById } : {}),
       },
       select: { id: true, email: true, tokenVersion: true },
+    });
+
+    // Pixel Clientes-publilat: se registró un cliente (dedup con el CompleteRegistration del navegador).
+    void fireMarketingEvent({
+      eventName: "CompleteRegistration",
+      externalId: user.id, fbp, fbc, phone, firstName: name, eventId,
+      clientIp: req.ip, userAgent: req.get("user-agent") ?? undefined,
     });
 
     // 2 DÍAS GRATIS de arranque (sin tarjeta) — el gancho de la landing. Best-effort.
