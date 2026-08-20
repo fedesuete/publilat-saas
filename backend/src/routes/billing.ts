@@ -311,6 +311,9 @@ export async function stripeWebhookHandler(req: Request, res: Response): Promise
 // resultado; si no devolvemos 200, Pagopar reintenta cada 10 minutos.
 pagoparWebhookRouter.post("/", async (req, res) => {
   try {
+    // TEMP (integración de suscripciones): logueamos SOLO las claves del aviso (no valores → sin montos ni
+    // datos personales, respeta §9) para ver cómo Pagopar identifica un cobro de suscripción vs pago único.
+    console.log("[pagopar webhook] keys:", JSON.stringify(Object.keys(req.body || {})), "| resultado[0] keys:", JSON.stringify(Object.keys((req.body?.resultado?.[0]) || {})));
     if (!pagoparEnabled()) return res.status(503).json({ error: "Pagopar no configurado" });
     const r = req.body?.resultado?.[0] ?? {};
     const hashPedido = String(r.hash_pedido ?? "");
