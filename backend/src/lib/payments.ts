@@ -49,7 +49,8 @@ export interface PromoInfo { key: PromoKey; days: number; usd: number; pyg: numb
 
 const PROMOS: Record<PromoKey, PromoInfo> = {
   prueba:   { key: "prueba",  days: 2,             usd: Number(process.env.PROMO_PRUEBA_USD ?? 4),   pyg: Number(process.env.PROMO_PRUEBA_PYG ?? 30000),   label: "Prueba 2 días" },
-  semana:   { key: "semana",  days: 7,             usd: Number(process.env.PROMO_SEMANA_USD ?? 7),   pyg: Number(process.env.PROMO_SEMANA_PYG ?? 52500),   label: "Semana laboral" },
+  // Semana = 7 días a la tarifa normal (2 USD/día = 14 USD). La Prueba gratis es el gancho de entrada.
+  semana:   { key: "semana",  days: 7,             usd: Number(process.env.PROMO_SEMANA_USD ?? 14),  pyg: Number(process.env.PROMO_SEMANA_PYG ?? 105000),  label: "Semana laboral" },
   mes:      { key: "mes",     days: 30,            usd: Number(process.env.PROMO_MES_USD ?? 60),     pyg: Number(process.env.PROMO_MES_PYG ?? 450000),     label: "Mes completo" },
   "2meses": { key: "2meses",  days: PROMO_2M_DAYS, usd: PROMO_2M_USD,                                pyg: PROMO_2M_PYG,                                    label: "Promo 2 meses" },
   full:     { key: "full",    days: 30,            usd: Number(process.env.PROMO_FULL_USD ?? 300),   pyg: Number(process.env.PROMO_FULL_PYG ?? 2250000),   label: "Full llave en mano" },

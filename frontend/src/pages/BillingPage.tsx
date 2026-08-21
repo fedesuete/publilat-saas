@@ -53,18 +53,19 @@ interface Plan {
   cons: string[];
   badge?: string;
   featured?: boolean;
+  free?: boolean; // Prueba: se activa gratis (no pasa por checkout)
 }
 const PLANS: Plan[] = [
   {
-    key: "prueba", name: "Prueba", usd: 4, days: 2, period: "2 días",
-    tagline: "Probá el producto sin comprometerte",
+    key: "prueba", name: "Prueba", usd: 0, days: 2, period: "2 días", free: true, badge: "EMPEZÁ ACÁ",
+    tagline: "Probá el producto gratis, sin poner un peso",
     pros: ["1 línea de WhatsApp activa 2 días", "Landings y links de rastreo (gratis)", "Dashboard de ROAS y CRM"],
-    cons: ["Se corta a los 2 días", "Sin descuento por volumen"],
+    cons: ["Se corta a los 2 días", "Una sola vez por cuenta"],
   },
   {
-    key: "semana", name: "Semana laboral", usd: 7, days: 7, period: "7 días", badge: "MÁS ELEGIDO",
-    tagline: "Una semana entera a mitad de precio",
-    pros: ["7 días de línea activa", "Sale 1 USD por día (la mitad)", "Todo lo de Prueba incluido"],
+    key: "semana", name: "Semana laboral", usd: 14, days: 7, period: "7 días", badge: "MÁS ELEGIDO",
+    tagline: "Una semana entera para tu primera campaña",
+    pros: ["7 días de línea activa", "Rotación de líneas incluida", "Todo lo de Prueba incluido"],
     cons: ["Setup y gestión a tu cargo"],
   },
   {
@@ -111,6 +112,10 @@ export default function BillingPage() {
   // Plan elegido de la grilla de paquetes: abre el checkout enfocado (tarjeta / cripto) para ese plan.
   const [selectedPlan, setSelectedPlan] = useState<PlanKey | null>(null);
   const checkoutRef = useRef<HTMLDivElement | null>(null);
+
+  // Prueba gratis (2 días, 1 vez por cuenta).
+  const [freeBusy, setFreeBusy] = useState(false);
+  const [freeMsg, setFreeMsg] = useState<string | null>(null);
 
   // Pagopar exige nombre y CI/RUC del comprador para crear el pedido.
   const [showPagopar, setShowPagopar] = useState(false);
@@ -272,6 +277,23 @@ export default function BillingPage() {
     }
   };
 
+  // Activar la prueba GRATIS (2 días, 1 vez por cuenta). No pasa por checkout.
+  const activateFreeTrial = async () => {
+    setFreeBusy(true);
+    setFreeMsg(null);
+    setError(null);
+    try {
+      const { data } = await api.post<{ ok: boolean; days: number }>("/api/billing/free-trial", {});
+      setFreeMsg("✅ ¡Listo! Se acreditaron tus 2 días gratis. Ya podés activar una línea.");
+      setDays(data.days);
+      await load(); // refresca el ledger (para que el botón quede como "ya activada")
+    } catch (err) {
+      setError(apiError(err));
+    } finally {
+      setFreeBusy(false);
+    }
+  };
+
   // Elegir un paquete de la grilla: fija el plan y baja al checkout enfocado (tarjeta / cripto).
   const choosePlan = (key: PlanKey) => {
     setSelectedPlan(key);
@@ -309,6 +331,7 @@ export default function BillingPage() {
   // ¿Se puede pagar un paquete? (los planes se cobran por tarjeta/Pagopar o cripto/USDT).
   const canPayPlans = methods.pagopar || methods.usdt;
   const sel = selectedPlan ? planByKey(selectedPlan) : null;
+  const freeTrialClaimed = ledger.some((e) => /prueba gratis/i.test(e.reason)); // ya usó la prueba
 
   return (
     <div className="p-6">
@@ -412,7 +435,11 @@ export default function BillingPage() {
 
                     <div className="text-sm font-semibold text-slate-200">{p.name}</div>
                     <div className="mt-2 flex items-baseline gap-1.5">
-                      <span className="text-3xl font-extrabold text-white">US${p.usd}</span>
+                      {p.free ? (
+                        <span className="text-3xl font-extrabold text-wa-green">GRATIS</span>
+                      ) : (
+                        <span className="text-3xl font-extrabold text-white">US${p.usd}</span>
+                      )}
                       <span className="text-xs text-slate-500">/ {p.period}</span>
                     </div>
                     <p className="mt-1 text-xs text-slate-400">{p.tagline}</p>
@@ -432,18 +459,32 @@ export default function BillingPage() {
                       ))}
                     </ul>
 
-                    <button
-                      type="button"
-                      disabled={!canPayPlans}
-                      onClick={() => choosePlan(p.key)}
-                      className={`mt-5 w-full rounded-xl px-4 py-2.5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${
-                        p.featured
-                          ? "bg-wa-green text-slate-950 hover:brightness-110"
-                          : "border border-wa-green/50 text-wa-green hover:bg-wa-green/10"
-                      }`}
-                    >
-                      {p.featured ? "Quiero el completo →" : "Elegir plan →"}
-                    </button>
+                    {p.free ? (
+                      <button
+                        type="button"
+                        disabled={freeBusy || freeTrialClaimed}
+                        onClick={() => void activateFreeTrial()}
+                        className="mt-5 w-full rounded-xl bg-wa-green px-4 py-2.5 text-sm font-bold text-slate-950 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {freeTrialClaimed ? "Ya activada ✓" : freeBusy ? "Activando…" : "Activar 2 días gratis →"}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={!canPayPlans}
+                        onClick={() => choosePlan(p.key)}
+                        className={`mt-5 w-full rounded-xl px-4 py-2.5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                          p.featured
+                            ? "bg-wa-green text-slate-950 hover:brightness-110"
+                            : "border border-wa-green/50 text-wa-green hover:bg-wa-green/10"
+                        }`}
+                      >
+                        {p.featured ? "Quiero el completo →" : "Elegir plan →"}
+                      </button>
+                    )}
+                    {p.free && freeMsg && (
+                      <p className="mt-2 text-xs font-semibold text-wa-green">{freeMsg}</p>
+                    )}
                   </div>
                 );
               })}
