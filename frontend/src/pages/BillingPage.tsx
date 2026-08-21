@@ -39,6 +39,61 @@ const PROVIDER_LABEL: Record<Provider, string> = {
 
 const ALL_PROVIDERS: Provider[] = ["mercadopago", "stripe", "usdt", "pagopar"];
 
+// ---- PAQUETES (planes a precio fijo). Coinciden con las promos del backend (payments.ts). El orden
+// va de menor a mayor; el Full es el ancla premium (destacado) para empujar a los planes de arriba.
+type PlanKey = "prueba" | "semana" | "mes" | "2meses" | "full";
+interface Plan {
+  key: PlanKey;
+  name: string;
+  usd: number;
+  days: number;
+  period: string;
+  tagline: string;
+  pros: string[];
+  cons: string[];
+  badge?: string;
+  featured?: boolean;
+}
+const PLANS: Plan[] = [
+  {
+    key: "prueba", name: "Prueba", usd: 4, days: 2, period: "2 días",
+    tagline: "Probá el producto sin comprometerte",
+    pros: ["1 línea de WhatsApp activa 2 días", "Landings y links de rastreo (gratis)", "Dashboard de ROAS y CRM"],
+    cons: ["Se corta a los 2 días", "Sin descuento por volumen"],
+  },
+  {
+    key: "semana", name: "Semana laboral", usd: 7, days: 7, period: "7 días", badge: "MÁS ELEGIDO",
+    tagline: "Una semana entera a mitad de precio",
+    pros: ["7 días de línea activa", "Sale 1 USD por día (la mitad)", "Todo lo de Prueba incluido"],
+    cons: ["Setup y gestión a tu cargo"],
+  },
+  {
+    key: "mes", name: "Mes", usd: 60, days: 30, period: "30 días",
+    tagline: "Un mes completo trabajando en serio",
+    pros: ["30 días de línea activa", "Rotación de líneas incluida", "Soporte prioritario"],
+    cons: ["Sin bot de gestión", "Sin setup personalizado"],
+  },
+  {
+    key: "2meses", name: "2 Meses", usd: 80, days: 60, period: "60 días", badge: "MEJOR PRECIO",
+    tagline: "El precio por día más bajo",
+    pros: ["60 días por 80 USD (ahorrás 40)", "Sale 1,33 USD por día", "Todo lo del plan Mes"],
+    cons: ["Vos gestionás el día a día"],
+  },
+  {
+    key: "full", name: "Full — Llave en mano", usd: 300, days: 30, period: "30 días + setup",
+    tagline: "Nosotros te armamos TODO y vos solo vendés", featured: true, badge: "⭐ PREMIUM",
+    pros: [
+      "1 mes de Publi.lat completo",
+      "Bot de gestión de sistemas",
+      "Chat App personalizada para tu marca",
+      "Landing hecha por nosotros",
+      "Setup y acompañamiento 1 a 1",
+    ],
+    cons: [],
+  },
+];
+const planByKey = (k: PlanKey) => PLANS.find((p) => p.key === k)!;
+
 export default function BillingPage() {
   const [days, setDays] = useState(0);
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
@@ -51,10 +106,15 @@ export default function BillingPage() {
   const [checkoutMsg, setCheckoutMsg] = useState<string | null>(null);
   const [methods, setMethods] = useState<Methods>({ mercadopago: false, stripe: false, usdt: false, pagopar: false });
   const [prices, setPrices] = useState<Record<Provider, { amount: number; currency: string }> | null>(null);
+  const [showManual, setShowManual] = useState(false); // el selector de "días sueltos" (secundario)
+
+  // Plan elegido de la grilla de paquetes: abre el checkout enfocado (tarjeta / cripto) para ese plan.
+  const [selectedPlan, setSelectedPlan] = useState<PlanKey | null>(null);
+  const checkoutRef = useRef<HTMLDivElement | null>(null);
 
   // Pagopar exige nombre y CI/RUC del comprador para crear el pedido.
   const [showPagopar, setShowPagopar] = useState(false);
-  const [promoMode, setPromoMode] = useState(false); // el form de tarjeta está en modo promo 2 meses
+  const [promoKey, setPromoKey] = useState<PlanKey | null>(null); // el form de tarjeta cobra este paquete (null = días sueltos)
   const [ppNombre, setPpNombre] = useState("");
   const [ppDocumento, setPpDocumento] = useState("");
   const [ppTelefono, setPpTelefono] = useState("");
@@ -144,7 +204,7 @@ export default function BillingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Cotiza el precio por proveedor cada vez que cambia la cantidad de días.
+  // Cotiza el precio por proveedor cada vez que cambia la cantidad de días (selector manual).
   useEffect(() => {
     const n = parseInt(buyDays, 10);
     if (!Number.isInteger(n) || n <= 0) {
@@ -162,15 +222,16 @@ export default function BillingPage() {
   const buy = async (
     provider: Provider,
     buyer?: { nombre: string; documento: string; telefono?: string },
-    promo?: "2meses",
+    promo?: PlanKey,
   ) => {
-    const n = promo ? 60 : parseInt(buyDays, 10); // la promo son 60 días fijos
+    const n = promo ? planByKey(promo).days : parseInt(buyDays, 10);
     if (!promo && (!Number.isInteger(n) || n <= 0)) {
       setError("Ingresá una cantidad de días válida (entero mayor a 0).");
       return;
     }
     // Pagopar necesita los datos del comprador: primero mostramos el mini-formulario.
     if (provider === "pagopar" && !buyer) {
+      setPromoKey(promo ?? null);
       setShowPagopar(true);
       setCheckoutMsg(null);
       return;
@@ -196,7 +257,7 @@ export default function BillingPage() {
         const win = window.open(data.url, "_blank");
         if (win) {
           setCheckoutMsg(`Te abrimos el checkout de ${PROVIDER_LABEL[provider]} en otra pestaña.`);
-          if (provider === "pagopar") { setShowPagopar(false); setPromoMode(false); }
+          if (provider === "pagopar") { setShowPagopar(false); setPromoKey(null); }
           // El pago se acredita por webhook: quedamos vigilando para avisar apenas suben los días.
           watchPayment(days);
         } else {
@@ -209,6 +270,16 @@ export default function BillingPage() {
     } finally {
       setBuying(null);
     }
+  };
+
+  // Elegir un paquete de la grilla: fija el plan y baja al checkout enfocado (tarjeta / cripto).
+  const choosePlan = (key: PlanKey) => {
+    setSelectedPlan(key);
+    setCheckoutMsg(null);
+    setShowPagopar(false);
+    setPromoKey(null);
+    setUsdtPay(null);
+    setTimeout(() => checkoutRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
   };
 
   const verifyUsdt = async () => {
@@ -234,6 +305,10 @@ export default function BillingPage() {
       setVerifying(false);
     }
   };
+
+  // ¿Se puede pagar un paquete? (los planes se cobran por tarjeta/Pagopar o cripto/USDT).
+  const canPayPlans = methods.pagopar || methods.usdt;
+  const sel = selectedPlan ? planByKey(selectedPlan) : null;
 
   return (
     <div className="p-6">
@@ -298,108 +373,133 @@ export default function BillingPage() {
             </Card>
           )}
 
-          <Card className="md:col-span-2">
-            <div className="mb-2 text-sm font-semibold">Comprar días</div>
-            <div className="mb-3 flex items-center gap-2">
-              <span className="text-sm text-slate-400">Cantidad de días:</span>
-              <Input
-                type="number"
-                min={1}
-                step={1}
-                value={buyDays}
-                onChange={(e) => setBuyDays(e.target.value)}
-                placeholder="Días"
-                className="max-w-[140px]"
-              />
-              {parseInt(buyDays, 10) >= 90 && (
-                <span className="rounded-full bg-wa-green/15 px-2 py-0.5 text-xs font-semibold text-wa-green">
-                  descuento por volumen
-                </span>
-              )}
-            </div>
-            {/* Atajos: 7 días es el paquete recomendado (semana de línea activa). */}
-            <div className="mb-3 flex flex-wrap gap-2">
-              {[2, 7, 15, 30].map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => setBuyDays(String(d))}
-                  className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                    parseInt(buyDays, 10) === d
-                      ? "border-wa-green bg-wa-green/15 text-wa-green"
-                      : "border-slate-700 text-slate-300 hover:border-slate-500"
-                  }`}
-                >
-                  {d} días
-                </button>
-              ))}
-            </div>
-            {ALL_PROVIDERS.filter((p) => methods[p]).length > 0 ? (
-              <>
-                <div className="flex flex-wrap gap-2">
-                  {ALL_PROVIDERS
-                    .filter((p) => methods[p])
-                    .map((p) => {
-                      // El precio se muestra en USD (para tarjeta/Pagopar se usa el equivalente
-                      // en dólares; el cobro real se hace en guaraníes en el checkout).
-                      const usd = prices?.usdt?.amount;
-                      const price = prices?.[p];
-                      const label =
-                        p === "pagopar"
-                          ? `${PROVIDER_LABEL[p]}${usd != null ? ` · ${usd} USD` : ""}`
-                          : `${PROVIDER_LABEL[p]}${price ? ` · ${price.amount.toLocaleString("es-AR")} ${price.currency}` : ""}`;
-                      return (
-                        <Button key={p} type="button" disabled={buying !== null} onClick={() => void buy(p)}>
-                          {buying === p ? "…" : label}
-                        </Button>
-                      );
-                    })}
-                </div>
-                <p className="mt-2 text-xs text-slate-500">
-                  Elegí el medio de pago; los días se acreditan al confirmarse el pago.
-                </p>
+          {/* ====== PAQUETES: la sección principal. Es lo primero que ve una cuenta nueva al entrar. ====== */}
+          <div className="md:col-span-2">
+            <h2 className="text-lg font-bold text-slate-100">Elegí tu plan</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              Empezá probando o andá directo al pack que más te rinde. Podés cambiar cuando quieras.
+            </p>
 
-                {/* Promo 2 meses: 60 días con descuento — tarjeta (Pagopar) o cripto (USDT). */}
-                {(methods.pagopar || methods.usdt) && (
-                  <div className="mt-4 rounded-lg border border-wa-green/30 bg-wa-green/5 p-3">
-                    <div className="text-sm font-semibold text-wa-green">🎁 Promo 2 meses</div>
-                    <div className="mb-3 text-xs text-slate-400">
-                      60 días de línea activa por <b className="text-slate-200">80 USD</b> (en vez de 120). Pagá con tarjeta o cripto.
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {methods.pagopar && (
-                        <Button type="button" disabled={buying !== null} onClick={() => { setPromoMode(true); setShowPagopar(true); setCheckoutMsg(null); }}>
-                          💳 Tarjeta · 80 USD
-                        </Button>
-                      )}
-                      {methods.usdt && (
-                        <Button type="button" variant="secondary" disabled={buying !== null} onClick={() => void buy("usdt", undefined, "2meses")}>
-                          ₮ Cripto (USDT) · 80 USD
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              <p className="text-sm text-slate-400">
+            {!canPayPlans && (
+              <p className="mt-3 text-sm text-slate-400">
                 Todavía no hay un medio de pago habilitado. Escribinos por Soporte para activarlo.
               </p>
             )}
-            {checkoutMsg && (
-              <p className="mt-3 rounded-md border border-emerald-800 bg-emerald-900/40 px-3 py-2 text-sm text-emerald-200">
-                {checkoutMsg}
-              </p>
-            )}
-          </Card>
 
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {PLANS.map((p) => {
+                const isSel = selectedPlan === p.key;
+                return (
+                  <div
+                    key={p.key}
+                    className={`relative flex flex-col rounded-2xl border p-5 transition ${
+                      p.featured
+                        ? "border-wa-green/60 bg-gradient-to-b from-wa-green/10 to-slate-900/40 shadow-[0_0_40px_-12px_rgba(37,211,102,0.5)]"
+                        : isSel
+                          ? "border-wa-green/70 bg-slate-900/60"
+                          : "border-slate-800 bg-slate-900/40 hover:border-slate-600"
+                    }`}
+                  >
+                    {p.badge && (
+                      <span
+                        className={`absolute -top-2.5 left-4 rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
+                          p.featured ? "bg-wa-green text-slate-950" : "bg-slate-700 text-slate-100"
+                        }`}
+                      >
+                        {p.badge}
+                      </span>
+                    )}
+
+                    <div className="text-sm font-semibold text-slate-200">{p.name}</div>
+                    <div className="mt-2 flex items-baseline gap-1.5">
+                      <span className="text-3xl font-extrabold text-white">US${p.usd}</span>
+                      <span className="text-xs text-slate-500">/ {p.period}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-400">{p.tagline}</p>
+
+                    <ul className="mt-4 flex-1 space-y-1.5 text-sm">
+                      {p.pros.map((pro) => (
+                        <li key={pro} className="flex gap-2 text-slate-300">
+                          <span className="mt-0.5 shrink-0 font-bold text-wa-green">✓</span>
+                          <span>{pro}</span>
+                        </li>
+                      ))}
+                      {p.cons.map((con) => (
+                        <li key={con} className="flex gap-2 text-slate-500">
+                          <span className="mt-0.5 shrink-0 font-bold text-slate-600">✕</span>
+                          <span>{con}</span>
+                        </li>
+                      ))}
+                    </ul>
+
+                    <button
+                      type="button"
+                      disabled={!canPayPlans}
+                      onClick={() => choosePlan(p.key)}
+                      className={`mt-5 w-full rounded-xl px-4 py-2.5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                        p.featured
+                          ? "bg-wa-green text-slate-950 hover:brightness-110"
+                          : "border border-wa-green/50 text-wa-green hover:bg-wa-green/10"
+                      }`}
+                    >
+                      {p.featured ? "Quiero el completo →" : "Elegir plan →"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ====== Checkout enfocado del plan elegido: elegí cómo pagar ese paquete. ====== */}
+          {sel && canPayPlans && (
+            <div ref={checkoutRef} className="md:col-span-2">
+            <Card className="border-wa-green/40">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <div className="text-sm font-semibold text-slate-100">
+                  Estás comprando: <span className="text-wa-green">{sel.name}</span>
+                </div>
+                <div className="text-sm text-slate-400">
+                  <b className="text-white">US${sel.usd}</b> · {sel.period}
+                </div>
+              </div>
+              {sel.key === "full" && (
+                <p className="mt-2 rounded-md border border-wa-green/30 bg-wa-green/5 px-3 py-2 text-xs text-slate-300">
+                  El plan Full incluye <b>setup personalizado</b> (bot, Chat App y landing). Apenas se confirma el pago te
+                  contactamos para armarte todo. Se acreditan 30 días para arrancar.
+                </p>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {methods.pagopar && (
+                  <Button type="button" disabled={buying !== null} onClick={() => void buy("pagopar", undefined, sel.key)}>
+                    💳 Pagar con tarjeta · US${sel.usd}
+                  </Button>
+                )}
+                {methods.usdt && (
+                  <Button type="button" variant="secondary" disabled={buying !== null} onClick={() => void buy("usdt", undefined, sel.key)}>
+                    ₮ Pagar con cripto (USDT) · US${sel.usd}
+                  </Button>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Pago seguro. Los días se acreditan automáticamente al confirmarse el pago.
+              </p>
+              {checkoutMsg && (
+                <p className="mt-3 rounded-md border border-emerald-800 bg-emerald-900/40 px-3 py-2 text-sm text-emerald-200">
+                  {checkoutMsg}
+                </p>
+              )}
+            </Card>
+            </div>
+          )}
+
+          {/* ====== Pagopar: form de datos del comprador (para el plan elegido o días sueltos). ====== */}
           {showPagopar && (
             <Card className="md:col-span-2">
               <div className="mb-1 text-sm font-semibold">
-                {promoMode ? "🎁 Promo 2 meses — 80 USD (60 días)" : "Pago con tarjeta"}
+                {promoKey ? `${planByKey(promoKey).name} — US$${planByKey(promoKey).usd}` : "Pago con tarjeta"}
               </div>
               <p className="mb-3 text-xs text-slate-400">
-                {promoMode && "Se acreditan 60 días de línea activa. "}
+                {promoKey && `Se acreditan ${planByKey(promoKey).days} días de línea activa. `}
                 Tarjetas de crédito/débito (locales e internacionales), billeteras (Tigo Money, Personal Pay, Zimple…),
                 QR y PIX. Se piden los datos del comprador para generar el pedido.
               </p>
@@ -432,20 +532,18 @@ export default function BillingPage() {
                         documento: ppDocumento,
                         ...(ppTelefono.trim() ? { telefono: ppTelefono.trim() } : {}),
                       },
-                      promoMode ? "2meses" : undefined,
+                      promoKey ?? undefined,
                     )
                   }
                 >
                   {buying === "pagopar" ? "…" : "Continuar al pago"}
                 </Button>
-                <Button type="button" variant="secondary" onClick={() => { setShowPagopar(false); setPromoMode(false); }}>
+                <Button type="button" variant="secondary" onClick={() => { setShowPagopar(false); setPromoKey(null); }}>
                   Cancelar
                 </Button>
               </div>
               <p className="mt-2 text-xs text-slate-500">
-                {promoMode
-                  ? "La promo se cobra en guaraníes (≈ 600.000 PYG, equivale a 80 USD) en un checkout seguro (Pagopar); los 60 días se acreditan al confirmarse."
-                  : "El pago se procesa en guaraníes (PYG) en un checkout seguro (Pagopar); los días se acreditan automáticamente al confirmarse."}
+                El pago se procesa en guaraníes (PYG) en un checkout seguro (Pagopar); los días se acreditan automáticamente al confirmarse.
               </p>
             </Card>
           )}
@@ -506,6 +604,84 @@ export default function BillingPage() {
               <p className="text-sm text-emerald-300">{verifyMsg}</p>
             </Card>
           )}
+
+          {/* ====== Días sueltos (secundario): para quien quiere elegir la cantidad exacta. ====== */}
+          <Card className="md:col-span-2">
+            <button
+              type="button"
+              onClick={() => setShowManual((v) => !v)}
+              className="flex w-full items-center justify-between text-left text-sm font-semibold text-slate-300"
+            >
+              <span>¿Preferís elegir la cantidad de días? Comprá días sueltos</span>
+              <span className="text-slate-500">{showManual ? "▲" : "▼"}</span>
+            </button>
+
+            {showManual && (
+              <div className="mt-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="text-sm text-slate-400">Cantidad de días:</span>
+                  <Input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={buyDays}
+                    onChange={(e) => setBuyDays(e.target.value)}
+                    placeholder="Días"
+                    className="max-w-[140px]"
+                  />
+                  {parseInt(buyDays, 10) >= 90 && (
+                    <span className="rounded-full bg-wa-green/15 px-2 py-0.5 text-xs font-semibold text-wa-green">
+                      descuento por volumen
+                    </span>
+                  )}
+                </div>
+                <div className="mb-3 flex flex-wrap gap-2">
+                  {[2, 7, 15, 30].map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setBuyDays(String(d))}
+                      className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                        parseInt(buyDays, 10) === d
+                          ? "border-wa-green bg-wa-green/15 text-wa-green"
+                          : "border-slate-700 text-slate-300 hover:border-slate-500"
+                      }`}
+                    >
+                      {d} días
+                    </button>
+                  ))}
+                </div>
+                {ALL_PROVIDERS.filter((p) => methods[p]).length > 0 ? (
+                  <>
+                    <div className="flex flex-wrap gap-2">
+                      {ALL_PROVIDERS
+                        .filter((p) => methods[p])
+                        .map((p) => {
+                          const usd = prices?.usdt?.amount;
+                          const price = prices?.[p];
+                          const label =
+                            p === "pagopar"
+                              ? `${PROVIDER_LABEL[p]}${usd != null ? ` · ${usd} USD` : ""}`
+                              : `${PROVIDER_LABEL[p]}${price ? ` · ${price.amount.toLocaleString("es-AR")} ${price.currency}` : ""}`;
+                          return (
+                            <Button key={p} type="button" disabled={buying !== null} onClick={() => { setPromoKey(null); void buy(p); }}>
+                              {buying === p ? "…" : label}
+                            </Button>
+                          );
+                        })}
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">
+                      Elegí el medio de pago; los días se acreditan al confirmarse el pago.
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-slate-400">
+                    Todavía no hay un medio de pago habilitado. Escribinos por Soporte para activarlo.
+                  </p>
+                )}
+              </div>
+            )}
+          </Card>
         </div>
       )}
 

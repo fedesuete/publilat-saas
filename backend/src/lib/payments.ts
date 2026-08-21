@@ -33,18 +33,30 @@ export function priceFor(provider: Provider, days: number): { amount: number; cu
   return { amount: days * usdPerDay(days), currency: "USD" }; // stripe + usdt
 }
 
-// ---- Promos (bundles a precio fijo, independientes del precio por día del selector) ----
-// "2meses": 60 días de línea activa por 80 USD (~1,33 USD/día, contra 2 USD/día normal). Todo por env.
+// ---- Promos / PAQUETES (bundles a precio FIJO, independientes del precio por día del selector) ----
+// Son los planes que ve el cliente al entrar al panel (BillingPage). Precio fijo en USD (lo que se
+// muestra) + su equivalente en PYG (lo que cobra Pagopar en guaraníes). Todo override-able por .env.
+// Conversión de referencia ≈ 7.500 Gs/USD (igual que la promo 2 meses: 80 USD = 600.000 PYG).
 const PROMO_2M_DAYS = Number(process.env.PROMO_2M_DAYS ?? 60);
 const PROMO_2M_USD = Number(process.env.PROMO_2M_USD ?? 80);
 const PROMO_2M_PYG = Number(process.env.PROMO_2M_PYG ?? 600000);
 
-export type PromoKey = "2meses";
+// "full" = llave en mano: 30 días de Publi.lat + bot de gestión + Chat App personalizada + landing
+// hecha por nosotros. Se cobra 300 USD y ACREDITA 30 días; el setup/servicios los coordina el equipo
+// (el pago dispara el aviso al dueño). No es un simple pack de días: el valor está en el armado.
+export type PromoKey = "prueba" | "semana" | "mes" | "2meses" | "full";
 export interface PromoInfo { key: PromoKey; days: number; usd: number; pyg: number; label: string }
 
+const PROMOS: Record<PromoKey, PromoInfo> = {
+  prueba:   { key: "prueba",  days: 2,             usd: Number(process.env.PROMO_PRUEBA_USD ?? 4),   pyg: Number(process.env.PROMO_PRUEBA_PYG ?? 30000),   label: "Prueba 2 días" },
+  semana:   { key: "semana",  days: 7,             usd: Number(process.env.PROMO_SEMANA_USD ?? 7),   pyg: Number(process.env.PROMO_SEMANA_PYG ?? 52500),   label: "Semana laboral" },
+  mes:      { key: "mes",     days: 30,            usd: Number(process.env.PROMO_MES_USD ?? 60),     pyg: Number(process.env.PROMO_MES_PYG ?? 450000),     label: "Mes completo" },
+  "2meses": { key: "2meses",  days: PROMO_2M_DAYS, usd: PROMO_2M_USD,                                pyg: PROMO_2M_PYG,                                    label: "Promo 2 meses" },
+  full:     { key: "full",    days: 30,            usd: Number(process.env.PROMO_FULL_USD ?? 300),   pyg: Number(process.env.PROMO_FULL_PYG ?? 2250000),   label: "Full llave en mano" },
+};
+
 export function promoFor(key: string): PromoInfo | null {
-  if (key === "2meses") return { key: "2meses", days: PROMO_2M_DAYS, usd: PROMO_2M_USD, pyg: PROMO_2M_PYG, label: "Promo 2 meses" };
-  return null;
+  return Object.prototype.hasOwnProperty.call(PROMOS, key) ? PROMOS[key as PromoKey] : null;
 }
 
 // Precio de una promo para un proveedor. Pagopar en PYG; stripe/usdt en USD.

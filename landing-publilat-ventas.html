@@ -65,25 +65,6 @@ fbq('init','1657845171960486');fbq('track','PageView');
   .can p{color:var(--muted);font-size:13.5px}
   .section-t{font-family:'Anton',sans-serif;text-transform:uppercase;font-size:clamp(22px,6vw,30px);text-align:center;margin:52px 0 6px}
   .section-s{color:var(--muted);text-align:center;font-size:14px;max-width:440px;margin:0 auto}
-  /* PLANES */
-  .plans{margin:24px auto 0;display:grid;gap:14px}
-  .plan{position:relative;background:var(--card);border:1.5px solid var(--line);border-radius:18px;padding:20px 18px}
-  .plan .pname{font-family:'Anton',sans-serif;text-transform:uppercase;font-size:20px;letter-spacing:.4px}
-  .plan .price{font-family:'Anton',sans-serif;font-size:36px;margin:4px 0 2px;line-height:1}
-  .plan .price small{font-size:14px;color:var(--muted);font-family:'Montserrat',sans-serif;font-weight:700}
-  .plan .dur{color:var(--muted);font-size:13px;margin-bottom:13px}
-  .plan ul{list-style:none;display:grid;gap:7px;margin-bottom:16px}
-  .plan li{display:flex;gap:9px;font-size:14px;align-items:flex-start;line-height:1.35}
-  .plan li .y{color:var(--green);font-weight:900;flex-shrink:0}
-  .plan li.no{color:var(--muted)}
-  .plan li.no .n{color:#5f7a6c;font-weight:900;flex-shrink:0}
-  .plan .pbtn{display:block;width:100%;text-align:center;border:1.5px solid var(--line);color:var(--text);font-weight:800;font-family:'Montserrat',sans-serif;padding:12px;border-radius:12px;cursor:pointer;background:transparent;font-size:15px;transition:.15s}
-  .plan .pbtn:hover{border-color:var(--green);color:var(--green)}
-  .plan.top{border-color:var(--gold);background:linear-gradient(180deg,rgba(247,207,91,.09),var(--card));box-shadow:0 14px 42px rgba(247,207,91,.16)}
-  .plan.top .pname,.plan.top .price{color:var(--gold)}
-  .plan .badge-top{position:absolute;top:-11px;left:50%;transform:translateX(-50%);background:linear-gradient(100deg,var(--gold),var(--gold2));color:#2a1a02;font-family:'Anton',sans-serif;font-size:12px;letter-spacing:1px;text-transform:uppercase;padding:5px 15px;border-radius:999px;white-space:nowrap}
-  .plan.top .pbtn{background:linear-gradient(100deg,var(--gold),var(--gold2));color:#2a1a02;border:0}
-  .plan-picked{display:none;text-align:center;font-size:13.5px;color:var(--gold);font-weight:700;margin-bottom:14px}
   /* FORM CARD */
   .form-card{margin:34px auto 0;background:linear-gradient(180deg,var(--card),var(--bg2));border:1px solid var(--line);border-radius:22px;padding:26px 22px 24px;
     box-shadow:0 20px 60px rgba(0,0,0,.35);position:relative;overflow:hidden}
@@ -111,79 +92,16 @@ fbq('init','1657845171960486');fbq('track','PageView');
     <p class="sub">Se te caen los anuncios, te bloquean el número y perdés ventas. Con Publi.lat tenés <b>tu propia app</b> y seguís vendiendo pase lo que pase.</p>
 
     <div class="offer">
-      <div class="big gold">DESDE US$4</div>
-      <div class="cap">un plan para cada etapa</div>
+      <div class="big gold">2 DÍAS</div>
+      <div class="cap">para probarlo con tus anuncios</div>
     </div>
 
-    <button class="cta" onclick="document.getElementById('planes').scrollIntoView({behavior:'smooth'})">VER PLANES →</button>
+    <button class="cta" onclick="document.getElementById('signupForm').scrollIntoView({behavior:'smooth'})">REGISTRATE →</button>
   </header>
-
-  <div class="section-t" id="planes">Elegí tu plan</div>
-  <p class="section-s">Todos incluyen el sistema completo. Cuanto más grande el plan, más hacemos por vos.</p>
-  <div class="plans">
-    <div class="plan">
-      <div class="pname">Prueba</div>
-      <div class="price">US$4 <small>· 2 días</small></div>
-      <div class="dur">Probá el sistema con tus anuncios.</div>
-      <ul>
-        <li><span class="y">✓</span> Atribución WhatsApp → Meta</li>
-        <li><span class="y">✓</span> CRM + Inbox + ROAS</li>
-        <li class="no"><span class="n">✕</span> Solo 2 días, sin extras</li>
-      </ul>
-      <button class="pbtn" type="button" onclick="pick('Prueba — US$4 (2 días)')">Empezar</button>
-    </div>
-    <div class="plan">
-      <div class="pname">Semana</div>
-      <div class="price">US$7 <small>· 7 días</small></div>
-      <div class="dur">Una semana laboral completa.</div>
-      <ul>
-        <li><span class="y">✓</span> Todo el sistema, 7 días</li>
-        <li><span class="y">✓</span> Mejor precio x día que la prueba</li>
-        <li class="no"><span class="n">✕</span> Sin servicios extra</li>
-      </ul>
-      <button class="pbtn" type="button" onclick="pick('Semana — US$7 (7 días)')">Empezar</button>
-    </div>
-    <div class="plan">
-      <div class="pname">Mes</div>
-      <div class="price">US$60 <small>· 30 días</small></div>
-      <div class="dur">Para operar en serio todo el mes.</div>
-      <ul>
-        <li><span class="y">✓</span> Un mes entero de Publi.lat</li>
-        <li><span class="y">✓</span> Todo el sistema</li>
-        <li class="no"><span class="n">✕</span> Lo configurás vos</li>
-      </ul>
-      <button class="pbtn" type="button" onclick="pick('Mes — US$60 (30 días)')">Empezar</button>
-    </div>
-    <div class="plan">
-      <div class="pname">2 Meses</div>
-      <div class="price">US$80 <small>· 60 días</small></div>
-      <div class="dur">El mejor precio por día.</div>
-      <ul>
-        <li><span class="y">✓</span> 60 días (2 meses)</li>
-        <li><span class="y">✓</span> Ahorrás vs. mensual</li>
-        <li class="no"><span class="n">✕</span> Sin app ni landing incluidas</li>
-      </ul>
-      <button class="pbtn" type="button" onclick="pick('2 Meses — US$80 (60 días)')">Empezar</button>
-    </div>
-    <div class="plan top">
-      <div class="badge-top">⭐ Llave en mano</div>
-      <div class="pname">Full</div>
-      <div class="price">US$300 <small>· mes</small></div>
-      <div class="dur">Todo hecho por nosotros. Arrancás sin tocar nada.</div>
-      <ul>
-        <li><span class="y">✓</span> 1 mes de Publi.lat completo</li>
-        <li><span class="y">✓</span> Bot de gestión de sistemas</li>
-        <li><span class="y">✓</span> ChatApp personalizada con tu marca</li>
-        <li><span class="y">✓</span> Landing hecha para vos</li>
-      </ul>
-      <button class="pbtn" type="button" onclick="pick('FULL — US$300 (mes + bot + chatapp + landing)')">Lo quiero →</button>
-    </div>
-  </div>
 
   <form class="form-card" id="signupForm" novalidate>
     <div class="t gold">Creá tu cuenta</div>
-    <div class="st">Registrate y te llevamos a pagar tu plan.</div>
-    <div class="plan-picked" id="planPicked"></div>
+    <div class="st">Registrate y activá tus <b>2 días</b> para empezar a probar.</div>
     <div class="err" id="err"></div>
     <div class="field"><label>Nombre</label><input id="f-name" type="text" autocomplete="name" placeholder="Tu nombre" required /></div>
     <div class="field"><label>Email</label><input id="f-email" type="email" autocomplete="email" placeholder="tucorreo@mail.com" required /></div>
@@ -210,14 +128,6 @@ fbq('init','1657845171960486');fbq('track','PageView');
   function ck(n){var m=('; '+document.cookie).split('; '+n+'=');return m.length===2?decodeURIComponent(m.pop().split(';').shift()):'';}
   function eid(){try{return crypto.randomUUID();}catch(e){return 'e'+Date.now()+Math.round(Math.random()*1e9);}}
   var fbclidUrl = new URLSearchParams(location.search).get('fbclid') || '';
-  // Plan elegido: al tocar un plan se marca y baja al formulario. Viaja en el aviso al dueño.
-  var selectedPlan = '';
-  function pick(p){
-    selectedPlan = p;
-    var el = document.getElementById('planPicked');
-    if(el){ el.textContent = '✓ Plan elegido: ' + p; el.style.display = 'block'; }
-    document.getElementById('signupForm').scrollIntoView({behavior:'smooth'});
-  }
   form.addEventListener('submit', async function(e){
     e.preventDefault();
     errBox.style.display = 'none';
@@ -229,7 +139,7 @@ fbq('init','1657845171960486');fbq('track','PageView');
       errBox.textContent = 'Completá todos los datos y una clave de al menos 6 caracteres.';
       errBox.style.display = 'block'; return;
     }
-    var interests = selectedPlan ? [selectedPlan] : [];
+    var interests = Array.prototype.map.call(document.querySelectorAll('.can .row.sel'), function(r){ return r.getAttribute('data-interest'); });
     var fbp = ck('_fbp'), fbc = ck('_fbc'), regEid = eid();
     btn.disabled = true; var prev = btn.textContent; btn.textContent = 'Creando tu cuenta…';
     try{

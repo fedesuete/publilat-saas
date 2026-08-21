@@ -135,8 +135,9 @@ billingRouter.post("/credit/add", async (req, res) => {
 const checkoutSchema = z.object({
   days: z.number().int().positive().max(3650),
   provider: z.enum(["mercadopago", "stripe", "usdt", "pagopar"]),
-  // Promo opcional (bundle a precio fijo). Hoy: "2meses" = 60 días con descuento, solo por tarjeta.
-  promo: z.enum(["2meses"]).optional(),
+  // Promo/paquete opcional (bundle a precio fijo). Los planes del panel (prueba/semana/mes/2meses/full);
+  // se pagan por tarjeta (Pagopar) o cripto (USDT). El backend deriva días y precio del promo, no del selector.
+  promo: z.enum(["prueba", "semana", "mes", "2meses", "full"]).optional(),
   // Pagopar exige los datos del comprador para crear el pedido (CI/RUC sin puntos).
   buyer: z
     .object({
