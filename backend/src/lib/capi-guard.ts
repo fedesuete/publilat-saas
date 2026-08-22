@@ -45,6 +45,16 @@ export async function notifyMissingPixel(userId: string): Promise<void> {
 
 // (3) Eventos que agotaron los reintentos (dead-letter) por errores REALES de envío
 // (token vencido/ inválido, pixel mal, etc.) — NO los "no_pixel". Avisa al dueño y al admin.
+// ¿Vale la pena alertar "token vencido"? Solo si la TASA de fallo es alta — NO por N absoluto bajo.
+// Un token muerto hace fallar TODO; 1-2 fallos entre cientos de OK es ruido (un evento con un campo
+// puntual mal). Regla: alerta si sin envíos OK hay >=3 fallos, o si la tasa de fallo supera 30% con
+// al menos 5 fallos.
+export function shouldAlertToken(failed: number, sent: number): boolean {
+  if (sent === 0) return failed >= 3;
+  const rate = failed / (failed + sent);
+  return rate > 0.3 && failed >= 5;
+}
+
 export async function alertCapiFailures(): Promise<void> {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const dead = await prisma.metaEvent
@@ -55,16 +65,23 @@ export async function alertCapiFailures(): Promise<void> {
     })
     .catch(() => [] as Array<{ userId: string; _count: { _all: number } }>);
   if (!dead.length) return;
+  let alerted = 0;
   for (const row of dead) {
+    // Contar los OK del mismo usuario en la ventana para decidir con TASA, no con N absoluto.
+    const sent = await prisma.metaEvent
+      .count({ where: { userId: row.userId, status: "sent", createdAt: { gte: since } } })
+      .catch(() => 0);
+    if (!shouldAlertToken(row._count._all, sent)) continue; // 1 fallo entre cientos de OK → no molestar
     const title = "Tus eventos a Meta están fallando";
     if (await notifiedRecently(row.userId, title)) continue;
+    alerted++;
     await notify(
       row.userId,
       "system",
       title,
-      `Algunos eventos de compra/lead no se pudieron enviar a Meta tras varios intentos ` +
-        `(posible token o Pixel vencido/ inválido). Revisá tu Pixel en el panel. Afectados: ${row._count._all}.`,
+      `${row._count._all} de tus últimos eventos no se pudieron enviar a Meta (de ${row._count._all + sent} en 24 h). ` +
+        `Si sigue, revisá tu Pixel/token en el panel (Mi Pixel).`,
     ).catch(() => undefined);
   }
-  void sendAdminMail("CAPI: cuentas con eventos dead-letter", `Cuentas con eventos CAPI fallidos (dead-letter) en 24h: ${dead.length}. Revisar tokens/pixels.`);
+  if (alerted > 0) void sendAdminMail("CAPI: cuentas con tasa alta de eventos fallidos", `Cuentas alertadas por fallos CAPI (tasa alta) en 24h: ${alerted}. Revisar tokens/pixels.`);
 }
