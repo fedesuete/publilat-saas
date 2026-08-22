@@ -92,6 +92,7 @@ export async function detectPayment(args: DetectPaymentArgs): Promise<void> {
     let amount: number | null = null;
     let currency: string | null = null;
     let confidence = signal ? 0.6 : 0; // por texto solo, confianza media
+    let payerName: string | null = null; // nombre del titular leído del comprobante (OCR) → fn/ln del Purchase
 
     // ¿Trae comprobante (imagen o PDF)? Intentar leerlo con la IA.
     const doc =
@@ -123,6 +124,7 @@ export async function detectPayment(args: DetectPaymentArgs): Promise<void> {
           amount = a.amount;
           currency = a.currency ?? currency;
           confidence = Math.max(confidence, a.confidence);
+          payerName = a.senderName ?? payerName; // titular del comprobante (nombre legal completo)
         }
       }
     }
@@ -135,7 +137,7 @@ export async function detectPayment(args: DetectPaymentArgs): Promise<void> {
       // eventId ÚNICO por comprobante (waMessageId) → Meta cuenta CADA recarga como un Purchase distinto
       // en vez de deduplicarlas contra la primera (BUG 2). El "Compró" manual mantiene el eventId estable.
       const detKey = String(item?.key?.id ?? Date.now());
-      await markPurchase(userId, contact.id, amount, DEFAULT_CURRENCY, { eventId: rechargeEventId(contact.externalId, detKey) });
+      await markPurchase(userId, contact.id, amount, DEFAULT_CURRENCY, { eventId: rechargeEventId(contact.externalId, detKey), payerName: payerName ?? undefined });
       return;
     }
 

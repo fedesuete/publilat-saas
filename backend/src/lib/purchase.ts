@@ -21,6 +21,16 @@ export interface MarkPurchaseResult {
  * se guarda en centavos (Int). Si Meta falla, la venta queda marcada igual (reintenta
  * la cola de CAPI). Devuelve ok=false con el detalle del error en ese caso.
  */
+// Nombre para fn/ln del Purchase. El comprobante (OCR) trae el NOMBRE LEGAL COMPLETO del titular
+// de la transferencia ("JIMENA SOLEDAD LENCINAS") → mejor que el apodo del chat ("Jimena") porque
+// aporta APELLIDO (sube la cobertura de `ln`, hoy ~37%). Regla: si el OCR trae ≥2 palabras (tiene
+// apellido), gana; si es una sola palabra o null, cae al nombre del contacto (y si tampoco, al OCR).
+export function choosePayerName(ocrName: string | null, contactName: string | null): string | undefined {
+  const ocr = ocrName?.trim();
+  if (ocr && ocr.split(/\s+/).length >= 2) return ocr; // nombre completo del comprobante
+  return contactName?.trim() || ocr || undefined;
+}
+
 export async function markPurchase(
   userId: string,
   contactId: string,
@@ -29,7 +39,8 @@ export async function markPurchase(
   // `eventId` opcional: la auto-detección de RECARGAS pasa uno ÚNICO por comprobante (así Meta cuenta
   // cada recarga y no las deduplica). El "Compró" manual NO lo pasa → usa el estable `${externalId}:purchase`
   // (idempotente: marcar dos veces la MISMA venta no duplica el Purchase). Ver BUG 2.
-  opts?: { eventId?: string },
+  // `payerName`: nombre del titular leído del comprobante (OCR) → se prefiere para fn/ln si trae apellido.
+  opts?: { eventId?: string; payerName?: string },
 ): Promise<MarkPurchaseResult | null> {
   const contact = await prisma.contact.findFirst({ where: { id: contactId, userId } });
   if (!contact) return null;
@@ -104,7 +115,8 @@ export async function markPurchase(
       fbp: contact.fbp ?? undefined,
       fbc: contactFbc(contact), // cookie _fbc o construida desde el fbclid
       phone: contact.phone ?? undefined, // E.164 sin + (jidToPhone ya deja solo dígitos) -> se hashea SHA-256
-      firstName: contact.name ?? undefined,
+      firstName: choosePayerName(opts?.payerName ?? null, contact.name), // OCR (con apellido) > apodo del chat
+
       // IP + user agent de la sesión web original (landing), guardados en el Contact. Suben el EMQ.
       clientIp: contact.clientIp ?? undefined,
       userAgent: contact.clientUserAgent ?? undefined,
