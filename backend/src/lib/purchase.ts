@@ -2,7 +2,7 @@
 // Purchase a Meta por CAPI con el MISMO externalId/fbp/fbc + value (habilita el match).
 // Se usa desde el endpoint /api/leads/:id/purchase Y desde la detección automática de pago.
 import { prisma } from "./prisma.js";
-import { sendCapiEvent, globalPixelAllowed, contactFbc } from "./meta-capi.js";
+import { sendCapiEvent, globalPixelAllowed, contactFbc, metaErrorDetail } from "./meta-capi.js";
 import { resolveUserPixel } from "./pixel.js";
 import { fireIntegration } from "./integrations.js";
 import { emitToUser } from "./io.js";
@@ -141,12 +141,13 @@ export async function markPurchase(
     emitToUser(userId, "lead:purchased", { contactId: contact.id, amount: updated.amount });
     return { ok: true, capi: result.response, lead };
   } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : String(e);
-    console.error("[CAPI Purchase] error:", message);
+    const detail = metaErrorDetail(e);
+    console.error("[CAPI Purchase] error:", detail.message, detail.subcode ? `(subcode ${detail.subcode})` : "");
     await prisma.metaEvent.update({
       where: { id: metaEvent.id },
-      data: { status: "failed", response: { error: message } },
+      data: { status: "failed", response: { error: detail.message, ...detail } },
     });
+    const message = detail.message;
     emitToUser(userId, "lead:purchased", { contactId: contact.id, amount: updated.amount });
     return { ok: false, error: message, lead };
   }

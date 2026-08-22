@@ -14,6 +14,20 @@ const ENV_TEST_CODE = process.env.META_TEST_EVENT_CODE || undefined;
 
 // ¿Está permitido el fallback al pixel global del .env? (default: NO, para multi-tenant).
 export const globalPixelAllowed = (): boolean => ALLOW_GLOBAL;
+
+// Extrae el error REAL de Meta (mensaje + subcode + type) del axios error, en vez del genérico
+// "Request failed with status code 400". Sin eso, un evento fallido no se puede diagnosticar
+// (no sabés SI fue token, formato, o un campo puntual). Se guarda en MetaEvent.response.
+export interface MetaErrorDetail { message: string; subcode?: number; code?: number; type?: string }
+export function metaErrorDetail(e: unknown): MetaErrorDetail {
+  if (axios.isAxiosError(e)) {
+    const meta = (e.response?.data as { error?: { message?: string; code?: number; error_subcode?: number; type?: string } } | undefined)?.error;
+    if (meta) return { message: meta.message ?? e.message, subcode: meta.error_subcode, code: meta.code, type: meta.type };
+    return { message: e.message };
+  }
+  if (e instanceof Error) return { message: e.message };
+  return { message: String(e) };
+}
 const SOURCE_URL = process.env.META_EVENT_SOURCE_URL ?? "";
 const GRAPH_VERSION = process.env.META_GRAPH_VERSION ?? "v21.0";
 

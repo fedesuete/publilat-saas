@@ -7,7 +7,7 @@
 // external_id: Publi ya genera UNO estable por contacto (go.ts al clic, o el webhook al 1er inbound)
 // y lo reusa en todos los eventos. Este helper SIEMPRE usa ese id (contact.externalId).
 import { prisma } from "./prisma.js";
-import { sendCapiEvent, globalPixelAllowed } from "./meta-capi.js";
+import { sendCapiEvent, globalPixelAllowed, metaErrorDetail } from "./meta-capi.js";
 import { resolveUserPixel } from "./pixel.js";
 import { notifyMissingPixel } from "./capi-guard.js";
 import { emitToUser } from "./io.js";
@@ -117,9 +117,10 @@ export async function fireMetaEvent(
     emitToUser(contact.userId, "meta:event", { contactId: contact.id, eventName });
     return { ok: true };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error(`[meta-events] ${eventName} falló:`, msg);
-    await prisma.metaEvent.update({ where: { id: metaEvent.id }, data: { status: "failed", response: { error: msg } } });
+    const detail = metaErrorDetail(e);
+    const msg = detail.message;
+    console.error(`[meta-events] ${eventName} falló:`, msg, detail.subcode ? `(subcode ${detail.subcode})` : "");
+    await prisma.metaEvent.update({ where: { id: metaEvent.id }, data: { status: "failed", response: { error: msg, ...detail } } });
     return { ok: false, error: msg };
   }
 }
