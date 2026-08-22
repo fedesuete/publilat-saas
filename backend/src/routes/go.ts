@@ -9,6 +9,7 @@ import { resolveUserPixel } from "../lib/pixel.js";
 import { prisma } from "../lib/prisma.js";
 import { fireIntegration } from "../lib/integrations.js";
 import { notifyMissingPixel } from "../lib/capi-guard.js";
+import { lineWeights, pickWeighted } from "../lib/line-weights.js";
 
 export const goRouter = Router();
 
@@ -89,10 +90,14 @@ async function pickLine(userId: string, linePref?: string) {
     }
   }
 
-  const eligible = await prisma.waLine.findFirst({
+  // Rotación con PESO por línea (env LINE_WEIGHTS): las líneas frágiles reciben menos clics sin
+  // apagarse. Sin pesos = LRU normal (la menos usada primero). Traemos las elegibles y elegimos
+  // con pickWeighted (antigüedad efectiva = espera * peso).
+  const candidates: Array<{ id: string; phone: string; lastUsedAt: Date | null }> = await prisma.waLine.findMany({
     where: base,
-    orderBy: { lastUsedAt: { sort: "asc", nulls: "first" } }, // la menos reciente primero
+    select: { id: true, phone: true, lastUsedAt: true },
   });
+  const eligible = pickWeighted(candidates, lineWeights(), now.getTime());
 
   if (eligible?.phone) {
     // Marcamos uso para que el próximo clic vaya a otra línea (round-robin natural).
