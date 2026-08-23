@@ -99,6 +99,9 @@ export default function OnboardingPage() {
       if (slug) localStorage.setItem(SESSION_SLUG_KEY, slug); // marca la cuenta de esta sesión
       // Pixel del navegador (además de la CAPI del server), deduplicado por eventId. Best-effort.
       if (data.pixel) fireMetaPixel(data.pixel, "CompleteRegistration", { eventId: data.eventId, externalId: data.username });
+      // Cuenta MANUAL (chatManualAccount): NO mostramos usuario/clave; entramos derecho al chat, donde el
+      // cajero crea la cuenta a mano. El registro y el pixel (Lead+Registro) ya se dispararon igual.
+      if (data.manual) { navigate("/chat", { replace: true }); return; }
       setCreds({ username: data.username, password: data.password ?? null });
       setStep("done");
     } catch (err) {

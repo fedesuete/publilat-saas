@@ -250,6 +250,17 @@ async function postWelcomeCreds(userId: string, conversationId: string, intro: s
   emitChat(`chat:${userId}`, "chat:message", payload);
 }
 
+// Bienvenida para cuentas MANUALES (chatManualAccount): el server NO muestra usuario/clave generados;
+// el CAJERO crea la cuenta a mano en el chat. Postea la bienvenida y avisa al operador en vivo.
+async function postManualWelcome(userId: string, conversationId: string, intro: string | null, image: string | null) {
+  const body = intro?.trim() || "¡Bienvenido/a! 🙌 Escribinos por acá y te creamos tu cuenta para empezar a jugar.";
+  const metadata = image ? { image } : {};
+  const msg = await prisma.chatMessage.create({ data: { userId, conversationId, senderType: "system", body, metadata }, select: { id: true, senderType: true, body: true, metadata: true, createdAt: true } });
+  await prisma.chatConversation.update({ where: { id: conversationId }, data: { lastMessageAt: new Date(), lastMessagePreview: body.slice(0, 120), unreadPlayer: 1, unreadOperator: { increment: 1 } } });
+  const payload = { conversationId, message: { id: msg.id, senderType: msg.senderType, body: msg.body, image: image ?? null, buttons: null, link: null, copy: null, createdAt: msg.createdAt } };
+  emitChat(`chat:${userId}`, "chat:message", payload);
+}
+
 // ============================ OPERADOR (requireAuth) ============================
 
 // GET /api/chat/invites — links del operador (su cuenta).
@@ -622,7 +633,7 @@ chatRouter.get("/broadcasts", async (req, res) => {
 // (nada de plan, tokenVersion, líneas de WhatsApp, etc.).
 const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "chatTheme", "welcomeText", "welcomeMsgText", "welcomeMsgImage", "chatWaLink", "chatPlatformUrl", "chatPayCbu", "chatPayAlias", "chatPayTitular", "chatInstallMsg1", "chatInstallMsg2", "chatInstallMsg3", "chatTutIosImg", "chatTutIosImg2", "chatTutIosImg3", "chatTutIosImg4", "chatTutAndroidImg", "chatDirectWelcome", "chatInstallPromptEnabled", "chatNotifTitle", "chatNotifText"] as const;
 // Select del branding del OPERADOR (incluye los campos de instalación; NO se exponen al jugador).
-const BRANDING_SELECT = { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true, chatPayCbu: true, chatPayAlias: true, chatPayTitular: true, chatInstallMsg1: true, chatInstallMsg2: true, chatInstallMsg3: true, chatTutIosImg: true, chatTutIosImg2: true, chatTutIosImg3: true, chatTutIosImg4: true, chatTutAndroidImg: true, chatDirectWelcome: true, chatInstallPromptEnabled: true, chatNotifTitle: true, chatNotifText: true } as const;
+const BRANDING_SELECT = { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true, chatPayCbu: true, chatPayAlias: true, chatPayTitular: true, chatInstallMsg1: true, chatInstallMsg2: true, chatInstallMsg3: true, chatTutIosImg: true, chatTutIosImg2: true, chatTutIosImg3: true, chatTutIosImg4: true, chatTutAndroidImg: true, chatDirectWelcome: true, chatInstallPromptEnabled: true, chatNotifTitle: true, chatNotifText: true, chatManualAccount: true } as const;
 
 // GET /api/chat/branding — branding actual de la cuenta (para poblar el formulario del panel).
 chatRouter.get("/branding", async (req, res) => {
@@ -1304,7 +1315,7 @@ chatPublicRouter.post("/start", async (req, res) => {
 
   const acc = await prisma.user.findUnique({
     where: { slug: accountSlug },
-    select: { id: true, welcomeMsgText: true, welcomeMsgImage: true, chatPlatformUrl: true },
+    select: { id: true, welcomeMsgText: true, welcomeMsgImage: true, chatPlatformUrl: true, chatManualAccount: true },
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   // Candado de días: sin día de WhatsApp vigente el chat está apagado.
@@ -1333,14 +1344,22 @@ chatPublicRouter.post("/start", async (req, res) => {
     }
     if (!np) return res.status(500).json({ error: "No se pudo generar tu usuario, probá de nuevo." });
     const conv = await prisma.chatConversation.create({ data: { userId: acc.id, playerId: np.id, status: "open" }, select: { id: true } });
-    // Primer mensaje = usuario + clave + botón a la plataforma.
-    await postWelcomeCreds(acc.id, conv.id, acc.welcomeMsgText ?? null, np.casinoUsername, plainPassword, acc.chatPlatformUrl ?? null);
+    // Cuenta MANUAL: NO mostramos usuario/clave (el cajero crea la cuenta a mano) → solo bienvenida.
+    // Cuenta normal: primer mensaje = usuario + clave + botón a la plataforma.
+    if (acc.chatManualAccount) {
+      await postManualWelcome(acc.id, conv.id, acc.welcomeMsgText ?? null, acc.welcomeMsgImage ?? null);
+    } else {
+      await postWelcomeCreds(acc.id, conv.id, acc.welcomeMsgText ?? null, np.casinoUsername, plainPassword, acc.chatPlatformUrl ?? null);
+    }
+    // El pixel (Lead+Registro) se dispara IGUAL en ambos modos: external_id = usuario interno del jugador.
     const eventId = `${np.casinoUsername}:register`;
     const creds = await resolveUserPixel(acc.id, "CompleteRegistration");
     void fireChatRegistration(acc.id, creds, np.casinoUsername, eventId, { fbclid, fbp, fbc });
     const token = signChatClientToken(acc.id, np.id);
     setChatCookie(res, token); // sesión persistente (además del Bearer)
-    return res.status(201).json({ token, player: np, conversationId: conv.id, username: np.casinoUsername, password: plainPassword, pixel: creds?.pixelId ?? null, eventId });
+    // username va SIEMPRE (es el external_id que el pixel del navegador usa para deduplicar con el CAPI);
+    // en modo manual la PWA no lo muestra (salta la pantalla de creds y entra al chat). La clave sí se omite.
+    return res.status(201).json({ token, player: np, conversationId: conv.id, manual: acc.chatManualAccount, username: np.casinoUsername, password: acc.chatManualAccount ? null : plainPassword, pixel: creds?.pixelId ?? null, eventId });
   }
 
   // --- Modo clásico (username explícito): retoma si existe, o crea si es nuevo. ---
