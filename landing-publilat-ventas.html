@@ -54,19 +54,6 @@ fbq('init','1657845171960486');fbq('track','PageView');
   .cta:hover{transform:translateY(-2px);box-shadow:0 18px 44px rgba(40,209,124,.46)}
   .cta:active{transform:translateY(0)}
   .cta-gold{background:linear-gradient(100deg,var(--gold),var(--gold2));color:#2a1a02;box-shadow:0 12px 34px rgba(247,207,91,.34)}
-  /* WHAT YOU CAN DO */
-  .can{margin:20px auto 0;display:grid;gap:12px}
-  .can .row{display:flex;gap:13px;align-items:flex-start;background:var(--card);border:1.5px solid var(--line);border-radius:15px;padding:15px 16px;text-align:left;cursor:pointer;transition:border-color .15s, background .15s}
-  .can .row:hover{border-color:#2c5741}
-  .can .row.sel{border-color:var(--green);background:rgba(40,209,124,.08)}
-  .can .chk{margin-left:auto;align-self:center;width:26px;height:26px;border-radius:50%;border:2px solid var(--line);flex-shrink:0;display:grid;place-items:center;font-size:15px;font-weight:900;color:transparent;transition:.15s}
-  .can .row.sel .chk{border-color:var(--green);background:var(--green);color:#04160c}
-  .can .ic{font-size:26px;line-height:1.1;flex-shrink:0}
-  .can h4{font-family:'Anton',sans-serif;font-weight:400;letter-spacing:.4px;text-transform:uppercase;font-size:20px;margin-bottom:3px;line-height:1.05}
-  .can h4.c1{color:var(--green)} .can h4.c2{color:var(--gold)} .can h4.c3{color:var(--cyan)}
-  .can p{color:var(--muted);font-size:13.5px}
-  .section-t{font-family:'Anton',sans-serif;text-transform:uppercase;font-size:clamp(22px,6vw,30px);text-align:center;margin:52px 0 6px}
-  .section-s{color:var(--muted);text-align:center;font-size:14px;max-width:440px;margin:0 auto}
   /* FORM CARD */
   .form-card{margin:34px auto 0;background:linear-gradient(180deg,var(--card),var(--bg2));border:1px solid var(--line);border-radius:22px;padding:26px 22px 24px;
     box-shadow:0 20px 60px rgba(0,0,0,.35);position:relative;overflow:hidden}
@@ -101,33 +88,8 @@ fbq('init','1657845171960486');fbq('track','PageView');
     <button class="cta" onclick="document.getElementById('signupForm').scrollIntoView({behavior:'smooth'})">REGISTRATE →</button>
   </header>
 
-  <!-- Beneficios TOCABLES: lo que marca el visitante viaja como `interests` en el alta → el aviso
-       de nuevo registro te dice qué le interesó (el CSS .can y el JS ya estaban; faltaba el HTML). -->
-  <div class="section-t">Con Publi.lat <span class="gold">vas a poder</span></div>
-  <p class="section-s">Tocá lo que más te interese (podés elegir varias) 👇</p>
-  <div class="can">
-    <div class="row" data-interest="sin-whatsapp">
-      <div class="ic">🚫</div>
-      <div><h4 class="c1">No dependas de WhatsApp</h4><p>Operá con tu propio canal. Si te bloquean WhatsApp, seguís trabajando igual.</p></div>
-      <div class="chk">✓</div>
-    </div>
-    <div class="row" data-interest="landings-pixel">
-      <div class="ic">🧲</div>
-      <div><h4 class="c2">Landings que traen compradores</h4><p>Con el pixel que le enseña a Meta quién te compra de verdad — y te trae más iguales.</p></div>
-      <div class="chk">✓</div>
-    </div>
-    <div class="row" data-interest="app-propia">
-      <div class="ic">📱</div>
-      <div><h4 class="c3">Tu propia aplicación</h4><p>Tu marca, tu app instalable, tus clientes adentro. Sin depender de terceros.</p></div>
-      <div class="chk">✓</div>
-    </div>
-    <div class="row" data-interest="cobros-automaticos">
-      <div class="ic">⚡</div>
-      <div><h4 class="c1">Cargas y retiros automatizados</h4><p>El sistema cobra y paga solo. Vos supervisás y listo.</p></div>
-      <div class="chk">✓</div>
-    </div>
-  </div>
-
+  <!-- OJO: la sección "Con Publi.lat vas a poder" (tarjetas de beneficios tocables) se SACÓ a
+       propósito (decisión del dueño, 2026-08-23). NO re-agregarla: hero → formulario directo. -->
   <form class="form-card" id="signupForm" novalidate>
     <div class="t gold">Creá tu cuenta</div>
     <div class="st">Registrate y activá tus <b>2 días</b> para empezar a probar.</div>
@@ -149,10 +111,6 @@ fbq('init','1657845171960486');fbq('track','PageView');
   var form = document.getElementById('signupForm');
   var btn = document.getElementById('submitBtn');
   var errBox = document.getElementById('err');
-  // Selección de intereses: tocar una tarjeta la marca/desmarca.
-  document.querySelectorAll('.can .row').forEach(function(r){
-    r.addEventListener('click', function(){ r.classList.toggle('sel'); });
-  });
   // Identificadores del clic de Meta, para cerrar el loop del pixel (Lead/Registro/Compra atribuibles).
   function ck(n){var m=('; '+document.cookie).split('; '+n+'=');return m.length===2?decodeURIComponent(m.pop().split(';').shift()):'';}
   function eid(){try{return crypto.randomUUID();}catch(e){return 'e'+Date.now()+Math.round(Math.random()*1e9);}}
@@ -175,14 +133,13 @@ fbq('init','1657845171960486');fbq('track','PageView');
       errBox.textContent = 'Revisá el email: ¿quisiste escribir @' + typo[1].toLowerCase() + '.com?';
       errBox.style.display = 'block'; return;
     }
-    var interests = Array.prototype.map.call(document.querySelectorAll('.can .row.sel'), function(r){ return r.getAttribute('data-interest'); });
     var fbp = ck('_fbp'), fbc = ck('_fbc'), regEid = eid();
     btn.disabled = true; var prev = btn.textContent; btn.textContent = 'Creando tu cuenta…';
     try{
       try{ fbq('track','Lead'); }catch(_){}
       var r = await fetch(API + '/api/land/signup', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ name:name, email:email, phone:phone, password:pass, interests:interests, fbp:fbp, fbc:fbc, fbclid:fbclidUrl, eventId:regEid })
+        body: JSON.stringify({ name:name, email:email, phone:phone, password:pass, fbp:fbp, fbc:fbc, fbclid:fbclidUrl, eventId:regEid })
       });
       var d = await r.json().catch(function(){ return {}; });
       if(!r.ok){ throw new Error(d.error || 'No pudimos crear la cuenta. Probá de nuevo.'); }
