@@ -1,9 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, apiError, getToken, setToken, saveBranding, applyBranding, type Branding } from "../lib/api";
+import { fireMetaPixel } from "../lib/pixel";
 
 // Recuerda a qué cuenta (slug) pertenece la sesión (mismo criterio que Onboarding).
 const SESSION_SLUG_KEY = "publilat_session_slug";
+
+function cookie(name: string): string {
+  const m = document.cookie.match("(^|;)\\s*" + name + "\\s*=\\s*([^;]+)");
+  return m ? decodeURIComponent(m.pop()!) : "";
+}
 
 // CHAT DIRECTO (/c/:slug): el jugador entra sin registro previo. Para NO duplicar la cuenta de ganamos
 // cuando alguien vuelve por el link del anuncio, primero retomamos su sesión (cookie/localStorage, ya
@@ -57,9 +63,19 @@ export default function DirectChatPage() {
     setPhase("creating");
     setError(null);
     try {
-      const { data } = await api.post("/api/chat/direct", { accountSlug: accSlug });
+      // IDs del clic de Meta: primero de la URL (los reenvía la landing, porque las cookies del pixel NO
+      // cruzan de dominio landing->chat), y si no, de las cookies propias de chat.publi.lat.
+      const params = new URLSearchParams(location.search);
+      const ids = {
+        fbclid: params.get("fbclid") || undefined,
+        fbp: params.get("fbp") || cookie("_fbp") || undefined,
+        fbc: params.get("fbc") || cookie("_fbc") || undefined,
+      };
+      const { data } = await api.post("/api/chat/direct", { accountSlug: accSlug, ...ids });
       setToken(data.token);
       localStorage.setItem(SESSION_SLUG_KEY, accSlug);
+      // Pixel del navegador (además de la CAPI del server), deduplicado por eventId. Best-effort.
+      if (data.pixel) fireMetaPixel(data.pixel, "CompleteRegistration", { eventId: data.eventId, externalId: data.username });
       navigate("/chat", { replace: true });
     } catch (e) {
       const code = (e as { response?: { data?: { code?: string } } })?.response?.data?.code;

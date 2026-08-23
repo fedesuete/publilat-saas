@@ -1403,7 +1403,14 @@ chatPublicRouter.post("/start", async (req, res) => {
 });
 
 const DEFAULT_DIRECT_WELCOME = "¡Hola! 🎉 Bienvenido. Para empezar, decime tu nombre 👇";
-const directSchema = z.object({ accountSlug: z.string().min(1).max(60) });
+const directSchema = z.object({
+  accountSlug: z.string().min(1).max(60),
+  // Identificadores del clic de Meta (los reenvía la landing por la URL): aunque el chat directo es
+  // anónimo, con esto disparamos el Registro al pixel y el loop de atribución cierra igual.
+  fbclid: z.string().max(400).optional(),
+  fbp: z.string().max(200).optional(),
+  fbc: z.string().max(200).optional(),
+});
 
 // POST /api/chat/direct — CHAT DIRECTO (3ª opción de entrada, SIN registro): el jugador cae derecho
 // en el chat. Crea un jugador anónimo (usuario + clave autogenerados por atrás, para que la carga al
@@ -1414,6 +1421,7 @@ const directSchema = z.object({ accountSlug: z.string().min(1).max(60) });
 chatPublicRouter.post("/direct", async (req, res) => {
   const parsed = directSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const { fbclid, fbp, fbc } = parsed.data;
   const acc = await prisma.user.findUnique({
     where: { slug: parsed.data.accountSlug },
     select: { id: true, chatDirectWelcome: true },
@@ -1452,9 +1460,15 @@ chatPublicRouter.post("/direct", async (req, res) => {
     data: { lastMessageAt: new Date(), lastMessagePreview: welcome.slice(0, 118), unreadPlayer: 1 },
   });
 
+  // Pixel: aunque el chat directo es anónimo, disparamos el Registro (external_id = usuario interno) para
+  // que Meta optimice por registros y el Purchase de la carga matchee después (mismo loop que /r).
+  const eventId = `${np.casinoUsername}:register`;
+  const pxCreds = await resolveUserPixel(acc.id, "CompleteRegistration");
+  void fireChatRegistration(acc.id, pxCreds, np.casinoUsername, eventId, { fbclid, fbp, fbc });
+
   const token = signChatClientToken(acc.id, np.id);
   setChatCookie(res, token); // sesión persistente (además del Bearer)
-  return res.status(201).json({ token, player: np, conversationId: conv.id });
+  return res.status(201).json({ token, player: np, conversationId: conv.id, username: np.casinoUsername, pixel: pxCreds?.pixelId ?? null, eventId });
 });
 
 // GET /api/chat/session — RECUPERA la sesión del jugador desde la cookie httpOnly (o el Bearer). La
