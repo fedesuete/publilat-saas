@@ -391,7 +391,7 @@ chatRouter.post("/messages/image", requireActiveLine, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
   const image = parsed.data.image;
   const bytes = Buffer.from(image.slice(image.indexOf(",") + 1), "base64");
-  if (bytes.length > 700 * 1024) return res.status(413).json({ error: "La imagen supera 700 KB. Sacá una foto más liviana." });
+  if (bytes.length > 2 * 1024 * 1024) return res.status(413).json({ error: "La imagen supera 2 MB. Sacá una foto más liviana." });
   const conv = await prisma.chatConversation.findFirst({
     where: { id: parsed.data.conversationId, userId: req.userId! },
     select: { id: true, playerId: true },
@@ -696,7 +696,7 @@ chatRouter.post("/branding/logo", async (req, res) => {
   const mime = dataUrl.slice(5, dataUrl.indexOf(";"));
   const buffer = Buffer.from(dataUrl.slice(comma + 1), "base64");
   // Tope 700 KB: en base64 (~1.37x) queda por debajo del límite global de body de 1 MB.
-  if (buffer.length > 700 * 1024) return res.status(413).json({ error: "La imagen supera 700 KB. Comprimila o usá una más liviana." });
+  if (buffer.length > 2 * 1024 * 1024) return res.status(413).json({ error: "La imagen supera 2 MB. Comprimila o usá una más liviana." });
 
   const asset = await prisma.brandingAsset.create({
     data: { userId: req.userId!, contentType: mime, data: buffer },
@@ -858,7 +858,7 @@ chatPublicRouter.post("/me/messages", requireChatClient, async (req, res) => {
   if (image) {
     comprobanteType = image.slice(5, image.indexOf(";"));
     comprobanteData = Buffer.from(image.slice(image.indexOf(",") + 1), "base64");
-    if (comprobanteData.length > 700 * 1024) return res.status(413).json({ error: "La imagen supera 700 KB. Sacá una foto más liviana." });
+    if (comprobanteData.length > 2 * 1024 * 1024) return res.status(413).json({ error: "La imagen supera 2 MB. Sacá una foto más liviana." });
   }
   // La imagen se guarda como BrandingAsset (URL corta), NO como data URL dentro del mensaje: un data URL
   // (~950KB por foto) infla el row Y la respuesta de GET /messages → una conversación con varias fotos pesa
@@ -1710,7 +1710,7 @@ chatPublicRouter.post("/me/deposit", requireChatClient, async (req, res) => {
     const d = parsed.data.comprobante;
     comprobanteType = d.slice(5, d.indexOf(";"));
     comprobanteData = Buffer.from(d.slice(d.indexOf(",") + 1), "base64");
-    if (comprobanteData.length > 700 * 1024) return res.status(413).json({ error: "El comprobante supera 700 KB. Sacá una foto más liviana." });
+    if (comprobanteData.length > 2 * 1024 * 1024) return res.status(413).json({ error: "El comprobante supera 2 MB. Sacá una foto más liviana." });
   }
   // Monto: el jugador puede NO escribirlo (pase directo → lo lee la IA del comprobante). SIEMPRE leemos
   // el comprobante (monto + remitente) y reusamos este `receipt` para el Purchase + el intent (un solo OCR).
