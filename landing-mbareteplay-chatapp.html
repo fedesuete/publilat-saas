@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>30% de Bonus | Mbarete Play</title>
+
+  <!-- META PIXEL (navegador) — SOLO BASE + PAGEVIEW.
+       El pixel real del cliente. Solo PageView acá: arma públicos de retargeting y setea _fbp/_fbc
+       para reenviarlos al chat. El Lead + CompleteRegistration + Purchase los dispara el CHATAPP al
+       registrarse/cargar (mismo external_id = usuario) — así el loop cierra sin WhatsApp. -->
+  <script>
+    !function(f,b,e,v,n,t,s)
+    {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+    if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+    n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];
+    s.parentNode.insertBefore(t,s)}
+    (window, document,'script',
+    'https://connect.facebook.net/en_US/fbevents.js');
+
+    fbq('init', '2919324311787260');
+    fbq('track', 'PageView');
+  </script>
+
+  <link rel="dns-prefetch" href="https://chat.publi.lat">
+
+  <style>
+    *{
+      box-sizing:border-box;
+      margin:0;
+      padding:0;
+    }
+
+    body{
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        radial-gradient(circle at 50% 10%, #6123a8 0%, #260846 30%, #090010 70%);
+      color:#fff;
+      min-height:100vh;
+      overflow-x:hidden;
+    }
+
+    .page{
+      max-width:520px;
+      margin:auto;
+      min-height:100vh;
+      padding:18px 16px 34px;
+      position:relative;
+    }
+
+    .glow{
+      position:absolute;
+      width:260px;
+      height:260px;
+      background:#d500ff;
+      filter:blur(100px);
+      opacity:.18;
+      border-radius:50%;
+      top:170px;
+      left:50%;
+      transform:translateX(-50%);
+      pointer-events:none;
+    }
+
+    .brand{
+      text-align:center;
+      margin-top:5px;
+      margin-bottom:22px;
+      font-size:26px;
+      font-weight:800;
+      letter-spacing:-1px;
+    }
+
+    .brand span{
+      color:#ffd52e;
+    }
+
+    .badge{
+      width:max-content;
+      max-width:100%;
+      margin:0 auto 12px;
+      padding:8px 15px;
+      border-radius:30px;
+      border:1px solid rgba(255,255,255,.18);
+      background:rgba(255,255,255,.08);
+      font-size:13px;
+      font-weight:700;
+      text-transform:uppercase;
+      letter-spacing:.6px;
+    }
+
+    h1{
+      text-align:center;
+      font-size:40px;
+      line-height:.98;
+      font-weight:900;
+      text-transform:uppercase;
+      margin-bottom:14px;
+      text-shadow:0 5px 20px rgba(0,0,0,.45);
+    }
+
+    h1 .gold{
+      display:block;
+      color:#ffd52e;
+      font-size:54px;
+      margin-top:5px;
+      text-shadow:
+        0 3px 0 #b56c00,
+        0 8px 25px rgba(255,183,0,.35);
+    }
+
+    .subtitle{
+      text-align:center;
+      font-size:17px;
+      line-height:1.4;
+      color:#e9def3;
+      max-width:390px;
+      margin:0 auto 20px;
+    }
+
+    .bonus-card{
+      position:relative;
+      background:linear-gradient(145deg,#401060,#180522);
+      border:2px solid #a83cff;
+      border-radius:24px;
+      padding:24px 18px;
+      margin:22px 0 18px;
+      box-shadow:
+        0 0 25px rgba(184,55,255,.35),
+        inset 0 0 30px rgba(255,255,255,.04);
+      text-align:center;
+      overflow:hidden;
+    }
+
+    .bonus-card:before{
+      content:"";
+      position:absolute;
+      width:180px;
+      height:180px;
+      background:#ff00d4;
+      filter:blur(90px);
+      opacity:.24;
+      top:-70px;
+      left:-50px;
+    }
+
+    .bonus-label{
+      font-size:16px;
+      font-weight:800;
+      text-transform:uppercase;
+      letter-spacing:1px;
+      position:relative;
+    }
+
+    .bonus{
+      font-size:92px;
+      line-height:1;
+      font-weight:1000;
+      color:#ffd329;
+      letter-spacing:-5px;
+      position:relative;
+      margin:6px 0;
+      text-shadow:
+        0 4px 0 #b56a00,
+        0 10px 30px rgba(255,186,0,.35);
+    }
+
+    .bonus-text{
+      font-size:22px;
+      font-weight:900;
+      text-transform:uppercase;
+      position:relative;
+    }
+
+    .bonus-small{
+      margin-top:10px;
+      color:#d9c7e7;
+      font-size:14px;
+      position:relative;
+    }
+
+    .slot{
+      display:grid;
+      grid-template-columns:repeat(5,1fr);
+      gap:7px;
+      background:#100017;
+      padding:12px;
+      border-radius:18px;
+      border:1px solid #5d287c;
+      margin-bottom:20px;
+      box-shadow:0 10px 30px rgba(0,0,0,.35);
+    }
+
+    .slot-item{
+      aspect-ratio:.78;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      border-radius:10px;
+      font-size:29px;
+      background:linear-gradient(#351040,#17031d);
+      border:1px solid rgba(255,255,255,.12);
+      box-shadow:inset 0 0 15px rgba(255,0,255,.08);
+    }
+
+    .features{
+      display:grid;
+      grid-template-columns:repeat(3,1fr);
+      gap:9px;
+      margin:18px 0;
+    }
+
+    .feature{
+      background:rgba(255,255,255,.065);
+      border:1px solid rgba(255,255,255,.11);
+      border-radius:15px;
+      padding:13px 7px;
+      text-align:center;
+    }
+
+    .feature-icon{
+      display:block;
+      font-size:25px;
+      margin-bottom:5px;
+    }
+
+    .feature strong{
+      display:block;
+      font-size:12px;
+      line-height:1.2;
+    }
+
+    .cta-wrap{
+      position:sticky;
+      bottom:12px;
+      z-index:20;
+      margin-top:20px;
+    }
+
+    .cta{
+      display:block;
+      width:100%;
+      text-align:center;
+      text-decoration:none;
+      color:#071b0d;
+      background:linear-gradient(180deg,#65f78b,#20d65a);
+      padding:19px 16px;
+      border-radius:17px;
+      font-size:20px;
+      font-weight:900;
+      text-transform:uppercase;
+      box-shadow:
+        0 7px 0 #098e35,
+        0 10px 32px rgba(32,214,90,.4);
+      transition:.15s ease;
+    }
+
+    .cta:active{
+      transform:translateY(4px);
+      box-shadow:
+        0 3px 0 #098e35,
+        0 6px 20px rgba(32,214,90,.32);
+    }
+
+    .cta-small{
+      display:block;
+      font-size:12px;
+      font-weight:700;
+      margin-top:4px;
+      opacity:.72;
+      text-transform:none;
+    }
+
+    .trust{
+      text-align:center;
+      margin-top:20px;
+      color:#c8b7d2;
+      font-size:12px;
+      line-height:1.5;
+    }
+
+    .legal{
+      text-align:center;
+      color:#85748f;
+      font-size:10px;
+      line-height:1.4;
+      margin-top:15px;
+      padding:0 12px;
+    }
+
+    /* Overlay para navegador in-app (FB/IG/TikTok): sin esto se pierde casi todo el tráfico
+       porque el pixel (_fbp/_fbc) no persiste dentro del webview. */
+    #inapp{
+      display:none;
+      position:fixed;
+      inset:0;
+      z-index:60;
+      background:rgba(9,0,16,.94);
+      padding:28px 22px;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+    }
+    #inapp .box{ max-width:360px; }
+    #inapp h3{ font-size:20px; margin-bottom:10px; }
+    #inapp p{ color:#d9c7e7; font-size:14px; margin-bottom:16px; line-height:1.5; }
+    #inapp .obtn{
+      display:inline-block;
+      background:linear-gradient(180deg,#65f78b,#20d65a);
+      color:#071b0d;
+      font-weight:800;
+      padding:12px 20px;
+      border-radius:12px;
+      text-decoration:none;
+    }
+
+    @media(max-width:390px){
+      h1{
+        font-size:34px;
+      }
+
+      h1 .gold{
+        font-size:48px;
+      }
+
+      .bonus{
+        font-size:78px;
+      }
+
+      .slot-item{
+        font-size:24px;
+      }
+
+      .cta{
+        font-size:18px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <main class="page">
+
+    <div class="glow"></div>
+
+    <div class="brand">
+      MBARETE <span>PLAY</span>
+    </div>
+
+    <div class="badge">
+      ⚡ Nueva plataforma
+    </div>
+
+    <h1>
+      Tu primera carga viene con
+      <span class="gold">30% EXTRA</span>
+    </h1>
+
+    <p class="subtitle">
+      Empezá hoy con un beneficio especial en tu primera carga.
+      Atención rápida y disponible todos los días.
+    </p>
+
+    <section class="bonus-card">
+      <div class="bonus-label">
+        Bonus de bienvenida
+      </div>
+
+      <div class="bonus">
+        30%
+      </div>
+
+      <div class="bonus-text">
+        En tu primera carga
+      </div>
+
+      <div class="bonus-small">
+        Consultá condiciones por WhatsApp
+      </div>
+    </section>
+
+
+
+    <div class="features">
+
+      <div class="feature">
+        <span class="feature-icon">⚡</span>
+        <strong>Cargas rápidas</strong>
+      </div>
+
+      <div class="feature">
+        <span class="feature-icon">🎧</span>
+        <strong>Atención 24/7</strong>
+      </div>
+
+      <div class="feature">
+        <span class="feature-icon">🎁</span>
+        <strong>Bonus exclusivos</strong>
+      </div>
+
+    </div>
+
+    <div class="cta-wrap">
+      <a
+        class="cta"
+        id="ctaMain"
+        href="https://chat.publi.lat/r/exitobet01"
+      >
+        HABLAR POR WHATSAPP
+        <span class="cta-small">
+          Consultá tu bonus ahora
+        </span>
+      </a>
+    </div>
+
+    <div class="trust">
+      Atención personalizada • Todos los días
+    </div>
+
+    <div class="legal">
+      +18. Jugá responsablemente. Promoción sujeta a términos y condiciones.
+    </div>
+
+  </main>
+
+  <!-- Overlay in-app (FB/IG/TikTok) -->
+  <div id="inapp"><div class="box">
+    <h3>🚀 Abrí esto en tu navegador</h3>
+    <p>Para crear tu cuenta y jugar sin problemas, tocá los <b>•••</b> (arriba a la derecha) y elegí <b>"Abrir en el navegador"</b>.</p>
+    <a class="obtn" href="#" id="openBrowser">Abrir en el navegador ↗</a>
+  </div></div>
+
+  <script>
+    /* ============================================================
+       CONFIG — lo único que se toca por cliente
+       ============================================================ */
+    var CHAT_URL = "https://chat.publi.lat/r/exitobet01";  // registro un-tap del chatapp (slug = exitobet01)
+
+    /* ====== helper ====== */
+    function cookie(n){var m=document.cookie.match('(^|; )'+n+'=([^;]+)');return m?decodeURIComponent(m[2]):"";}
+
+    /* ============================================================
+       CTA → registro del chatapp (/r/exitobet01). Reenvía fbclid + _fbp + _fbc por la URL porque
+       las cookies del pixel NO cruzan de dominio (landing -> chat.publi.lat). Con eso el chatapp
+       dispara el Lead + CompleteRegistration por CAPI atribuidos al anuncio, y el Purchase de la
+       carga matchea después (mismo external_id = usuario). ← el loop completo, sin WhatsApp.
+       ============================================================ */
+    function goChat(e){
+      if(e)e.preventDefault();
+      var p = new URLSearchParams();
+      var here = new URLSearchParams(location.search);
+      var fbclid = here.get('fbclid'); if(fbclid) p.set('fbclid', fbclid);
+      var fbc = cookie('_fbc'); if(fbc) p.set('fbc', fbc);
+      var fbp = cookie('_fbp'); if(fbp) p.set('fbp', fbp);
+      ['campaign','ad','src'].forEach(function(k){var v=here.get(k); if(v) p.set(k,v);});
+      var qs = p.toString();
+      location.href = CHAT_URL + (qs ? '?' + qs : '');
+    }
+    document.getElementById('ctaMain').addEventListener('click', goChat);
+
+    /* ====== navegador in-app (FB/IG/TikTok): sin esto se pierde casi todo el tráfico ====== */
+    var ua = navigator.userAgent||"";
+    if(/FBAN|FBAV|Instagram|FB_IAB|Line|Messenger|TikTok|musical_ly|Bytedance/i.test(ua)){
+      document.getElementById('inapp').style.display='flex';
+      document.getElementById('openBrowser').href = location.href;
+    }
+  </script>
+
+</body>
+</html>

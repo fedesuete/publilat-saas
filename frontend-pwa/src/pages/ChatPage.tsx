@@ -12,6 +12,45 @@ interface Popup { title?: string | null; text?: string | null; image?: string | 
 interface Wallet { balance: number; minDeposit: number; minWithdrawal: number; paymentInfo: string | null; pay?: { cbu: string | null; alias: string | null; titular: string | null } }
 const POPUP_SEEN_KEY = "publilat_popup_seen";
 
+// Comprime/redimensiona una foto en el cliente antes de subirla. Las fotos de celular pesan varios MB y
+// el server acepta hasta ~700 KB; sin esto casi todas se rechazaban ("La imagen supera 700 KB"). Redibuja
+// en un canvas a máx 1280px y exporta JPEG bajando calidad hasta entrar bajo el objetivo (~620 KB).
+async function compressImage(file: File, maxDim = 1280, targetBytes = 620 * 1024): Promise<string> {
+  const dataUrl: string = await new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result as string);
+    r.onerror = () => reject(new Error("read"));
+    r.readAsDataURL(file);
+  });
+  const img: HTMLImageElement = await new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error("decode"));
+    im.src = dataUrl;
+  });
+  let w = img.naturalWidth || img.width;
+  let h = img.naturalHeight || img.height;
+  if (Math.max(w, h) > maxDim) {
+    const s = maxDim / Math.max(w, h);
+    w = Math.round(w * s);
+    h = Math.round(h * s);
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return dataUrl; // sin canvas: fallback al original (el server puede rechazarlo, pero no perdemos la foto)
+  ctx.drawImage(img, 0, 0, w, h);
+  let q = 0.82;
+  let out = canvas.toDataURL("image/jpeg", q);
+  // El data URL en base64 pesa ~4/3 de los bytes reales; bajamos calidad hasta entrar bajo el objetivo.
+  while (out.length * 0.75 > targetBytes && q > 0.4) {
+    q -= 0.12;
+    out = canvas.toDataURL("image/jpeg", q);
+  }
+  return out;
+}
+
 function appendUnique(list: Msg[], m: Msg): Msg[] {
   return list.some((x) => x.id === m.id) ? list : [...list, m];
 }
@@ -145,8 +184,8 @@ export default function ChatPage() {
       });
 
   const onComprobante = (e: ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]; if (!f) return;
-    const r = new FileReader(); r.onload = () => setComprobante(r.result as string); r.readAsDataURL(f);
+    const f = e.target.files?.[0]; e.target.value = ""; if (!f) return;
+    compressImage(f).then(setComprobante).catch(() => setCashMsg("No pudimos procesar la imagen. Probá con otra foto."));
   };
   const submitDeposit = async () => {
     const amt = parseInt(amount.replace(/\D/g, ""), 10);
@@ -283,10 +322,9 @@ export default function ChatPage() {
   };
   // Clip: adjuntar una imagen (comprobante/foto) al mensaje del jugador.
   const onChatImage = (e: ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]; if (!f) { return; }
-    if (f.size > 700 * 1024) { setError("La imagen supera 700 KB. Sacá una foto más liviana."); e.target.value = ""; return; }
-    const r = new FileReader(); r.onload = () => setChatImage(r.result as string); r.readAsDataURL(f);
-    e.target.value = "";
+    const f = e.target.files?.[0]; e.target.value = ""; if (!f) { return; }
+    // Antes rechazaba fotos > 700 KB (casi todas las de celular). Ahora las comprimimos y entran siempre.
+    compressImage(f).then(setChatImage).catch(() => setError("No pudimos procesar la imagen. Probá con otra foto."));
   };
 
   // id del último mensaje con datos de pago (ahí va el form de carga activo).

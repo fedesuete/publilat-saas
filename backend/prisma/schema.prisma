@@ -88,6 +88,11 @@ model User {
   // vigente O este día vigente.
   chatDayEnabled   Boolean   @default(false)
   chatDayExpiresAt DateTime?
+  // Registro SIN usuario automático: en el modo un-tap (/r/:slug), la cuenta con esto en true igual
+  // registra al jugador y dispara Lead+Registro al pixel, PERO no le muestra usuario/clave generados;
+  // postea un mensaje de bienvenida y el CAJERO le crea la cuenta a mano en el chat. El loop del pixel
+  // sigue intacto (external_id = usuario interno del jugador; el Purchase de la carga matchea igual).
+  chatManualAccount Boolean  @default(false)
   // Popup/promo que ve el jugador al entrar a la PWA (imagen + texto + link). popupUpdatedAt
   // versiona el aviso: el jugador lo ve de nuevo cada vez que cambia (dedupe en el cliente).
   popupActive     Boolean   @default(false)

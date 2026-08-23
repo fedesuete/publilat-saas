@@ -204,7 +204,7 @@ export default function ChatAppPage() {
   const imgRef = useRef<HTMLInputElement>(null);
   const sendImage = async (file: File) => {
     if (!selected) return;
-    if (file.size > 700 * 1024) { setError("La imagen supera 700 KB. Usá una más liviana."); return; }
+    if (file.size > 2 * 1024 * 1024) { setError("La imagen supera 2 MB. Usá una más liviana."); return; }
     const target = selected;
     setSending(true); setError(null);
     try {
@@ -600,7 +600,7 @@ function BrandingTab() {
     field: "logoUrl" | "welcomeMsgImage" | "chatTutIosImg" | "chatTutIosImg2" | "chatTutIosImg3" | "chatTutIosImg4" | "chatTutAndroidImg",
     which: "logo" | "welcome" | "tut_ios" | "tut_ios2" | "tut_ios3" | "tut_ios4" | "tut_android",
   ) => {
-    if (file.size > 700 * 1024) { setError("La imagen supera 700 KB. Comprimila o usá una más liviana."); return; }
+    if (file.size > 2 * 1024 * 1024) { setError("La imagen supera 2 MB. Comprimila o usá una más liviana."); return; }
     setUploading(which); setError(null);
     try {
       const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -945,7 +945,7 @@ function AvisosTab() {
   }, []);
 
   const pick = async (file: File, onUrl: (u: string) => void, setBusy: (b: boolean) => void) => {
-    if (file.size > 700 * 1024) { setError("La imagen supera 700 KB. Comprimila o usá una más liviana."); return; }
+    if (file.size > 2 * 1024 * 1024) { setError("La imagen supera 2 MB. Comprimila o usá una más liviana."); return; }
     setBusy(true); setError(null);
     try { onUrl(await uploadImage(file)); } catch (e) { setError(apiError(e)); } finally { setBusy(false); }
   };
