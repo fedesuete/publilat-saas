@@ -551,6 +551,13 @@ export default function WhatsappPage() {
       setError("Ingresá una cantidad de días válida (entero mayor a 0).");
       return;
     }
+    // Aviso si la línea YA está activa: cada "Activar" SUMA días (se descuentan del crédito). Sin esto,
+    // tocar el botón dos veces gastaba días sin querer (caso freydis: 2 clicks -> 2 días de una).
+    const line = lines.find((l) => l.id === id);
+    if (line?.expiresAt && new Date(line.expiresAt) > new Date()) {
+      const hasta = new Date(line.expiresAt).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+      if (!window.confirm(`Esta línea YA está activa hasta el ${hasta}. Cada activación suma días (se descuentan de tu crédito). ¿Sumar ${n} día${n === 1 ? "" : "s"} más?`)) return;
+    }
     setActivatingId(id);
     setError(null);
     setNotice(null);
