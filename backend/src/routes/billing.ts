@@ -118,20 +118,10 @@ billingRouter.get("/quote", (req, res) => {
 // Interino sin tarjeta: el flujo "tarjeta primero + débito automático semanal" que se quiere usar va por
 // la SUSCRIPCIÓN de Pagopar (pendiente: falta capturar el webhook de suscripción para acreditar en cada
 // cobro). Guard por marca en el ledger para no regalar días más de una vez a la misma cuenta.
-billingRouter.post("/free-trial", async (req, res) => {
-  const credit = await ensureCredit(req.userId!);
-  const already = await prisma.creditLedger.findFirst({
-    where: { creditId: credit.id, reason: { contains: "prueba gratis" } },
-    select: { id: true },
-  });
-  if (already) return res.status(409).json({ error: "Ya activaste tu prueba gratis." });
-  const updated = await prisma.credit.update({
-    where: { id: credit.id },
-    data: { days: { increment: 2 }, ledger: { create: { delta: 2, reason: "prueba gratis (2d)" } } },
-    select: { days: true },
-  });
-  console.log(`[billing] prueba gratis: +2 días a user ${req.userId}`);
-  return res.json({ ok: true, days: updated.days });
+billingRouter.post("/free-trial", async (_req, res) => {
+  // APAGADO (2026-08-25, decisión del dueño): los 2 días de Prueba ahora son PAGOS (promo "prueba",
+  // US$4) — este endpoint regalaba días y quedaba explotable por API aunque la UI ya no lo muestre.
+  return res.status(410).json({ error: "La prueba gratis ya no está disponible. Activá el plan Prueba (2 días, US$4) desde Créditos." });
 });
 
 const addSchema = z.object({ days: z.number().int().positive().max(3650) });

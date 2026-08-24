@@ -102,7 +102,8 @@ authRouter.get("/autologin", (req, res) => {
   if (!ok) return res.redirect(`${panel}/login`);
   setAuthCookie(res, t);
   // Va DIRECTO a /billing a pagar/activar sus días — el embudo termina en la compra.
-  return res.redirect(`${panel}/billing`);
+  // ?bienvenida=1: dispara el tour de bienvenida (plan Prueba US$4 → WhatsApp de soporte) UNA vez.
+  return res.redirect(`${panel}/billing?bienvenida=1`);
 });
 
 authRouter.post("/login", async (req, res) => {

@@ -2,6 +2,23 @@ import { useEffect, useRef, useState } from "react";
 import { api, apiError } from "../lib/api";
 import { fmtDate, fmtRemaining } from "../lib/format";
 import { Button, Input, Card, ErrorMsg } from "../components/ui";
+import OnboardingTour, { type TourStep } from "../components/OnboardingTour";
+
+// Tour de bienvenida para los que llegan desde la LANDING de ventas (autologin → /billing?bienvenida=1):
+// 1) el plan Prueba (2 días, US$4) y 2) el WhatsApp de soporte para que los ayudemos a configurar.
+const WELCOME_TOUR: TourStep[] = [
+  {
+    targetId: "plan-prueba",
+    title: "Activá tus 2 días",
+    body: "Con US$4 activás tu línea por 2 días y probás el sistema completo con tus anuncios: landing, pixel, inbox y CRM.",
+  },
+  {
+    targetId: "support-bubble",
+    title: "Te ayudamos a configurar",
+    body: "Apenas actives, escribinos por WhatsApp: te dejamos la línea, la landing y el pixel funcionando con vos, paso a paso.",
+  },
+];
+const WELCOME_TOUR_KEY = "publilat_billing_welcome_tour"; // visto una vez, no se repite
 
 interface LedgerEntry {
   id: string;
@@ -53,14 +70,13 @@ interface Plan {
   cons: string[];
   badge?: string;
   featured?: boolean;
-  free?: boolean; // Prueba: se activa gratis (no pasa por checkout)
 }
 const PLANS: Plan[] = [
   {
-    key: "prueba", name: "Prueba", usd: 0, days: 2, period: "2 días", free: true, badge: "EMPEZÁ ACÁ",
-    tagline: "Probá el producto gratis, sin poner un peso",
-    pros: ["1 línea de WhatsApp activa 2 días", "Landings y links de rastreo (gratis)", "Dashboard de ROAS y CRM"],
-    cons: ["Se corta a los 2 días", "Una sola vez por cuenta"],
+    key: "prueba", name: "Prueba", usd: 4, days: 2, period: "2 días", badge: "EMPEZÁ ACÁ",
+    tagline: "Probá el sistema completo con tus anuncios",
+    pros: ["1 línea de WhatsApp activa 2 días", "Landings y links de rastreo incluidos", "Dashboard de ROAS y CRM"],
+    cons: ["Se corta a los 2 días"],
   },
   {
     key: "semana", name: "Semana laboral", usd: 14, days: 7, period: "7 días", badge: "MÁS ELEGIDO",
@@ -113,9 +129,13 @@ export default function BillingPage() {
   const [selectedPlan, setSelectedPlan] = useState<PlanKey | null>(null);
   const checkoutRef = useRef<HTMLDivElement | null>(null);
 
-  // Prueba gratis (2 días, 1 vez por cuenta).
-  const [freeBusy, setFreeBusy] = useState(false);
-  const [freeMsg, setFreeMsg] = useState<string | null>(null);
+  // Tour de bienvenida (llegada desde la landing con ?bienvenida=1; se muestra UNA vez).
+  const [tour, setTour] = useState(false);
+  useEffect(() => {
+    const fromLanding = new URLSearchParams(window.location.search).get("bienvenida") === "1";
+    if (fromLanding && !localStorage.getItem(WELCOME_TOUR_KEY)) setTour(true);
+  }, []);
+  const closeTour = () => { localStorage.setItem(WELCOME_TOUR_KEY, "1"); setTour(false); };
 
   // Pagopar exige nombre y CI/RUC del comprador para crear el pedido.
   const [showPagopar, setShowPagopar] = useState(false);
@@ -277,23 +297,6 @@ export default function BillingPage() {
     }
   };
 
-  // Activar la prueba GRATIS (2 días, 1 vez por cuenta). No pasa por checkout.
-  const activateFreeTrial = async () => {
-    setFreeBusy(true);
-    setFreeMsg(null);
-    setError(null);
-    try {
-      const { data } = await api.post<{ ok: boolean; days: number }>("/api/billing/free-trial", {});
-      setFreeMsg("✅ ¡Listo! Se acreditaron tus 2 días gratis. Ya podés activar una línea.");
-      setDays(data.days);
-      await load(); // refresca el ledger (para que el botón quede como "ya activada")
-    } catch (err) {
-      setError(apiError(err));
-    } finally {
-      setFreeBusy(false);
-    }
-  };
-
   // Elegir un paquete de la grilla: fija el plan y baja al checkout enfocado (tarjeta / cripto).
   const choosePlan = (key: PlanKey) => {
     setSelectedPlan(key);
@@ -331,10 +334,10 @@ export default function BillingPage() {
   // ¿Se puede pagar un paquete? (los planes se cobran por tarjeta/Pagopar o cripto/USDT).
   const canPayPlans = methods.pagopar || methods.usdt;
   const sel = selectedPlan ? planByKey(selectedPlan) : null;
-  const freeTrialClaimed = ledger.some((e) => /prueba gratis/i.test(e.reason)); // ya usó la prueba
 
   return (
     <div className="p-6">
+      {tour && <OnboardingTour steps={WELCOME_TOUR} onClose={closeTour} />}
       <h1 className="mb-2 text-xl font-bold">Créditos</h1>
       <p className="mb-5 text-sm text-slate-400">
         1 día = 1 línea activa por 24 h. Activá líneas consumiendo días del crédito.
@@ -415,6 +418,7 @@ export default function BillingPage() {
                 return (
                   <div
                     key={p.key}
+                    id={p.key === "prueba" ? "plan-prueba" : undefined}
                     className={`relative flex flex-col rounded-2xl border p-5 transition ${
                       p.featured
                         ? "border-wa-green/60 bg-gradient-to-b from-wa-green/10 to-slate-900/40 shadow-[0_0_40px_-12px_rgba(37,211,102,0.5)]"
@@ -435,11 +439,7 @@ export default function BillingPage() {
 
                     <div className="text-sm font-semibold text-slate-200">{p.name}</div>
                     <div className="mt-2 flex items-baseline gap-1.5">
-                      {p.free ? (
-                        <span className="text-3xl font-extrabold text-wa-green">GRATIS</span>
-                      ) : (
-                        <span className="text-3xl font-extrabold text-white">US${p.usd}</span>
-                      )}
+                      <span className="text-3xl font-extrabold text-white">US${p.usd}</span>
                       <span className="text-xs text-slate-500">/ {p.period}</span>
                     </div>
                     <p className="mt-1 text-xs text-slate-400">{p.tagline}</p>
@@ -459,32 +459,18 @@ export default function BillingPage() {
                       ))}
                     </ul>
 
-                    {p.free ? (
-                      <button
-                        type="button"
-                        disabled={freeBusy || freeTrialClaimed}
-                        onClick={() => void activateFreeTrial()}
-                        className="mt-5 w-full rounded-xl bg-wa-green px-4 py-2.5 text-sm font-bold text-slate-950 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        {freeTrialClaimed ? "Ya activada ✓" : freeBusy ? "Activando…" : "Activar 2 días gratis →"}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={!canPayPlans}
-                        onClick={() => choosePlan(p.key)}
-                        className={`mt-5 w-full rounded-xl px-4 py-2.5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${
-                          p.featured
-                            ? "bg-wa-green text-slate-950 hover:brightness-110"
-                            : "border border-wa-green/50 text-wa-green hover:bg-wa-green/10"
-                        }`}
-                      >
-                        {p.featured ? "Quiero el completo →" : "Elegir plan →"}
-                      </button>
-                    )}
-                    {p.free && freeMsg && (
-                      <p className="mt-2 text-xs font-semibold text-wa-green">{freeMsg}</p>
-                    )}
+                    <button
+                      type="button"
+                      disabled={!canPayPlans}
+                      onClick={() => choosePlan(p.key)}
+                      className={`mt-5 w-full rounded-xl px-4 py-2.5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                        p.featured || p.key === "prueba"
+                          ? "bg-wa-green text-slate-950 hover:brightness-110"
+                          : "border border-wa-green/50 text-wa-green hover:bg-wa-green/10"
+                      }`}
+                    >
+                      {p.featured ? "Quiero el completo →" : p.key === "prueba" ? "Activar 2 días (US$4) →" : "Elegir plan →"}
+                    </button>
                   </div>
                 );
               })}
