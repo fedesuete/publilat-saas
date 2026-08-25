@@ -310,14 +310,16 @@ chatRouter.get("/conversations", async (req, res) => {
     take: 200,
     select: {
       id: true, playerId: true, status: true, unreadOperator: true, lastMessagePreview: true, lastMessageAt: true, createdAt: true,
-      player: { select: { casinoUsername: true, nombre: true } },
+      player: { select: { casinoUsername: true, nombre: true, alias: true } },
     },
   });
   return res.json({
     conversations: convs.map((c) => ({
       id: c.id,
       playerId: c.playerId,
-      player: c.player.nombre || c.player.casinoUsername,
+      // Display: primero el alias del operador (agenda), después el nombre del jugador, después el user.
+      player: c.player.alias || c.player.nombre || c.player.casinoUsername,
+      alias: c.player.alias ?? null,
       username: c.player.casinoUsername,
       status: c.status,
       unread: c.unreadOperator,
@@ -325,6 +327,21 @@ chatRouter.get("/conversations", async (req, res) => {
       lastAt: (c.lastMessageAt ?? c.createdAt).toISOString(),
     })),
   });
+});
+
+const playerAliasSchema = z.object({ alias: z.string().max(60).nullish() });
+
+// PATCH /api/chat/players/:id/alias — el operador le pone un nombre propio al jugador ("agenda"),
+// igual que el alias del Inbox de WhatsApp. SOLO visual: escribe ChatPlayer.alias, un campo aparte de
+// `nombre` (que lo escribe el propio jugador) y de `casinoUsername` (que no se toca nunca). Vacío = borrar.
+chatRouter.patch("/players/:id/alias", async (req, res) => {
+  const parsed = playerAliasSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Alias inválido (máx. 60 caracteres)" });
+  const player = await prisma.chatPlayer.findFirst({ where: { id: req.params.id, userId: req.userId! }, select: { id: true } });
+  if (!player) return res.status(404).json({ error: "Jugador no encontrado" });
+  const alias = parsed.data.alias?.trim() || null;
+  await prisma.chatPlayer.update({ where: { id: player.id }, data: { alias } });
+  return res.json({ ok: true, alias });
 });
 
 // GET /api/chat/conversations/:id/messages — historial (operador). Marca leído.

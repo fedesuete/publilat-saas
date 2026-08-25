@@ -645,6 +645,7 @@ model ChatPlayer {
   id              String   @id @default(cuid())
   userId          String   // cuenta dueña
   nombre          String?
+  alias           String?  // nombre que le pone el OPERADOR (agenda) — solo visual, como Contact.alias del Inbox
   casinoUsername  String   // usuario del jugador en el casino
   password        String?  // hash bcrypt (null = jugador viejo passwordless; login sin clave)
   invitedByUserId String?  // operador que lo invitó (User.id)

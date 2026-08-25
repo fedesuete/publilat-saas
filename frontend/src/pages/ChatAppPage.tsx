@@ -22,7 +22,7 @@ const CHATAPP_TOUR: TourStep[] = [
   { targetId: "ca-tab-brand", title: "4. Tu marca", body: "En “Marca” le ponés tu logo, tus colores y el nombre de la app. Queda 100% con tu identidad." },
 ];
 
-interface Conv { id: string; playerId: string; player: string; username: string; status: string; unread: number; preview: string; lastAt: string }
+interface Conv { id: string; playerId: string; player: string; alias: string | null; username: string; status: string; unread: number; preview: string; lastAt: string }
 interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; metadata?: Record<string, unknown>; createdAt: string }
 
 // Agrega un mensaje evitando duplicados por id (optimistic add + echo del socket).
@@ -150,6 +150,17 @@ export default function ChatAppPage() {
       // La conversación ABIERTA la estás leyendo: la dejamos en 0 aunque llegue un mensaje mientras la mirás
       // (evita que el contador "reviva" en verde con 99+/2 estando abierta).
       setConvs(data.conversations.map((c) => (c.id === selectedRef.current ? { ...c, unread: 0 } : c)));
+    } catch (e) { setError(apiError(e)); }
+  };
+  // "Agendar" al jugador: el operador le pone un nombre propio (como el alias del Inbox de WhatsApp).
+  // Persiste server-side (ChatPlayer.alias); el jugador NO lo ve. Vacío = volver al nombre/usuario real.
+  const renamePlayer = async (conv: Conv) => {
+    const input = window.prompt("Nombre para este jugador (solo lo ves vos):", conv.alias ?? conv.player);
+    if (input === null) return; // canceló
+    const alias = input.trim() || null;
+    try {
+      await api.patch(`/api/chat/players/${conv.playerId}/alias`, { alias });
+      await loadConvs(); // refresca la lista con el display resuelto por el server (alias→nombre→user)
     } catch (e) { setError(apiError(e)); }
   };
   const openConv = async (id: string) => {
@@ -321,6 +332,14 @@ export default function ChatAppPage() {
                 <div className="flex items-center gap-2 border-b border-slate-800 px-4 py-3 text-sm font-semibold text-slate-100">
                   <button onClick={() => setSelected(null)} className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white lg:hidden" title="Volver">←</button>
                   <span>{current?.player} <span className="text-xs font-normal text-slate-500">· {current?.username}</span></span>
+                  {/* Renombrar (agenda): igual que el alias del Inbox de WhatsApp — solo lo ve el operador. */}
+                  {current && (
+                    <button
+                      onClick={() => void renamePlayer(current)}
+                      className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white"
+                      title="Ponerle nombre (solo lo ves vos)"
+                    >✏️</button>
+                  )}
                 </div>
                 <div className="flex-1 space-y-2 overflow-y-auto p-4">
                   {messages.map((m) => {
