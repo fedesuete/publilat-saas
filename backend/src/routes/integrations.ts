@@ -3,6 +3,7 @@ import express, { Router } from "express";
 import { z } from "zod";
 import crypto from "node:crypto";
 import { prisma } from "../lib/prisma.js";
+import { emitToUser } from "../lib/io.js";
 import { sendTestIntegration } from "../lib/integrations.js";
 import { markPurchase } from "../lib/purchase.js";
 import { encryptSecret, decryptSecret } from "../lib/crypto.js";
@@ -245,31 +246,73 @@ function kommoCreds(integ: { kommoBaseUrl: string | null; kommoToken: string | n
   }
 }
 
-// Procesa los eventos de MENSAJE ENTRANTE: captura el ref y ata el lead de Kommo al contacto.
+// "Línea Kommo" INERTE por cuenta: los mensajes espejados necesitan un lineId (Message.lineId es
+// obligatorio) pero NO hay una línea de WhatsApp real. Creamos una con provider="kommo", NO conectada,
+// phone vacío y sin expiresAt → la rotación de /go y el vencimiento de días la IGNORAN (pickLine exige
+// connected:true + expiresAt futuro + phone no vacío). Es solo el contenedor del chat espejado.
+async function ensureKommoLine(userId: string): Promise<string> {
+  const existing = await prisma.waLine.findFirst({ where: { userId, provider: "kommo" }, select: { id: true } });
+  if (existing) return existing.id;
+  const line = await prisma.waLine.create({
+    data: { userId, phone: "", label: "Kommo", provider: "kommo", connected: false, status: "active" },
+    select: { id: true },
+  });
+  return line.id;
+}
+
+// Procesa los eventos de MENSAJE de Kommo: (1) ESPEJA el chat al Inbox de Publi.lat (contacto + mensaje +
+// emit en vivo, para operar todo desde un solo panel) y (2) captura el ref para atar el lead a la
+// atribución. Aditivo: los mensajes cuelgan de la línea Kommo inerte, NO tocan warmup/rotación/billing de
+// las líneas reales. Nota: el webhook "Mensaje entrante" de Kommo trae el TEXTO (no la imagen), y solo los
+// entrantes; el saliente (responder desde Publi.lat) es fase 2 (API de chat de Kommo + inbox.ts).
 async function processKommoMessages(userId: string, creds: KommoCreds, events: Record<string, unknown>[]): Promise<void> {
+  let kommoLineId: string | null = null;
   for (const m of events) {
-    if (String(m.type ?? "") !== "incoming") continue; // solo lo que escribe el cliente
-    const ref = extractRefFromText(String(m.text ?? ""));
-    if (!ref) continue;
-    const contact = await prisma.contact.findFirst({ where: { userId, code: ref }, orderBy: { createdAt: "desc" } });
-    if (!contact) continue;
-    const kommoLeadId = String(m.entity_id ?? m.element_id ?? "");
+    const type = String(m.type ?? "").toLowerCase();
+    const direction = type === "incoming" ? "in" : type === "outgoing" ? "out" : null;
+    if (!direction) continue; // solo mensajes de chat
+    const text = String(m.text ?? "").trim();
     const kommoContactId = String(m.contact_id ?? "") || null;
-    if (kommoLeadId) {
+    const kommoLeadId = String(m.entity_id ?? m.element_id ?? "");
+    // Teléfono del contacto en Kommo (para matchear/crear el Contact en Publi.lat).
+    const phone = creds && kommoContactId ? await kommoContactPhone(creds.baseUrl, creds.token, kommoContactId) : null;
+
+    // Contacto: 1) por ref (atribución, solo entrantes), 2) por teléfono, 3) lo creamos (espejo).
+    const ref = direction === "in" ? extractRefFromText(text) : null;
+    let contact =
+      (ref ? await prisma.contact.findFirst({ where: { userId, code: ref }, orderBy: { createdAt: "desc" } }) : null) ??
+      (phone ? await prisma.contact.findFirst({ where: { userId, phone }, orderBy: { createdAt: "desc" } }) : null);
+    if (!contact) {
+      kommoLineId = kommoLineId ?? (await ensureKommoLine(userId));
+      contact = await prisma.contact.create({
+        data: { userId, externalId: crypto.randomUUID(), phone: phone ?? null, lineId: kommoLineId, source: "kommo", stage: "CONTACTADO" },
+      });
+    } else if (!contact.phone && phone) {
+      await prisma.contact.update({ where: { id: contact.id }, data: { phone } }).catch(() => undefined);
+    }
+
+    // Atribución: atar el lead de Kommo al contacto (para el Purchase por ref).
+    if (ref && kommoLeadId) {
       await prisma.kommoLink.upsert({
         where: { userId_kommoLeadId: { userId, kommoLeadId } },
         create: { userId, kommoLeadId, kommoContactId, contactId: contact.id },
         update: { kommoContactId, contactId: contact.id },
-      });
+      }).catch(() => undefined);
+      console.log(`[kommo] ref ${ref} atado al lead ${kommoLeadId || "?"} (contacto ${contact.id})`);
     }
-    // Enriquecemos el teléfono (solo si no lo teníamos: acá el inbound de WhatsApp no pasa por nosotros).
-    if (!contact.phone && creds && kommoContactId) {
-      const phone = await kommoContactPhone(creds.baseUrl, creds.token, kommoContactId);
-      if (phone) {
-        await prisma.contact.update({ where: { id: contact.id }, data: { phone } }).catch(() => undefined);
-      }
-    }
-    console.log(`[kommo] ref ${ref} atado al lead ${kommoLeadId || "?"} (contacto ${contact.id})`);
+
+    // ESPEJO del mensaje al Inbox: cuelga SIEMPRE de la línea Kommo inerte (no ensucia el cupo de warmup de
+    // las líneas reales) y se emite en vivo, igual que el webhook de WhatsApp.
+    if (!text) continue; // por ahora solo texto (el webhook de Kommo no manda la imagen del comprobante)
+    kommoLineId = kommoLineId ?? (await ensureKommoLine(userId));
+    const msg = await prisma.message.create({
+      data: { contactId: contact.id, lineId: kommoLineId, direction, body: text },
+      select: { id: true, createdAt: true },
+    });
+    emitToUser(userId, "inbox:message", {
+      contactId: contact.id,
+      message: { id: msg.id, direction, body: text, mediaUrl: null, createdAt: msg.createdAt },
+    });
   }
 }
 
