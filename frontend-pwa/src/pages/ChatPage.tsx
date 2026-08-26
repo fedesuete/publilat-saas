@@ -540,17 +540,25 @@ export default function ChatPage() {
 
       {error && <div className="px-4 py-1 text-center text-xs text-rose-600">{error}</div>}
 
-      {/* Botones del bot (chips): tocar = mandar ese texto. Muestra los del último mensaje. Ocultos en redblack. */}
-      {!bare && messages[messages.length - 1]?.buttons?.length ? (
-        <div className="flex flex-wrap gap-2 px-3 pt-2.5" style={{ background: "var(--c-surface)" }}>
-          {messages[messages.length - 1]!.buttons!.map((b) => (
-            <button key={b} type="button" disabled={sending} onClick={() => void sendBody(b)}
-              className="rounded-full border px-3.5 py-1.5 text-sm font-medium disabled:opacity-50" style={{ borderColor: "var(--c-accent)", color: "var(--c-accent)" }}>
-              {b}
-            </button>
-          ))}
-        </div>
-      ) : null}
+      {/* Botones del bot (chips): tocar = mandar ese texto. Muestra los del último mensaje. Ocultos en
+          redblack. SIN duplicar la barra del cajero: "Cargar/Retirar/Cajero" ya están SIEMPRE como
+          botones fijos abajo — repetirlos como chips confundía ("queda lleno de botones, 2 veces el de
+          cargar/retirar"). Solo pasan los chips que agregan algo: montos, sí/no, opciones custom. */}
+      {(() => {
+        const esDeLaBarra = (b: string) =>
+          ["cargar", "cargarfichas", "retirar", "retirarfichas", "cajero"].includes(b.toLowerCase().replace(/[^a-z]/g, ""));
+        const chips = (messages[messages.length - 1]?.buttons ?? []).filter((b) => !esDeLaBarra(b));
+        return !bare && chips.length ? (
+          <div className="flex flex-wrap gap-2 px-3 pt-2.5" style={{ background: "var(--c-surface)" }}>
+            {chips.map((b) => (
+              <button key={b} type="button" disabled={sending} onClick={() => void sendBody(b)}
+                className="rounded-full border px-3.5 py-1.5 text-sm font-medium disabled:opacity-50" style={{ borderColor: "var(--c-accent)", color: "var(--c-accent)" }}>
+                {b}
+              </button>
+            ))}
+          </div>
+        ) : null;
+      })()}
 
       {/* Barra del cajero: cargar / retirar / soporte (E3). Botones full-width "fichas" (estilo maqueta).
           En redblack NO va (chat pelado): el cajero maneja carga/retiro hablando, como en WhatsApp. */}

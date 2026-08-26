@@ -64,6 +64,16 @@ export async function canOperateChat(userId: string): Promise<boolean> {
 export async function consumeChatDayAndActivate(userId: string): Promise<boolean> {
   const now = new Date();
   if (await hasActiveWaLine(userId)) return true; // cubierto por WhatsApp -> no gastar otro día
+  // ANTI DOBLE COBRO (bug "orden renovación"): una línea ACTIVA que venció hace minutos está en la
+  // ventana de su PROPIA auto-renovación (expireLines corre en este tick o el siguiente). Sin esta
+  // gracia, este chequeo caía a veces en los segundos exactos entre "la línea venció" y "se renovó"
+  // y cobraba el día de Chat App ADEMÁS del día de línea (doble cobro real: ailin/pulpo/victor, con
+  // reintegros a mano). Si la línea al final NO renueva (sin saldo o desconectada), expireLines la
+  // deja inactive y el próximo tick este count da 0 → el día de chat se cobra normal.
+  const lineRenovando = await prisma.waLine.count({
+    where: { userId, status: "active", expiresAt: { gt: new Date(now.getTime() - 30 * 60 * 1000) } },
+  });
+  if (lineRenovando > 0) return true;
   const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
   // 1) Claim atómico de la ventana de 24h: solo si está habilitado y no activo (null o vencido).
