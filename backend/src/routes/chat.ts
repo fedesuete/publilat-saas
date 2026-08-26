@@ -1492,6 +1492,15 @@ chatPublicRouter.post("/direct", async (req, res) => {
 // PWA la llama al abrir cuando no tiene token en localStorage: si la cookie es válida, repuebla la
 // sesión SIN volver a registrar (así NO se duplica la cuenta de ganamos). Es "rodante": re-emite un
 // token fresco y renueva la cookie 90 días, de modo que la sesión no vence mientras el jugador vuelva.
+// POST /api/chat/logout — cierra la sesión del JUGADOR en ESTE dispositivo: limpia la cookie httpOnly
+// de 90 días (la PWA borra su token de localStorage por su lado). Pedido de mrc/Gg: teléfonos
+// compartidos o jugadores a los que el cajero les cambia la cuenta necesitan poder salir y entrar con
+// otro usuario. No borra nada del jugador — con usuario y clave vuelve a entrar cuando quiera.
+chatPublicRouter.post("/logout", (_req, res) => {
+  res.clearCookie(CHAT_CLIENT_COOKIE, { path: "/" });
+  return res.json({ ok: true });
+});
+
 chatPublicRouter.get("/session", async (req, res) => {
   const token = extractChatClientToken(req);
   if (!token) return res.status(401).json({ error: "sin sesión" });

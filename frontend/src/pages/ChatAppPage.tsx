@@ -315,7 +315,12 @@ export default function ChatAppPage() {
                       {c.unread > 0 ? c.unread : (c.player || "?").charAt(0).toUpperCase()}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-slate-100">{c.player}</span>
+                      <span className="block truncate text-sm font-medium text-slate-100">
+                        {c.player}
+                        {/* El usuario al lado del nombre: varios jugadores ponen el MISMO nombre ("Ya
+                            transferí" x2, pedido de mrc/Gg) y sin esto no se distinguen sin abrir. */}
+                        {c.player !== c.username && <span className="text-xs font-normal text-slate-500"> · {c.username}</span>}
+                      </span>
                       <span className="mt-0.5 block truncate text-xs text-slate-400">{c.preview || "—"}</span>
                     </span>
                   </button>

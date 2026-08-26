@@ -110,6 +110,21 @@ export default function ChatPage() {
   // Si el logo no carga (asset viejo/borrado/cache corrupto), mostramos el fallback limpio en vez del
   // ícono roto. Se resetea cuando llega branding fresco del server (logo nuevo).
   const [logoBroken, setLogoBroken] = useState(false);
+
+  // Cerrar sesión (pedido de mrc/Gg: teléfonos compartidos o el cajero le cambia la cuenta al jugador).
+  // Limpia la cookie httpOnly (server) + el token local y va al login de la cuenta. OJO: para volver
+  // hace falta usuario y clave — por eso el confirm avisa antes (un anónimo web###### no puede volver).
+  const logout = async () => {
+    if (!window.confirm("¿Cerrar sesión?\n\nPara volver a entrar vas a necesitar tu usuario y tu clave. Guardalos antes de salir.")) return;
+    try { await api.post("/api/chat/logout"); } catch { /* salimos igual */ }
+    clearToken();
+    let slug = "";
+    try {
+      slug = localStorage.getItem("publilat_session_slug") ?? "";
+      localStorage.removeItem("publilat_session_slug");
+    } catch { /* noop */ }
+    window.location.href = slug ? `/login?a=${encodeURIComponent(slug)}` : "/login";
+  };
   useEffect(() => {
     // Fallback al slug de sesión: en la app instalada (storage aislado) loadBranding() puede venir
     // vacío, pero recoverSession dejó el slug de la cuenta → igual traemos y aplicamos la marca.
@@ -364,6 +379,10 @@ export default function ChatPage() {
           <span className="flex h-9 w-8 items-center justify-center opacity-95" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2a1 1 0 0 1 1.02-.24 11.36 11.36 0 0 0 3.57.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1.02l-2.2 2.2z" /></svg>
           </span>
+          {/* Cerrar sesión (discreto, también en el tema "WhatsApp pelado"). */}
+          <button onClick={() => void logout()} title="Cerrar sesión" aria-label="Cerrar sesión" className="flex h-9 w-8 items-center justify-center opacity-75 hover:opacity-100">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
+          </button>
         </header>
       ) : (
         <header className="flex items-center gap-3 px-4 py-2.5 shadow" style={{ background: "var(--c-header)", color: "var(--c-header-text)" }}>
@@ -372,7 +391,13 @@ export default function ChatPage() {
             <div className="truncate font-semibold leading-tight">{branding?.brandName || "Chat"}</div>
             <div className="text-xs opacity-80">🟢 en línea</div>
           </div>
-          {wallet && <div className="ml-auto rounded-full bg-white/20 px-3 py-1 text-sm font-bold">💰 {money(wallet.balance)}</div>}
+          <div className="ml-auto flex items-center gap-2">
+            {wallet && <div className="rounded-full bg-white/20 px-3 py-1 text-sm font-bold">💰 {money(wallet.balance)}</div>}
+            {/* Cerrar sesión (discreto): salir para entrar con OTRO usuario. */}
+            <button onClick={() => void logout()} title="Cerrar sesión" aria-label="Cerrar sesión" className="rounded-full p-1.5 opacity-75 hover:opacity-100">
+              <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
+            </button>
+          </div>
         </header>
       )}
 
