@@ -137,6 +137,7 @@ model User {
   flows       Flow[]
   // Chat App (módulo aislado)
   chatPlayers       ChatPlayer[]
+  chatSkins         ChatSkin[]
   chatConversations ChatConversation[]
   chatMessages      ChatMessage[]
   inviteCodes       InviteCode[]
@@ -641,9 +642,34 @@ model Referral {
 // ============================================================================
 
 // Jugador (usuario final del chat), registrado passwordless por un link de invitación.
+// Segunda "PIEL" visual del Chat App (pedido de Gg/mrc): OTRO link de entrada (/c/<slug>, /r/<slug>)
+// con su propia marca, cayendo al MISMO inbox/bot/cajero de la cuenta. SOLO visual: la operación
+// (pagos, bot, casino, pixel, días) es la de la cuenta. El jugador queda marcado con la skin por la
+// que entró (ChatPlayer.skinId) y la ve siempre (branding, manifest de instalación, sesión).
+model ChatSkin {
+  id                String   @id @default(cuid())
+  userId            String
+  slug              String   @unique // slug GLOBAL de entrada — convive con User.slug (no puede chocar)
+  brandName         String?
+  logoUrl           String?
+  primaryColor      String?
+  accentColor       String?
+  chatTheme         String   @default("whatsapp") // whatsapp | midnight | redblack
+  welcomeText       String?  // bienvenida de la PWA (pantallas de entrada)
+  welcomeMsgText    String?  // 1er mensaje automático (si difiere del de la marca principal)
+  chatDirectWelcome String?  // 1er mensaje del chat directo /c/
+  chatPlatformUrl   String?  // link de juego, si difiere
+  chatNotifTitle    String?
+  chatNotifText     String?
+  createdAt         DateTime @default(now())
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  players           ChatPlayer[]
+}
+
 model ChatPlayer {
   id              String   @id @default(cuid())
   userId          String   // cuenta dueña
+  skinId          String?  // skin de marca por la que entró (null = marca principal de la cuenta)
   nombre          String?
   alias           String?  // nombre que le pone el OPERADOR (agenda) — solo visual, como Contact.alias del Inbox
   casinoUsername  String   // usuario del jugador en el casino
@@ -653,6 +679,7 @@ model ChatPlayer {
   estatus         String   @default("active")
   createdAt       DateTime @default(now())
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skin            ChatSkin? @relation(fields: [skinId], references: [id])
   conversations   ChatConversation[]
   pushSubs        ChatPushSub[]
 

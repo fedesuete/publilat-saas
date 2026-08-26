@@ -22,7 +22,7 @@ const CHATAPP_TOUR: TourStep[] = [
   { targetId: "ca-tab-brand", title: "4. Tu marca", body: "En “Marca” le ponés tu logo, tus colores y el nombre de la app. Queda 100% con tu identidad." },
 ];
 
-interface Conv { id: string; playerId: string; player: string; alias: string | null; username: string; status: string; unread: number; preview: string; lastAt: string }
+interface Conv { id: string; playerId: string; player: string; alias: string | null; marca: string | null; username: string; status: string; unread: number; preview: string; lastAt: string }
 interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; metadata?: Record<string, unknown>; createdAt: string }
 
 // Agrega un mensaje evitando duplicados por id (optimistic add + echo del socket).
@@ -320,6 +320,9 @@ export default function ChatAppPage() {
                         {/* El usuario al lado del nombre: varios jugadores ponen el MISMO nombre ("Ya
                             transferí" x2, pedido de mrc/Gg) y sin esto no se distinguen sin abrir. */}
                         {c.player !== c.username && <span className="text-xs font-normal text-slate-500"> · {c.username}</span>}
+                        {/* Skin de marca por la que entró (solo si la cuenta tiene skins): el operador
+                            sabe qué marca espera ver ese jugador antes de contestarle. */}
+                        {c.marca && <span className="ml-1 rounded bg-slate-700/70 px-1.5 py-0.5 text-[10px] font-semibold text-slate-300">{c.marca}</span>}
                       </span>
                       <span className="mt-0.5 block truncate text-xs text-slate-400">{c.preview || "—"}</span>
                     </span>

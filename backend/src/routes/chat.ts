@@ -52,6 +52,25 @@ function setChatCookie(res: Response, token: string): void {
   });
 }
 
+// ---- SKINS de marca: 2ª piel visual de la MISMA cuenta (mismo inbox/bot/cajero, otro look) ----
+// Un slug de entrada del jugador puede ser la cuenta (User.slug) o una skin (ChatSkin.slug). El
+// resolver es la ÚNICA puerta: /public, /start, /direct y /login pasan por acá, así el link de la
+// skin se comporta idéntico al principal. El jugador creado por una skin queda marcado (skinId) y
+// su marca lo sigue (branding, manifest, sesión recuperada, login).
+type EntrySkin = {
+  id: string; slug: string; brandName: string | null; logoUrl: string | null;
+  primaryColor: string | null; accentColor: string | null; chatTheme: string;
+  welcomeText: string | null; welcomeMsgText: string | null; chatDirectWelcome: string | null;
+  chatPlatformUrl: string | null; chatNotifTitle: string | null; chatNotifText: string | null;
+};
+async function resolveEntrySlug(slug: string): Promise<{ accountId: string; skin: EntrySkin | null } | null> {
+  const acc = await prisma.user.findUnique({ where: { slug }, select: { id: true } });
+  if (acc) return { accountId: acc.id, skin: null };
+  const skin = await prisma.chatSkin.findUnique({ where: { slug } });
+  if (skin) return { accountId: skin.userId, skin };
+  return null;
+}
+
 // ¿La cuenta tiene al menos una línea de WhatsApp con un DÍA PAGADO VIGENTE (expiresAt futuro)?
 // El Chat App se vende junto con el servicio de líneas. Gateamos por el día pagado y NO por
 // status/connected a propósito: el `status` sigue a la conexión (webhook.ts pone active/inactive
@@ -310,7 +329,7 @@ chatRouter.get("/conversations", async (req, res) => {
     take: 200,
     select: {
       id: true, playerId: true, status: true, unreadOperator: true, lastMessagePreview: true, lastMessageAt: true, createdAt: true,
-      player: { select: { casinoUsername: true, nombre: true, alias: true } },
+      player: { select: { casinoUsername: true, nombre: true, alias: true, skin: { select: { brandName: true, slug: true } } } },
     },
   });
   return res.json({
@@ -320,6 +339,8 @@ chatRouter.get("/conversations", async (req, res) => {
       // Display: primero el alias del operador (agenda), después el nombre del jugador, después el user.
       player: c.player.alias || c.player.nombre || c.player.casinoUsername,
       alias: c.player.alias ?? null,
+      // Skin de marca por la que entró (null = principal): el operador ve qué marca espera el jugador.
+      marca: c.player.skin ? (c.player.skin.brandName ?? c.player.skin.slug) : null,
       username: c.player.casinoUsername,
       status: c.status,
       unread: c.unreadOperator,
@@ -327,6 +348,73 @@ chatRouter.get("/conversations", async (req, res) => {
       lastAt: (c.lastMessageAt ?? c.createdAt).toISOString(),
     })),
   });
+});
+
+// ============================ SKINS DE MARCA (operador) ============================
+// CRUD de las "pieles" extra del Chat App: mismo inbox/bot/cajero, otro link + marca visual.
+const SKIN_SLUG_RE = /^[a-z0-9][a-z0-9-]{2,39}$/;
+const skinHex = z.string().regex(/^#[0-9a-fA-F]{6}$/).nullish();
+const skinSchema = z.object({
+  slug: z.string().regex(SKIN_SLUG_RE, "Slug inválido (minúsculas, números y guiones, 3-40)").optional(),
+  brandName: z.string().max(60).nullish(),
+  logoUrl: z.string().url().max(600).nullish(),
+  primaryColor: skinHex,
+  accentColor: skinHex,
+  chatTheme: z.enum(["whatsapp", "midnight", "redblack"]).optional(),
+  welcomeText: z.string().max(300).nullish(),
+  welcomeMsgText: z.string().max(1000).nullish(),
+  chatDirectWelcome: z.string().max(1000).nullish(),
+  chatPlatformUrl: z.string().max(300).nullish(),
+  chatNotifTitle: z.string().max(60).nullish(),
+  chatNotifText: z.string().max(200).nullish(),
+});
+
+// ¿El slug está libre? (no puede pisar el slug de NINGUNA cuenta ni de otra skin — son un namespace único).
+async function skinSlugTaken(slug: string, exceptSkinId?: string): Promise<boolean> {
+  const user = await prisma.user.findUnique({ where: { slug }, select: { id: true } });
+  if (user) return true;
+  const other = await prisma.chatSkin.findUnique({ where: { slug }, select: { id: true } });
+  return Boolean(other && other.id !== exceptSkinId);
+}
+
+// GET /api/chat/skins — las skins de la cuenta (con el link de entrada listo para compartir).
+chatRouter.get("/skins", async (req, res) => {
+  const skins = await prisma.chatSkin.findMany({ where: { userId: req.userId! }, orderBy: { createdAt: "asc" } });
+  const base = (process.env.CHAT_PWA_URL ?? "https://chat.publi.lat").replace(/\/$/, "");
+  return res.json({ skins: skins.map((s) => ({ ...s, links: { directo: `${base}/c/${s.slug}`, registro: `${base}/r/${s.slug}` } })) });
+});
+
+// POST /api/chat/skins — crea una skin nueva (slug obligatorio y único global).
+chatRouter.post("/skins", async (req, res) => {
+  const parsed = skinSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
+  const slug = parsed.data.slug;
+  if (!slug) return res.status(400).json({ error: "Falta el slug (el link de entrada de esta marca)." });
+  if (await skinSlugTaken(slug)) return res.status(409).json({ error: "Ese slug ya está en uso. Probá con otro." });
+  const { slug: _s, ...fields } = parsed.data;
+  const skin = await prisma.chatSkin.create({ data: { userId: req.userId!, slug, ...fields } });
+  return res.status(201).json({ skin });
+});
+
+// PATCH /api/chat/skins/:id — edita una skin (ownership por userId).
+chatRouter.patch("/skins/:id", async (req, res) => {
+  const parsed = skinSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
+  const skin = await prisma.chatSkin.findFirst({ where: { id: req.params.id, userId: req.userId! }, select: { id: true } });
+  if (!skin) return res.status(404).json({ error: "Skin no encontrada" });
+  if (parsed.data.slug && (await skinSlugTaken(parsed.data.slug, skin.id))) {
+    return res.status(409).json({ error: "Ese slug ya está en uso. Probá con otro." });
+  }
+  const updated = await prisma.chatSkin.update({ where: { id: skin.id }, data: parsed.data });
+  return res.json({ skin: updated });
+});
+
+// DELETE /api/chat/skins/:id — borra la skin; sus jugadores vuelven a la marca principal (skinId -> null).
+chatRouter.delete("/skins/:id", async (req, res) => {
+  const skin = await prisma.chatSkin.findFirst({ where: { id: req.params.id, userId: req.userId! }, select: { id: true } });
+  if (!skin) return res.status(404).json({ error: "Skin no encontrada" });
+  await prisma.chatSkin.delete({ where: { id: skin.id } });
+  return res.json({ ok: true });
 });
 
 const playerAliasSchema = z.object({ alias: z.string().max(60).nullish() });
@@ -1031,8 +1119,13 @@ chatPublicRouter.get("/manifest", async (req, res) => {
   const s = typeof req.query.s === "string" ? req.query.s : "";
   let name = "Chat";
   if (s) {
+    // El slug puede ser una SKIN: la app instalada toma el nombre de ESA marca.
     const acc = await prisma.user.findFirst({ where: { slug: s }, select: { brandName: true } }).catch(() => null);
     if (acc?.brandName) name = acc.brandName;
+    else {
+      const skin = await prisma.chatSkin.findUnique({ where: { slug: s }, select: { brandName: true, user: { select: { brandName: true } } } }).catch(() => null);
+      if (skin) name = skin.brandName ?? skin.user.brandName ?? name;
+    }
   }
   const qs = new URLSearchParams();
   if (t) qs.set("t", t);
@@ -1244,22 +1337,23 @@ chatPublicRouter.post("/login", async (req, res) => {
   const username = parsed.data.username.trim();
   const slug = parsed.data.accountSlug?.trim();
 
-  let player: { id: string; casinoUsername: string; password: string | null; userId: string } | null = null;
+  let player: { id: string; casinoUsername: string; password: string | null; userId: string; skin?: { slug: string } | null } | null = null;
   let accId: string | null = null;
 
   if (slug) {
-    const acc = await prisma.user.findUnique({ where: { slug }, select: { id: true } });
-    if (!acc) return res.status(404).json({ error: "Cuenta no encontrada", code: "account_required" });
-    accId = acc.id;
+    // El slug puede ser la cuenta o una SKIN de marca (misma cuenta por atrás).
+    const entry = await resolveEntrySlug(slug);
+    if (!entry) return res.status(404).json({ error: "Cuenta no encontrada", code: "account_required" });
+    accId = entry.accountId;
     player = await prisma.chatPlayer.findUnique({
-      where: { userId_casinoUsername: { userId: acc.id, casinoUsername: username } },
-      select: { id: true, casinoUsername: true, password: true, userId: true },
+      where: { userId_casinoUsername: { userId: entry.accountId, casinoUsername: username } },
+      select: { id: true, casinoUsername: true, password: true, userId: true, skin: { select: { slug: true } } },
     });
   } else {
     // Sin slug: resolvemos por usuario (jugadores con clave = accesos nuevos).
     const matches = await prisma.chatPlayer.findMany({
       where: { casinoUsername: username, password: { not: null } },
-      select: { id: true, casinoUsername: true, password: true, userId: true },
+      select: { id: true, casinoUsername: true, password: true, userId: true, skin: { select: { slug: true } } },
       take: 5,
     });
     if (matches.length === 1) { player = matches[0]; accId = matches[0].userId; }
@@ -1284,7 +1378,8 @@ chatPublicRouter.post("/login", async (req, res) => {
   const token = signChatClientToken(accId, player.id);
   setChatCookie(res, token); // sesión persistente (además del Bearer)
   // Devolvemos el slug: la app lo guarda para recordar la cuenta y mostrar el branding la próxima vez.
-  return res.json({ token, player: { id: player.id, casinoUsername: player.casinoUsername }, conversationId: conv?.id ?? null, accountSlug: acc?.slug ?? null });
+  // Jugador de una SKIN: devolvemos el slug de SU marca (no el principal) para que vea su piel.
+  return res.json({ token, player: { id: player.id, casinoUsername: player.casinoUsername }, conversationId: conv?.id ?? null, accountSlug: player.skin?.slug ?? acc?.slug ?? null });
 });
 
 // GET /api/chat/public/:slug — branding + estado de una cuenta por su slug (público, para la
@@ -1294,19 +1389,26 @@ chatPublicRouter.get("/public/:slug", async (req, res) => {
   // El branding se lee SIEMPRE fresco: sin esto el navegador podía servir una config vieja (logoUrl de
   // un asset ya borrado) y quedaba el logo roto hasta limpiar caché. La imagen en sí es immutable por id.
   res.set("Cache-Control", "no-store");
+  // El slug puede ser la cuenta o una SKIN de marca: la skin pisa lo visual (skin.campo ?? cuenta.campo)
+  // y devolvemos SU slug como accountSlug — así la PWA guarda/rehidrata la marca correcta y todos los
+  // pasos siguientes (/start, /direct) viajan con el slug de la skin.
+  const entry = await resolveEntrySlug(req.params.slug);
+  if (!entry) return res.status(404).json({ error: "Cuenta no encontrada" });
   const acc = await prisma.user.findUnique({
-    where: { slug: req.params.slug },
+    where: { id: entry.accountId },
     select: { id: true, slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, chatWaLink: true, chatPlatformUrl: true, chatInstallPromptEnabled: true, chatNotifTitle: true, chatNotifText: true },
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
+  const s = entry.skin;
   return res.json({
-    accountSlug: acc.slug,
+    accountSlug: s ? s.slug : acc.slug,
     active: await canOperateChat(acc.id),
     branding: {
-      brandName: acc.brandName, logoUrl: acc.logoUrl, chatTheme: acc.chatTheme,
-      primaryColor: acc.primaryColor, accentColor: acc.accentColor, welcomeText: acc.welcomeText, chatWaLink: acc.chatWaLink, chatPlatformUrl: acc.chatPlatformUrl,
+      brandName: s?.brandName ?? acc.brandName, logoUrl: s?.logoUrl ?? acc.logoUrl, chatTheme: s?.chatTheme ?? acc.chatTheme,
+      primaryColor: s?.primaryColor ?? acc.primaryColor, accentColor: s?.accentColor ?? acc.accentColor,
+      welcomeText: s?.welcomeText ?? acc.welcomeText, chatWaLink: acc.chatWaLink, chatPlatformUrl: s?.chatPlatformUrl ?? acc.chatPlatformUrl,
       chatInstallPromptEnabled: acc.chatInstallPromptEnabled,
-      chatNotifTitle: acc.chatNotifTitle, chatNotifText: acc.chatNotifText,
+      chatNotifTitle: s?.chatNotifTitle ?? acc.chatNotifTitle, chatNotifText: s?.chatNotifText ?? acc.chatNotifText,
     },
   });
 });
@@ -1330,11 +1432,17 @@ chatPublicRouter.post("/start", async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
   const { accountSlug, autogenerate, fbclid, fbp, fbc } = parsed.data;
 
+  // El slug puede ser la cuenta o una SKIN: misma cuenta por atrás, textos visuales de la skin.
+  const entry = await resolveEntrySlug(accountSlug.trim());
+  if (!entry) return res.status(404).json({ error: "Cuenta no encontrada" });
+  const skin = entry.skin;
   const acc = await prisma.user.findUnique({
-    where: { slug: accountSlug },
+    where: { id: entry.accountId },
     select: { id: true, welcomeMsgText: true, welcomeMsgImage: true, chatPlatformUrl: true, chatManualAccount: true },
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
+  const welcomeMsgText = skin?.welcomeMsgText ?? acc.welcomeMsgText;
+  const platformUrl = skin?.chatPlatformUrl ?? acc.chatPlatformUrl;
   // Candado de días: sin día de WhatsApp vigente el chat está apagado.
   if (!(await canOperateChat(acc.id))) {
     return res.status(403).json({ error: "El chat no está disponible en este momento. Probá más tarde.", code: "line_required" });
@@ -1351,7 +1459,7 @@ chatPublicRouter.post("/start", async (req, res) => {
     for (let i = 0; i < 8 && !np; i++) {
       try {
         np = await prisma.chatPlayer.create({
-          data: { userId: acc.id, casinoUsername: `${base}${randDigits(5)}`, password: hash, nombre, estatus: "active" },
+          data: { userId: acc.id, skinId: skin?.id ?? null, casinoUsername: `${base}${randDigits(5)}`, password: hash, nombre, estatus: "active" },
           select: { id: true, casinoUsername: true },
         });
       } catch (e) {
@@ -1364,9 +1472,9 @@ chatPublicRouter.post("/start", async (req, res) => {
     // Cuenta MANUAL: NO mostramos usuario/clave (el cajero crea la cuenta a mano) → solo bienvenida.
     // Cuenta normal: primer mensaje = usuario + clave + botón a la plataforma.
     if (acc.chatManualAccount) {
-      await postManualWelcome(acc.id, conv.id, acc.welcomeMsgText ?? null, acc.welcomeMsgImage ?? null);
+      await postManualWelcome(acc.id, conv.id, welcomeMsgText ?? null, acc.welcomeMsgImage ?? null);
     } else {
-      await postWelcomeCreds(acc.id, conv.id, acc.welcomeMsgText ?? null, np.casinoUsername, plainPassword, acc.chatPlatformUrl ?? null);
+      await postWelcomeCreds(acc.id, conv.id, welcomeMsgText ?? null, np.casinoUsername, plainPassword, platformUrl ?? null);
     }
     // El pixel (Lead+Registro) se dispara IGUAL en ambos modos: external_id = usuario interno del jugador.
     const eventId = `${np.casinoUsername}:register`;
@@ -1393,7 +1501,7 @@ chatPublicRouter.post("/start", async (req, res) => {
     conversationId = conv?.id ?? null;
   } else {
     player = await prisma.chatPlayer.create({
-      data: { userId: acc.id, casinoUsername: username.trim(), estatus: "active" },
+      data: { userId: acc.id, skinId: skin?.id ?? null, casinoUsername: username.trim(), estatus: "active" },
       select: { id: true, casinoUsername: true },
     });
     const conv = await prisma.chatConversation.create({
@@ -1401,7 +1509,7 @@ chatPublicRouter.post("/start", async (req, res) => {
       select: { id: true },
     });
     conversationId = conv.id;
-    const welcomeBody = acc.welcomeMsgText?.trim();
+    const welcomeBody = welcomeMsgText?.trim();
     if (welcomeBody || acc.welcomeMsgImage) {
       await prisma.chatMessage.create({
         data: { userId: acc.id, conversationId: conv.id, senderType: "system", body: welcomeBody ?? null, metadata: acc.welcomeMsgImage ? { image: acc.welcomeMsgImage } : {} },
@@ -1439,8 +1547,12 @@ chatPublicRouter.post("/direct", async (req, res) => {
   const parsed = directSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
   const { fbclid, fbp, fbc } = parsed.data;
+  // El slug puede ser la cuenta o una SKIN (mismo inbox, otra marca): la bienvenida sale de la skin.
+  const entry = await resolveEntrySlug(parsed.data.accountSlug.trim());
+  if (!entry) return res.status(404).json({ error: "Cuenta no encontrada" });
+  const skin = entry.skin;
   const acc = await prisma.user.findUnique({
-    where: { slug: parsed.data.accountSlug },
+    where: { id: entry.accountId },
     select: { id: true, chatDirectWelcome: true },
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
@@ -1454,7 +1566,7 @@ chatPublicRouter.post("/direct", async (req, res) => {
   for (let i = 0; i < 8 && !np; i++) {
     try {
       np = await prisma.chatPlayer.create({
-        data: { userId: acc.id, casinoUsername: `web${randDigits(6)}`, password: hash, estatus: "active" },
+        data: { userId: acc.id, skinId: skin?.id ?? null, casinoUsername: `web${randDigits(6)}`, password: hash, estatus: "active" },
         select: { id: true, casinoUsername: true },
       });
     } catch (e) {
@@ -1468,7 +1580,7 @@ chatPublicRouter.post("/direct", async (req, res) => {
     data: { userId: acc.id, playerId: np.id, status: "open", botStep: "ask_name" },
     select: { id: true },
   });
-  const welcome = acc.chatDirectWelcome?.trim() || DEFAULT_DIRECT_WELCOME;
+  const welcome = (skin?.chatDirectWelcome ?? acc.chatDirectWelcome)?.trim() || DEFAULT_DIRECT_WELCOME;
   await prisma.chatMessage.create({
     data: { userId: acc.id, conversationId: conv.id, senderType: "system", body: welcome, metadata: {} },
   });
@@ -1517,7 +1629,7 @@ chatPublicRouter.get("/session", async (req, res) => {
   // El jugador y la cuenta tienen que seguir existiendo (si se borraron, no recuperamos).
   const player = await prisma.chatPlayer.findFirst({
     where: { id: payload.playerId, userId: payload.accountId },
-    select: { id: true, casinoUsername: true },
+    select: { id: true, casinoUsername: true, skin: { select: { slug: true } } },
   });
   if (!player) {
     res.clearCookie(CHAT_CLIENT_COOKIE, { path: "/" });
@@ -1527,7 +1639,8 @@ chatPublicRouter.get("/session", async (req, res) => {
   const conv = await prisma.chatConversation.findFirst({ where: { userId: payload.accountId, playerId: player.id }, select: { id: true } });
   const fresh = signChatClientToken(payload.accountId, player.id); // rolling: renueva 90 días
   setChatCookie(res, fresh);
-  return res.json({ token: fresh, player: { id: player.id, casinoUsername: player.casinoUsername }, accountSlug: acc?.slug ?? null, conversationId: conv?.id ?? null });
+  // Jugador de una SKIN: su slug es el de la skin (la marca que eligió lo sigue al recuperar sesión).
+  return res.json({ token: fresh, player: { id: player.id, casinoUsername: player.casinoUsername }, accountSlug: player.skin?.slug ?? acc?.slug ?? null, conversationId: conv?.id ?? null });
 });
 
 // ============================ CAJERO SELF-SERVICE (Fase E) ============================
