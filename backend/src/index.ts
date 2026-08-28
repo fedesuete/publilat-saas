@@ -23,6 +23,7 @@ import { referralsRouter } from "./routes/referrals.js";
 import { landingsRouter } from "./routes/landings.js";
 import { landingTemplatesRouter } from "./routes/landing-templates.js";
 import { integrationsRouter, inboundIntegrationsRouter } from "./routes/integrations.js";
+import { leadgenRouter } from "./routes/leadgen.js";
 import { pixelRouter } from "./routes/pixel.js";
 import { setupRouter } from "./routes/setup.js";
 import { adminRouter } from "./routes/admin.js";
@@ -142,6 +143,7 @@ app.use("/api/land", apiLimiter, landRouter);
 app.use("/api/wa/cloud/webhook", cloudWebhookRouter); // WhatsApp Cloud API (CTWA)
 app.use("/api/wa/webhook", webhookRouter);
 app.use("/api/integrations/inbound", webhookLimiter, inboundIntegrationsRouter); // CRM externo (Kommo) → Purchase
+app.use("/api/webhooks/leadgen", webhookLimiter, leadgenRouter); // Meta Lead Ads (formularios) → captura del lead
 app.use("/api/bot-relay", webhookLimiter, botRelayRouter); // puente cajero de socio (x-bot-token propio; off sin env)
 app.use("/api/billing/webhook/usdt", webhookLimiter, usdtWebhookRouter); // NOWPayments (USDT)
 app.use("/api/billing/webhook/pagopar", webhookLimiter, pagoparWebhookRouter); // Pagopar (Paraguay)

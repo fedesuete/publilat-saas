@@ -580,8 +580,30 @@ model Integration {
   enabled    Boolean  @default(false)
   kommoBaseUrl String?                   // https://<subdominio>.kommo.com (solo ese dominio, guard SSRF)
   kommoToken   String?                   // token larga duración de la API de Kommo (cifrado en reposo)
+  // --- Meta Lead Ads (formularios instantáneos) → captura del lead + respuesta automática ---
+  metaPageId    String?                  // id de la Page de Meta (mapea el webhook leadgen a esta cuenta)
+  metaPageToken String?                  // Page access token (cifrado) para traer los datos del lead por Graph API
+  leadgenEnabled Boolean @default(false) // prende la captura + respuesta automática de formularios
+  leadgenLineId String?                  // línea de WhatsApp desde la que se auto-responde (Fase 2)
+  leadgenReply  String?                  // mensaje de respuesta automática por defecto (Fase 2)
   createdAt  DateTime @default(now())
   user       User     @relation(fields: [userId], references: [id])
+}
+
+// Lead capturado de un FORMULARIO de Meta (Lead Ads). Aditivo: guarda las respuestas del form y linkea al
+// Contact ya creado. La respuesta automática (Fase 2) lee `answers` para personalizar el mensaje según lo
+// que respondió el cliente. `leadgenId` @unique = idempotencia (Meta reenvía el webhook).
+model LeadForm {
+  id         String   @id @default(cuid())
+  userId     String
+  contactId  String
+  leadgenId  String   @unique
+  formId     String?
+  adId       String?
+  answers    Json     @default("[]")
+  createdAt  DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 // Vínculo lead de Kommo ↔ contacto nuestro. Lo crea el webhook de MENSAJE ENTRANTE cuando el primer
