@@ -193,14 +193,30 @@
     actualizarNotificacion();
   </script>
 
-  <!-- SCRIPT EVENTO LEAD -->
+  <!-- SCRIPT EVENTO LEAD + ATRIBUCIÓN (cierra el loop hasta el Purchase vía Kommo) -->
   <script>
+    function cookie(n){var m=document.cookie.match('(^|; )'+n+'=([^;]+)');return m?decodeURIComponent(m[2]):"";}
     function irAWhatsApp() {
+      var p = new URLSearchParams(location.search);
+      var fbclid = p.get('fbclid') || undefined;
+      var fbp = cookie('_fbp') || undefined;
+      var fbc = cookie('_fbc') || undefined;
+      // ref generado en el cliente: WhatsApp abre YA con este ref (gesto móvil), y lo registramos en paralelo.
+      var ref = (Date.now().toString(36) + Math.random().toString(36).slice(2, 6)).toUpperCase();
+      var eventId = 'lead_' + ref;
+      // 1) Lead del pixel del navegador (dedup con el CAPI por eventID).
+      try { fbq('track', 'Lead', {}, { eventID: eventId }); } catch(e) {}
+      // 2) Registrar el clic en Publi.lat (contacto + IDs del clic + ref + Lead por CAPI). Fire-and-forget.
       try {
-        fbq('track', 'Lead');
+        fetch('https://app.publi.lat/api/land/track', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          keepalive: true,
+          body: JSON.stringify({ accountSlug: 'raulcasino2023', ref: ref, fbclid: fbclid, fbp: fbp, fbc: fbc, eventId: eventId })
+        });
       } catch(e) {}
-
-      window.open("https://wa.link/gco1p1", "_blank");
+      // 3) Abrir el WhatsApp de raul (conectado a Kommo) CON el ref → Kommo lee el ref → linkea → Purchase matchea.
+      window.open('https://wa.me/543562675689?text=' + encodeURIComponent('hola quiero info! ref:' + ref), '_blank');
     }
   </script>
 

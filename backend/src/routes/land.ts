@@ -12,6 +12,9 @@ import { uniqueSlug } from "./auth.js";
 import { resolveReferrerByCode } from "../lib/referrals.js";
 import { notifyNewSignup } from "../lib/signup-notify.js";
 import { fireMarketingEvent } from "../lib/marketing-capi.js";
+import { sendCapiEvent } from "../lib/meta-capi.js";
+import { resolveUserPixel } from "../lib/pixel.js";
+import crypto from "node:crypto";
 
 export const landRouter = Router();
 
@@ -70,5 +73,61 @@ landRouter.post("/signup", async (req, res) => {
     }
     console.error("[land/signup] error:", e instanceof Error ? e.message : String(e));
     return res.status(500).json({ error: "No pudimos crear la cuenta. Probá de nuevo en un momento." });
+  }
+});
+
+const trackSchema = z.object({
+  accountSlug: z.string().min(1).max(60),
+  ref: z.string().regex(/^[A-Za-z0-9]{3,20}$/).optional(), // lo genera la landing (gesto móvil: WhatsApp abre YA con este ref)
+  fbclid: z.string().max(600).optional(),
+  fbp: z.string().max(255).optional(),
+  fbc: z.string().max(600).optional(),
+  eventId: z.string().max(120).optional(), // dedup con el Lead del pixel del navegador
+});
+
+const shortRef = () => crypto.randomBytes(4).toString("hex").toUpperCase().slice(0, 7);
+
+// POST /api/land/track — registra el clic de una landing EXTERNA de un cliente que responde por SU PROPIO
+// WhatsApp (conectado a Kommo, NO una línea de Publi.lat). Crea un Contact con los IDs del clic + un `ref:`
+// corto y dispara el Lead por CAPI. Devuelve el `ref` para que la landing lo meta en el mensaje de WhatsApp
+// → Kommo lee el `ref:` → linkea el lead → el Purchase (etapa ganada) matchea el anuncio. Es el /go para
+// clientes SIN línea propia. CORS abierto (la landing vive en el CloudFront descartable del cliente).
+landRouter.post("/track", async (req, res) => {
+  const parsed = trackSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const { accountSlug, fbclid, fbp, fbc, eventId } = parsed.data;
+  const acc = await prisma.user.findUnique({ where: { slug: accountSlug }, select: { id: true } });
+  if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
+  const ref = (parsed.data.ref ?? shortRef()).toUpperCase();
+  try {
+    const externalId = crypto.randomUUID();
+    const eid = eventId || externalId;
+    // Contact con `ref:` (el que ya abrió en el WhatsApp). source="an" = anuncio.
+    let contact: { id: string; createdAt: Date };
+    try {
+      contact = await prisma.contact.create({
+        data: { userId: acc.id, externalId, code: ref, fbclid: fbclid ?? null, fbp: fbp ?? null, fbc: fbc ?? null, source: "an", stage: "NUEVO", clientIp: req.ip ?? null, clientUserAgent: req.get("user-agent") ?? null },
+        select: { id: true, createdAt: true },
+      });
+    } catch (e) {
+      // ref ya usado (rarísimo con random): devolvemos ok — el ref ya vive en el sistema.
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") return res.json({ ref, eventId: eid });
+      throw e;
+    }
+    // Lead por CAPI (best-effort, mismo eventId que el pixel del navegador → dedup). fbc derivado del fbclid
+    // si no vino la cookie _fbc (formato de Meta). Sin pixel del cliente, es no-op silencioso.
+    const fbcEff = fbc || (fbclid ? `fb.1.${contact.createdAt.getTime()}.${fbclid}` : undefined);
+    const creds = await resolveUserPixel(acc.id, "Lead");
+    if (creds) {
+      void sendCapiEvent({
+        eventName: "Lead", externalId, fbp, fbc: fbcEff, eventId: eid,
+        clientIp: req.ip, userAgent: req.get("user-agent") ?? undefined,
+        pixelId: creds.pixelId, capiToken: creds.capiToken,
+      }).catch(() => undefined);
+    }
+    return res.json({ ref, eventId: eid, pixel: creds?.pixelId ?? null });
+  } catch (e) {
+    console.error("[land/track] error:", e instanceof Error ? e.message : String(e));
+    return res.status(500).json({ error: "Error interno" });
   }
 });
