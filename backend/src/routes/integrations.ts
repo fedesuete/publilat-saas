@@ -401,3 +401,57 @@ inboundIntegrationsRouter.post("/kommo", express.urlencoded({ extended: true, li
     await processKommoStatus(integ.userId, creds, statusEvents);
   })().catch((e) => console.error("[kommo] error procesando webhook:", e instanceof Error ? e.message : e));
 });
+
+// ── Bot autoresponder por Salesbot de Kommo (widget_request) — SALIDA estilo ScaleOS ─────────────
+// Kommo NO deja mandar por API a su WhatsApp nativo (amocrmwa); el ÚNICO puente es su Salesbot. En el paso
+// "Widget" del Salesbot, Kommo pega a esta URL con { token(JWT), data, return_url }. Nosotros: (1) ACK <2s,
+// (2) calculamos la respuesta, (3) CONTINUAMOS el bot posteando a return_url los handlers "show" → Kommo
+// manda esos mensajes por el WhatsApp del cliente. Así el bot contesta SIN que Publi.lat sea el gateway de
+// WhatsApp (Kommo sigue siendo el transporte; el WhatsApp no se mueve). Público: lo llama el Salesbot.
+inboundIntegrationsRouter.post("/kommo-bot", express.json({ limit: "1mb" }), async (req, res) => {
+  const token = String(req.query.token ?? "").trim();
+  const integ = token ? await prisma.integration.findUnique({ where: { inboundToken: token } }) : null;
+  if (!integ) return res.status(401).json({ error: "Token inválido." });
+
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const data = (body.data ?? {}) as Record<string, unknown>;
+  const returnUrl = String(body.return_url ?? "").trim();
+  const incoming = String(data.message ?? data.text ?? "").trim();
+
+  // ACK YA: Kommo corta el bot si no respondemos <2s. El continue va en background.
+  res.json({ ok: true });
+
+  if (!returnUrl) { console.warn(`[kommo-bot] user ${integ.userId}: sin return_url`); return; }
+  // Guard SSRF: el return_url TIENE que ser del dominio Kommo del cliente (no un destino arbitrario).
+  let ru: URL | null = null;
+  try { ru = new URL(returnUrl); } catch { /* inválido */ }
+  if (!ru || !/(^|\.)(kommo\.com|amocrm\.com)$/.test(ru.hostname)) {
+    console.warn(`[kommo-bot] user ${integ.userId}: return_url sospechoso (${ru?.hostname ?? "inválido"}) — se descarta`);
+    return;
+  }
+
+  void (async () => {
+    const reply = await computeKommoBotReply(integ.userId, incoming);
+    if (!reply) { console.log(`[kommo-bot] user ${integ.userId}: sin respuesta (bot mudo)`); return; }
+    const creds = kommoCreds(integ);
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (creds) headers.Authorization = "Bearer " + creds.token; // el continue vive en el dominio del cliente
+    const payload = {
+      data: {},
+      execute_handlers: [{ handler: "show", params: { type: "text", value: reply } }],
+    };
+    const r = await fetch(returnUrl, { method: "POST", headers, body: JSON.stringify(payload) });
+    console.log(`[kommo-bot] user ${integ.userId}: in(${incoming.length} chars) -> continue ${r.status}`);
+  })().catch((e) => console.error("[kommo-bot] error:", e instanceof Error ? e.message : e));
+});
+
+// Respuesta del bot para un mensaje entrante que llega por el Salesbot de Kommo.
+// MVP: usa el `botWelcome` de la cuenta (o un saludo por defecto) para PROBAR el circuito de punta a punta.
+// Fase 2: enganchar el bot de carga/descarga real (runChatBot) con estado por conversación.
+async function computeKommoBotReply(userId: string, _incoming: string): Promise<string> {
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { botWelcome: true, brandName: true } });
+  const welcome = (u?.botWelcome ?? "").trim();
+  if (welcome) return welcome;
+  const marca = (u?.brandName ?? "").trim();
+  return `¡Hola! 👋 Gracias por escribir${marca ? ` a ${marca}` : ""}. Ya te atendemos por acá. ¿Qué necesitás?`;
+}
