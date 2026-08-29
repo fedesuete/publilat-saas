@@ -103,6 +103,10 @@ model User {
   popupFrom       DateTime? // ventana opcional: no se muestra antes de esta fecha/hora
   popupUntil      DateTime? // ni después de esta
   popupUpdatedAt  DateTime?
+  // Acreditación AUTOMÁTICA de la carga (modelo B) POR CUENTA. null = se decide como siempre (el
+  // global CHAT_PAY_WEBHOOK_SECRET); true = auto-carga por callback; false = la acredita el cajero a
+  // mano aunque la cuenta tenga casino. Permite tener clientes automáticos y manuales a la vez.
+  casinoAutoCredit Boolean?
   // --- Bot de carga/descarga del Chat App (opcional, por cuenta; aislado, no toca WhatsApp) ---
   botEnabled     Boolean  @default(false)  // prende/apaga el bot para esta cuenta
   botPaymentInfo String?                   // datos de pago que muestra el bot (alias/CBU/QR/USDT del cliente)

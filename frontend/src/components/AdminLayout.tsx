@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Users, Phone, Network, Gauge, Activity, LayoutTemplate, DollarSign, Gift, HandCoins, LifeBuoy, Download, GraduationCap, ArrowLeft, Menu, X, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, Users, UserPlus, Phone, Network, Gauge, Activity, LayoutTemplate, DollarSign, Gift, HandCoins, LifeBuoy, Download, GraduationCap, ArrowLeft, Menu, X, type LucideIcon } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { Button } from "./ui";
 import InstallPWA from "./InstallPWA";
@@ -8,6 +8,7 @@ import InstallPWA from "./InstallPWA";
 const NAV: Array<{ to: string; label: string; icon: LucideIcon; end?: boolean }> = [
   { to: "/admin", label: "Resumen", icon: LayoutDashboard, end: true },
   { to: "/admin/clientes", label: "Clientes", icon: Users },
+  { to: "/admin/alta", label: "Alta de cliente", icon: UserPlus },
   { to: "/admin/lineas", label: "Líneas", icon: Phone },
   { to: "/admin/proxies", label: "Proxies", icon: Network },
   { to: "/admin/proxy-health", label: "Estabilidad", icon: Gauge },

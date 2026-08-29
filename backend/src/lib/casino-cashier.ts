@@ -51,10 +51,24 @@ export async function resolveCasinoCreds(userId: string): Promise<CasinoCreds | 
   return null;
 }
 
-// ¿El modelo B (auto-carga) está activo para ESTA cuenta? Requiere el secreto del callback (global) + que
-// la cuenta tenga casino (key propia o legacy). Es lo que gatea el envío del intent (la plata a ganamos).
+// ¿La AUTO-CARGA (modelo B) está habilitada para ESTA cuenta? El interruptor histórico es global
+// (CHAT_PAY_WEBHOOK_SECRET): con el secreto puesto, toda cuenta con casino queda en automático. Eso
+// impide dar de alta un cliente nuevo en manual mientras los demás van solos, así que ahora se puede
+// decidir por cuenta con `User.casinoAutoCredit`:
+//   null  -> como siempre (manda el global). Es el default: NO cambia el comportamiento de nadie.
+//   true  -> auto-carga (igual necesita el secreto: sin él no hay callback firmado que acredite).
+//   false -> el cajero acredita a mano, aunque la cuenta tenga casino y el secreto esté puesto.
+export async function casinoAutoCreditForAccount(userId: string): Promise<boolean> {
+  const hasSecret = Boolean(process.env.CHAT_PAY_WEBHOOK_SECRET);
+  if (!hasSecret) return false; // sin secreto del callback no hay auto-carga segura (ni con el flag en true)
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { casinoAutoCredit: true } });
+  return u?.casinoAutoCredit ?? true; // null = lo que hacía el global (que acá ya sabemos que está puesto)
+}
+
+// ¿El modelo B (auto-carga) está activo para ESTA cuenta? Requiere la auto-carga habilitada + que la
+// cuenta tenga casino (key propia o legacy). Es lo que gatea el envío del intent (la plata a ganamos).
 export async function casinoLiveForAccount(userId: string): Promise<boolean> {
-  if (!process.env.CHAT_PAY_WEBHOOK_SECRET) return false; // sin secreto del callback no hay auto-carga segura
+  if (!(await casinoAutoCreditForAccount(userId))) return false;
   return (await resolveCasinoCreds(userId)) !== null;
 }
 
@@ -89,7 +103,7 @@ export async function sendDepositIntent(
   casinoUsername: string,
   receipt: { senderName: string | null; codigoOperacion: string | null },
 ): Promise<void> {
-  if (!process.env.CHAT_PAY_WEBHOOK_SECRET) return; // sin secreto del callback no hay auto-carga segura
+  if (!(await casinoAutoCreditForAccount(dep.userId))) return; // sin auto-carga no se avisa la intención
   const creds = await resolveCasinoCreds(dep.userId);
   if (!creds) return; // la cuenta no tiene casino (rollout por cuenta)
   try {
@@ -151,7 +165,7 @@ export async function sendDepositIntent(
 export async function creditDepositInCasino(dep: Op, casinoUsername: string): Promise<void> {
   const creds = await resolveCasinoCreds(dep.userId);
   if (!creds) return; // la cuenta no tiene casino
-  if (process.env.CHAT_PAY_WEBHOOK_SECRET) return; // Model B: la carga la acredita el callback, no el /credit del approve.
+  if (await casinoAutoCreditForAccount(dep.userId)) return; // auto-carga: la acredita el callback, no el /credit del approve.
   try {
     const referencia = `dep-${dep.id}`;
     const existing = await prisma.casinoTx.findUnique({ where: { referencia } });

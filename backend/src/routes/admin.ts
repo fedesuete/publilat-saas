@@ -16,6 +16,7 @@ import { buildProxyHealthSummary } from "../lib/proxy-report.js";
 import { fetchIproyalBalance, IPROYAL_LOW_GB, iproyalBalanceEnabled } from "../lib/iproyal-balance.js";
 import { getEngine } from "../lib/wa-engine.js";
 import { uniqueSlug } from "./auth.js";
+import { consumeChatDayAndActivate } from "../lib/access.js";
 
 export const adminRouter = Router();
 
@@ -909,6 +910,193 @@ adminRouter.get("/metrics", async (_req, res) => {
   const metaByStatus = es.map((e) => ({ eventName: e.eventName, status: e.status, n: e._count._all }));
 
   return res.json({ proxyPool, lineStats, proxyEvents, metaByDay, metaByStatus });
+});
+
+// ============================ ALTA AUTOMATIZADA (Chat App + bot de carga/descarga) ============================
+// Problema que resuelve: dejar un cliente operativo hoy son ~8 pasos en 4 superficies distintas (panel
+// admin, panel DEL CLIENTE vía impersonate, un script por SSH para la key del casino, y el .env del
+// server). Eso demora cada alta y es la razón por la que hay muchas cuentas creadas y pocas con el bot
+// andando. Acá se hace todo de una: cuenta + días + marca + datos de pago + bot + casino.
+// ADITIVO: no toca `POST /clients` ni ninguna ruta del panel del cliente; es un atajo del admin.
+
+// Config del Chat App que el ADMIN puede aplicar sobre una cuenta. Son los mismos campos que el
+// cliente edita en su panel (pestañas Marca / Bot) + los que hoy solo se podían tocar por SQL/script.
+const chatConfigSchema = z.object({
+  // Marca (white-label de la PWA del jugador)
+  brandName: z.string().max(60).nullish(),
+  primaryColor: z.string().max(20).nullish(),
+  accentColor: z.string().max(20).nullish(),
+  chatTheme: z.enum(["whatsapp", "midnight", "redblack"]).optional(),
+  welcomeText: z.string().max(300).nullish(),
+  welcomeMsgText: z.string().max(1000).nullish(),
+  chatDirectWelcome: z.string().max(1000).nullish(),
+  chatPlatformUrl: z.string().url("URL de plataforma inválida").max(300).nullish(),
+  chatWaLink: z.string().url("Link de WhatsApp inválido").max(300).nullish(),
+  // Datos de pago del cajero (los que ve el jugador para transferir)
+  chatPayCbu: z.string().max(40).nullish(),
+  chatPayAlias: z.string().max(60).nullish(),
+  chatPayTitular: z.string().max(120).nullish(),
+  // Bot de carga/descarga
+  botEnabled: z.boolean().optional(),
+  botPaymentInfo: z.string().max(2000).nullish(),
+  botWelcome: z.string().max(1000).nullish(),
+  // El cajero crea la cuenta del jugador a mano (el registro un-tap no muestra usuario/clave).
+  // Hasta ahora solo se podía cambiar por SQL: el PATCH del cliente no lo escribe.
+  chatManualAccount: z.boolean().optional(),
+  // Casino (partner-api del socio). La key se guarda CIFRADA igual que en el script set-casino-key.
+  // `casinoApiKey: null` la borra (la cuenta vuelve a la key global legacy).
+  casinoApiKey: z.string().max(200).nullish(),
+  // Auto-carga por cuenta: true = automática por callback · false = la acredita el cajero a mano ·
+  // null = como siempre (manda el interruptor global del .env).
+  casinoAutoCredit: z.boolean().nullish(),
+});
+type ChatConfig = z.infer<typeof chatConfigSchema>;
+
+// Aplica la config sobre una cuenta ya creada. Solo escribe lo que vino en el body (undefined = no
+// tocar), así el mismo endpoint sirve para el alta y para retocar un cliente existente sin pisarle
+// lo que ya tenía configurado.
+async function applyChatConfig(userId: string, cfg: ChatConfig): Promise<string[]> {
+  const data: Prisma.UserUpdateInput = {};
+  const applied: string[] = [];
+  const copy = <K extends keyof ChatConfig>(key: K) => {
+    if (cfg[key] === undefined) return;
+    (data as Record<string, unknown>)[key as string] = cfg[key];
+    applied.push(key as string);
+  };
+  (["brandName", "primaryColor", "accentColor", "chatTheme", "welcomeText", "welcomeMsgText",
+    "chatDirectWelcome", "chatPlatformUrl", "chatWaLink", "chatPayCbu", "chatPayAlias", "chatPayTitular",
+    "botEnabled", "botPaymentInfo", "botWelcome", "chatManualAccount", "casinoAutoCredit"] as const).forEach(copy);
+  // La key del casino nunca se guarda en claro (mismo cifrado que usa el script set-casino-key).
+  if (cfg.casinoApiKey !== undefined) {
+    const raw = (cfg.casinoApiKey ?? "").trim();
+    data.casinoApiKey = raw ? encryptSecret(raw) : null;
+    applied.push(raw ? "casinoApiKey" : "casinoApiKey(borrada)");
+  }
+  if (Object.keys(data).length > 0) await prisma.user.update({ where: { id: userId }, data });
+  return applied;
+}
+
+// Qué le falta a la cuenta para que el bot de carga/descarga funcione de verdad. Es la lista que hoy
+// hay que ir a chequear a mano en 4 pantallas distintas.
+async function chatReadiness(userId: string) {
+  const [u, credit, lines, pixel] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { slug: true, brandName: true, botEnabled: true, botPaymentInfo: true, chatPayCbu: true, chatPayAlias: true,
+        chatPlatformUrl: true, chatDayEnabled: true, chatDayExpiresAt: true, casinoApiKey: true, casinoAutoCredit: true },
+    }),
+    prisma.credit.findUnique({ where: { userId }, select: { days: true } }),
+    prisma.waLine.count({ where: { userId, status: "active", expiresAt: { gt: new Date() } } }),
+    prisma.pixel.findFirst({ where: { userId }, select: { id: true } }),
+  ]);
+  if (!u) return null;
+  const chatDayActivo = Boolean(u.chatDayExpiresAt && u.chatDayExpiresAt > new Date());
+  const items = [
+    { key: "dias", ok: (credit?.days ?? 0) > 0 || chatDayActivo || lines > 0, detalle: `${credit?.days ?? 0} día(s) de saldo` },
+    { key: "canal_activo", ok: chatDayActivo || lines > 0, detalle: chatDayActivo ? "día de Chat App vigente" : lines > 0 ? `${lines} línea(s) de WhatsApp activa(s)` : "sin día ni línea: el chat está apagado" },
+    { key: "marca", ok: Boolean(u.brandName), detalle: u.brandName ?? "sin nombre de marca" },
+    { key: "bot", ok: u.botEnabled, detalle: u.botEnabled ? "bot prendido" : "bot apagado" },
+    { key: "datos_de_pago", ok: Boolean(u.chatPayCbu || u.chatPayAlias || u.botPaymentInfo || u.casinoApiKey), detalle: u.casinoApiKey ? "CVU de la recaudadora (casino)" : (u.chatPayCbu || u.chatPayAlias) ? "CBU/alias propios" : "sin datos de pago" },
+    { key: "plataforma_de_juego", ok: Boolean(u.chatPlatformUrl), detalle: u.chatPlatformUrl ?? "sin link de plataforma" },
+    { key: "pixel", ok: Boolean(pixel), detalle: pixel ? "pixel cargado" : "sin pixel: no se miden los eventos de Meta" },
+  ];
+  const chatBase = (process.env.CHAT_PWA_URL ?? "https://chat.publi.lat").replace(/\/$/, "");
+  return {
+    listo: items.every((i) => i.ok),
+    items,
+    casino: {
+      keyPropia: Boolean(u.casinoApiKey),
+      autoCredit: u.casinoAutoCredit, // null = manda el interruptor global del server
+    },
+    links: { registro: `${chatBase}/r/${u.slug}`, chatDirecto: `${chatBase}/c/${u.slug}` },
+  };
+}
+
+// Alta COMPLETA en un solo request: crea la cuenta y la deja configurada y lista para operar.
+const provisionSchema = z.object({
+  email: z.string().email("Email inválido"),
+  password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres").optional(), // si no viene, se genera
+  name: z.string().min(1).max(120).optional(),
+  phone: z.string().max(30).optional(),
+  days: z.number().int().min(0).max(3650).optional(),
+  maxLines: z.number().int().min(0).max(100).optional(),
+  activarChatDay: z.boolean().optional(), // prende el canal propio y consume 1 día (igual que el botón del cliente)
+  config: chatConfigSchema.optional(),
+});
+adminRouter.post("/clients/provision", async (req, res) => {
+  const parsed = provisionSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
+  const { email, name, phone, days, maxLines, activarChatDay, config } = parsed.data;
+  const password = parsed.data.password ?? genPassword();
+  try {
+    const slug = await uniqueSlug(name ?? email.split("@")[0]);
+    const user = await prisma.user.create({
+      data: {
+        email: email.toLowerCase().trim(),
+        slug,
+        name,
+        phone,
+        password: await hashPassword(password),
+        ...(maxLines !== undefined ? { maxLines } : {}),
+        source: "admin:provision",
+      },
+      select: { id: true, email: true, slug: true, name: true },
+    });
+    if (days && days > 0) {
+      const credit = await prisma.credit.create({ data: { userId: user.id, days } });
+      await prisma.creditLedger.create({ data: { creditId: credit.id, delta: days, reason: `admin: alta con ${days}d` } });
+    }
+    const applied = config ? await applyChatConfig(user.id, config) : [];
+    // El día de Chat App se consume igual que cuando lo prende el cliente (mismo paywall y misma
+    // protección anti doble cobro): primero se habilita, después se reclama la ventana de 24h.
+    let chatDay = false;
+    if (activarChatDay) {
+      await prisma.user.update({ where: { id: user.id }, data: { chatDayEnabled: true } });
+      chatDay = await consumeChatDayAndActivate(user.id);
+    }
+    await adminLog(req.userId!, "provision_client", user.id, { email: user.email, days: days ?? 0, chatDay, applied });
+    return res.status(201).json({
+      ok: true,
+      client: user,
+      // La contraseña se muestra UNA sola vez (queda hasheada): es la que hay que pasarle al cliente.
+      credenciales: { email: user.email, password, panel: process.env.APP_BASE_URL ?? "https://app.publi.lat" },
+      aplicado: applied,
+      chatDayActivado: chatDay,
+      estado: await chatReadiness(user.id),
+    });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return res.status(409).json({ error: "Ya existe una cuenta con ese email" });
+    }
+    console.error("[admin/provision] error:", e);
+    return res.status(500).json({ error: "No se pudo dar de alta el cliente" });
+  }
+});
+
+// Ver la config del Chat App de una cuenta + qué le falta para operar (sin exponer la key del casino).
+adminRouter.get("/clients/:id/chat-config", async (req, res) => {
+  const user = await prisma.user.findUnique({
+    where: { id: req.params.id },
+    select: { id: true, email: true, slug: true, brandName: true, primaryColor: true, accentColor: true, chatTheme: true,
+      welcomeText: true, welcomeMsgText: true, chatDirectWelcome: true, chatPlatformUrl: true, chatWaLink: true,
+      chatPayCbu: true, chatPayAlias: true, chatPayTitular: true, botEnabled: true, botPaymentInfo: true, botWelcome: true,
+      chatManualAccount: true, casinoAutoCredit: true, casinoApiKey: true, chatDayEnabled: true, chatDayExpiresAt: true },
+  });
+  if (!user) return res.status(404).json({ error: "Cliente no encontrado" });
+  const { casinoApiKey, ...rest } = user;
+  return res.json({ config: { ...rest, casinoKeyCargada: Boolean(casinoApiKey) }, estado: await chatReadiness(user.id) });
+});
+
+// Configurar/retocar una cuenta EXISTENTE (sirve para los clientes que ya están dados de alta).
+adminRouter.patch("/clients/:id/chat-config", async (req, res) => {
+  const parsed = chatConfigSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
+  const user = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true, email: true } });
+  if (!user) return res.status(404).json({ error: "Cliente no encontrado" });
+  const applied = await applyChatConfig(user.id, parsed.data);
+  // Nunca loguear la key en claro: solo si se tocó.
+  await adminLog(req.userId!, "chat_config", user.id, { applied });
+  return res.json({ ok: true, aplicado: applied, estado: await chatReadiness(user.id) });
 });
 
 export { emitToAdmins };

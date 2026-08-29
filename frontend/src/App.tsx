@@ -25,6 +25,7 @@ import ProtectedAdminRoute from "./components/ProtectedAdminRoute";
 import AdminLayout from "./components/AdminLayout";
 import AdminOverview from "./pages/admin/AdminOverview";
 import AdminClients from "./pages/admin/AdminClients";
+import AdminProvision from "./pages/admin/AdminProvision";
 import AdminLines from "./pages/admin/AdminLines";
 import AdminProxies from "./pages/admin/AdminProxies";
 import AdminProxyHealth from "./pages/admin/AdminProxyHealth";
@@ -79,6 +80,7 @@ export default function App() {
           >
             <Route path="/admin" element={<AdminOverview />} />
             <Route path="/admin/clientes" element={<AdminClients />} />
+            <Route path="/admin/alta" element={<AdminProvision />} />
             <Route path="/admin/lineas" element={<AdminLines />} />
             <Route path="/admin/proxies" element={<AdminProxies />} />
             <Route path="/admin/proxy-health" element={<AdminProxyHealth />} />
