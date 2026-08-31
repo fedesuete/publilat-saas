@@ -230,7 +230,12 @@ webhookRouter.post("/", async (req, res) => {
           if (!peerPhone) continue;
           const fmId = item.key.id as string | undefined;
           if (fmId) {
-            const dup = await prisma.message.findFirst({ where: { waMessageId: fmId }, select: { id: true } });
+            // El eco llega con el id SERIALIZADO ("true_<jid>_<raw>") pero el envío desde el CRM
+            // guardó el raw ("3EB0…"). Sin comparar AMBOS formatos, el eco pasaba el dedup y el
+            // mensaje aparecía DUPLICADO en el Inbox (visto con Roger, 2026-08-31).
+            const rawTail = fmId.includes("_") ? fmId.split("_").pop() : undefined;
+            const ids = rawTail && rawTail !== fmId ? [fmId, rawTail] : [fmId];
+            const dup = await prisma.message.findFirst({ where: { waMessageId: { in: ids } }, select: { id: true } });
             if (dup) continue; // ya lo registramos (enviado desde el CRM)
           }
           // Matcheamos el contacto por su waJid EXACTO (incluye @lid) primero, y si no, por teléfono. En
