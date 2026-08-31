@@ -602,6 +602,29 @@ model Integration {
 // Lead capturado de un FORMULARIO de Meta (Lead Ads). Aditivo: guarda las respuestas del form y linkea al
 // Contact ya creado. La respuesta automática (Fase 2) lee `answers` para personalizar el mensaje según lo
 // que respondió el cliente. `leadgenId` @unique = idempotencia (Meta reenvía el webhook).
+// Campaña de ENVÍO MASIVO: le escribe a una base ya cargada (leads de formularios, contactos del
+// CRM) rotando variantes de texto/audio y espaciando los envíos. Una por cuenta (upsert por userId):
+// alcanza para el caso real y evita campañas simultáneas peleando por la misma línea.
+model BulkCampaign {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  variants   Json     @default("[]") // [{kind:"text",body} | {kind:"audio",clipId}]
+  pauseMinS  Int      @default(170)  // pausa MÍNIMA entre envíos (segundos)
+  pauseMaxS  Int      @default(230)  // pausa MÁXIMA (el intervalo real es aleatorio entre ambas)
+  lineId     String?                 // línea desde la que sale (null = la activa menos usada)
+  audSource  String?                 // filtro: origen del contacto ("leadform" = solo formularios)
+  audStage   String   @default("NUEVO") // filtro: etapa (NUEVO = todavía sin contactar)
+  audMaxDays Int?                    // filtro: solo contactos de los últimos N días
+  audLimit   Int      @default(25)   // tope de envíos por corrida
+  status     String   @default("idle") // idle | running | paused | done
+  sent       Int      @default(0)
+  failed     Int      @default(0)
+  lastRunAt  DateTime?
+  lastError  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
 model LeadForm {
   id         String   @id @default(cuid())
   userId     String

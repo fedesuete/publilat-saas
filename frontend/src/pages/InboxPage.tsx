@@ -12,6 +12,7 @@ interface Conversation {
   alias: string | null; // nombre que le puso el operador (agenda)
   number: string;
   label: string;
+  source: string | null; // "leadform" = lead del formulario de Meta (lo contactamos nosotros)
   stage: Stage;
   line: string | null;
   preview: string;
@@ -394,10 +395,23 @@ export default function InboxPage() {
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center justify-between gap-2">
                     <span className="truncate text-sm font-medium text-slate-100">{c.alias || c.name || c.number || "Sin nombre"}</span>
+                    {/* Distintivo de origen: 📋 = lead del formulario de Meta (salimos a buscarlo
+                        nosotros). Sin etiqueta = escribió la persona por su cuenta (publi/orgánico). */}
+                    {c.source === "leadform" && (
+                      <span className="shrink-0 rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-sky-300" title="Lead del formulario de Meta — lo contactamos nosotros">
+                        📋 Formulario
+                      </span>
+                    )}
                     <span className="shrink-0 text-[10px] text-slate-500">{shortTime(c.lastAt)}</span>
                   </span>
-                  {c.name && c.number && <span className="block truncate text-[10px] text-slate-500">{c.number}</span>}
-                  {c.line && <span className="block truncate text-[10px] text-slate-600">vía {c.line}</span>}
+                  {/* Distintivo del número: chip siempre visible (salvo cuando el título YA es el número).
+                      Ayuda a no confundir contactos, sobre todo los renombrados (alias) o sin nombre. */}
+                  {c.number && (c.alias || c.name) && (
+                    <span className="mt-0.5 inline-flex max-w-full items-center gap-1 rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[11px] leading-tight text-slate-300">
+                      📱<span className="truncate">{c.number}</span>
+                    </span>
+                  )}
+                  {c.line && <span className="mt-0.5 block truncate text-[10px] text-slate-600">vía {c.line}</span>}
                   <span className="mt-0.5 block truncate text-xs text-slate-400">{c.preview || "—"}</span>
                 </span>
               </button>

@@ -8,6 +8,7 @@ import { prisma } from "../lib/prisma.js";
 import { decryptSecret } from "../lib/crypto.js";
 import { notify } from "../lib/notifications.js";
 import { parseVariants, pickVariant, sendLeadVariant } from "../lib/leadgen-send.js";
+import { renderLeadReply as renderTpl, type LeadData } from "../lib/lead-template.js";
 
 export const leadgenRouter = Router();
 const VERIFY_TOKEN = process.env.META_LEADGEN_VERIFY_TOKEN ?? "";
@@ -27,23 +28,9 @@ leadgenRouter.post("/", (req: Request, res: Response) => {
   void processLeadgen(req.body).catch((e) => console.error("[leadgen] error:", e instanceof Error ? e.message : String(e)));
 });
 
-interface LeadData { name: string | null; phone: string | null; email: string | null; answers: Array<{ q: string; a: string }> }
-
-// Plantilla del mensaje automático: {{nombre}} (primer nombre), {{nombre_completo}}, {{email}} y
-// {{respuesta}} (la 1ª respuesta que NO es un dato de contacto — suele ser "qué te interesa").
-// Sin plantilla configurada NO se manda nada (la respuesta automática es opt-in por cuenta).
-export function renderLeadReply(tpl: string, lead: LeadData): string {
-  const full = (lead.name ?? "").trim();
-  const first = full.split(/\s+/)[0] ?? "";
-  const CONTACT_FIELDS = ["full_name", "name", "nombre", "nombre_completo", "phone_number", "phone", "telefono", "teléfono", "celular", "email", "correo"];
-  const extra = lead.answers.find((x) => !CONTACT_FIELDS.includes((x.q ?? "").toLowerCase()) && (x.a ?? "").trim())?.a ?? "";
-  return tpl
-    .replace(/\{\{\s*nombre_completo\s*\}\}/gi, full)
-    .replace(/\{\{\s*nombre\s*\}\}/gi, first)
-    .replace(/\{\{\s*email\s*\}\}/gi, lead.email ?? "")
-    .replace(/\{\{\s*respuesta\s*\}\}/gi, extra)
-    .trim();
-}
+// La plantilla vive en lib/lead-template (la comparten el auto-responder y los envíos masivos).
+// Se re-exporta para no romper imports existentes.
+export { renderLeadReply, type LeadData } from "../lib/lead-template.js";
 
 // Elige la línea desde la que se auto-responde: la configurada (si sigue activa) o, si no hay
 // ninguna configurada, la línea activa menos usada. Elegible = conectada, activa y con día pagado
@@ -86,7 +73,7 @@ async function autoReplyLead(
   // Elegimos UNA variante al azar (texto o audio). Legacy: si no hay variantes, el mensaje único.
   const variant = pickVariant(variants) ?? (legacy ? { kind: "text" as const, body: legacy } : null);
   if (!variant) return;
-  const text = variant.kind === "text" ? renderLeadReply(variant.body, lead) : undefined;
+  const text = variant.kind === "text" ? renderTpl(variant.body, lead) : undefined;
   if (variant.kind === "text" && !text) return;
   const ok = await sendLeadVariant(integ.userId, contact.id, variant, text);
   if (ok) {

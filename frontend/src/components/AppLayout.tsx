@@ -8,6 +8,7 @@ import NotificationBell from "./NotificationBell";
 import {
   LayoutDashboard,
   Users,
+  Send,
   CalendarDays,
   KanbanSquare,
   Inbox,
@@ -122,13 +123,18 @@ function looksLikeReceipt(mediaUrl: string | null | undefined): boolean {
   return mediaUrl.startsWith("data:image") || mediaUrl.startsWith("data:application/pdf");
 }
 
-const NAV: Array<{ to: string; label: string; icon: LucideIcon; id?: string; end?: boolean }> = [
+// Cuentas que ven la sección de Envíos masivos mientras está en prueba (el backend valida lo mismo).
+const BULK_EMAILS = ["federicobogado1997@gmail.com"];
+
+const NAV: Array<{ to: string; label: string; icon: LucideIcon; id?: string; end?: boolean; onlyFor?: "bulk" }> = [
   { to: "/empezar", label: "Empezá acá", icon: Zap, id: "nav-empezar" },
   { to: "/tutoriales", label: "Tutoriales", icon: GraduationCap, id: "nav-tutoriales" },
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/inbox", label: "Inbox", icon: Inbox },
   { to: "/chat", label: "Chat App", icon: MessagesSquare },
   { to: "/leads", label: "Leads", icon: Users },
+  // Envíos masivos: en prueba, solo para las cuentas de BULK_EMAILS (el backend también lo gatea).
+  { to: "/envios", label: "Envíos masivos", icon: Send, onlyFor: "bulk" },
   { to: "/agenda", label: "Agenda", icon: CalendarDays },
   { to: "/kanban", label: "Kanban", icon: KanbanSquare },
   { to: "/automatizaciones", label: "Automatizaciones", icon: Workflow },
@@ -284,7 +290,7 @@ export default function AppLayout() {
           </div>
         </div>
         <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3">
-          {NAV.map((item) => (
+          {NAV.filter((item) => item.onlyFor !== "bulk" || BULK_EMAILS.includes((user?.email ?? "").toLowerCase())).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

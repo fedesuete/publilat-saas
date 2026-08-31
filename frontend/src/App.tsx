@@ -5,6 +5,7 @@ import AppLayout from "./components/AppLayout";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import LeadsPage from "./pages/LeadsPage";
+import BulkPage from "./pages/BulkPage";
 import KanbanPage from "./pages/KanbanPage";
 import InboxPage from "./pages/InboxPage";
 import ChatAppPage from "./pages/ChatAppPage";
@@ -54,6 +55,7 @@ export default function App() {
             <Route path="/empezar" element={<EmpezarPage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/leads" element={<LeadsPage />} />
+            <Route path="/envios" element={<BulkPage />} />
             <Route path="/agenda" element={<AgendaPage />} />
             <Route path="/kanban" element={<KanbanPage />} />
             <Route path="/inbox" element={<InboxPage />} />

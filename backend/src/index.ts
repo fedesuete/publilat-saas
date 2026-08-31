@@ -13,6 +13,7 @@ import { landingRouter } from "./routes/landing.js";
 import { authRouter } from "./routes/auth.js";
 import { landRouter } from "./routes/land.js";
 import { leadsRouter } from "./routes/leads.js";
+import { bulkRouter } from "./routes/bulk.js";
 import { waRouter } from "./routes/wa.js";
 import { webhookRouter } from "./routes/webhook.js";
 import { cloudWebhookRouter } from "./routes/wa-cloud.js";
@@ -171,6 +172,7 @@ app.post("/api/data-deletion", webhookLimiter, (req, res) => {
 
 // Rutas protegidas: Bearer token + rate-limit de API.
 app.use("/api/leads", apiLimiter, requireAuth, leadsRouter);
+app.use("/api/bulk", apiLimiter, requireAuth, bulkRouter); // envíos masivos (gate por email, ver routes/bulk.ts)
 app.use("/api/wa", apiLimiter, requireAuth, waRouter);
 app.use("/api/inbox", apiLimiter, requireAuth, inboxRouter);
 app.use("/api/analytics", apiLimiter, requireAuth, analyticsRouter);

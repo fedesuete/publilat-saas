@@ -174,6 +174,9 @@ inboxRouter.get("/conversations", async (req, res) => {
         alias: c.alias || null,
         number,
         label: c.alias || c.name || number || c.externalId.slice(0, 8),
+        // Origen del contacto: distingue en el Inbox a los que SALIMOS a buscar (leadform = formulario
+        // de Meta) de los que escribieron ellos. Solo visual; el dato ya venía en el include.
+        source: c.source,
         stage: c.stage,
         line: c.line ? c.line.label || c.line.phone : null,
         preview,
