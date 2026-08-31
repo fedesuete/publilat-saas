@@ -40,6 +40,28 @@ function extractText(message: Record<string, any> | undefined): string {
 // "5492944...@s.whatsapp.net" -> "5492944..."
 const jidToPhone = (jid: string | undefined) => (jid ? jid.split("@")[0].replace(/\D/g, "") : "");
 
+// LID → JID real (@c.us). El @lid oculta el teléfono del remitente; WAHA conoce el mapeo. Sin esto,
+// la respuesta de un lead que NOSOTROS contactamos por su número (formularios de Meta) no matchea a
+// su contacto y nace un DUPLICADO "orgánico" — que encima dispara el funnel de bienvenida equivocado
+// (4 leads de plataformas recibieron la secuencia de Publi.lat el 2026-08-31). Best-effort con
+// timeout corto: si WAHA no responde o no conoce el LID, devolvemos null y todo sigue como siempre.
+async function resolveLidJid(sessionId: string, lid: string): Promise<string | null> {
+  const base = process.env.WAHA_BASE_URL, key = process.env.WAHA_API_KEY;
+  if ((process.env.WA_ENGINE ?? "").toLowerCase() !== "waha" || !base || !key) return null;
+  try {
+    const r = await fetch(
+      `${base}/api/contacts?contactId=${encodeURIComponent(lid)}&session=${encodeURIComponent(sessionId)}`,
+      { headers: { "X-Api-Key": key }, signal: AbortSignal.timeout(7000) },
+    );
+    if (!r.ok) return null;
+    const d = (await r.json()) as { id?: string | { _serialized?: string } };
+    const id = typeof d?.id === "string" ? d.id : d?.id?._serialized;
+    return id && id.includes("@") && !id.endsWith("@lid") ? id.replace("@s.whatsapp.net", "@c.us") : null;
+  } catch {
+    return null;
+  }
+}
+
 // Comparación de tokens en tiempo constante (evita side-channel de timing).
 function safeTokenEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a);
@@ -343,6 +365,25 @@ webhookRouter.post("/", async (req, res) => {
               orderBy: { createdAt: "desc" },
             });
             if (existing) return { contact: existing, isNew: false };
+            // Remitente con teléfono OCULTO (@lid) que no matcheó tal cual: resolvemos el número
+            // REAL contra WAHA y buscamos por ese (leads de formulario guardados por su teléfono).
+            // Si matchea, guardamos el LID como waJid → los próximos mensajes matchean directo.
+            let lidRealPhone = "";
+            if (rawJid?.endsWith("@lid") && line.sessionId) {
+              const realJid = await resolveLidJid(line.sessionId, rawJid);
+              lidRealPhone = jidToPhone(realJid ?? undefined);
+              if (lidRealPhone) {
+                const byReal = await prisma.contact.findFirst({
+                  where: { userId, OR: [{ phone: lidRealPhone }, ...(realJid ? [{ waJid: realJid }] : [])] },
+                  orderBy: { createdAt: "desc" },
+                });
+                if (byReal) {
+                  await prisma.contact.update({ where: { id: byReal.id }, data: { waJid: rawJid } }).catch(() => undefined);
+                  byReal.waJid = rawJid;
+                  return { contact: byReal, isNew: false };
+                }
+              }
+            }
             // Link con `ref:` de un cliente (código propio, no de /go) O mensaje directo. Guardamos el
             // código que ya parseamos arriba, así CUALQUIER link con ref funciona (no solo los del /go)
             // y se puede cruzar la carga con la publicidad que la trajo. Sin ref, entra como directo.
@@ -353,7 +394,7 @@ webhookRouter.post("/", async (req, res) => {
                 data: {
                   userId,
                   externalId: crypto.randomUUID(),
-                  phone,
+                  phone: lidRealPhone || phone, // con @lid, el número REAL si lo resolvimos
                   waJid: item.key.remoteJid ?? undefined,
                   lineId: line.id,
                   source: "wa",
@@ -370,7 +411,7 @@ webhookRouter.post("/", async (req, res) => {
                   data: {
                     userId,
                     externalId: crypto.randomUUID(),
-                    phone,
+                    phone: lidRealPhone || phone,
                     waJid: item.key.remoteJid ?? undefined,
                     lineId: line.id,
                     source: "wa",
