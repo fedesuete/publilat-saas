@@ -8,21 +8,25 @@ export const flowsRouter = Router();
 // Pasos recursivos: un menú tiene opciones y cada opción su propia rama de pasos.
 type StepInput = {
   id: string;
-  type: "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage";
+  type: "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage" | "audio";
   text?: string;
+  alts?: string[];    // message: variantes que rotan al azar
   minutes?: number;
   options?: Array<{ id: string; label: string; keywords?: string[]; steps: StepInput[] }>;
   url?: string;
   urlLabel?: string;
   stage?: string;
+  clipIds?: string[]; // audio: pool de audios de la biblioteca (uno al azar)
 };
 
 const stepSchema: z.ZodType<StepInput> = z.lazy(() =>
   z.object({
     id: z.string().min(1),
-    type: z.enum(["message", "delay", "wait_reply", "menu", "link", "set_stage"]),
+    type: z.enum(["message", "delay", "wait_reply", "menu", "link", "set_stage", "audio"]),
     text: z.string().max(2000).optional(),
+    alts: z.array(z.string().max(2000)).max(9).optional(),    // variantes rotativas del mensaje
     minutes: z.number().min(0).max(10080).optional(),
+    clipIds: z.array(z.string().max(40)).max(9).optional(),   // audios de la biblioteca (rota al azar)
     url: z.string().url().max(500).refine((u) => /^https?:\/\//i.test(u), "Solo http(s)").optional(),
     urlLabel: z.string().max(40).optional(),
     stage: z.enum(["NUEVO", "CONTACTADO", "INTERESADO", "PERDIDO"]).optional(),

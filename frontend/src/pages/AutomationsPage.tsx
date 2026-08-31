@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { MessageSquare, Clock, Reply, ListTree, Link2, KanbanSquare, ArrowUp, ArrowDown, Trash2, Plus, X, Workflow, List } from "lucide-react";
+import { MessageSquare, Clock, Reply, ListTree, Link2, KanbanSquare, ArrowUp, ArrowDown, Trash2, Plus, X, Workflow, List, Mic } from "lucide-react";
 import { api, apiError } from "../lib/api";
 import { Button, Input, Card, ErrorMsg } from "../components/ui";
 import FlowCanvas from "../components/FlowCanvas";
 
-type StepType = "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage";
+type StepType = "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage" | "audio";
 interface Option { id: string; label: string; keywords?: string[]; steps: Step[] }
-interface Step { id: string; type: StepType; text?: string; minutes?: number; options?: Option[]; url?: string; urlLabel?: string; stage?: string }
+interface Step { id: string; type: StepType; text?: string; alts?: string[]; minutes?: number; options?: Option[]; url?: string; urlLabel?: string; stage?: string; clipIds?: string[] }
 interface FlowStats { total: number; done: number; active: number }
 interface LinkStat { stepId: string; sent: number; clicked: number }
 interface Flow { id: string; name: string; enabled: boolean; trigger: "first_message" | "keyword"; keyword: string | null; steps: Step[]; stats?: FlowStats; linkStats?: LinkStat[] }
@@ -18,10 +18,12 @@ const newStep = (type: StepType): Step =>
   : type === "menu" ? { id: uid(), type, text: "¿Qué te interesa?", options: [{ id: uid(), label: "Opción 1", steps: [] }, { id: uid(), label: "Opción 2", steps: [] }] }
   : type === "link" ? { id: uid(), type, text: "", urlLabel: "Abrir link", url: "" }
   : type === "set_stage" ? { id: uid(), type, stage: "INTERESADO" }
+  : type === "audio" ? { id: uid(), type, clipIds: [] }
   : { id: uid(), type };
 
 const STEP_META: Record<StepType, { icon: typeof MessageSquare; label: string; color: string }> = {
   message: { icon: MessageSquare, label: "Enviar mensaje", color: "text-wa-green" },
+  audio: { icon: Mic, label: "Enviar audio", color: "text-fuchsia-300" },
   delay: { icon: Clock, label: "Esperar", color: "text-amber-300" },
   wait_reply: { icon: Reply, label: "Esperar respuesta", color: "text-sky-300" },
   menu: { icon: ListTree, label: "Menú con opciones (ramifica)", color: "text-violet-300" },
@@ -79,6 +81,67 @@ function hasUnreachable(steps: Step[]): boolean {
 }
 
 // ---------- Editor recursivo de pasos ----------
+// ---- Biblioteca de audios (compartida por los editores de pasos; se carga una sola vez) ----
+interface Clip { id: string; title: string }
+let clipsCache: Clip[] | null = null;
+function useClips(): Clip[] {
+  const [clips, setClips] = useState<Clip[]>(clipsCache ?? []);
+  useEffect(() => {
+    if (clipsCache) { setClips(clipsCache); return; }
+    api.get<{ items: Clip[] }>("/api/inbox/audio-clips")
+      .then(({ data }) => { clipsCache = data.items ?? []; setClips(clipsCache); })
+      .catch(() => undefined);
+  }, []);
+  return clips;
+}
+
+// Variantes de un paso "mensaje": texto principal + alternativas — se manda UNA al azar (el mismo
+// texto repetido en masa es un patrón que WhatsApp detecta; rotar lo evita).
+function AltsEditor({ step, onChange, compact }: { step: Step; onChange: (p: Partial<Step>) => void; compact?: boolean }) {
+  const alts = step.alts ?? [];
+  return (
+    <div className="space-y-2">
+      <textarea value={step.text ?? ""} onChange={(e) => onChange({ text: e.target.value })} placeholder="Texto que se envía…"
+        className={`${compact ? "h-24" : "h-20"} w-full resize-none rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green`} />
+      {alts.map((a, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <textarea value={a} onChange={(e) => onChange({ alts: alts.map((x, j) => (j === i ? e.target.value : x)) })} placeholder={`Variante ${i + 2} (rota al azar)…`}
+            className="h-14 w-full resize-none rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 outline-none focus:border-wa-green" />
+          <button type="button" onClick={() => onChange({ alts: alts.filter((_, j) => j !== i) })} className="mt-1 text-slate-500 hover:text-rose-400" title="Quitar variante"><X className="h-4 w-4" /></button>
+        </div>
+      ))}
+      <button type="button" onClick={() => onChange({ alts: [...alts, ""] })} className="text-xs text-wa-green hover:underline">
+        + Variante (se manda una al azar, evita parecer bot)
+      </button>
+    </div>
+  );
+}
+
+// Paso "audio": audios de la biblioteca; con varios cargados se manda UNO al azar. Cada envío sale
+// con una copia única (WhatsApp no ve el mismo archivo repetido).
+function AudioEditor({ step, onChange }: { step: Step; onChange: (p: Partial<Step>) => void }) {
+  const clips = useClips();
+  const ids = step.clipIds ?? [];
+  return (
+    <div className="space-y-2">
+      {ids.map((id, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <select value={id} onChange={(e) => onChange({ clipIds: ids.map((x, j) => (j === i ? e.target.value : x)) })}
+            className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green">
+            <option value="">— elegí un audio —</option>
+            {clips.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+          </select>
+          <button type="button" onClick={() => onChange({ clipIds: ids.filter((_, j) => j !== i) })} className="text-slate-500 hover:text-rose-400" title="Quitar audio"><X className="h-4 w-4" /></button>
+        </div>
+      ))}
+      <button type="button" disabled={!clips.length} onClick={() => onChange({ clipIds: [...ids, clips[0]?.id ?? ""] })} className="text-xs text-wa-green hover:underline disabled:opacity-40">
+        + Audio (con varios, rota al azar)
+      </button>
+      {!clips.length && <p className="text-[11px] text-slate-500">No tenés audios en la biblioteca — subilos desde el Inbox 🎵 o Integraciones.</p>}
+    </div>
+  );
+}
+
 function StepsEditor({ steps, onChange, depth = 0, linkStats }: { steps: Step[]; onChange: (s: Step[]) => void; depth?: number; linkStats?: LinkStat[] }) {
   const set = (i: number, patch: Partial<Step>) => onChange(steps.map((s, k) => (k === i ? { ...s, ...patch } : s)));
   const move = (i: number, dir: -1 | 1) => { const j = i + dir; if (j < 0 || j >= steps.length) return; const arr = [...steps]; [arr[i], arr[j]] = [arr[j], arr[i]]; onChange(arr); };
@@ -120,10 +183,8 @@ function StepsEditor({ steps, onChange, depth = 0, linkStats }: { steps: Step[];
               </div>
             </div>
 
-            {s.type === "message" && (
-              <textarea value={s.text ?? ""} onChange={(e) => set(i, { text: e.target.value })} placeholder="Texto que se envía…"
-                className="h-20 w-full resize-none rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
-            )}
+            {s.type === "message" && <AltsEditor step={s} onChange={(p) => set(i, p)} />}
+            {s.type === "audio" && <AudioEditor step={s} onChange={(p) => set(i, p)} />}
             {s.type === "delay" && (
               <div className="flex items-center gap-2 text-sm text-slate-300">
                 Esperar
@@ -188,6 +249,7 @@ function StepsEditor({ steps, onChange, depth = 0, linkStats }: { steps: Step[];
 
       <div className="flex flex-wrap gap-2">
         <Button variant="secondary" onClick={() => add("message")}><MessageSquare className="h-4 w-4" /> Mensaje</Button>
+        <Button variant="secondary" onClick={() => add("audio")}><Mic className="h-4 w-4" /> Audio</Button>
         <Button variant="secondary" onClick={() => add("link")}><Link2 className="h-4 w-4" /> Botón con link</Button>
         <Button variant="secondary" onClick={() => add("delay")}><Clock className="h-4 w-4" /> Espera</Button>
         <Button variant="secondary" onClick={() => add("wait_reply")}><Reply className="h-4 w-4" /> Esperar respuesta</Button>
@@ -290,7 +352,7 @@ export default function AutomationsPage() {
                     <p className="mb-2 font-semibold text-slate-300">Tocá un nodo para editarlo.</p>
                     <p className="mb-3">O agregá un paso al final del flujo:</p>
                     <div className="flex flex-wrap gap-1.5">
-                      {(["message", "link", "delay", "wait_reply", "set_stage", "menu"] as StepType[]).map((t) => (
+                      {(["message", "audio", "link", "delay", "wait_reply", "set_stage", "menu"] as StepType[]).map((t) => (
                         <Button key={t} variant="secondary" onClick={() => { const s = [...draft.steps, newStep(t)]; setDraft({ ...draft, steps: s }); setSelected(String(s.length - 1)); }}>
                           + {STEP_META[t].label.split(" (")[0]}
                         </Button>
@@ -301,7 +363,7 @@ export default function AutomationsPage() {
                   <div className="text-xs text-slate-400">
                     <p className="mb-2 font-semibold text-violet-300">Rama vacía — agregá el primer paso:</p>
                     <div className="flex flex-wrap gap-1.5">
-                      {(["message", "link", "delay", "wait_reply", "set_stage", "menu"] as StepType[]).map((t) => (
+                      {(["message", "audio", "link", "delay", "wait_reply", "set_stage", "menu"] as StepType[]).map((t) => (
                         <Button key={t} variant="secondary" onClick={() => {
                           const optPath = selected.slice(4);
                           setDraft({ ...draft, steps: mutateBranch(draft.steps, optPath, (b) => b.push(newStep(t))) });
@@ -322,10 +384,8 @@ export default function AutomationsPage() {
                     <div className="space-y-3 text-sm">
                       <div className={`flex items-center gap-2 font-semibold ${M.color}`}><M.icon className="h-4 w-4" /> {M.label}</div>
 
-                      {step.type === "message" && (
-                        <textarea value={step.text ?? ""} onChange={(e) => upd({ text: e.target.value })} placeholder="Texto que se envía…"
-                          className="h-28 w-full resize-none rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
-                      )}
+                      {step.type === "message" && <AltsEditor step={step} onChange={upd} compact />}
+                      {step.type === "audio" && <AudioEditor step={step} onChange={upd} />}
                       {step.type === "link" && (
                         <>
                           <textarea value={step.text ?? ""} onChange={(e) => upd({ text: e.target.value })} placeholder="Mensaje que acompaña al link…"
@@ -369,7 +429,7 @@ export default function AutomationsPage() {
                       <div className="border-t border-slate-800 pt-2">
                         <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Agregar después</div>
                         <div className="flex flex-wrap gap-1.5">
-                          {(["message", "link", "delay", "wait_reply", "set_stage", "menu"] as StepType[]).map((t) => (
+                          {(["message", "audio", "link", "delay", "wait_reply", "set_stage", "menu"] as StepType[]).map((t) => (
                             <button key={t} onClick={() => {
                               setDraft({ ...draft, steps: mutateAt(draft.steps, selected, (l, i) => l.splice(i + 1, 0, newStep(t))) });
                               const parts = selected.split(":"); parts[parts.length - 1] = String(parseInt(parts[parts.length - 1], 10) + 1);

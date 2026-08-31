@@ -22,6 +22,13 @@ async function maybeSendQrWelcome(userId: string, contactId: string): Promise<vo
   if (!user?.waQrWelcomeEnabled) return;
   const variants = parseVariants(user.waQrWelcomeReplies);
   if (!variants.length) return;
+  // Si hay un FLOW de bienvenida activo (trigger first_message), manda el flow y esta bienvenida
+  // simple se calla — así el contacto NUNCA recibe las dos. Apagando el flow, esta vuelve sola.
+  const flowActivo = await prisma.flow.findFirst({
+    where: { userId, enabled: true, trigger: "first_message" },
+    select: { id: true },
+  });
+  if (flowActivo) return;
 
   const contact = await prisma.contact.findUnique({
     where: { id: contactId },
@@ -61,13 +68,16 @@ export interface FlowOption {
 
 export interface FlowStep {
   id: string;
-  type: "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage";
+  type: "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage" | "audio";
   text?: string;          // message, menu (encabezado) y link (mensaje que acompaña)
+  alts?: string[];        // message: VARIANTES extra — se manda UNA al azar entre text y alts
+                          // (mensajes idénticos en masa = patrón que WhatsApp detecta como bot)
   minutes?: number;       // delay
   options?: FlowOption[]; // menu
   url?: string;           // link: destino real
   urlLabel?: string;      // link: texto del "botón"
   stage?: string;         // set_stage: NUEVO | CONTACTADO | INTERESADO | PERDIDO
+  clipIds?: string[];     // audio: biblioteca de audios — se manda UNO al azar (copia única por envío)
 }
 
 const NUM_EMOJI = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
@@ -145,7 +155,19 @@ export async function resumeFlowRun(runId: string): Promise<void> {
     const step = pos.list[pos.index];
 
     if (step.type === "message") {
-      if (step.text) await sendToContact(userId, run.contactId, step.text);
+      // Rotación: una variante al azar entre el texto principal y las alternativas.
+      const pool = [step.text, ...(step.alts ?? [])].filter((t): t is string => Boolean(t && t.trim()));
+      if (pool.length) await sendToContact(userId, run.contactId, pool[Math.floor(Math.random() * pool.length)]);
+      cursor = cursorWith(cursor, pos.index + 1);
+      await prisma.flowRun.update({ where: { id: run.id }, data: { cursor, status: "running" } });
+    } else if (step.type === "audio") {
+      // Audio de la biblioteca: uno al azar del pool; el envío sale con copia única (uniquifyAudio).
+      const clips = (step.clipIds ?? []).filter(Boolean);
+      if (clips.length) {
+        const clipId = clips[Math.floor(Math.random() * clips.length)];
+        await sendLeadVariant(userId, run.contactId, { kind: "audio", clipId }).catch((e) =>
+          console.error("[flow] audio no enviado:", e instanceof Error ? e.message : String(e)));
+      }
       cursor = cursorWith(cursor, pos.index + 1);
       await prisma.flowRun.update({ where: { id: run.id }, data: { cursor, status: "running" } });
     } else if (step.type === "link") {
