@@ -131,6 +131,29 @@ export default function IntegrationsPage() {
   const [lgOk, setLgOk] = useState<string | null>(null);
   const [lgCopied, setLgCopied] = useState<string | null>(null);
   const [lines, setLines] = useState<LineOpt[]>([]);
+  // Bienvenida automática de líneas QR (1er mensaje de un contacto nuevo → variante al azar).
+  const [qrwEnabled, setQrwEnabled] = useState(false);
+  const [qrwVariants, setQrwVariants] = useState<Variant[]>([]);
+  const [qrwSaving, setQrwSaving] = useState(false);
+  const [qrwOk, setQrwOk] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get<{ enabled: boolean; replies: Variant[] }>("/api/integrations/qr-welcome")
+      .then(({ data }) => { setQrwEnabled(data.enabled); setQrwVariants(Array.isArray(data.replies) ? data.replies : []); })
+      .catch(() => undefined);
+  }, []);
+
+  const saveQrWelcome = async () => {
+    setQrwSaving(true); setError(null); setQrwOk(null);
+    try {
+      await api.put("/api/integrations/qr-welcome", {
+        enabled: qrwEnabled,
+        replies: qrwVariants.filter((v) => (v.kind === "text" ? v.body.trim() : v.clipId)),
+      });
+      setQrwOk("Guardado ✔");
+    } catch (err) { setError(apiError(err)); }
+    finally { setQrwSaving(false); }
+  };
 
   useEffect(() => {
     api.get<{ lines: LineOpt[] }>("/api/wa/lines")
@@ -352,6 +375,60 @@ export default function IntegrationsPage() {
               </Button>
             </div>
           </form>
+        </Card>
+      )}
+
+      {/* Bienvenida automática de WhatsApp (líneas QR): al 1er mensaje de un contacto NUEVO se manda
+          una variante al azar. Dedup server-side: nunca se repite ni pisa charlas ya iniciadas. */}
+      {!loading && (
+        <Card className="mt-6 max-w-lg">
+          <div className="mb-1 text-sm font-semibold text-slate-100">
+            Bienvenida automática de WhatsApp {qrwEnabled && qrwVariants.length > 0 && <span className="text-emerald-400">· activa ✓</span>}
+          </div>
+          <p className="mb-3 text-xs text-slate-400">
+            Cuando un contacto <b>nuevo</b> te escribe por primera vez (por ejemplo desde tu anuncio), le
+            respondemos al instante con uno de estos mensajes. Si ya le hablaste vos o ya se le envió algo,
+            <b> no se repite jamás</b>.
+          </p>
+          <div className="space-y-2">
+            {qrwVariants.map((v, i) => (
+              <div key={i} className="rounded-md border border-slate-700 bg-slate-800/60 p-2">
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-400">{v.kind === "text" ? `📝 Texto ${i + 1}` : `🎤 Audio ${i + 1}`}</span>
+                  <button type="button" onClick={() => setQrwVariants(qrwVariants.filter((_, j) => j !== i))} className="text-xs text-rose-400 hover:text-rose-300">Quitar</button>
+                </div>
+                {v.kind === "text" ? (
+                  <textarea
+                    value={v.body} rows={2}
+                    onChange={(e) => setQrwVariants(qrwVariants.map((x, j) => (j === i ? { kind: "text", body: e.target.value } : x)))}
+                    className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green"
+                  />
+                ) : (
+                  <select
+                    value={v.clipId}
+                    onChange={(e) => setQrwVariants(qrwVariants.map((x, j) => (j === i ? { kind: "audio", clipId: e.target.value } : x)))}
+                    className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green"
+                  >
+                    <option value="">— elegí un audio —</option>
+                    {clips.map((c) => (<option key={c.id} value={c.id}>{c.title}</option>))}
+                  </select>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" onClick={() => setQrwVariants([...qrwVariants, { kind: "text", body: "" }])}>+ Texto</Button>
+            <Button type="button" variant="secondary" disabled={!clips.length} onClick={() => setQrwVariants([...qrwVariants, { kind: "audio", clipId: clips[0]?.id ?? "" }])}>+ Audio</Button>
+          </div>
+          <div className="mt-3 space-y-2">
+            <Toggle label="Responder automáticamente al primer mensaje" checked={qrwEnabled} onChange={setQrwEnabled} />
+            <Button type="button" disabled={qrwSaving} onClick={() => void saveQrWelcome()}>{qrwSaving ? "Guardando…" : "Guardar"}</Button>
+            {qrwOk && <p className="text-xs text-emerald-300">{qrwOk}</p>}
+          </div>
+          <p className="mt-2 text-[11px] text-slate-500">
+            Variables: <span className="font-mono">{"{{nombre}}"}</span> (el nombre de WhatsApp del contacto).
+            Los audios se administran desde la sección de Formularios de Meta o el Inbox.
+          </p>
         </Card>
       )}
 

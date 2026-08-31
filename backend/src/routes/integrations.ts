@@ -144,6 +144,39 @@ integrationsRouter.put("/", async (req, res) => {
   });
 });
 
+// ---- Bienvenida automática de líneas QR (User.waQrWelcome*) ----
+// Variantes rotativas (texto/audio) que se mandan solas al PRIMER mensaje de un contacto nuevo en
+// las líneas Baileys/QR. El envío y el dedup viven en lib/flow-engine (maybeSendQrWelcome).
+const qrWelcomeSchema = z.object({
+  enabled: z.boolean().optional(),
+  replies: z.array(z.union([
+    z.object({ kind: z.literal("text"), body: z.string().min(1).max(1000) }),
+    z.object({ kind: z.literal("audio"), clipId: z.string().min(1).max(40) }),
+  ])).max(10).optional(),
+});
+
+integrationsRouter.get("/qr-welcome", async (req, res) => {
+  const u = await prisma.user.findUnique({
+    where: { id: req.userId! },
+    select: { waQrWelcomeEnabled: true, waQrWelcomeReplies: true },
+  });
+  return res.json({ enabled: u?.waQrWelcomeEnabled ?? false, replies: u?.waQrWelcomeReplies ?? [] });
+});
+
+integrationsRouter.put("/qr-welcome", async (req, res) => {
+  const parsed = qrWelcomeSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
+  const data: Record<string, unknown> = {};
+  if (parsed.data.enabled !== undefined) data.waQrWelcomeEnabled = parsed.data.enabled;
+  if (parsed.data.replies !== undefined) data.waQrWelcomeReplies = parsed.data.replies;
+  const u = await prisma.user.update({
+    where: { id: req.userId! },
+    data,
+    select: { waQrWelcomeEnabled: true, waQrWelcomeReplies: true },
+  });
+  return res.json({ enabled: u.waQrWelcomeEnabled, replies: u.waQrWelcomeReplies ?? [] });
+});
+
 // POST /api/integrations/test — dispara un webhook de prueba.
 integrationsRouter.post("/test", async (req, res) => {
   try {

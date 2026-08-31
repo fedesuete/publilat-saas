@@ -6,6 +6,51 @@
 import { prisma } from "./prisma.js";
 import { sendToContact } from "./wa-send.js";
 import { scheduleFlowResume } from "./queue.js";
+import { parseVariants, pickVariant, sendLeadVariant } from "./leadgen-send.js";
+import { renderLeadReply } from "./lead-template.js";
+
+// ---- Bienvenida automática de líneas QR (waQrWelcomeEnabled + waQrWelcomeReplies) ----
+// Al PRIMER mensaje de un contacto NUEVO se manda UNA variante al azar (texto o audio). Dedup en dos
+// capas: (1) claim ATÓMICO de la etapa NUEVO→CONTACTADO (dos mensajes rápidos seguidos no duplican:
+// solo uno gana el updateMany), y (2) si el contacto ya tiene ALGÚN saliente (le hablaste vos desde
+// el celu o el panel) no se manda nada. Best-effort: jamás rompe el procesamiento del inbound.
+async function maybeSendQrWelcome(userId: string, contactId: string): Promise<void> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { waQrWelcomeEnabled: true, waQrWelcomeReplies: true },
+  });
+  if (!user?.waQrWelcomeEnabled) return;
+  const variants = parseVariants(user.waQrWelcomeReplies);
+  if (!variants.length) return;
+
+  const contact = await prisma.contact.findUnique({
+    where: { id: contactId },
+    select: { id: true, name: true, stage: true, lineId: true },
+  });
+  if (!contact?.lineId || contact.stage !== "NUEVO") return;
+  // ¿Ya le hablamos alguna vez (panel, celu, tanda)? Entonces no es un contacto "por estrenar".
+  const prevOut = await prisma.message.findFirst({ where: { contactId, direction: "out" }, select: { id: true } });
+  if (prevOut) return;
+  // Claim atómico: solo UN inbound gana el derecho a dar la bienvenida.
+  const claimed = await prisma.contact.updateMany({
+    where: { id: contactId, stage: "NUEVO" },
+    data: { stage: "CONTACTADO" },
+  });
+  if (claimed.count !== 1) return;
+
+  const variant = pickVariant(variants)!;
+  const text = variant.kind === "text"
+    ? renderLeadReply(variant.body, { name: contact.name, phone: null, email: null, answers: [] })
+    : undefined;
+  const ok = await sendLeadVariant(userId, contactId, variant, text).catch(() => false);
+  if (!ok) {
+    // No salió (línea caída, cupo de warmup): soltamos el claim para que el próximo mensaje reintente.
+    await prisma.contact.updateMany({ where: { id: contactId, stage: "CONTACTADO" }, data: { stage: "NUEVO" } }).catch(() => undefined);
+    console.warn(`[qr-welcome] no se pudo enviar la bienvenida al contacto ${contactId}`);
+    return;
+  }
+  console.log(`[qr-welcome] bienvenida (${variant.kind}) enviada al contacto ${contactId}`);
+}
 
 export interface FlowOption {
   id: string;
@@ -153,6 +198,9 @@ export async function resumeFlowRun(runId: string): Promise<void> {
 // Se llama por cada mensaje ENTRANTE.
 export async function onInboundFlow(userId: string, contactId: string, text: string): Promise<void> {
   try {
+    // Bienvenida automática de líneas QR (independiente de los flows; con su propio dedup).
+    await maybeSendQrWelcome(userId, contactId).catch((e) =>
+      console.error("[qr-welcome] error:", e instanceof Error ? e.message : String(e)));
     // 1) ¿Esperando la elección de un menú?
     const waitingOpt = await prisma.flowRun.findFirst({
       where: { contactId, status: "waiting_option" },

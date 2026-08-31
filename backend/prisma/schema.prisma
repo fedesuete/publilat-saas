@@ -116,6 +116,11 @@ model User {
   waWelcomeEnabled Boolean @default(false) // prende el auto-saludo al entrar el 1er msg del anuncio
   waWelcomeText    String?                 // cuerpo del saludo (ej. "¡Hola! ¿Cómo podemos ayudarte?")
   waWelcomeButtons String?                 // hasta 3 botones, etiquetas separadas por "|"
+  // Bienvenida automática para líneas QR (Baileys/WAHA): al PRIMER mensaje de un contacto nuevo se
+  // manda UNA variante al azar (texto o audio, mismo formato que leadgenReplies). Dedup atómico por
+  // etapa (NUEVO→CONTACTADO) + sin salientes previos → jamás se repite ni pisa charlas ya iniciadas.
+  waQrWelcomeEnabled Boolean @default(false)
+  waQrWelcomeReplies Json?
   // Auto-responder con botón CTA (link) en la Cloud API: bienvenida al 1er msg + follow-up en cada
   // msg siguiente, con un botón que abre un URL (funnel neutro; el casino NO va en el texto).
   waAutoEnabled    Boolean @default(false)
