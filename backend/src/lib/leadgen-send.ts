@@ -35,7 +35,15 @@ export async function ensureContactJid(
     if (!r.ok) return true; // API caída: no bloqueamos el envío por esto
     const d = (await r.json()) as { numberExists?: boolean; chatId?: string };
     if (!d.numberExists || !d.chatId) return false; // el número NO tiene WhatsApp
-    await prisma.contact.update({ where: { id: contact.id }, data: { waJid: d.chatId } }).catch(() => undefined);
+    // Persistimos el jid Y el teléfono CANÓNICO (con el 9). Sin actualizar el phone, la RESPUESTA
+    // del cliente entra por el webhook con el número canónico, no matchea al contacto (guardado sin
+    // 9) y nace un DUPLICADO "orgánico" — que encima dispara el funnel de bienvenida equivocado
+    // (pasó el 2026-08-31: lead de plataforma recibió la secuencia de Publi.lat).
+    const canonicalPhone = d.chatId.split("@")[0].replace(/\D/g, "") || null;
+    await prisma.contact.update({
+      where: { id: contact.id },
+      data: { waJid: d.chatId, ...(canonicalPhone ? { phone: canonicalPhone } : {}) },
+    }).catch(() => undefined);
     contact.waJid = d.chatId;
     return true;
   } catch {

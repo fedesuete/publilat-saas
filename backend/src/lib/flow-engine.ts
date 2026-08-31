@@ -220,6 +220,12 @@ export async function resumeFlowRun(runId: string): Promise<void> {
 // Se llama por cada mensaje ENTRANTE.
 export async function onInboundFlow(userId: string, contactId: string, text: string): Promise<void> {
   try {
+    // SEPARACIÓN DE FUNNELS (regla dura): los contactos que NOSOTROS salimos a buscar (leads de
+    // formulario de Meta, Kommo) NUNCA entran a la bienvenida automática ni a las secuencias — esas
+    // son para los que nos escriben espontáneamente. Mezclarlos manda el funnel de Publi.lat a
+    // clientes de plataformas (pasó el 2026-08-31). A estos contactos los atiende una persona.
+    const src = await prisma.contact.findUnique({ where: { id: contactId }, select: { source: true } });
+    if (src?.source === "leadform" || src?.source === "kommo") return;
     // Bienvenida automática de líneas QR (independiente de los flows; con su propio dedup).
     await maybeSendQrWelcome(userId, contactId).catch((e) =>
       console.error("[qr-welcome] error:", e instanceof Error ? e.message : String(e)));
