@@ -22,11 +22,15 @@ interface Integration {
   leadgenEnabled?: boolean;
   leadgenLineId?: string | null;
   leadgenReply?: string | null;
+  leadgenReplies?: Variant[];
   leadgenWebhookUrl?: string | null;
   leadgenVerifyToken?: string | null;
 }
 
 interface LineOpt { id: string; label: string | null; phone: string }
+interface ClipOpt { id: string; title: string }
+// Una variante de la respuesta automática: texto o audio de la biblioteca.
+type Variant = { kind: "text"; body: string } | { kind: "audio"; clipId: string };
 const DEFAULT_LEAD_REPLY =
   "¡Hola {{nombre}}! 👋 Gracias por dejarnos tus datos. Te escribo para contarte cómo seguimos, ¿te viene bien ahora?";
 
@@ -88,6 +92,8 @@ export default function IntegrationsPage() {
   const [lgEnabled, setLgEnabled] = useState(false);
   const [lgLineId, setLgLineId] = useState("");
   const [lgReply, setLgReply] = useState("");
+  const [variants, setVariants] = useState<Variant[]>([]);
+  const [clips, setClips] = useState<ClipOpt[]>([]);
   const [lgHook, setLgHook] = useState<{ url: string | null; verify: string | null }>({ url: null, verify: null });
   const [lgSaving, setLgSaving] = useState(false);
   const [lgOk, setLgOk] = useState<string | null>(null);
@@ -98,6 +104,9 @@ export default function IntegrationsPage() {
     api.get<{ lines: LineOpt[] }>("/api/wa/lines")
       .then(({ data }) => setLines(data.lines ?? []))
       .catch(() => undefined); // sin líneas el selector queda en "la que esté activa"
+    api.get<{ items: ClipOpt[] }>("/api/inbox/audio-clips")
+      .then(({ data }) => setClips(data.items ?? []))
+      .catch(() => undefined); // sin audios, solo se pueden agregar variantes de texto
   }, []);
 
   const saveLeadgen = async () => {
@@ -111,6 +120,7 @@ export default function IntegrationsPage() {
         leadgenEnabled: lgEnabled,
         leadgenLineId: lgLineId ? lgLineId : null,
         leadgenReply: lgReply.trim() ? lgReply.trim() : null,
+        leadgenReplies: variants.filter((v) => (v.kind === "text" ? v.body.trim() : v.clipId)),
       });
       applyIntegration(data.integration);
       setPageToken("");
@@ -138,6 +148,7 @@ export default function IntegrationsPage() {
     setLgEnabled(Boolean(i.leadgenEnabled));
     setLgLineId(i.leadgenLineId ?? "");
     setLgReply(i.leadgenReply ?? "");
+    setVariants(Array.isArray(i.leadgenReplies) ? i.leadgenReplies : []);
     setLgHook({ url: i.leadgenWebhookUrl ?? null, verify: i.leadgenVerifyToken ?? null });
   };
 
@@ -346,22 +357,70 @@ export default function IntegrationsPage() {
                 ))}
               </select>
             </div>
+            {/* Variantes ROTATIVAS: por cada lead se manda UNA al azar (texto o audio). Mandar el
+                mismo mensaje a decenas de números es un patrón que WhatsApp marca como spam. */}
             <div>
-              <label className="mb-1 block text-xs text-slate-400">Mensaje automático</label>
-              <textarea
-                value={lgReply}
-                onChange={(e) => setLgReply(e.target.value)}
-                rows={3}
-                placeholder={DEFAULT_LEAD_REPLY}
-                className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green"
-              />
-              <p className="mt-1 text-[11px] text-slate-500">
-                Podés usar <span className="font-mono">{"{{nombre}}"}</span>,{" "}
+              <label className="mb-1 block text-xs text-slate-400">
+                Mensajes automáticos (se manda uno al azar por cada lead)
+              </label>
+              <div className="space-y-2">
+                {variants.map((v, i) => (
+                  <div key={i} className="rounded-md border border-slate-700 bg-slate-800/60 p-2">
+                    <div className="mb-1 flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-slate-400">
+                        {v.kind === "text" ? `📝 Texto ${i + 1}` : `🎤 Audio ${i + 1}`}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setVariants(variants.filter((_, j) => j !== i))}
+                        className="text-xs text-rose-400 hover:text-rose-300"
+                      >
+                        Quitar
+                      </button>
+                    </div>
+                    {v.kind === "text" ? (
+                      <textarea
+                        value={v.body}
+                        onChange={(e) => setVariants(variants.map((x, j) => (j === i ? { kind: "text", body: e.target.value } : x)))}
+                        rows={2}
+                        placeholder={DEFAULT_LEAD_REPLY}
+                        className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green"
+                      />
+                    ) : (
+                      <select
+                        value={v.clipId}
+                        onChange={(e) => setVariants(variants.map((x, j) => (j === i ? { kind: "audio", clipId: e.target.value } : x)))}
+                        className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green"
+                      >
+                        <option value="">— elegí un audio de tu biblioteca —</option>
+                        {clips.map((c) => (<option key={c.id} value={c.id}>{c.title}</option>))}
+                      </select>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button type="button" variant="secondary" onClick={() => setVariants([...variants, { kind: "text", body: "" }])}>
+                  + Agregar texto
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={!clips.length}
+                  onClick={() => setVariants([...variants, { kind: "audio", clipId: clips[0]?.id ?? "" }])}
+                >
+                  + Agregar audio
+                </Button>
+              </div>
+              <p className="mt-2 text-[11px] text-slate-500">
+                Variables para los textos: <span className="font-mono">{"{{nombre}}"}</span>,{" "}
                 <span className="font-mono">{"{{nombre_completo}}"}</span>,{" "}
-                <span className="font-mono">{"{{email}}"}</span> y{" "}
+                <span className="font-mono">{"{{email}}"}</span>,{" "}
                 <span className="font-mono">{"{{respuesta}}"}</span> (lo que eligió en el formulario).
-                <button type="button" onClick={() => setLgReply(DEFAULT_LEAD_REPLY)} className="ml-1 text-wa-green hover:underline">Usar ejemplo</button>
-                <br />Si lo dejás vacío, el lead se guarda igual pero NO se le escribe.
+                <br />Los audios salen de <b>Inbox → biblioteca de audios</b>, y cada envío va con una copia
+                única (WhatsApp no los ve como el mismo archivo repetido).
+                {!clips.length && <><br /><b>No tenés audios cargados todavía</b> — subilos desde el Inbox y aparecen acá.</>}
+                <br />Sin ningún mensaje cargado, el lead se guarda igual pero NO se le escribe.
               </p>
             </div>
             <Toggle label="Activar captura y respuesta automática" checked={lgEnabled} onChange={setLgEnabled} />

@@ -66,6 +66,7 @@ integrationsRouter.get("/", async (req, res) => {
       leadgenEnabled: i.leadgenEnabled,
       leadgenLineId: i.leadgenLineId,
       leadgenReply: i.leadgenReply,
+      leadgenReplies: i.leadgenReplies ?? [],
       leadgenWebhookUrl: LEADGEN_WEBHOOK_URL,
       leadgenVerifyToken: LEADGEN_VERIFY_TOKEN,
     },
@@ -87,6 +88,11 @@ const putSchema = z.object({
   leadgenEnabled: z.boolean().optional(),
   leadgenLineId: z.string().max(40).nullable().optional(),
   leadgenReply: z.string().max(1000).nullable().optional(),
+  // Variantes rotativas de la auto-respuesta: texto o audio de la biblioteca (máx. 10).
+  leadgenReplies: z.array(z.union([
+    z.object({ kind: z.literal("text"), body: z.string().min(1).max(1000) }),
+    z.object({ kind: z.literal("audio"), clipId: z.string().min(1).max(40) }),
+  ])).max(10).nullable().optional(),
 });
 
 // PUT /api/integrations — actualiza la configuración.
@@ -132,6 +138,7 @@ integrationsRouter.put("/", async (req, res) => {
       kommoWebhookUrl: kommoWebhookUrl(i.inboundToken),
       metaPageId: i.metaPageId, metaPageTokenSet: Boolean(i.metaPageToken),
       leadgenEnabled: i.leadgenEnabled, leadgenLineId: i.leadgenLineId, leadgenReply: i.leadgenReply,
+      leadgenReplies: i.leadgenReplies ?? [],
       leadgenWebhookUrl: LEADGEN_WEBHOOK_URL, leadgenVerifyToken: LEADGEN_VERIFY_TOKEN,
     },
   });

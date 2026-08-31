@@ -589,7 +589,12 @@ model Integration {
   metaPageToken String?                  // Page access token (cifrado) para traer los datos del lead por Graph API
   leadgenEnabled Boolean @default(false) // prende la captura + respuesta automática de formularios
   leadgenLineId String?                  // línea de WhatsApp desde la que se auto-responde (Fase 2)
-  leadgenReply  String?                  // mensaje de respuesta automática por defecto (Fase 2)
+  leadgenReply  String?                  // mensaje único (legacy; si hay leadgenReplies, se ignora)
+  // Variantes ROTATIVAS de la respuesta automática: texto o AUDIO de la biblioteca. Se elige una al
+  // azar por lead → 138 mensajes idénticos son un patrón que WhatsApp detecta; variar lo evita. El
+  // audio además permite explicar cosas que por texto queman el número (rubros sensibles).
+  // Formato: [{ "kind": "text", "body": "Hola {{nombre}}…" } | { "kind": "audio", "clipId": "cuid" }]
+  leadgenReplies Json?
   createdAt  DateTime @default(now())
   user       User     @relation(fields: [userId], references: [id])
 }

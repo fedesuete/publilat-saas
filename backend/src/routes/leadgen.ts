@@ -6,8 +6,8 @@ import { Router, type Request, type Response } from "express";
 import crypto from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { decryptSecret } from "../lib/crypto.js";
-import { sendToContact } from "../lib/wa-send.js";
 import { notify } from "../lib/notifications.js";
+import { parseVariants, pickVariant, sendLeadVariant } from "../lib/leadgen-send.js";
 
 export const leadgenRouter = Router();
 const VERIFY_TOKEN = process.env.META_LEADGEN_VERIFY_TOKEN ?? "";
@@ -62,12 +62,14 @@ async function pickLeadgenLine(userId: string, preferredId: string | null): Prom
 // queda logueado y NO rompe la captura (el lead ya está guardado). Requiere plantilla configurada,
 // teléfono en el formulario y una línea con día pagado vigente.
 async function autoReplyLead(
-  integ: { userId: string; leadgenReply: string | null; leadgenLineId: string | null },
+  integ: { userId: string; leadgenReply: string | null; leadgenReplies: unknown; leadgenLineId: string | null },
   contact: { id: string; phone: string | null; lineId: string | null },
   lead: LeadData,
 ): Promise<void> {
-  const tpl = integ.leadgenReply?.trim();
-  if (!tpl) return;                       // sin plantilla = solo captura (opt-in)
+  // Variantes rotativas (texto/audio); si no hay, cae al mensaje único legacy. Sin nada = solo captura.
+  const variants = parseVariants(integ.leadgenReplies);
+  const legacy = integ.leadgenReply?.trim();
+  if (!variants.length && !legacy) return; // opt-in: sin mensajes configurados no se escribe nada
   if (!contact.phone) { console.warn("[leadgen] lead sin teléfono, no se auto-responde"); return; }
 
   const lineId = contact.lineId ?? (await pickLeadgenLine(integ.userId, integ.leadgenLineId));
@@ -77,14 +79,18 @@ async function autoReplyLead(
       "Entró un lead de tu formulario de Meta pero no tenés ninguna línea de WhatsApp activa con días. Activá una línea para que la respuesta automática salga sola.").catch(() => undefined);
     return;
   }
-  // sendToContact envía por la línea DEL CONTACTO: se la asignamos antes (el lead entra sin línea).
+  // El envío sale por la línea DEL CONTACTO: se la asignamos antes (el lead entra sin línea).
   if (contact.lineId !== lineId) {
     await prisma.contact.update({ where: { id: contact.id }, data: { lineId } }).catch(() => undefined);
   }
-  const text = renderLeadReply(tpl, lead);
-  if (!text) return;
-  const ok = await sendToContact(integ.userId, contact.id, text);
+  // Elegimos UNA variante al azar (texto o audio). Legacy: si no hay variantes, el mensaje único.
+  const variant = pickVariant(variants) ?? (legacy ? { kind: "text" as const, body: legacy } : null);
+  if (!variant) return;
+  const text = variant.kind === "text" ? renderLeadReply(variant.body, lead) : undefined;
+  if (variant.kind === "text" && !text) return;
+  const ok = await sendLeadVariant(integ.userId, contact.id, variant, text);
   if (ok) {
+    console.log(`[leadgen] variante enviada: ${variant.kind}`);
     // Queda como CONTACTADO en el CRM (el operador ve que ya se le escribió).
     await prisma.contact.update({ where: { id: contact.id }, data: { stage: "CONTACTADO" } }).catch(() => undefined);
     console.log(`[leadgen] auto-respuesta enviada al contacto ${contact.id}`);
