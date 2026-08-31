@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { api, apiError } from "../lib/api";
 import { Button, Input, Card, ErrorMsg } from "../components/ui";
 
@@ -94,6 +94,38 @@ export default function IntegrationsPage() {
   const [lgReply, setLgReply] = useState("");
   const [variants, setVariants] = useState<Variant[]>([]);
   const [clips, setClips] = useState<ClipOpt[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const audioInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Subir un audio SIN salir de esta pantalla: lo guarda en la biblioteca (la misma del Inbox) y lo
+  // deja elegido como variante nueva. Antes había que ir al Inbox, subirlo y volver acá.
+  const onAudioPicked = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // permite volver a elegir el mismo archivo
+    if (!file) return;
+    const sugerido = file.name.replace(/\.[^.]+$/, "").slice(0, 60);
+    const title = window.prompt("Nombre del audio (ej: Apertura 1):", sugerido)?.trim();
+    if (!title) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onloadend = () => resolve(String(fr.result));
+        fr.onerror = () => reject(new Error("No se pudo leer el archivo"));
+        fr.readAsDataURL(file);
+      });
+      const { data } = await api.post<{ item: ClipOpt }>("/api/inbox/audio-clips", { title, audio: dataUrl });
+      const { data: listado } = await api.get<{ items: ClipOpt[] }>("/api/inbox/audio-clips");
+      setClips(listado.items ?? []);
+      setVariants((prev) => [...prev, { kind: "audio", clipId: data.item.id }]); // ya queda en la rotación
+      setLgOk("Audio subido y agregado a la rotación. Acordate de Guardar 👇");
+    } catch (err) {
+      setError(apiError(err));
+    } finally {
+      setUploading(false);
+    }
+  };
   const [lgHook, setLgHook] = useState<{ url: string | null; verify: string | null }>({ url: null, verify: null });
   const [lgSaving, setLgSaving] = useState(false);
   const [lgOk, setLgOk] = useState<string | null>(null);
@@ -409,7 +441,12 @@ export default function IntegrationsPage() {
                   disabled={!clips.length}
                   onClick={() => setVariants([...variants, { kind: "audio", clipId: clips[0]?.id ?? "" }])}
                 >
-                  + Agregar audio
+                  + Elegir audio guardado
+                </Button>
+                {/* Subida directa: sin salir de acá (antes había que ir al Inbox y volver). */}
+                <input ref={audioInputRef} type="file" accept="audio/*" className="hidden" onChange={(e) => void onAudioPicked(e)} />
+                <Button type="button" disabled={uploading} onClick={() => audioInputRef.current?.click()}>
+                  {uploading ? "Subiendo…" : "🎤 Subir audio nuevo"}
                 </Button>
               </div>
               <p className="mt-2 text-[11px] text-slate-500">
@@ -417,9 +454,9 @@ export default function IntegrationsPage() {
                 <span className="font-mono">{"{{nombre_completo}}"}</span>,{" "}
                 <span className="font-mono">{"{{email}}"}</span>,{" "}
                 <span className="font-mono">{"{{respuesta}}"}</span> (lo que eligió en el formulario).
-                <br />Los audios salen de <b>Inbox → biblioteca de audios</b>, y cada envío va con una copia
-                única (WhatsApp no los ve como el mismo archivo repetido).
-                {!clips.length && <><br /><b>No tenés audios cargados todavía</b> — subilos desde el Inbox y aparecen acá.</>}
+                <br />Subí los audios acá mismo con <b>🎤 Subir audio nuevo</b> (quedan también en la
+                biblioteca del Inbox). Cada envío va con una copia única, así WhatsApp no los ve como el
+                mismo archivo repetido. Máx. 12 MB por audio.
                 <br />Sin ningún mensaje cargado, el lead se guarda igual pero NO se le escribe.
               </p>
             </div>
