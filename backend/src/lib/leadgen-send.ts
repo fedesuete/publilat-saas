@@ -14,6 +14,35 @@ export type LeadReplyVariant =
   | { kind: "text"; body: string }
   | { kind: "audio"; clipId: string };
 
+// Resuelve el JID CANÓNICO de WhatsApp de un contacto que solo tiene teléfono (leads de formularios:
+// los números argentinos vienen SIN el 9 → "54387..." no es nadie en WhatsApp; el real es "549387...").
+// WAHA check-exists devuelve el chatId correcto (le agrega el 9 solo). Lo persistimos en waJid: los
+// envíos usan waJid primero, así que UNA resolución arregla todos los envíos futuros a ese contacto.
+// Devuelve true si el número EXISTE en WhatsApp (con jid ya guardado); false si no existe o falló.
+export async function ensureContactJid(
+  contact: { id: string; phone: string | null; waJid: string | null },
+  sessionId: string | null,
+): Promise<boolean> {
+  if (contact.waJid) return true;           // ya resuelto (contactos que escribieron ellos)
+  if (!contact.phone || !sessionId) return false;
+  const base = process.env.WAHA_BASE_URL, key = process.env.WAHA_API_KEY;
+  if ((process.env.WA_ENGINE ?? "").toLowerCase() !== "waha" || !base || !key) return true; // otros motores: sin chequeo, se envía como siempre
+  try {
+    const r = await fetch(
+      `${base}/api/contacts/check-exists?phone=${encodeURIComponent(contact.phone)}&session=${encodeURIComponent(sessionId)}`,
+      { headers: { "X-Api-Key": key }, signal: AbortSignal.timeout(9000) },
+    );
+    if (!r.ok) return true; // API caída: no bloqueamos el envío por esto
+    const d = (await r.json()) as { numberExists?: boolean; chatId?: string };
+    if (!d.numberExists || !d.chatId) return false; // el número NO tiene WhatsApp
+    await prisma.contact.update({ where: { id: contact.id }, data: { waJid: d.chatId } }).catch(() => undefined);
+    contact.waJid = d.chatId;
+    return true;
+  } catch {
+    return true; // error de red: mejor intentar el envío que perderlo
+  }
+}
+
 // Lee/valida las variantes guardadas en Integration.leadgenReplies (JSON libre en la DB).
 export function parseVariants(raw: unknown): LeadReplyVariant[] {
   if (!Array.isArray(raw)) return [];
@@ -88,8 +117,26 @@ async function sendAudioToContact(userId: string, contactId: string, clipId: str
   return true;
 }
 
-// Envía la variante elegida (texto ya renderizado, o audio). Punto único que usa el webhook de leadgen.
+// Envía la variante elegida (texto ya renderizado, o audio). Punto único que usan el auto-responder
+// de leads, los envíos masivos y la bienvenida QR. ANTES de enviar resuelve el JID canónico del
+// contacto (sin esto, los números de formularios sin el "9" argentino se iban al vacío: WhatsApp
+// los "aceptaba" pero no era nadie — 46 envíos perdidos el 2026-08-31).
 export async function sendLeadVariant(userId: string, contactId: string, variant: LeadReplyVariant, text?: string): Promise<boolean> {
+  const contact = await prisma.contact.findFirst({
+    where: { id: contactId, userId },
+    select: { id: true, phone: true, waJid: true, lineId: true },
+  });
+  if (!contact) return false;
+  if (!contact.waJid && contact.lineId) {
+    const line = await prisma.waLine.findFirst({ where: { id: contact.lineId, userId }, select: { sessionId: true, provider: true } });
+    if (line && line.provider !== "cloud") {
+      const exists = await ensureContactJid(contact, line.sessionId);
+      if (!exists) {
+        console.warn(`[leadgen-send] el contacto ${contactId} NO tiene WhatsApp (número inválido) — no se envía`);
+        return false;
+      }
+    }
+  }
   if (variant.kind === "audio") return sendAudioToContact(userId, contactId, variant.clipId);
   return sendToContact(userId, contactId, text ?? variant.body);
 }
