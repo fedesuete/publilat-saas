@@ -49,14 +49,15 @@ async function resolveLidJid(sessionId: string, lid: string): Promise<string | n
   const base = process.env.WAHA_BASE_URL, key = process.env.WAHA_API_KEY;
   if ((process.env.WA_ENGINE ?? "").toLowerCase() !== "waha" || !base || !key) return null;
   try {
+    // GET /api/{session}/lids/{lid} → {"lid":"…@lid","pn":"549…@c.us"} (verificado en prod contra
+    // WAHA 2026.7.2; /api/contacts NO devuelve el número real en NOWEB).
     const r = await fetch(
-      `${base}/api/contacts?contactId=${encodeURIComponent(lid)}&session=${encodeURIComponent(sessionId)}`,
+      `${base}/api/${encodeURIComponent(sessionId)}/lids/${encodeURIComponent(lid)}`,
       { headers: { "X-Api-Key": key }, signal: AbortSignal.timeout(7000) },
     );
     if (!r.ok) return null;
-    const d = (await r.json()) as { id?: string | { _serialized?: string } };
-    const id = typeof d?.id === "string" ? d.id : d?.id?._serialized;
-    return id && id.includes("@") && !id.endsWith("@lid") ? id.replace("@s.whatsapp.net", "@c.us") : null;
+    const d = (await r.json()) as { pn?: string };
+    return d?.pn && d.pn.includes("@") && !d.pn.endsWith("@lid") ? d.pn.replace("@s.whatsapp.net", "@c.us") : null;
   } catch {
     return null;
   }
