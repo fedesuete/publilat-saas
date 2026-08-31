@@ -268,9 +268,19 @@ export async function onInboundFlow(userId: string, contactId: string, text: str
     const flows = await prisma.flow.findMany({ where: { userId, enabled: true }, orderBy: { createdAt: "asc" } });
     const low = (text || "").toLowerCase();
     for (const f of flows) {
-      const match = f.trigger === "keyword"
-        ? !!f.keyword && low.includes(f.keyword.toLowerCase())
-        : !anyRun; // first_message: solo si el contacto nunca entró a una secuencia
+      let match: boolean;
+      if (f.trigger === "keyword") {
+        match = !!f.keyword && low.includes(f.keyword.toLowerCase());
+      } else {
+        // first_message: contacto que nunca entró a una secuencia Y al que NUNCA le escribimos
+        // (sin salientes previos). Sin la 2ª condición, prender el flow le mandaba la "bienvenida"
+        // a contactos VIEJOS con charlas de meses en su próximo mensaje — desastre asegurado.
+        match = !anyRun;
+        if (match) {
+          const prevOut = await prisma.message.findFirst({ where: { contactId, direction: "out" }, select: { id: true } });
+          match = !prevOut;
+        }
+      }
       if (!match) continue;
       const run = await prisma.flowRun.create({ data: { flowId: f.id, contactId, cursor: "0", status: "running" } });
       await resumeFlowRun(run.id);
