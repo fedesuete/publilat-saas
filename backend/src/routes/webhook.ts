@@ -279,6 +279,12 @@ webhookRouter.post("/", async (req, res) => {
             if ((e as { code?: string })?.code === "P2002") continue;
             throw e;
           }
+          // Le escribiste desde el CELULAR → ya está contactado. Solo NUEVO→CONTACTADO (jamás pisa
+          // COMPRO/INTERESADO/etc.). Sin esto, el CRM lo seguía viendo "sin contactar" y los envíos
+          // automáticos/masivos le volvían a escribir (el doble-mensaje que delataba al bot).
+          if (known.stage === "NUEVO") {
+            await prisma.contact.update({ where: { id: known.id }, data: { stage: "CONTACTADO" } }).catch(() => undefined);
+          }
           const fmMediaUrl = fmMediaData ? `data:${fmMediaType};base64,${fmMediaData}` : null;
           emitToUser(userId, "inbox:message", {
             contactId: known.id,

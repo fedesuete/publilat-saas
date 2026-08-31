@@ -267,3 +267,36 @@ describe("kommo", () => {
     expect(extractRefFromText("prefiero el otro")).toBeNull(); // "ref" adentro de palabra NO cuenta
   });
 });
+
+// ============ normalizeWahaEvent: ecos fromMe del teléfono (NOWEB no manda `to`) ============
+describe("normalizeWahaEvent (espejo del celular)", () => {
+  it("fromMe SIN `to` (NOWEB): usa `from` como peer — sin esto el mensaje del celu se descartaba", async () => {
+    const { normalizeWahaEvent } = await import("./waha.js");
+    const ev = normalizeWahaEvent({
+      event: "message.any", session: "line_x",
+      payload: { id: "AAA", from: "5491122334455@c.us", to: undefined, fromMe: true, body: "hola desde el celu" },
+    });
+    expect(ev?.data?.key?.remoteJid).toBe("5491122334455@c.us");
+    expect(ev?.data?.key?.fromMe).toBe(true);
+    expect(ev?.data?.message?.conversation).toBe("hola desde el celu");
+  });
+
+  it("fromMe CON `to` (WEBJS): sigue usando `to` (sin cambios de comportamiento)", async () => {
+    const { normalizeWahaEvent } = await import("./waha.js");
+    const ev = normalizeWahaEvent({
+      event: "message.any", session: "line_x",
+      payload: { id: "BBB", from: "595975112248@c.us", to: "5491122334455@c.us", fromMe: true, body: "x" },
+    });
+    expect(ev?.data?.key?.remoteJid).toBe("5491122334455@c.us");
+  });
+
+  it("entrante normal: el peer es `from` (intacto)", async () => {
+    const { normalizeWahaEvent } = await import("./waha.js");
+    const ev = normalizeWahaEvent({
+      event: "message.any", session: "line_x",
+      payload: { id: "CCC", from: "5491122334455@c.us", fromMe: false, body: "hola" },
+    });
+    expect(ev?.data?.key?.remoteJid).toBe("5491122334455@c.us");
+    expect(ev?.data?.key?.fromMe).toBe(false);
+  });
+});

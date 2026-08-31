@@ -340,7 +340,12 @@ export function normalizeWahaEvent(body: any): Record<string, any> | null {
     event: "messages.upsert",
     instance: session,
     data: {
-      key: { id: serializeId(p.id), remoteJid: p.fromMe ? p.to : p.from, fromMe: !!p.fromMe },
+      // fromMe: el peer es `to`… en WEBJS. En NOWEB los ecos del TELÉFONO llegan SIN `to` y el chat
+      // viene en `from` (verificado contra la API: to=undefined, from=<peer>@c.us). Sin este fallback
+      // el remoteJid quedaba vacío → webhook.ts descartaba el mensaje → lo hablado desde el celular
+      // NUNCA aparecía en el Inbox (y el CRM creía que el contacto seguía sin contactar). El `??` solo
+      // actúa cuando `to` falta, así WEBJS/Cloud siguen exactamente igual.
+      key: { id: serializeId(p.id), remoteJid: p.fromMe ? (p.to ?? p.from) : p.from, fromMe: !!p.fromMe },
       pushName: p?._data?.notifyName ?? p?._data?.pushName ?? undefined,
       message: { conversation: typeof p.body === "string" ? p.body : "", ...mediaHint },
       ...(mediaUrl ? { _wahaMedia: { url: mediaUrl, mimetype: mime || undefined } } : {}),
