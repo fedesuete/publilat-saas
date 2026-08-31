@@ -16,7 +16,19 @@ interface Integration {
   kommoBaseUrl?: string | null;
   kommoTokenSet?: boolean;
   kommoWebhookUrl?: string | null;
+  // Formularios de Meta (Lead Ads): captura del lead + respuesta automática por WhatsApp.
+  metaPageId?: string | null;
+  metaPageTokenSet?: boolean;
+  leadgenEnabled?: boolean;
+  leadgenLineId?: string | null;
+  leadgenReply?: string | null;
+  leadgenWebhookUrl?: string | null;
+  leadgenVerifyToken?: string | null;
 }
+
+interface LineOpt { id: string; label: string | null; phone: string }
+const DEFAULT_LEAD_REPLY =
+  "¡Hola {{nombre}}! 👋 Gracias por dejarnos tus datos. Te escribo para contarte cómo seguimos, ¿te viene bien ahora?";
 
 const MODE_HELP: Record<Mode, string> = {
   nativo: "Sin webhook saliente. Los eventos quedan solo en Publi.lat.",
@@ -69,6 +81,46 @@ export default function IntegrationsPage() {
   const [kommoSaving, setKommoSaving] = useState(false);
   const [kommoCopied, setKommoCopied] = useState(false);
   const [kommoOk, setKommoOk] = useState<string | null>(null);
+  // Formularios de Meta (Lead Ads)
+  const [pageId, setPageId] = useState("");
+  const [pageToken, setPageToken] = useState("");
+  const [pageTokenSet, setPageTokenSet] = useState(false);
+  const [lgEnabled, setLgEnabled] = useState(false);
+  const [lgLineId, setLgLineId] = useState("");
+  const [lgReply, setLgReply] = useState("");
+  const [lgHook, setLgHook] = useState<{ url: string | null; verify: string | null }>({ url: null, verify: null });
+  const [lgSaving, setLgSaving] = useState(false);
+  const [lgOk, setLgOk] = useState<string | null>(null);
+  const [lgCopied, setLgCopied] = useState<string | null>(null);
+  const [lines, setLines] = useState<LineOpt[]>([]);
+
+  useEffect(() => {
+    api.get<{ lines: LineOpt[] }>("/api/wa/lines")
+      .then(({ data }) => setLines(data.lines ?? []))
+      .catch(() => undefined); // sin líneas el selector queda en "la que esté activa"
+  }, []);
+
+  const saveLeadgen = async () => {
+    setLgSaving(true);
+    setError(null);
+    setLgOk(null);
+    try {
+      const { data } = await api.put<{ integration: Integration }>("/api/integrations", {
+        metaPageId: pageId.trim() ? pageId.trim() : null,
+        ...(pageToken.trim() ? { metaPageToken: pageToken.trim() } : {}), // vacío = no tocar el guardado
+        leadgenEnabled: lgEnabled,
+        leadgenLineId: lgLineId ? lgLineId : null,
+        leadgenReply: lgReply.trim() ? lgReply.trim() : null,
+      });
+      applyIntegration(data.integration);
+      setPageToken("");
+      setLgOk("Guardado ✔");
+    } catch (err) {
+      setError(apiError(err));
+    } finally {
+      setLgSaving(false);
+    }
+  };
 
   const applyIntegration = (i: Integration) => {
     setMode(i.mode);
@@ -81,6 +133,12 @@ export default function IntegrationsPage() {
     setKommoUrl(i.kommoBaseUrl ?? "");
     setKommoTokenSet(Boolean(i.kommoTokenSet));
     setKommoWebhook(i.kommoWebhookUrl ?? null);
+    setPageId(i.metaPageId ?? "");
+    setPageTokenSet(Boolean(i.metaPageTokenSet));
+    setLgEnabled(Boolean(i.leadgenEnabled));
+    setLgLineId(i.leadgenLineId ?? "");
+    setLgReply(i.leadgenReply ?? "");
+    setLgHook({ url: i.leadgenWebhookUrl ?? null, verify: i.leadgenVerifyToken ?? null });
   };
 
   const saveKommo = async () => {
@@ -251,6 +309,94 @@ export default function IntegrationsPage() {
               </Button>
             </div>
           </form>
+        </Card>
+      )}
+
+      {/* Formularios de Meta (Lead Ads): el lead entra solo y le contestamos por WhatsApp al instante. */}
+      {!loading && (
+        <Card className="mt-6 max-w-lg">
+          <div className="mb-1 text-sm font-semibold text-slate-100">
+            Formularios de Meta (Lead Ads) {lgEnabled && pageTokenSet && <span className="text-emerald-400">· activo ✓</span>}
+          </div>
+          <p className="mb-3 text-xs text-slate-400">
+            Cuando alguien completa tu formulario en Facebook/Instagram, el contacto entra solo al CRM y le
+            mandamos el WhatsApp automáticamente — sin esperar a que alguien lo vea.
+          </p>
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-xs text-slate-400">ID de tu página de Facebook</label>
+              <Input value={pageId} onChange={(e) => setPageId(e.target.value)} placeholder="1121925017675878" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-slate-400">
+                Token de la página {pageTokenSet && <span className="text-emerald-400">(ya cargado — pegá uno nuevo solo para reemplazarlo)</span>}
+              </label>
+              <Input type="password" value={pageToken} onChange={(e) => setPageToken(e.target.value)} placeholder={pageTokenSet ? "••••••••••••" : "Page access token"} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-slate-400">Responder desde la línea</label>
+              <select
+                value={lgLineId}
+                onChange={(e) => setLgLineId(e.target.value)}
+                className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green"
+              >
+                <option value="">La que esté activa (automático)</option>
+                {lines.map((l) => (
+                  <option key={l.id} value={l.id}>{l.label || l.phone}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-slate-400">Mensaje automático</label>
+              <textarea
+                value={lgReply}
+                onChange={(e) => setLgReply(e.target.value)}
+                rows={3}
+                placeholder={DEFAULT_LEAD_REPLY}
+                className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green"
+              />
+              <p className="mt-1 text-[11px] text-slate-500">
+                Podés usar <span className="font-mono">{"{{nombre}}"}</span>,{" "}
+                <span className="font-mono">{"{{nombre_completo}}"}</span>,{" "}
+                <span className="font-mono">{"{{email}}"}</span> y{" "}
+                <span className="font-mono">{"{{respuesta}}"}</span> (lo que eligió en el formulario).
+                <button type="button" onClick={() => setLgReply(DEFAULT_LEAD_REPLY)} className="ml-1 text-wa-green hover:underline">Usar ejemplo</button>
+                <br />Si lo dejás vacío, el lead se guarda igual pero NO se le escribe.
+              </p>
+            </div>
+            <Toggle label="Activar captura y respuesta automática" checked={lgEnabled} onChange={setLgEnabled} />
+            <Button type="button" disabled={lgSaving} onClick={() => void saveLeadgen()}>
+              {lgSaving ? "Guardando…" : "Guardar"}
+            </Button>
+            {lgOk && <p className="text-xs text-emerald-300">{lgOk}</p>}
+          </div>
+          {lgHook.url && (
+            <div className="mt-4 border-t border-slate-800 pt-3">
+              <p className="mb-2 text-xs text-slate-400">
+                Estos dos datos se cargan UNA vez en tu app de Meta (Webhooks → Página → campo <span className="font-mono">leadgen</span>):
+              </p>
+              {[{ k: "URL de devolución", v: lgHook.url }, { k: "Token de verificación", v: lgHook.verify }].map((row) => (
+                <div key={row.k} className="mb-2">
+                  <label className="mb-1 block text-[11px] text-slate-500">{row.k}</label>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 break-all rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs text-slate-200">{row.v || "—"}</code>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        if (!row.v) return;
+                        void navigator.clipboard.writeText(row.v);
+                        setLgCopied(row.k);
+                        setTimeout(() => setLgCopied(null), 1500);
+                      }}
+                    >
+                      {lgCopied === row.k ? "¡Listo!" : "Copiar"}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
       )}
 

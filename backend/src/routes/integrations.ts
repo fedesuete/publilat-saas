@@ -25,6 +25,10 @@ const inboundPurchaseUrl = (token: string | null) =>
 // con los eventos "Etapa del lead modificada" + "Mensaje entrante". Mismo token opaco.
 const kommoWebhookUrl = (token: string | null) =>
   token ? `${APP_BASE_URL}/api/integrations/inbound/kommo?token=${token}` : null;
+// Webhook de Meta Lead Ads (formularios): es ÚNICO para toda la plataforma (Meta lo llama por Page,
+// y el page_id mapea a la cuenta). Se pega en la app de Meta → Webhooks → Página → campo "leadgen".
+const LEADGEN_WEBHOOK_URL = `${APP_BASE_URL}/api/webhooks/leadgen`;
+const LEADGEN_VERIFY_TOKEN = process.env.META_LEADGEN_VERIFY_TOKEN ?? "";
 
 async function ensureIntegration(userId: string) {
   const existing = await prisma.integration.findUnique({ where: { userId } });
@@ -56,6 +60,14 @@ integrationsRouter.get("/", async (req, res) => {
       kommoBaseUrl: i.kommoBaseUrl,
       kommoTokenSet: Boolean(i.kommoToken),
       kommoWebhookUrl: kommoWebhookUrl(i.inboundToken),
+      // Formularios de Meta (Lead Ads): captura del lead + respuesta automática por WhatsApp.
+      metaPageId: i.metaPageId,
+      metaPageTokenSet: Boolean(i.metaPageToken),
+      leadgenEnabled: i.leadgenEnabled,
+      leadgenLineId: i.leadgenLineId,
+      leadgenReply: i.leadgenReply,
+      leadgenWebhookUrl: LEADGEN_WEBHOOK_URL,
+      leadgenVerifyToken: LEADGEN_VERIFY_TOKEN,
     },
   });
 });
@@ -69,6 +81,12 @@ const putSchema = z.object({
   enabled: z.boolean().optional(),
   kommoBaseUrl: z.string().max(200).nullable().optional(),
   kommoToken: z.string().max(4000).nullable().optional(),
+  // Formularios de Meta (Lead Ads)
+  metaPageId: z.string().max(60).nullable().optional(),
+  metaPageToken: z.string().max(600).nullable().optional(),
+  leadgenEnabled: z.boolean().optional(),
+  leadgenLineId: z.string().max(40).nullable().optional(),
+  leadgenReply: z.string().max(1000).nullable().optional(),
 });
 
 // PUT /api/integrations — actualiza la configuración.
@@ -77,8 +95,17 @@ integrationsRouter.put("/", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
   }
-  const { kommoBaseUrl, kommoToken, ...rest } = parsed.data;
+  const { kommoBaseUrl, kommoToken, metaPageId, metaPageToken, ...rest } = parsed.data;
   const data: Record<string, unknown> = { ...rest };
+  // Page de Meta: solo dígitos (el id de la Page). Vacío = desvincular.
+  if (metaPageId !== undefined) {
+    const digits = (metaPageId ?? "").replace(/\D/g, "");
+    data.metaPageId = digits || null;
+  }
+  // Page access token: cifrado en reposo (igual que el capiToken del pixel y el token de Kommo).
+  if (metaPageToken !== undefined) {
+    data.metaPageToken = metaPageToken && metaPageToken.trim() !== "" ? encryptSecret(metaPageToken.trim()) : null;
+  }
   // URL de Kommo: solo dominios *.kommo.com (guard SSRF — la escribe el usuario a mano).
   if (kommoBaseUrl !== undefined) {
     if (kommoBaseUrl === null || kommoBaseUrl.trim() === "") data.kommoBaseUrl = null;
@@ -103,6 +130,9 @@ integrationsRouter.put("/", async (req, res) => {
       onLead: i.onLead, onPurchase: i.onPurchase, enabled: i.enabled,
       kommoBaseUrl: i.kommoBaseUrl, kommoTokenSet: Boolean(i.kommoToken),
       kommoWebhookUrl: kommoWebhookUrl(i.inboundToken),
+      metaPageId: i.metaPageId, metaPageTokenSet: Boolean(i.metaPageToken),
+      leadgenEnabled: i.leadgenEnabled, leadgenLineId: i.leadgenLineId, leadgenReply: i.leadgenReply,
+      leadgenWebhookUrl: LEADGEN_WEBHOOK_URL, leadgenVerifyToken: LEADGEN_VERIFY_TOKEN,
     },
   });
 });
