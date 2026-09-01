@@ -75,7 +75,12 @@ export default function DirectChatPage() {
       setToken(data.token);
       localStorage.setItem(SESSION_SLUG_KEY, accSlug);
       // Pixel del navegador (además de la CAPI del server), deduplicado por eventId. Best-effort.
-      if (data.pixel) fireMetaPixel(data.pixel, "CompleteRegistration", { eventId: data.eventId, externalId: data.username });
+      // PageView primero: el Chat App ES la landing del anuncio → Meta necesita la visita para
+      // optimizar entrega/audiencias, y de paso el pixel siembra _fbp/_fbc en este dominio.
+      if (data.pixel) {
+        fireMetaPixel(data.pixel, "PageView", {});
+        fireMetaPixel(data.pixel, "CompleteRegistration", { eventId: data.eventId, externalId: data.username });
+      }
       navigate("/chat", { replace: true });
     } catch (e) {
       const code = (e as { response?: { data?: { code?: string } } })?.response?.data?.code;

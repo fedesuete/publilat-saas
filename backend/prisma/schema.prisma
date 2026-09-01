@@ -744,6 +744,13 @@ model ChatPlayer {
   invitedByUserId String?  // operador que lo invitó (User.id)
   inviteCodeId    String?
   estatus         String   @default("active")
+  // --- Atribución de Meta del ALTA (landing = el propio Chat App). Se guardan al crear el
+  // jugador y las reusa el Purchase del puente (external_id + fbp/fbc/IP/UA = mejor EMQ). ---
+  fbp             String?
+  fbc             String?
+  fbclid          String?
+  clientIp        String?
+  userAgent       String?
   createdAt       DateTime @default(now())
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   skin            ChatSkin? @relation(fields: [skinId], references: [id])

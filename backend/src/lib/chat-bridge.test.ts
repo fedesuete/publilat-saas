@@ -3,18 +3,23 @@
 // (postBotChatMessage: postea en la conversación SOLO con el puente prendido; sombra = log).
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const { prismaMock, emitChatMock } = vi.hoisted(() => ({
+const { prismaMock, emitChatMock, resolvePixelMock, sendCapiMock } = vi.hoisted(() => ({
   prismaMock: {
     chatPlayer: { findUnique: vi.fn(), update: vi.fn() },
     chatConversation: { findFirst: vi.fn(), update: vi.fn() },
     chatMessage: { create: vi.fn() },
+    metaEvent: { create: vi.fn().mockResolvedValue({ id: "me1" }), update: vi.fn().mockResolvedValue({}) },
   },
   emitChatMock: vi.fn(),
+  resolvePixelMock: vi.fn(),
+  sendCapiMock: vi.fn(),
 }));
 vi.mock("./prisma.js", () => ({ prisma: prismaMock }));
 vi.mock("./io.js", () => ({ emitChat: (...a: unknown[]) => emitChatMock(...a) }));
+vi.mock("./pixel.js", () => ({ resolveUserPixel: (...a: unknown[]) => resolvePixelMock(...a) }));
+vi.mock("./meta-capi.js", () => ({ sendCapiEvent: (...a: unknown[]) => sendCapiMock(...a) }));
 
-import { parseChatPlayerRef, chatInstance, forwardChatToBot, postBotChatMessage, updateChatPlayerUsername } from "./chat-bridge.js";
+import { parseChatPlayerRef, chatInstance, forwardChatToBot, postBotChatMessage, updateChatPlayerUsername, fireChatBridgePurchase } from "./chat-bridge.js";
 
 const fetchMock = vi.fn().mockResolvedValue({ ok: true });
 
@@ -158,5 +163,60 @@ describe("updateChatPlayerUsername (sync del username definitivo que creó el bo
     prismaMock.chatPlayer.update.mockRejectedValue(new Error("Unique constraint failed"));
     const r = await updateChatPlayerUsername("chat:p1", "maxi1234rb");
     expect(r.ok).toBe(false);
+  });
+});
+
+describe("fireChatBridgePurchase (Purchase CAPI de cargas del canal chat)", () => {
+  const player = {
+    id: "p1", userId: "acc1", casinoUsername: "maxi1234rb",
+    fbp: "fb.1.111.222", fbc: null, fbclid: "CLID123", clientIp: "190.1.2.3", userAgent: "Mozilla/5.0",
+  };
+
+  it("dispara Purchase con el pixel de la cuenta, external_id=username y la atribución guardada", async () => {
+    prismaMock.chatPlayer.findUnique.mockResolvedValue(player);
+    resolvePixelMock.mockResolvedValue({ pixelId: "px1", capiToken: "tok1" });
+    sendCapiMock.mockResolvedValue({ pixelId: "px1", payload: {}, response: {} });
+    const r = await fireChatBridgePurchase("chat:p1", 15000, "ARS");
+    expect(r.ok).toBe(true);
+    const arg = sendCapiMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(arg.eventName).toBe("Purchase");
+    expect(arg.externalId).toBe("maxi1234rb");
+    expect(arg.value).toBe(15000);
+    expect(arg.currency).toBe("ARS");
+    expect(arg.fbp).toBe("fb.1.111.222");
+    expect(String(arg.fbc)).toContain("CLID123"); // fbc derivada del fbclid guardado
+    expect(arg.clientIp).toBe("190.1.2.3");
+    expect(arg.userAgent).toBe("Mozilla/5.0");
+    expect(arg.pixelId).toBe("px1");
+    expect(prismaMock.metaEvent.create).toHaveBeenCalled(); // visible en analytics
+  });
+
+  it("eventId único por carga (Meta cuenta cada una, sin dedup entre cargas)", async () => {
+    prismaMock.chatPlayer.findUnique.mockResolvedValue(player);
+    resolvePixelMock.mockResolvedValue({ pixelId: "px1", capiToken: "tok1" });
+    sendCapiMock.mockResolvedValue({ pixelId: "px1", payload: {}, response: {} });
+    await fireChatBridgePurchase("chat:p1", 1000, "ARS");
+    await fireChatBridgePurchase("chat:p1", 2000, "ARS");
+    const ids = sendCapiMock.mock.calls.map((c) => (c[0] as { eventId: string }).eventId);
+    expect(ids[0]).not.toBe(ids[1]);
+  });
+
+  it("ref inválido, monto inválido o jugador inexistente → skipped sin CAPI", async () => {
+    expect(await fireChatBridgePurchase("5492944679040", 1000, "ARS")).toMatchObject({ ok: false });
+    expect(await fireChatBridgePurchase("chat:p1", 0, "ARS")).toMatchObject({ ok: false });
+    prismaMock.chatPlayer.findUnique.mockResolvedValue(null);
+    expect(await fireChatBridgePurchase("chat:nope", 1000, "ARS")).toMatchObject({ ok: false, skipped: "no_player" });
+    expect(sendCapiMock).not.toHaveBeenCalled();
+  });
+
+  it("fallo del CAPI: marca el MetaEvent failed y no explota", async () => {
+    prismaMock.chatPlayer.findUnique.mockResolvedValue(player);
+    resolvePixelMock.mockResolvedValue({ pixelId: "px1", capiToken: "tok1" });
+    sendCapiMock.mockRejectedValue(new Error("boom"));
+    const r = await fireChatBridgePurchase("chat:p1", 1000, "ARS");
+    expect(r.ok).toBe(false);
+    expect(prismaMock.metaEvent.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "failed" }) }),
+    );
   });
 });

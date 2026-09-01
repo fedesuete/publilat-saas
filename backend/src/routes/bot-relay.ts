@@ -10,7 +10,7 @@ import crypto from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { sendToContact } from "../lib/wa-send.js";
 import { markPurchase } from "../lib/purchase.js";
-import { postBotChatMessage, updateChatPlayerUsername } from "../lib/chat-bridge.js";
+import { postBotChatMessage, updateChatPlayerUsername, fireChatBridgePurchase } from "../lib/chat-bridge.js";
 
 export const botRelayRouter = Router();
 
@@ -113,6 +113,13 @@ botRelayRouter.post("/purchase", requireBotToken, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "input inválido" });
   const { phone, amount, currency } = parsed.data;
   try {
+    // Canal CHAT APP: el "phone" es el ref sintético chat:<chatPlayerId> — la carga es de un
+    // jugador del Chat App (no hay Contact de WhatsApp). Dispara el Purchase por el camino del
+    // chat (pixel de la cuenta + atribución guardada del alta). 200 siempre: sin reintentos.
+    if (phone.startsWith("chat:")) {
+      const r = await fireChatBridgePurchase(phone, amount, currency ?? "ARS");
+      return res.json(r.ok ? { ok: true } : { ok: true, skipped: r.skipped });
+    }
     const digits = phone.replace(/\D/g, "");
     // Resolvemos el tenant por el contacto cuya línea está en el forward (la del socio): así no cruzamos
     // cuentas ni dependemos de recibir el tenant en el body. Si no hay forward, caemos a match global.

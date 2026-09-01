@@ -14,6 +14,8 @@
 // El prefijo no numérico `chat:` garantiza que el ref nunca colisiona con un teléfono real.
 import { prisma } from "./prisma.js";
 import { emitChat } from "./io.js";
+import { resolveUserPixel } from "./pixel.js";
+import { sendCapiEvent } from "./meta-capi.js";
 
 const REF_PREFIX = "chat:";
 
@@ -83,6 +85,52 @@ export async function updateChatPlayerUsername(playerRef: string, username: stri
   } catch (e) {
     console.warn("[chat-bridge sync-username]", playerId, e instanceof Error ? e.message : String(e));
     return { ok: false, skipped: "update_failed" };
+  }
+}
+
+// ---- PURCHASE: el bot acreditó una carga REAL de un jugador del Chat App → señal de marketing a
+// Meta (Purchase CAPI) con el pixel de la cuenta. Los Purchase de WhatsApp los dispara el OCR del
+// inbox; los del Chat App no pasan por ahí, entran por POST /api/bot-relay/purchase con el
+// playerRef chat:<id>. external_id = casinoUsername (matchea el CompleteRegistration del alta) +
+// fbp/fbc/IP/UA guardados en el ChatPlayer al entrar por el anuncio (EMQ). eventId ÚNICO por
+// carga: Meta cuenta cada una. NO acredita fichas (la plata ya se movió del lado del bot).
+export async function fireChatBridgePurchase(playerRef: string, amount: number, currency: string): Promise<{ ok: boolean; skipped?: string }> {
+  const playerId = parseChatPlayerRef(playerRef);
+  if (!playerId || !(amount > 0)) return { ok: false, skipped: "bad_input" };
+  const player = await prisma.chatPlayer.findUnique({
+    where: { id: playerId },
+    select: { id: true, userId: true, casinoUsername: true, fbp: true, fbc: true, fbclid: true, clientIp: true, userAgent: true },
+  });
+  if (!player) return { ok: false, skipped: "no_player" };
+  const creds = await resolveUserPixel(player.userId, "Purchase");
+  // Log en MetaEvent para que la venta sea VISIBLE en analytics/admin (mismo patrón que el cajero nativo).
+  const metaEvent = await prisma.metaEvent.create({
+    data: { userId: player.userId, eventName: "Purchase", pixelId: creds?.pixelId ?? "", payload: {}, status: "pending" },
+  });
+  try {
+    const fbc = player.fbc ?? (player.fbclid ? `fb.1.${Date.now()}.${player.fbclid}` : undefined);
+    const result = await sendCapiEvent({
+      eventName: "Purchase",
+      userId: player.userId,
+      externalId: player.casinoUsername,
+      eventId: `${player.id}:bridge:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+      value: amount,
+      currency,
+      actionSource: "chat",
+      fbp: player.fbp ?? undefined,
+      fbc,
+      clientIp: player.clientIp ?? undefined,
+      userAgent: player.userAgent ?? undefined,
+      pixelId: creds?.pixelId,
+      capiToken: creds?.capiToken,
+    });
+    await prisma.metaEvent.update({ where: { id: metaEvent.id }, data: { status: "sent", pixelId: result.pixelId, payload: result.payload as object, response: result.response as object } });
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[chat-bridge purchase]", playerId, msg);
+    await prisma.metaEvent.update({ where: { id: metaEvent.id }, data: { status: "failed", response: { error: msg } } }).catch(() => undefined);
+    return { ok: false, skipped: "capi_failed" };
   }
 }
 

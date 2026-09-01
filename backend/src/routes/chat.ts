@@ -46,6 +46,23 @@ async function playerPasswordFor(accountId: string): Promise<string> {
   return u?.chatPlayerPassword?.trim() || PLAYER_PASSWORD;
 }
 
+// Atribución de Meta al ALTA (el Chat App ES la landing de los anuncios): fbp/fbc/fbclid del clic
+// + IP y user-agent reales del visitante. Se guarda en el ChatPlayer y la reusa el Purchase del
+// puente (external_id + fbp/fbc + IP/UA = mejor Event Match Quality). La IP viene del proxy.
+function chatAttribution(
+  req: { headers: Record<string, unknown>; socket: { remoteAddress?: string | null } },
+  at: { fbclid?: string; fbp?: string; fbc?: string },
+) {
+  const fwd = typeof req.headers["x-forwarded-for"] === "string" ? (req.headers["x-forwarded-for"] as string) : "";
+  return {
+    fbp: at.fbp ?? null,
+    fbc: at.fbc ?? (at.fbclid ? `fb.1.${Date.now()}.${at.fbclid}` : null),
+    fbclid: at.fbclid ?? null,
+    clientIp: fwd.split(",")[0].trim() || req.socket.remoteAddress || null,
+    userAgent: typeof req.headers["user-agent"] === "string" ? (req.headers["user-agent"] as string).slice(0, 400) : null,
+  };
+}
+
 // Cookie httpOnly de larga duración con el token del jugador, ADEMÁS del Bearer en localStorage. Es lo
 // que evita perder la sesión (y duplicar la cuenta de ganamos) cuando el navegador borra el localStorage
 // (Safari ITP a los 7 días, incógnito, limpiar datos). SameSite=lax: chat.publi.lat y app.publi.lat son
@@ -1264,6 +1281,7 @@ chatPublicRouter.post("/register", async (req, res) => {
             invitedByUserId: invite.operatorId,
             inviteCodeId: invite.id,
             estatus: "active",
+            ...chatAttribution(req, { fbclid, fbp, fbc }),
           },
           select: { id: true, casinoUsername: true },
         });
@@ -1489,7 +1507,7 @@ chatPublicRouter.post("/start", async (req, res) => {
     for (let i = 0; i < 8 && !np; i++) {
       try {
         np = await prisma.chatPlayer.create({
-          data: { userId: acc.id, skinId: skin?.id ?? null, casinoUsername: `${base}${randDigits(5)}`, password: hash, nombre, estatus: "active" },
+          data: { userId: acc.id, skinId: skin?.id ?? null, casinoUsername: `${base}${randDigits(5)}`, password: hash, nombre, estatus: "active", ...chatAttribution(req, { fbclid, fbp, fbc }) },
           select: { id: true, casinoUsername: true },
         });
       } catch (e) {
@@ -1596,7 +1614,7 @@ chatPublicRouter.post("/direct", async (req, res) => {
   for (let i = 0; i < 8 && !np; i++) {
     try {
       np = await prisma.chatPlayer.create({
-        data: { userId: acc.id, skinId: skin?.id ?? null, casinoUsername: `web${randDigits(6)}`, password: hash, estatus: "active" },
+        data: { userId: acc.id, skinId: skin?.id ?? null, casinoUsername: `web${randDigits(6)}`, password: hash, estatus: "active", ...chatAttribution(req, { fbclid, fbp, fbc }) },
         select: { id: true, casinoUsername: true },
       });
     } catch (e) {
