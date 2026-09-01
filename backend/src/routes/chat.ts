@@ -351,7 +351,10 @@ chatRouter.get("/conversations", async (req, res) => {
   const convs = await prisma.chatConversation.findMany({
     where: { userId: req.userId! },
     orderBy: [{ lastMessageAt: "desc" }, { createdAt: "desc" }],
-    take: 200,
+    // 200 dejaba fuera a los jugadores viejos (matias ya tiene 400+): el operador buscaba a
+    // alguien "que ya entró" y no aparecía. 1000 cubre con margen; si el volumen de ads lo
+    // supera, el próximo paso es paginación/búsqueda en el panel (no subir más este número).
+    take: 1000,
     select: {
       id: true, playerId: true, status: true, unreadOperator: true, lastMessagePreview: true, lastMessageAt: true, createdAt: true,
       player: { select: { casinoUsername: true, nombre: true, alias: true, skin: { select: { brandName: true, slug: true } } } },
