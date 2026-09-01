@@ -17,7 +17,7 @@ import { pushBonusFor, pushOnMilestoneBody, appInstalledMilestoneBody } from "..
 import { pushEnabled, publicVapidKey, enqueuePlayerPush, enqueueAccountBroadcast, enqueueOperatorPush } from "../lib/chat-push.js";
 import { s3Enabled } from "../lib/s3.js";
 import { runChatBot } from "../lib/chat-bot.js";
-import { forwardChatToBot } from "../lib/chat-bridge.js";
+import { forwardChatToBot, notifyBotOperatorActiveChat } from "../lib/chat-bridge.js";
 import { canOperateChat, consumeChatDayAndActivate, getAvailableDays } from "../lib/access.js";
 import { creditDepositInCasino, debitWithdrawalInCasino, sendDepositIntent, casinoLiveForAccount, casinoCvuForAccount, ensureCasinoUser, casinoPlayerPassword } from "../lib/casino-cashier.js"; // puente casino (key por cuenta)
 import { verifyPartnerSignature, isCallbackTimestampFresh } from "../lib/casino-callback.js"; // firma del callback (modelo B)
@@ -511,6 +511,8 @@ chatRouter.post("/messages", requireActiveLine, async (req, res) => {
   const payload = { conversationId: conv.id, message: msg };
   emitChat(`chat:${req.userId}:player:${conv.playerId}`, "chat:message", payload); // al jugador
   emitChat(`chat:${req.userId}`, "chat:message", payload);                          // al operador (otras pestañas)
+  // El operador habló → el bot del puente se calla en esta conversación (operator hold, como en WA).
+  notifyBotOperatorActiveChat(req.userId!, conv.playerId);
 
   // Sin socket vivo del jugador -> Web Push (best-effort, no bloquea la respuesta).
   if (!(await playerIsForeground(req.userId!, conv.playerId))) {
@@ -566,6 +568,7 @@ chatRouter.post("/messages/image", requireActiveLine, async (req, res) => {
   const payload = { conversationId: conv.id, message: outMsg };
   emitChat(`chat:${req.userId}:player:${conv.playerId}`, "chat:message", payload); // al jugador
   emitChat(`chat:${req.userId}`, "chat:message", payload);                          // al operador (otras pestañas)
+  notifyBotOperatorActiveChat(req.userId!, conv.playerId); // el operador habló → el bot se calla
   if (!(await playerIsForeground(req.userId!, conv.playerId))) {
     void enqueuePlayerPush(req.userId!, conv.playerId, { title: "Nuevo mensaje", body: "📷 Imagen", url: "/chat" })
       .catch((e) => console.error("[chat] push falló:", e instanceof Error ? e.message : String(e)));
@@ -658,6 +661,7 @@ chatRouter.post("/messages/install", requireActiveLine, async (req, res) => {
     emitChat(`chat:${req.userId}`, "chat:message", payload);
     out.push(outMsg);
   }
+  notifyBotOperatorActiveChat(req.userId!, conv.playerId); // el operador mandó la secuencia → el bot se calla
   if (!(await playerIsForeground(req.userId!, conv.playerId))) {
     void enqueuePlayerPush(req.userId!, conv.playerId, { title: "Nuevo mensaje", body: (items[0]?.body ?? "Instalá la app").slice(0, 140), url: "/chat" }).catch(() => undefined);
   }

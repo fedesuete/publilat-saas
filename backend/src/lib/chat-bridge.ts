@@ -88,6 +88,27 @@ export async function updateChatPlayerUsername(playerRef: string, username: stri
   }
 }
 
+// ---- OPERATOR HOLD: el OPERADOR respondió en una conversación del Chat App → avisamos al bot
+// para que se calle en esa conversación (ventana operatorHoldMinutes, igual que en WhatsApp con
+// notify-bot.ts). Mismo gate por env que el forward: sin BOT_CHAT_FORWARD para la cuenta es un
+// no-op. Fire-and-forget: nunca bloquea ni rompe el envío del operador.
+export function notifyBotOperatorActiveChat(accountId: string, chatPlayerId: string): void {
+  let webhookUrl: string | undefined;
+  try {
+    webhookUrl = (JSON.parse(process.env.BOT_CHAT_FORWARD || "{}") as Record<string, string>)[accountId];
+  } catch {
+    return;
+  }
+  if (!webhookUrl) return;
+  const url = webhookUrl.replace("/api/wa/webhook", "/api/wa/operator-active");
+  void fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ instance: chatInstance(accountId), phone: `${REF_PREFIX}${chatPlayerId}` }),
+    signal: AbortSignal.timeout(5000),
+  }).catch((e) => console.warn("[chat-bridge op-hold]", accountId, e instanceof Error ? e.message : String(e)));
+}
+
 // ---- PURCHASE: el bot acreditó una carga REAL de un jugador del Chat App → señal de marketing a
 // Meta (Purchase CAPI) con el pixel de la cuenta. Los Purchase de WhatsApp los dispara el OCR del
 // inbox; los del Chat App no pasan por ahí, entran por POST /api/bot-relay/purchase con el

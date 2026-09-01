@@ -19,7 +19,7 @@ vi.mock("./io.js", () => ({ emitChat: (...a: unknown[]) => emitChatMock(...a) })
 vi.mock("./pixel.js", () => ({ resolveUserPixel: (...a: unknown[]) => resolvePixelMock(...a) }));
 vi.mock("./meta-capi.js", () => ({ sendCapiEvent: (...a: unknown[]) => sendCapiMock(...a) }));
 
-import { parseChatPlayerRef, chatInstance, forwardChatToBot, postBotChatMessage, updateChatPlayerUsername, fireChatBridgePurchase } from "./chat-bridge.js";
+import { parseChatPlayerRef, chatInstance, forwardChatToBot, postBotChatMessage, updateChatPlayerUsername, fireChatBridgePurchase, notifyBotOperatorActiveChat } from "./chat-bridge.js";
 
 const fetchMock = vi.fn().mockResolvedValue({ ok: true });
 
@@ -140,6 +140,25 @@ describe("postBotChatMessage (salida)", () => {
     prismaMock.chatPlayer.findUnique.mockResolvedValue(null);
     expect(await postBotChatMessage("chat:nope", "x")).toMatchObject({ ok: false, skipped: "no_player" });
     expect(prismaMock.chatMessage.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("notifyBotOperatorActiveChat (el operador habló → el bot se calla)", () => {
+  it("avisa al endpoint operator-active del bot con la instancia y el ref del jugador", () => {
+    process.env.BOT_CHAT_FORWARD = JSON.stringify({ acc1: "https://bot.test/api/wa/webhook?token=x" });
+    notifyBotOperatorActiveChat("acc1", "p1");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, { body: string }];
+    expect(url).toBe("https://bot.test/api/wa/operator-active?token=x");
+    const body = JSON.parse(init.body);
+    expect(body.instance).toBe("publilat-chat-acc1");
+    expect(body.phone).toBe("chat:p1");
+  });
+
+  it("sin BOT_CHAT_FORWARD para la cuenta: no-op", () => {
+    delete process.env.BOT_CHAT_FORWARD;
+    notifyBotOperatorActiveChat("acc1", "p1");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
