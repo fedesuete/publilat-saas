@@ -38,6 +38,13 @@ const nickSlug = (s: string) => s.toLowerCase().normalize("NFD").replace(/[^a-z0
 const randDigits = (n: number) => { let s = ""; for (let i = 0; i < n; i++) s += crypto.randomInt(0, 10); return s; };
 // Clave fija simple para los usuarios autogenerados (fácil de recordar, se muestra en "cuenta creada").
 const PLAYER_PASSWORD = "123456";
+// Clave para jugadores NUEVOS del Chat App de una cuenta: configurable por cuenta
+// (User.chatPlayerPassword — ej. matias usa la política de su casino, "Hola1234");
+// sin configurar, la histórica "123456". Los jugadores existentes conservan su hash.
+async function playerPasswordFor(accountId: string): Promise<string> {
+  const u = await prisma.user.findUnique({ where: { id: accountId }, select: { chatPlayerPassword: true } });
+  return u?.chatPlayerPassword?.trim() || PLAYER_PASSWORD;
+}
 
 // Cookie httpOnly de larga duración con el token del jugador, ADEMÁS del Bearer en localStorage. Es lo
 // que evita perder la sesión (y duplicar la cuenta de ganamos) cuando el navegador borra el localStorage
@@ -1011,7 +1018,7 @@ chatPublicRouter.post("/me/messages", requireChatClient, async (req, res) => {
   // Puente al bot cajero EXTERNO (combatwin/mijoker): si la cuenta lo tiene prendido (o en sombra),
   // le forwardeamos el mensaje del jugador (texto o comprobante) con el payload sintético del puente.
   // Con el puente FULL el cajero nativo se bypassa (no corren dos bots); en SOMBRA todo sigue como hoy.
-  const bridgeAcc = await prisma.user.findUnique({ where: { id: req.accountId! }, select: { chatBotBridge: true, chatBotBridgeShadow: true } });
+  const bridgeAcc = await prisma.user.findUnique({ where: { id: req.accountId! }, select: { chatBotBridge: true, chatBotBridgeShadow: true, chatPlayerPassword: true } });
   const bridgeOn = !!bridgeAcc?.chatBotBridge;
   if (bridgeOn || bridgeAcc?.chatBotBridgeShadow) {
     // El usuario que la app YA le mostró al jugador viaja al bot: lo vincula/crea con ESE username
@@ -1021,7 +1028,7 @@ chatPublicRouter.post("/me/messages", requireChatClient, async (req, res) => {
       text: body,
       msgId: msg.id,
       chatUsername: pl?.casinoUsername ?? undefined,
-      chatPassword: PLAYER_PASSWORD, // la clave que la app le mostró: el alta en la plataforma usa la misma
+      chatPassword: bridgeAcc?.chatPlayerPassword?.trim() || PLAYER_PASSWORD, // la clave que la app le mostró: el alta usa la misma
       pushName: pl?.nombre ?? undefined,
       mediaBase64: comprobanteData ? comprobanteData.toString("base64") : undefined,
       mediaMimetype: comprobanteType ?? undefined,
@@ -1244,7 +1251,7 @@ chatPublicRouter.post("/register", async (req, res) => {
   if (autogenerate) {
     const base = nickSlug(parsed.data.nickname ?? "") || "user";
     const nombre = (parsed.data.nickname ?? "").trim() || null;
-    plainPassword = PLAYER_PASSWORD;
+    plainPassword = await playerPasswordFor(invite.userId);
     const hash = await hashPassword(plainPassword);
     for (let i = 0; i < 8 && !player; i++) {
       try {
@@ -1476,7 +1483,7 @@ chatPublicRouter.post("/start", async (req, res) => {
   if (autogenerate) {
     const base = nickSlug(parsed.data.nickname ?? "") || "user";
     const nombre = (parsed.data.nickname ?? "").trim() || null;
-    const plainPassword = PLAYER_PASSWORD;
+    const plainPassword = await playerPasswordFor(acc.id);
     const hash = await hashPassword(plainPassword);
     let np: { id: string; casinoUsername: string } | undefined;
     for (let i = 0; i < 8 && !np; i++) {
@@ -1583,7 +1590,7 @@ chatPublicRouter.post("/direct", async (req, res) => {
     return res.status(403).json({ error: "El chat no está disponible en este momento. Probá más tarde.", code: "line_required" });
   }
 
-  const plainPassword = PLAYER_PASSWORD;
+  const plainPassword = await playerPasswordFor(acc.id);
   const hash = await hashPassword(plainPassword);
   let np: { id: string; casinoUsername: string } | undefined;
   for (let i = 0; i < 8 && !np; i++) {

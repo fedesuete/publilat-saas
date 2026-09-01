@@ -31,6 +31,9 @@ model User {
   chatBotBridge       Boolean @default(false)
   // Modo sombra: forwardea y loguea lo que el bot respondería, SIN postear en la conversación.
   chatBotBridgeShadow Boolean @default(false)
+  // Clave que el Chat App muestra a los jugadores nuevos de ESTA cuenta (null = "123456", la
+  // histórica). Con puente al bot, el alta en el casino usa la MISMA (viaja como chatPassword).
+  chatPlayerPassword  String?
   // --- Panel maestro (super-admin) ---
   role          Role      @default(USER)
   suspended     Boolean   @default(false)
