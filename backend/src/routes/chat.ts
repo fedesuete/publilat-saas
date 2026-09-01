@@ -1451,9 +1451,13 @@ chatPublicRouter.get("/public/:slug", async (req, res) => {
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   const s = entry.skin;
+  // Pixel de la cuenta para el PageView del GATE (la página de entrada ES la landing del anuncio):
+  // sin esto Meta solo veía a los que pasaban el botón y no había forma de medir visitas vs entradas.
+  const pxPv = await resolveUserPixel(acc.id, "CompleteRegistration").catch(() => null);
   return res.json({
     accountSlug: s ? s.slug : acc.slug,
     active: await canOperateChat(acc.id),
+    pixelId: pxPv?.pixelId ?? null,
     branding: {
       brandName: s?.brandName ?? acc.brandName, logoUrl: s?.logoUrl ?? acc.logoUrl, chatTheme: s?.chatTheme ?? acc.chatTheme,
       primaryColor: s?.primaryColor ?? acc.primaryColor, accentColor: s?.accentColor ?? acc.accentColor,

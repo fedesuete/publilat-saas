@@ -35,6 +35,9 @@ export default function DirectChatPage() {
         saveBranding(pub.data.accountSlug, pub.data.branding);
         setBrand(pub.data.branding);
         setAccountSlug(pub.data.accountSlug);
+        // PageView al ABRIR el gate (esta página ES la landing del anuncio): Meta ve TODAS las
+        // visitas — con esto se mide visitas vs "Empezar a chatear" y el pixel siembra _fbp acá.
+        if (pub.data.pixelId) fireMetaPixel(pub.data.pixelId, "PageView", {});
         if (!pub.data.active) {
           setError("El chat no está disponible en este momento. Probá más tarde.");
           return;
@@ -78,12 +81,8 @@ export default function DirectChatPage() {
       setToken(data.token);
       localStorage.setItem(SESSION_SLUG_KEY, accSlug);
       // Pixel del navegador (además de la CAPI del server), deduplicado por eventId. Best-effort.
-      // PageView primero: el Chat App ES la landing del anuncio → Meta necesita la visita para
-      // optimizar entrega/audiencias, y de paso el pixel siembra _fbp/_fbc en este dominio.
-      if (data.pixel) {
-        fireMetaPixel(data.pixel, "PageView", {});
-        fireMetaPixel(data.pixel, "CompleteRegistration", { eventId: data.eventId, externalId: data.username });
-      }
+      // (El PageView ya se disparó al abrir el gate — acá solo el registro.)
+      if (data.pixel) fireMetaPixel(data.pixel, "CompleteRegistration", { eventId: data.eventId, externalId: data.username });
       navigate("/chat", { replace: true });
     } catch (e) {
       const code = (e as { response?: { data?: { code?: string } } })?.response?.data?.code;
