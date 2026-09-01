@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const { prismaMock, emitChatMock } = vi.hoisted(() => ({
   prismaMock: {
-    chatPlayer: { findUnique: vi.fn() },
+    chatPlayer: { findUnique: vi.fn(), update: vi.fn() },
     chatConversation: { findFirst: vi.fn(), update: vi.fn() },
     chatMessage: { create: vi.fn() },
   },
@@ -14,7 +14,7 @@ const { prismaMock, emitChatMock } = vi.hoisted(() => ({
 vi.mock("./prisma.js", () => ({ prisma: prismaMock }));
 vi.mock("./io.js", () => ({ emitChat: (...a: unknown[]) => emitChatMock(...a) }));
 
-import { parseChatPlayerRef, chatInstance, forwardChatToBot, postBotChatMessage } from "./chat-bridge.js";
+import { parseChatPlayerRef, chatInstance, forwardChatToBot, postBotChatMessage, updateChatPlayerUsername } from "./chat-bridge.js";
 
 const fetchMock = vi.fn().mockResolvedValue({ ok: true });
 
@@ -135,5 +135,28 @@ describe("postBotChatMessage (salida)", () => {
     prismaMock.chatPlayer.findUnique.mockResolvedValue(null);
     expect(await postBotChatMessage("chat:nope", "x")).toMatchObject({ ok: false, skipped: "no_player" });
     expect(prismaMock.chatMessage.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateChatPlayerUsername (sync del username definitivo que creó el bot)", () => {
+  it("actualiza el casinoUsername del jugador (el web* provisional pasa a ser el real)", async () => {
+    prismaMock.chatPlayer.update.mockResolvedValue({ id: "p1" });
+    const r = await updateChatPlayerUsername("chat:p1", "maxi1234rb");
+    expect(r.ok).toBe(true);
+    expect(prismaMock.chatPlayer.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "p1" }, data: expect.objectContaining({ casinoUsername: "maxi1234rb" }) }),
+    );
+  });
+
+  it("ref inválido o username vacío: skipped sin tocar nada", async () => {
+    expect(await updateChatPlayerUsername("5492944679040", "x")).toMatchObject({ ok: false });
+    expect(await updateChatPlayerUsername("chat:p1", "")).toMatchObject({ ok: false });
+    expect(prismaMock.chatPlayer.update).not.toHaveBeenCalled();
+  });
+
+  it("username tomado o jugador inexistente (P2002/P2025): no explota", async () => {
+    prismaMock.chatPlayer.update.mockRejectedValue(new Error("Unique constraint failed"));
+    const r = await updateChatPlayerUsername("chat:p1", "maxi1234rb");
+    expect(r.ok).toBe(false);
   });
 });

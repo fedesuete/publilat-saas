@@ -10,7 +10,7 @@ import crypto from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { sendToContact } from "../lib/wa-send.js";
 import { markPurchase } from "../lib/purchase.js";
-import { postBotChatMessage } from "../lib/chat-bridge.js";
+import { postBotChatMessage, updateChatPlayerUsername } from "../lib/chat-bridge.js";
 
 export const botRelayRouter = Router();
 
@@ -76,6 +76,25 @@ botRelayRouter.post("/chat-send", requireBotToken, async (req, res) => {
     return res.json(r);
   } catch (e) {
     console.error("[bot-relay/chat-send]", e instanceof Error ? e.message : String(e));
+    return res.status(500).json({ error: "error interno" });
+  }
+});
+
+const chatUsernameSchema = z.object({
+  playerRef: z.string().min(6).max(64),
+  username: z.string().min(2).max(64),
+});
+
+// POST /api/bot-relay/chat-username — el bot creó el username DEFINITIVO de un jugador del Chat App
+// (el flujo directo genera web* provisional que la app no muestra; el bot pregunta el nombre y crea
+// el real). Acá se sincroniza para que el login de la app use ese mismo usuario. Best-effort.
+botRelayRouter.post("/chat-username", requireBotToken, async (req, res) => {
+  const parsed = chatUsernameSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "input inválido" });
+  try {
+    return res.json(await updateChatPlayerUsername(parsed.data.playerRef, parsed.data.username));
+  } catch (e) {
+    console.error("[bot-relay/chat-username]", e instanceof Error ? e.message : String(e));
     return res.status(500).json({ error: "error interno" });
   }
 });

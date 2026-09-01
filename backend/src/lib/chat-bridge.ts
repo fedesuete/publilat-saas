@@ -71,6 +71,21 @@ export function forwardChatToBot(accountId: string, chatPlayerId: string, data: 
   }).catch((e) => console.warn("[chat-bridge fwd]", accountId, e instanceof Error ? e.message : String(e)));
 }
 
+// ---- SYNC: el bot creó el username DEFINITIVO para un jugador del flujo directo (web* provisional
+// que la app nunca le mostró) → acá se pisa el provisional, así el login del Chat App y la cuenta
+// del casino quedan con EL MISMO usuario. Best-effort: username tomado o jugador inexistente = no-op.
+export async function updateChatPlayerUsername(playerRef: string, username: string): Promise<{ ok: boolean; skipped?: string }> {
+  const playerId = parseChatPlayerRef(playerRef);
+  if (!playerId || !username.trim()) return { ok: false, skipped: "bad_input" };
+  try {
+    await prisma.chatPlayer.update({ where: { id: playerId }, data: { casinoUsername: username.trim() } });
+    return { ok: true };
+  } catch (e) {
+    console.warn("[chat-bridge sync-username]", playerId, e instanceof Error ? e.message : String(e));
+    return { ok: false, skipped: "update_failed" };
+  }
+}
+
 // ---- SALIDA: bot → Chat App ----
 export async function postBotChatMessage(playerRef: string, message: string): Promise<{ ok: boolean; skipped?: string; shadow?: boolean }> {
   const playerId = parseChatPlayerRef(playerRef);
