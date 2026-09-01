@@ -10,6 +10,7 @@ import crypto from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { sendToContact } from "../lib/wa-send.js";
 import { markPurchase } from "../lib/purchase.js";
+import { postBotChatMessage } from "../lib/chat-bridge.js";
 
 export const botRelayRouter = Router();
 
@@ -55,6 +56,26 @@ botRelayRouter.post("/send", requireBotToken, async (req, res) => {
     return res.json({ ok });
   } catch (e) {
     console.error("[bot-relay/send]", e instanceof Error ? e.message : String(e));
+    return res.status(500).json({ error: "error interno" });
+  }
+});
+
+const chatSendSchema = z.object({
+  playerRef: z.string().min(6).max(64),   // "chat:<chatPlayerId>" (el phone sintético del puente)
+  message: z.string().min(1).max(4096),
+});
+
+// POST /api/bot-relay/chat-send — el bot responde a un jugador del CHAT APP (no WhatsApp). Postea el
+// mensaje en la conversación como cajero y lo emite en vivo. Gateado por User.chatBotBridge (sombra =
+// loguea sin postear). Devuelve 200 con skipped en vez de error para no provocar reintentos del bot.
+botRelayRouter.post("/chat-send", requireBotToken, async (req, res) => {
+  const parsed = chatSendSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "input inválido" });
+  try {
+    const r = await postBotChatMessage(parsed.data.playerRef, parsed.data.message);
+    return res.json(r);
+  } catch (e) {
+    console.error("[bot-relay/chat-send]", e instanceof Error ? e.message : String(e));
     return res.status(500).json({ error: "error interno" });
   }
 });

@@ -26,6 +26,11 @@ model User {
   // Embudo de eventos a Meta: si true, el Lead se dispara en el 1er INBOUND real (no en el clic).
   // Default false = comportamiento de hoy (Lead en el clic). Se prende por cuenta (ON para victor).
   leadOnInbound    Boolean @default(false)
+  // --- Puente Chat App → bot cajero EXTERNO (combatwin/mijoker). Ver lib/chat-bridge.ts ---
+  // ON: el bot externo atiende el Chat App de esta cuenta (bypassa el bot nativo runChatBot).
+  chatBotBridge       Boolean @default(false)
+  // Modo sombra: forwardea y loguea lo que el bot respondería, SIN postear en la conversación.
+  chatBotBridgeShadow Boolean @default(false)
   // --- Panel maestro (super-admin) ---
   role          Role      @default(USER)
   suspended     Boolean   @default(false)

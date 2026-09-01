@@ -17,6 +17,7 @@ import { pushBonusFor, pushOnMilestoneBody, appInstalledMilestoneBody } from "..
 import { pushEnabled, publicVapidKey, enqueuePlayerPush, enqueueAccountBroadcast, enqueueOperatorPush } from "../lib/chat-push.js";
 import { s3Enabled } from "../lib/s3.js";
 import { runChatBot } from "../lib/chat-bot.js";
+import { forwardChatToBot } from "../lib/chat-bridge.js";
 import { canOperateChat, consumeChatDayAndActivate, getAvailableDays } from "../lib/access.js";
 import { creditDepositInCasino, debitWithdrawalInCasino, sendDepositIntent, casinoLiveForAccount, casinoCvuForAccount, ensureCasinoUser, casinoPlayerPassword } from "../lib/casino-cashier.js"; // puente casino (key por cuenta)
 import { verifyPartnerSignature, isCallbackTimestampFresh } from "../lib/casino-callback.js"; // firma del callback (modelo B)
@@ -1007,10 +1008,25 @@ chatPublicRouter.post("/me/messages", requireChatClient, async (req, res) => {
   // Push al OPERADOR (celu, panel cerrado): un jugador le escribió. Best-effort, no bloquea.
   void enqueueOperatorPush(req.accountId!, { title: "💬 Nuevo mensaje", body: (body ?? "📷 Imagen").slice(0, 140), url: "/chat" }).catch(() => undefined);
 
+  // Puente al bot cajero EXTERNO (combatwin/mijoker): si la cuenta lo tiene prendido (o en sombra),
+  // le forwardeamos el mensaje del jugador (texto o comprobante) con el payload sintético del puente.
+  // Con el puente FULL el cajero nativo se bypassa (no corren dos bots); en SOMBRA todo sigue como hoy.
+  const bridgeAcc = await prisma.user.findUnique({ where: { id: req.accountId! }, select: { chatBotBridge: true, chatBotBridgeShadow: true } });
+  const bridgeOn = !!bridgeAcc?.chatBotBridge;
+  if (bridgeOn || bridgeAcc?.chatBotBridgeShadow) {
+    forwardChatToBot(req.accountId!, req.chatPlayerId!, {
+      text: body,
+      msgId: msg.id,
+      mediaBase64: comprobanteData ? comprobanteData.toString("base64") : undefined,
+      mediaMimetype: comprobanteType ?? undefined,
+    });
+  }
+
   // Si mandó una IMAGEN y la cuenta usa el cajero (bot prendido o casino en vivo): la leemos con IA y, si es
   // un comprobante, registramos la carga (pending) → aparece en la pestaña Cajero + dispara Purchase/intent.
   // NO acredita fichas (§9.2). Si lo tomó como comprobante, cerramos el paso del bot y no re-preguntamos.
-  if (comprobanteData) {
+  // Con el puente FULL el comprobante lo procesa el bot externo (OCR + carga en el casino real).
+  if (comprobanteData && !bridgeOn) {
     const acc = await prisma.user.findUnique({ where: { id: req.accountId! }, select: { botEnabled: true } });
     const cashierOn = acc?.botEnabled || (await casinoLiveForAccount(req.accountId!));
     if (cashierOn && (await handlePlayerComprobante(req.accountId!, req.chatPlayerId!, comprobanteType ?? "image/jpeg", comprobanteData, conv.botAmount ?? null))) {
@@ -1023,7 +1039,8 @@ chatPublicRouter.post("/me/messages", requireChatClient, async (req, res) => {
 
   // Bot de carga/descarga (Fase 1): responde solo si la cuenta lo tiene PRENDIDO. Best-effort y
   // aislado: sin bot es no-op; un error del bot no afecta el envío del jugador.
-  void runChatBot(req.accountId!, conv.id, req.chatPlayerId!, body ?? "").catch((e) => console.error("[chat-bot]", e instanceof Error ? e.message : String(e)));
+  // Con el puente al bot externo FULL, el bot nativo NO corre (atiende el externo).
+  if (!bridgeOn) void runChatBot(req.accountId!, conv.id, req.chatPlayerId!, body ?? "").catch((e) => console.error("[chat-bot]", e instanceof Error ? e.message : String(e)));
 
   return res.status(201).json({ message: outMsg });
 });
