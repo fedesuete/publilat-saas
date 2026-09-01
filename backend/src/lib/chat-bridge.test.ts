@@ -201,6 +201,23 @@ describe("fireChatBridgePurchase (Purchase CAPI de cargas del canal chat)", () =
     expect(ids[0]).not.toBe(ids[1]);
   });
 
+  it("jugador SIN click de anuncio (sin fbclid ni fbc) → NO dispara Purchase (orgánicos y viejos afuera)", async () => {
+    prismaMock.chatPlayer.findUnique.mockResolvedValue({ ...player, fbclid: null, fbc: null, fbp: "fb.1.111.222" });
+    const r = await fireChatBridgePurchase("chat:p1", 5000, "ARS");
+    expect(r).toMatchObject({ ok: true, skipped: "sin_click_de_anuncio" });
+    expect(sendCapiMock).not.toHaveBeenCalled();
+    expect(prismaMock.metaEvent.create).not.toHaveBeenCalled();
+  });
+
+  it("con fbc guardada (aunque no haya fbclid) SÍ dispara", async () => {
+    prismaMock.chatPlayer.findUnique.mockResolvedValue({ ...player, fbclid: null, fbc: "fb.1.999.ABC" });
+    resolvePixelMock.mockResolvedValue({ pixelId: "px1", capiToken: "tok1" });
+    sendCapiMock.mockResolvedValue({ pixelId: "px1", payload: {}, response: {} });
+    const r = await fireChatBridgePurchase("chat:p1", 5000, "ARS");
+    expect(r.ok).toBe(true);
+    expect(sendCapiMock).toHaveBeenCalled();
+  });
+
   it("ref inválido, monto inválido o jugador inexistente → skipped sin CAPI", async () => {
     expect(await fireChatBridgePurchase("5492944679040", 1000, "ARS")).toMatchObject({ ok: false });
     expect(await fireChatBridgePurchase("chat:p1", 0, "ARS")).toMatchObject({ ok: false });

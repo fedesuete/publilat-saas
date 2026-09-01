@@ -102,6 +102,14 @@ export async function fireChatBridgePurchase(playerRef: string, amount: number, 
     select: { id: true, userId: true, casinoUsername: true, fbp: true, fbc: true, fbclid: true, clientIp: true, userAgent: true },
   });
   if (!player) return { ok: false, skipped: "no_player" };
+  // SOLO jugadores que vinieron de un ANUNCIO de Meta (fbclid/fbc del click guardados al alta).
+  // Los registrados de antes y los orgánicos (link compartido, sin click) NO disparan Purchase:
+  // el pixel mide la campaña, no el volumen orgánico (pedido de Eduardo 01/09). fbp NO alcanza
+  // como señal (la cookie del pixel se siembra en cualquier visita, con o sin anuncio).
+  if (!player.fbclid && !player.fbc) {
+    console.log(`[chat-bridge purchase] ${playerId} sin click de anuncio → no se reporta a Meta`);
+    return { ok: true, skipped: "sin_click_de_anuncio" };
+  }
   const creds = await resolveUserPixel(player.userId, "Purchase");
   // Log en MetaEvent para que la venta sea VISIBLE en analytics/admin (mismo patrón que el cajero nativo).
   const metaEvent = await prisma.metaEvent.create({
