@@ -71,6 +71,15 @@ describe("forwardChatToBot (entrada)", () => {
     expect(body.data.pushName).toBe("Juan");
   });
 
+  it("incluye el usuario y la clave que la app YA le mostró al jugador, para que el bot lo reconozca", () => {
+    process.env.BOT_CHAT_FORWARD = JSON.stringify({ acc1: "https://bot/webhook" });
+    forwardChatToBot("acc1", "p1", { text: "hola", chatUsername: "pepe1234rb", chatPassword: "123456", pushName: "Pepe" });
+    const body = JSON.parse((fetchMock.mock.calls[0] as [string, { body: string }])[1].body);
+    expect(body.data.chatUsername).toBe("pepe1234rb");
+    expect(body.data.chatPassword).toBe("123456");
+    expect(body.data.pushName).toBe("Pepe");
+  });
+
   it("manda comprobantes como imageMessage + mediaBase64", () => {
     process.env.BOT_CHAT_FORWARD = JSON.stringify({ acc1: "https://bot/webhook" });
     forwardChatToBot("acc1", "p1", { mediaBase64: "QUJD", mediaMimetype: "image/jpeg", text: "va el compro" });

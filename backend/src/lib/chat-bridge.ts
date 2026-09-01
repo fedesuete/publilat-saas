@@ -32,6 +32,10 @@ export function forwardChatToBot(accountId: string, chatPlayerId: string, data: 
   text?: string | null;
   msgId?: string;
   pushName?: string | null;
+  chatUsername?: string | null;  // ChatPlayer.casinoUsername: el usuario que la app YA le mostró
+                                 // al jugador → el bot lo vincula/crea con ESE username (no inventa otro)
+  chatPassword?: string | null;  // la clave que la app mostró junto al usuario → el alta en la
+                                 // plataforma usa ESTA (un solo juego de credenciales)
   mediaBase64?: string | null;   // comprobante en base64 SIN prefijo data:
   mediaMimetype?: string | null;
 }): void {
@@ -57,6 +61,8 @@ export function forwardChatToBot(accountId: string, chatPlayerId: string, data: 
         key: { remoteJid: ref, fromMe: false, id: data.msgId, senderPn: ref },
         message,
         pushName: data.pushName ?? undefined,
+        chatUsername: data.chatUsername ?? undefined,
+        chatPassword: data.chatPassword ?? undefined,
         mediaBase64: data.mediaBase64 ?? undefined,
         mediaMimetype: data.mediaMimetype ?? undefined,
       },

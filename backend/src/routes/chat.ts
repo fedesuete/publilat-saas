@@ -1014,9 +1014,15 @@ chatPublicRouter.post("/me/messages", requireChatClient, async (req, res) => {
   const bridgeAcc = await prisma.user.findUnique({ where: { id: req.accountId! }, select: { chatBotBridge: true, chatBotBridgeShadow: true } });
   const bridgeOn = !!bridgeAcc?.chatBotBridge;
   if (bridgeOn || bridgeAcc?.chatBotBridgeShadow) {
+    // El usuario que la app YA le mostró al jugador viaja al bot: lo vincula/crea con ESE username
+    // en la plataforma (un solo juego de credenciales, el bot lo reconoce como jugador existente).
+    const pl = await prisma.chatPlayer.findUnique({ where: { id: req.chatPlayerId! }, select: { casinoUsername: true, nombre: true } });
     forwardChatToBot(req.accountId!, req.chatPlayerId!, {
       text: body,
       msgId: msg.id,
+      chatUsername: pl?.casinoUsername ?? undefined,
+      chatPassword: PLAYER_PASSWORD, // la clave que la app le mostró: el alta en la plataforma usa la misma
+      pushName: pl?.nombre ?? undefined,
       mediaBase64: comprobanteData ? comprobanteData.toString("base64") : undefined,
       mediaMimetype: comprobanteType ?? undefined,
     });
