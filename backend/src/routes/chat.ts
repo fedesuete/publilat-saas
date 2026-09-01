@@ -1578,6 +1578,9 @@ chatPublicRouter.post("/start", async (req, res) => {
 const DEFAULT_DIRECT_WELCOME = "¡Hola! 🎉 Bienvenido. Para empezar, decime tu nombre 👇";
 const directSchema = z.object({
   accountSlug: z.string().min(1).max(60),
+  // Nombre/apodo del gate de entrada (PWA): con él, el username sale del nombre (no más web*
+  // fantasma) y el bot del puente atiende sin re-preguntar el nombre.
+  nickname: z.string().max(40).optional(),
   // Identificadores del clic de Meta (los reenvía la landing por la URL): aunque el chat directo es
   // anónimo, con esto disparamos el Registro al pixel y el loop de atribución cierra igual.
   fbclid: z.string().max(400).optional(),
@@ -1595,6 +1598,7 @@ chatPublicRouter.post("/direct", async (req, res) => {
   const parsed = directSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
   const { fbclid, fbp, fbc } = parsed.data;
+  const nombreGate = (parsed.data.nickname ?? "").trim() || null; // nombre del gate de entrada (PWA)
   // El slug puede ser la cuenta o una SKIN (mismo inbox, otra marca): la bienvenida sale de la skin.
   const entry = await resolveEntrySlug(parsed.data.accountSlug.trim());
   if (!entry) return res.status(404).json({ error: "Cuenta no encontrada" });
@@ -1613,8 +1617,15 @@ chatPublicRouter.post("/direct", async (req, res) => {
   let np: { id: string; casinoUsername: string } | undefined;
   for (let i = 0; i < 8 && !np; i++) {
     try {
+      // Con nombre del gate: username REAL a partir del nombre (nickSlug+dígitos, como /start) — el
+      // bot del puente lo crea/vincula directo. Sin nombre (flujo viejo): web<dígitos> provisional.
       np = await prisma.chatPlayer.create({
-        data: { userId: acc.id, skinId: skin?.id ?? null, casinoUsername: `web${randDigits(6)}`, password: hash, estatus: "active", ...chatAttribution(req, { fbclid, fbp, fbc }) },
+        data: {
+          userId: acc.id, skinId: skin?.id ?? null,
+          casinoUsername: nombreGate ? `${nickSlug(nombreGate) || "user"}${randDigits(5)}` : `web${randDigits(6)}`,
+          nombre: nombreGate,
+          password: hash, estatus: "active", ...chatAttribution(req, { fbclid, fbp, fbc }),
+        },
         select: { id: true, casinoUsername: true },
       });
     } catch (e) {
@@ -1625,10 +1636,15 @@ chatPublicRouter.post("/direct", async (req, res) => {
   if (!np) return res.status(500).json({ error: "No se pudo iniciar el chat, probá de nuevo." });
 
   const conv = await prisma.chatConversation.create({
-    data: { userId: acc.id, playerId: np.id, status: "open", botStep: "ask_name" },
+    // Con nombre del gate no hay que preguntarlo de nuevo (botStep ask_name era para eso).
+    data: { userId: acc.id, playerId: np.id, status: "open", botStep: nombreGate ? null : "ask_name" },
     select: { id: true },
   });
-  const welcome = (skin?.chatDirectWelcome ?? acc.chatDirectWelcome)?.trim() || DEFAULT_DIRECT_WELCOME;
+  // El welcome configurado pide el nombre ("decime tu nombre") — si YA lo dio en el gate, saludamos
+  // por su nombre y lo invitamos a escribir (el bot del puente le crea la cuenta al primer mensaje).
+  const welcome = nombreGate
+    ? `¡Hola, ${nombreGate}! 👋 Contanos qué necesitás y te ayudamos al toque 👇`
+    : (skin?.chatDirectWelcome ?? acc.chatDirectWelcome)?.trim() || DEFAULT_DIRECT_WELCOME;
   await prisma.chatMessage.create({
     data: { userId: acc.id, conversationId: conv.id, senderType: "system", body: welcome, metadata: {} },
   });
