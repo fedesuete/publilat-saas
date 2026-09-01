@@ -478,12 +478,14 @@ inboundIntegrationsRouter.post("/kommo", express.urlencoded({ extended: true, li
 // (2) calculamos la respuesta, (3) CONTINUAMOS el bot posteando a return_url los handlers "show" → Kommo
 // manda esos mensajes por el WhatsApp del cliente. Así el bot contesta SIN que Publi.lat sea el gateway de
 // WhatsApp (Kommo sigue siendo el transporte; el WhatsApp no se mueve). Público: lo llama el Salesbot.
-inboundIntegrationsRouter.post("/kommo-bot", express.json({ limit: "1mb" }), async (req, res) => {
+inboundIntegrationsRouter.post("/kommo-bot", express.json({ limit: "1mb" }), express.urlencoded({ extended: true, limit: "1mb" }), async (req, res) => {
   const token = String(req.query.token ?? "").trim();
   const integ = token ? await prisma.integration.findUnique({ where: { inboundToken: token } }) : null;
   if (!integ) return res.status(401).json({ error: "Token inválido." });
 
   const body = (req.body ?? {}) as Record<string, unknown>;
+  // TEMP (debug): ver el formato EXACTO con el que Kommo llama al widget_request (content-type + payload).
+  console.log(`[kommo-bot] ct=${req.get("content-type") ?? "?"} keys=${Object.keys(body).join(",")} raw=${JSON.stringify(body).slice(0, 700)}`);
   const data = (body.data ?? {}) as Record<string, unknown>;
   const returnUrl = String(body.return_url ?? "").trim();
   const incoming = String(data.message ?? data.text ?? "").trim();
