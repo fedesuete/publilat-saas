@@ -1640,10 +1640,20 @@ chatPublicRouter.post("/direct", async (req, res) => {
     data: { userId: acc.id, playerId: np.id, status: "open", botStep: nombreGate ? null : "ask_name" },
     select: { id: true },
   });
-  // El welcome configurado pide el nombre ("decime tu nombre") — si YA lo dio en el gate, saludamos
-  // por su nombre y lo invitamos a escribir (el bot del puente le crea la cuenta al primer mensaje).
+  // Con nombre del gate + puente al bot PRENDIDO: la cuenta del casino se crea YA (no se espera
+  // al primer mensaje) — se dispara un forward sintético al bot, que hace el alta y postea el
+  // bloque completo (usuario/clave/bono/CBU) como primer mensaje. El welcome local es un puente
+  // corto por si el alta tarda unos segundos. Sin puente (o sin nombre): comportamiento de antes.
+  const bridgeOnDirect = nombreGate
+    ? !!(await prisma.user.findUnique({ where: { id: acc.id }, select: { chatBotBridge: true } }))?.chatBotBridge
+    : false;
+  if (bridgeOnDirect && nombreGate) {
+    forwardChatToBot(acc.id, np.id, { text: nombreGate, pushName: nombreGate, chatUsername: np.casinoUsername, chatPassword: plainPassword });
+  }
   const welcome = nombreGate
-    ? `¡Hola, ${nombreGate}! 👋 Contanos qué necesitás y te ayudamos al toque 👇`
+    ? (bridgeOnDirect
+        ? `¡Hola, ${nombreGate}! 👋 Un segundo que te preparamos tu cuenta… 🎰`
+        : `¡Hola, ${nombreGate}! 👋 Contanos qué necesitás y te ayudamos al toque 👇`)
     : (skin?.chatDirectWelcome ?? acc.chatDirectWelcome)?.trim() || DEFAULT_DIRECT_WELCOME;
   await prisma.chatMessage.create({
     data: { userId: acc.id, conversationId: conv.id, senderType: "system", body: welcome, metadata: {} },
