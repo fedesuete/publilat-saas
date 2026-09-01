@@ -7,3 +7,6 @@
 .gitignore
 **/*.md
 backend/prisma/dev.db
+backup-*
+*.sql
+*.sql.gz

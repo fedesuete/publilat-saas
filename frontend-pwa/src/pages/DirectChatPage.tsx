@@ -21,7 +21,6 @@ export default function DirectChatPage() {
   const [brand, setBrand] = useState<Branding | null>(null);
   const [accountSlug, setAccountSlug] = useState<string>("");
   const [phase, setPhase] = useState<"loading" | "gate" | "name" | "creating">("loading");
-  const [nick, setNick] = useState("");
   const [error, setError] = useState<string | null>(null);
   const started = useRef(false); // evita correr dos veces (StrictMode)
 
@@ -104,20 +103,15 @@ export default function DirectChatPage() {
         <div className="mt-5 w-full rounded-xl border border-amber-700/50 bg-amber-500/10 p-3 text-sm text-amber-200">{error}</div>
       ) : phase === "name" ? (
         <>
-          <p className="mt-2 text-sm text-slate-400">Decinos tu nombre o apodo y empezá a chatear 👇</p>
-          <input
-            value={nick}
-            onChange={(e) => setNick(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && nick.trim().length >= 2) void enterAsNew(accountSlug, nick.trim()); }}
-            placeholder="Tu nombre o apodo"
-            maxLength={40}
-            autoFocus
-            className="mt-5 w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3.5 text-base text-white placeholder:text-slate-500 focus:border-white/40 focus:outline-none"
-          />
+          {/* Gancho del bono (el gate evita los jugadores fantasma: nada se crea sin este tap).
+              El NOMBRE lo pregunta el bot adentro del chat y con eso arma el usuario. */}
+          <div className="mt-4 w-full rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4">
+            <p className="text-lg font-extrabold text-amber-300">🎁 50% EXTRA en tu primera carga</p>
+            <p className="mt-1 text-sm text-slate-300">Activá el chat y reclamá tu bono al toque</p>
+          </div>
           <button
-            onClick={() => void enterAsNew(accountSlug, nick.trim())}
-            disabled={nick.trim().length < 2}
-            className="mt-3 w-full rounded-xl py-3.5 text-base font-extrabold text-white transition active:scale-[.98] disabled:opacity-40"
+            onClick={() => void enterAsNew(accountSlug)}
+            className="mt-4 w-full rounded-xl py-3.5 text-base font-extrabold text-white transition active:scale-[.98]"
             style={{ background: primary }}
           >
             💬 Empezar a chatear

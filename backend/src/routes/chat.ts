@@ -1640,21 +1640,26 @@ chatPublicRouter.post("/direct", async (req, res) => {
     data: { userId: acc.id, playerId: np.id, status: "open", botStep: nombreGate ? null : "ask_name" },
     select: { id: true },
   });
-  // Con nombre del gate + puente al bot PRENDIDO: la cuenta del casino se crea YA (no se espera
-  // al primer mensaje) — se dispara un forward sintético al bot, que hace el alta y postea el
-  // bloque completo (usuario/clave/bono/CBU) como primer mensaje. El welcome local es un puente
-  // corto por si el alta tarda unos segundos. Sin puente (o sin nombre): comportamiento de antes.
-  const bridgeOnDirect = nombreGate
-    ? !!(await prisma.user.findUnique({ where: { id: acc.id }, select: { chatBotBridge: true } }))?.chatBotBridge
-    : false;
-  if (bridgeOnDirect && nombreGate) {
-    forwardChatToBot(acc.id, np.id, { text: nombreGate, pushName: nombreGate, chatUsername: np.casinoUsername, chatPassword: plainPassword });
+  // Puente al bot PRENDIDO: el BOT maneja la entrada — se dispara un forward sintético apenas el
+  // jugador pasa el gate y el bot saluda/pregunta EL NOMBRE dentro del chat (su onboarding de
+  // siempre) para armarle el usuario; la app no repite la pregunta. Si el gate mandó nickname
+  // (variante con input), el alta sale directa con ese nombre (usuario/clave/bono/CBU al toque).
+  const bridgeOnDirect = !!(await prisma.user.findUnique({ where: { id: acc.id }, select: { chatBotBridge: true } }))?.chatBotBridge;
+  if (bridgeOnDirect) {
+    forwardChatToBot(acc.id, np.id, {
+      text: nombreGate ?? "hola",
+      pushName: nombreGate ?? undefined,
+      chatUsername: np.casinoUsername,
+      chatPassword: plainPassword,
+    });
   }
-  const welcome = nombreGate
-    ? (bridgeOnDirect
-        ? `¡Hola, ${nombreGate}! 👋 Un segundo que te preparamos tu cuenta… 🎰`
-        : `¡Hola, ${nombreGate}! 👋 Contanos qué necesitás y te ayudamos al toque 👇`)
-    : (skin?.chatDirectWelcome ?? acc.chatDirectWelcome)?.trim() || DEFAULT_DIRECT_WELCOME;
+  // Welcome local: con el puente el bot saluda solo (no duplicamos ni pedimos el nombre dos veces);
+  // apenas un puente visual mínimo. Sin puente: el welcome configurado de siempre.
+  const welcome = bridgeOnDirect
+    ? (nombreGate ? `¡Hola, ${nombreGate}! 👋 Un segundo que te preparamos tu cuenta… 🎰` : "¡Bienvenido! 🎰")
+    : nombreGate
+      ? `¡Hola, ${nombreGate}! 👋 Contanos qué necesitás y te ayudamos al toque 👇`
+      : (skin?.chatDirectWelcome ?? acc.chatDirectWelcome)?.trim() || DEFAULT_DIRECT_WELCOME;
   await prisma.chatMessage.create({
     data: { userId: acc.id, conversationId: conv.id, senderType: "system", body: welcome, metadata: {} },
   });
