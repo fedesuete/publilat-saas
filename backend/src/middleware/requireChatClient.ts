@@ -1,5 +1,5 @@
 // Auth del JUGADOR del Chat App (canal aislado, separado del operador). El jugador entra
-// passwordless por un link de invitación y recibe un JWT de tipo "client" (90 días) que llega
+// passwordless por un link de invitación y recibe un JWT de tipo "client" (10 años) que llega
 // por Bearer (localStorage de la PWA) O por una cookie httpOnly de larga duración (sobrevive al
 // borrado del localStorage — clave para que el jugador no pierda la sesión y NO se le duplique la
 // cuenta de ganamos). NO usa tokenVersion, y NO da acceso al panel (requireAuth lo rechaza porque
@@ -20,10 +20,11 @@ declare global {
   }
 }
 
-// Firma el token del jugador (90 días). userId = playerId a propósito: si por error se usa
+// Firma el token del jugador (10 años = indefinido en la práctica: si vence, el jugador "pierde
+// su usuario" y se duplica — pedido de Eduardo 01/09). userId = playerId a propósito: si por error se usa
 // contra requireAuth, falla (no hay User con ese id) — el jugador nunca accede al panel.
 export function signChatClientToken(accountId: string, playerId: string): string {
-  return signToken({ userId: playerId, type: "client", accountId, playerId }, "90d");
+  return signToken({ userId: playerId, type: "client", accountId, playerId }, "3650d");
 }
 
 // Token del jugador: primero Bearer (localStorage), y si no, la cookie httpOnly (sesión persistente).

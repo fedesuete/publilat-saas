@@ -72,7 +72,10 @@ function setChatCookie(res: Response, token: string): void {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    maxAge: 90 * 24 * 60 * 60 * 1000, // 90 días (igual que el JWT), se renueva en cada /session
+    // 400 días = el MÁXIMO que Chrome permite para una cookie (cap desde 2022; pedir más lo
+    // recorta igual a 400). Con la renovación de /session en cada apertura, en la práctica es
+    // indefinida: solo la pierde quien no abre la app en más de un año. El JWT dura 10 años.
+    maxAge: 400 * 24 * 60 * 60 * 1000,
     path: "/",
   });
 }
@@ -1727,7 +1730,7 @@ chatPublicRouter.get("/session", async (req, res) => {
   }
   const acc = await prisma.user.findUnique({ where: { id: payload.accountId }, select: { slug: true } });
   const conv = await prisma.chatConversation.findFirst({ where: { userId: payload.accountId, playerId: player.id }, select: { id: true } });
-  const fresh = signChatClientToken(payload.accountId, player.id); // rolling: renueva 90 días
+  const fresh = signChatClientToken(payload.accountId, player.id); // rolling: renueva la sesión completa en cada apertura
   setChatCookie(res, fresh);
   // Jugador de una SKIN: su slug es el de la skin (la marca que eligió lo sigue al recuperar sesión).
   return res.json({ token: fresh, player: { id: player.id, casinoUsername: player.casinoUsername }, accountSlug: player.skin?.slug ?? acc?.slug ?? null, conversationId: conv?.id ?? null });
