@@ -189,6 +189,7 @@ describe("fireChatBridgePurchase (Purchase CAPI de cargas del canal chat)", () =
   const player = {
     id: "p1", userId: "acc1", casinoUsername: "maxi1234rb",
     fbp: "fb.1.111.222", fbc: null, fbclid: "CLID123", clientIp: "190.1.2.3", userAgent: "Mozilla/5.0",
+    user: { slug: "matias" },
   };
 
   it("dispara Purchase con el pixel de la cuenta, external_id=username y la atribución guardada", async () => {
@@ -207,6 +208,10 @@ describe("fireChatBridgePurchase (Purchase CAPI de cargas del canal chat)", () =
     expect(arg.clientIp).toBe("190.1.2.3");
     expect(arg.userAgent).toBe("Mozilla/5.0");
     expect(arg.pixelId).toBe("px1");
+    // Venta DESDE LA LANDING: website + la URL del gate, nunca "chat" (misma atribución que
+    // el PageView/CompleteRegistration del pixel del navegador).
+    expect(arg.actionSource).toBe("website");
+    expect(arg.eventSourceUrl).toBe("https://chat.publi.lat/c/matias/");
     expect(prismaMock.metaEvent.create).toHaveBeenCalled(); // visible en analytics
   });
 

@@ -120,7 +120,7 @@ export async function fireChatBridgePurchase(playerRef: string, amount: number, 
   if (!playerId || !(amount > 0)) return { ok: false, skipped: "bad_input" };
   const player = await prisma.chatPlayer.findUnique({
     where: { id: playerId },
-    select: { id: true, userId: true, casinoUsername: true, fbp: true, fbc: true, fbclid: true, clientIp: true, userAgent: true },
+    select: { id: true, userId: true, casinoUsername: true, fbp: true, fbc: true, fbclid: true, clientIp: true, userAgent: true, user: { select: { slug: true } } },
   });
   if (!player) return { ok: false, skipped: "no_player" };
   // SOLO jugadores que vinieron de un ANUNCIO de Meta (fbclid/fbc del click guardados al alta).
@@ -145,7 +145,11 @@ export async function fireChatBridgePurchase(playerRef: string, amount: number, 
       eventId: `${player.id}:bridge:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
       value: amount,
       currency,
-      actionSource: "chat",
+      // Venta DESDE LA LANDING (anuncio → chat.publi.lat → carga), NO "chat": con website +
+      // event_source_url el Purchase queda en el mismo dominio de atribución que el PageView y
+      // el CompleteRegistration del pixel (pedido de Eduardo 02/09 — Meta optimiza tráfico web).
+      actionSource: "website",
+      eventSourceUrl: `https://chat.publi.lat/c/${player.user.slug}/`,
       fbp: player.fbp ?? undefined,
       fbc,
       clientIp: player.clientIp ?? undefined,
