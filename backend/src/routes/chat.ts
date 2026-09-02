@@ -17,6 +17,7 @@ import { pushBonusFor, pushOnMilestoneBody, appInstalledMilestoneBody } from "..
 import { pushEnabled, publicVapidKey, enqueuePlayerPush, enqueueAccountBroadcast, enqueueOperatorPush } from "../lib/chat-push.js";
 import { s3Enabled } from "../lib/s3.js";
 import { runChatBot } from "../lib/chat-bot.js";
+import { forwardChatToBot, notifyBotOperatorActiveChat } from "../lib/chat-bridge.js";
 import { canOperateChat, consumeChatDayAndActivate, getAvailableDays } from "../lib/access.js";
 import { creditDepositInCasino, debitWithdrawalInCasino, sendDepositIntent, casinoLiveForAccount, casinoCvuForAccount, ensureCasinoUser, casinoPlayerPassword } from "../lib/casino-cashier.js"; // puente casino (key por cuenta)
 import { verifyPartnerSignature, isCallbackTimestampFresh } from "../lib/casino-callback.js"; // firma del callback (modelo B)
@@ -37,6 +38,30 @@ const nickSlug = (s: string) => s.toLowerCase().normalize("NFD").replace(/[^a-z0
 const randDigits = (n: number) => { let s = ""; for (let i = 0; i < n; i++) s += crypto.randomInt(0, 10); return s; };
 // Clave fija simple para los usuarios autogenerados (fácil de recordar, se muestra en "cuenta creada").
 const PLAYER_PASSWORD = "123456";
+// Clave para jugadores NUEVOS del Chat App de una cuenta: configurable por cuenta
+// (User.chatPlayerPassword — ej. matias usa la política de su casino, "Hola1234");
+// sin configurar, la histórica "123456". Los jugadores existentes conservan su hash.
+async function playerPasswordFor(accountId: string): Promise<string> {
+  const u = await prisma.user.findUnique({ where: { id: accountId }, select: { chatPlayerPassword: true } });
+  return u?.chatPlayerPassword?.trim() || PLAYER_PASSWORD;
+}
+
+// Atribución de Meta al ALTA (el Chat App ES la landing de los anuncios): fbp/fbc/fbclid del clic
+// + IP y user-agent reales del visitante. Se guarda en el ChatPlayer y la reusa el Purchase del
+// puente (external_id + fbp/fbc + IP/UA = mejor Event Match Quality). La IP viene del proxy.
+function chatAttribution(
+  req: { headers: Record<string, unknown>; socket: { remoteAddress?: string | null } },
+  at: { fbclid?: string; fbp?: string; fbc?: string },
+) {
+  const fwd = typeof req.headers["x-forwarded-for"] === "string" ? (req.headers["x-forwarded-for"] as string) : "";
+  return {
+    fbp: at.fbp ?? null,
+    fbc: at.fbc ?? (at.fbclid ? `fb.1.${Date.now()}.${at.fbclid}` : null),
+    fbclid: at.fbclid ?? null,
+    clientIp: fwd.split(",")[0].trim() || req.socket.remoteAddress || null,
+    userAgent: typeof req.headers["user-agent"] === "string" ? (req.headers["user-agent"] as string).slice(0, 400) : null,
+  };
+}
 
 // Cookie httpOnly de larga duración con el token del jugador, ADEMÁS del Bearer en localStorage. Es lo
 // que evita perder la sesión (y duplicar la cuenta de ganamos) cuando el navegador borra el localStorage
@@ -47,7 +72,10 @@ function setChatCookie(res: Response, token: string): void {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    maxAge: 90 * 24 * 60 * 60 * 1000, // 90 días (igual que el JWT), se renueva en cada /session
+    // 400 días = el MÁXIMO que Chrome permite para una cookie (cap desde 2022; pedir más lo
+    // recorta igual a 400). Con la renovación de /session en cada apertura, en la práctica es
+    // indefinida: solo la pierde quien no abre la app en más de un año. El JWT dura 10 años.
+    maxAge: 400 * 24 * 60 * 60 * 1000,
     path: "/",
   });
 }
@@ -326,7 +354,10 @@ chatRouter.get("/conversations", async (req, res) => {
   const convs = await prisma.chatConversation.findMany({
     where: { userId: req.userId! },
     orderBy: [{ lastMessageAt: "desc" }, { createdAt: "desc" }],
-    take: 200,
+    // 200 dejaba fuera a los jugadores viejos (matias ya tiene 400+): el operador buscaba a
+    // alguien "que ya entró" y no aparecía. 1000 cubre con margen; si el volumen de ads lo
+    // supera, el próximo paso es paginación/búsqueda en el panel (no subir más este número).
+    take: 1000,
     select: {
       id: true, playerId: true, status: true, unreadOperator: true, lastMessagePreview: true, lastMessageAt: true, createdAt: true,
       player: { select: { casinoUsername: true, nombre: true, alias: true, skin: { select: { brandName: true, slug: true } } } },
@@ -483,6 +514,8 @@ chatRouter.post("/messages", requireActiveLine, async (req, res) => {
   const payload = { conversationId: conv.id, message: msg };
   emitChat(`chat:${req.userId}:player:${conv.playerId}`, "chat:message", payload); // al jugador
   emitChat(`chat:${req.userId}`, "chat:message", payload);                          // al operador (otras pestañas)
+  // El operador habló → el bot del puente se calla en esta conversación (operator hold, como en WA).
+  notifyBotOperatorActiveChat(req.userId!, conv.playerId);
 
   // Sin socket vivo del jugador -> Web Push (best-effort, no bloquea la respuesta).
   if (!(await playerIsForeground(req.userId!, conv.playerId))) {
@@ -538,6 +571,7 @@ chatRouter.post("/messages/image", requireActiveLine, async (req, res) => {
   const payload = { conversationId: conv.id, message: outMsg };
   emitChat(`chat:${req.userId}:player:${conv.playerId}`, "chat:message", payload); // al jugador
   emitChat(`chat:${req.userId}`, "chat:message", payload);                          // al operador (otras pestañas)
+  notifyBotOperatorActiveChat(req.userId!, conv.playerId); // el operador habló → el bot se calla
   if (!(await playerIsForeground(req.userId!, conv.playerId))) {
     void enqueuePlayerPush(req.userId!, conv.playerId, { title: "Nuevo mensaje", body: "📷 Imagen", url: "/chat" })
       .catch((e) => console.error("[chat] push falló:", e instanceof Error ? e.message : String(e)));
@@ -630,6 +664,7 @@ chatRouter.post("/messages/install", requireActiveLine, async (req, res) => {
     emitChat(`chat:${req.userId}`, "chat:message", payload);
     out.push(outMsg);
   }
+  notifyBotOperatorActiveChat(req.userId!, conv.playerId); // el operador mandó la secuencia → el bot se calla
   if (!(await playerIsForeground(req.userId!, conv.playerId))) {
     void enqueuePlayerPush(req.userId!, conv.playerId, { title: "Nuevo mensaje", body: (items[0]?.body ?? "Instalá la app").slice(0, 140), url: "/chat" }).catch(() => undefined);
   }
@@ -1007,10 +1042,31 @@ chatPublicRouter.post("/me/messages", requireChatClient, async (req, res) => {
   // Push al OPERADOR (celu, panel cerrado): un jugador le escribió. Best-effort, no bloquea.
   void enqueueOperatorPush(req.accountId!, { title: "💬 Nuevo mensaje", body: (body ?? "📷 Imagen").slice(0, 140), url: "/chat" }).catch(() => undefined);
 
+  // Puente al bot cajero EXTERNO (combatwin/mijoker): si la cuenta lo tiene prendido (o en sombra),
+  // le forwardeamos el mensaje del jugador (texto o comprobante) con el payload sintético del puente.
+  // Con el puente FULL el cajero nativo se bypassa (no corren dos bots); en SOMBRA todo sigue como hoy.
+  const bridgeAcc = await prisma.user.findUnique({ where: { id: req.accountId! }, select: { chatBotBridge: true, chatBotBridgeShadow: true, chatPlayerPassword: true } });
+  const bridgeOn = !!bridgeAcc?.chatBotBridge;
+  if (bridgeOn || bridgeAcc?.chatBotBridgeShadow) {
+    // El usuario que la app YA le mostró al jugador viaja al bot: lo vincula/crea con ESE username
+    // en la plataforma (un solo juego de credenciales, el bot lo reconoce como jugador existente).
+    const pl = await prisma.chatPlayer.findUnique({ where: { id: req.chatPlayerId! }, select: { casinoUsername: true, nombre: true } });
+    forwardChatToBot(req.accountId!, req.chatPlayerId!, {
+      text: body,
+      msgId: msg.id,
+      chatUsername: pl?.casinoUsername ?? undefined,
+      chatPassword: bridgeAcc?.chatPlayerPassword?.trim() || PLAYER_PASSWORD, // la clave que la app le mostró: el alta usa la misma
+      pushName: pl?.nombre ?? undefined,
+      mediaBase64: comprobanteData ? comprobanteData.toString("base64") : undefined,
+      mediaMimetype: comprobanteType ?? undefined,
+    });
+  }
+
   // Si mandó una IMAGEN y la cuenta usa el cajero (bot prendido o casino en vivo): la leemos con IA y, si es
   // un comprobante, registramos la carga (pending) → aparece en la pestaña Cajero + dispara Purchase/intent.
   // NO acredita fichas (§9.2). Si lo tomó como comprobante, cerramos el paso del bot y no re-preguntamos.
-  if (comprobanteData) {
+  // Con el puente FULL el comprobante lo procesa el bot externo (OCR + carga en el casino real).
+  if (comprobanteData && !bridgeOn) {
     const acc = await prisma.user.findUnique({ where: { id: req.accountId! }, select: { botEnabled: true } });
     const cashierOn = acc?.botEnabled || (await casinoLiveForAccount(req.accountId!));
     if (cashierOn && (await handlePlayerComprobante(req.accountId!, req.chatPlayerId!, comprobanteType ?? "image/jpeg", comprobanteData, conv.botAmount ?? null))) {
@@ -1023,7 +1079,8 @@ chatPublicRouter.post("/me/messages", requireChatClient, async (req, res) => {
 
   // Bot de carga/descarga (Fase 1): responde solo si la cuenta lo tiene PRENDIDO. Best-effort y
   // aislado: sin bot es no-op; un error del bot no afecta el envío del jugador.
-  void runChatBot(req.accountId!, conv.id, req.chatPlayerId!, body ?? "").catch((e) => console.error("[chat-bot]", e instanceof Error ? e.message : String(e)));
+  // Con el puente al bot externo FULL, el bot nativo NO corre (atiende el externo).
+  if (!bridgeOn) void runChatBot(req.accountId!, conv.id, req.chatPlayerId!, body ?? "").catch((e) => console.error("[chat-bot]", e instanceof Error ? e.message : String(e)));
 
   return res.status(201).json({ message: outMsg });
 });
@@ -1221,7 +1278,7 @@ chatPublicRouter.post("/register", async (req, res) => {
   if (autogenerate) {
     const base = nickSlug(parsed.data.nickname ?? "") || "user";
     const nombre = (parsed.data.nickname ?? "").trim() || null;
-    plainPassword = PLAYER_PASSWORD;
+    plainPassword = await playerPasswordFor(invite.userId);
     const hash = await hashPassword(plainPassword);
     for (let i = 0; i < 8 && !player; i++) {
       try {
@@ -1234,6 +1291,7 @@ chatPublicRouter.post("/register", async (req, res) => {
             invitedByUserId: invite.operatorId,
             inviteCodeId: invite.id,
             estatus: "active",
+            ...chatAttribution(req, { fbclid, fbp, fbc }),
           },
           select: { id: true, casinoUsername: true },
         });
@@ -1400,9 +1458,13 @@ chatPublicRouter.get("/public/:slug", async (req, res) => {
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   const s = entry.skin;
+  // Pixel de la cuenta para el PageView del GATE (la página de entrada ES la landing del anuncio):
+  // sin esto Meta solo veía a los que pasaban el botón y no había forma de medir visitas vs entradas.
+  const pxPv = await resolveUserPixel(acc.id, "CompleteRegistration").catch(() => null);
   return res.json({
     accountSlug: s ? s.slug : acc.slug,
     active: await canOperateChat(acc.id),
+    pixelId: pxPv?.pixelId ?? null,
     branding: {
       brandName: s?.brandName ?? acc.brandName, logoUrl: s?.logoUrl ?? acc.logoUrl, chatTheme: s?.chatTheme ?? acc.chatTheme,
       primaryColor: s?.primaryColor ?? acc.primaryColor, accentColor: s?.accentColor ?? acc.accentColor,
@@ -1453,13 +1515,13 @@ chatPublicRouter.post("/start", async (req, res) => {
   if (autogenerate) {
     const base = nickSlug(parsed.data.nickname ?? "") || "user";
     const nombre = (parsed.data.nickname ?? "").trim() || null;
-    const plainPassword = PLAYER_PASSWORD;
+    const plainPassword = await playerPasswordFor(acc.id);
     const hash = await hashPassword(plainPassword);
     let np: { id: string; casinoUsername: string } | undefined;
     for (let i = 0; i < 8 && !np; i++) {
       try {
         np = await prisma.chatPlayer.create({
-          data: { userId: acc.id, skinId: skin?.id ?? null, casinoUsername: `${base}${randDigits(5)}`, password: hash, nombre, estatus: "active" },
+          data: { userId: acc.id, skinId: skin?.id ?? null, casinoUsername: `${base}${randDigits(5)}`, password: hash, nombre, estatus: "active", ...chatAttribution(req, { fbclid, fbp, fbc }) },
           select: { id: true, casinoUsername: true },
         });
       } catch (e) {
@@ -1530,6 +1592,9 @@ chatPublicRouter.post("/start", async (req, res) => {
 const DEFAULT_DIRECT_WELCOME = "¡Hola! 🎉 Bienvenido. Para empezar, decime tu nombre 👇";
 const directSchema = z.object({
   accountSlug: z.string().min(1).max(60),
+  // Nombre/apodo del gate de entrada (PWA): con él, el username sale del nombre (no más web*
+  // fantasma) y el bot del puente atiende sin re-preguntar el nombre.
+  nickname: z.string().max(40).optional(),
   // Identificadores del clic de Meta (los reenvía la landing por la URL): aunque el chat directo es
   // anónimo, con esto disparamos el Registro al pixel y el loop de atribución cierra igual.
   fbclid: z.string().max(400).optional(),
@@ -1547,6 +1612,7 @@ chatPublicRouter.post("/direct", async (req, res) => {
   const parsed = directSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
   const { fbclid, fbp, fbc } = parsed.data;
+  const nombreGate = (parsed.data.nickname ?? "").trim() || null; // nombre del gate de entrada (PWA)
   // El slug puede ser la cuenta o una SKIN (mismo inbox, otra marca): la bienvenida sale de la skin.
   const entry = await resolveEntrySlug(parsed.data.accountSlug.trim());
   if (!entry) return res.status(404).json({ error: "Cuenta no encontrada" });
@@ -1560,13 +1626,20 @@ chatPublicRouter.post("/direct", async (req, res) => {
     return res.status(403).json({ error: "El chat no está disponible en este momento. Probá más tarde.", code: "line_required" });
   }
 
-  const plainPassword = PLAYER_PASSWORD;
+  const plainPassword = await playerPasswordFor(acc.id);
   const hash = await hashPassword(plainPassword);
   let np: { id: string; casinoUsername: string } | undefined;
   for (let i = 0; i < 8 && !np; i++) {
     try {
+      // Con nombre del gate: username REAL a partir del nombre (nickSlug+dígitos, como /start) — el
+      // bot del puente lo crea/vincula directo. Sin nombre (flujo viejo): web<dígitos> provisional.
       np = await prisma.chatPlayer.create({
-        data: { userId: acc.id, skinId: skin?.id ?? null, casinoUsername: `web${randDigits(6)}`, password: hash, estatus: "active" },
+        data: {
+          userId: acc.id, skinId: skin?.id ?? null,
+          casinoUsername: nombreGate ? `${nickSlug(nombreGate) || "user"}${randDigits(5)}` : `web${randDigits(6)}`,
+          nombre: nombreGate,
+          password: hash, estatus: "active", ...chatAttribution(req, { fbclid, fbp, fbc }),
+        },
         select: { id: true, casinoUsername: true },
       });
     } catch (e) {
@@ -1577,10 +1650,30 @@ chatPublicRouter.post("/direct", async (req, res) => {
   if (!np) return res.status(500).json({ error: "No se pudo iniciar el chat, probá de nuevo." });
 
   const conv = await prisma.chatConversation.create({
-    data: { userId: acc.id, playerId: np.id, status: "open", botStep: "ask_name" },
+    // Con nombre del gate no hay que preguntarlo de nuevo (botStep ask_name era para eso).
+    data: { userId: acc.id, playerId: np.id, status: "open", botStep: nombreGate ? null : "ask_name" },
     select: { id: true },
   });
-  const welcome = (skin?.chatDirectWelcome ?? acc.chatDirectWelcome)?.trim() || DEFAULT_DIRECT_WELCOME;
+  // Puente al bot PRENDIDO: el BOT maneja la entrada — se dispara un forward sintético apenas el
+  // jugador pasa el gate y el bot saluda/pregunta EL NOMBRE dentro del chat (su onboarding de
+  // siempre) para armarle el usuario; la app no repite la pregunta. Si el gate mandó nickname
+  // (variante con input), el alta sale directa con ese nombre (usuario/clave/bono/CBU al toque).
+  const bridgeOnDirect = !!(await prisma.user.findUnique({ where: { id: acc.id }, select: { chatBotBridge: true } }))?.chatBotBridge;
+  if (bridgeOnDirect) {
+    forwardChatToBot(acc.id, np.id, {
+      text: nombreGate ?? "hola",
+      pushName: nombreGate ?? undefined,
+      chatUsername: np.casinoUsername,
+      chatPassword: plainPassword,
+    });
+  }
+  // Welcome local: con el puente el bot saluda solo (no duplicamos ni pedimos el nombre dos veces);
+  // apenas un puente visual mínimo. Sin puente: el welcome configurado de siempre.
+  const welcome = bridgeOnDirect
+    ? (nombreGate ? `¡Hola, ${nombreGate}! 👋 Un segundo que te preparamos tu cuenta… 🎰` : "¡Bienvenido! 🎰")
+    : nombreGate
+      ? `¡Hola, ${nombreGate}! 👋 Contanos qué necesitás y te ayudamos al toque 👇`
+      : (skin?.chatDirectWelcome ?? acc.chatDirectWelcome)?.trim() || DEFAULT_DIRECT_WELCOME;
   await prisma.chatMessage.create({
     data: { userId: acc.id, conversationId: conv.id, senderType: "system", body: welcome, metadata: {} },
   });
@@ -1637,7 +1730,7 @@ chatPublicRouter.get("/session", async (req, res) => {
   }
   const acc = await prisma.user.findUnique({ where: { id: payload.accountId }, select: { slug: true } });
   const conv = await prisma.chatConversation.findFirst({ where: { userId: payload.accountId, playerId: player.id }, select: { id: true } });
-  const fresh = signChatClientToken(payload.accountId, player.id); // rolling: renueva 90 días
+  const fresh = signChatClientToken(payload.accountId, player.id); // rolling: renueva la sesión completa en cada apertura
   setChatCookie(res, fresh);
   // Jugador de una SKIN: su slug es el de la skin (la marca que eligió lo sigue al recuperar sesión).
   return res.json({ token: fresh, player: { id: player.id, casinoUsername: player.casinoUsername }, accountSlug: player.skin?.slug ?? acc?.slug ?? null, conversationId: conv?.id ?? null });

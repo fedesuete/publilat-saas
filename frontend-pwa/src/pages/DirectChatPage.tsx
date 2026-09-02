@@ -20,7 +20,7 @@ export default function DirectChatPage() {
   const navigate = useNavigate();
   const [brand, setBrand] = useState<Branding | null>(null);
   const [accountSlug, setAccountSlug] = useState<string>("");
-  const [phase, setPhase] = useState<"loading" | "gate" | "creating">("loading");
+  const [phase, setPhase] = useState<"loading" | "gate" | "name" | "creating">("loading");
   const [error, setError] = useState<string | null>(null);
   const started = useRef(false); // evita correr dos veces (StrictMode)
 
@@ -35,6 +35,9 @@ export default function DirectChatPage() {
         saveBranding(pub.data.accountSlug, pub.data.branding);
         setBrand(pub.data.branding);
         setAccountSlug(pub.data.accountSlug);
+        // PageView al ABRIR el gate (esta página ES la landing del anuncio): Meta ve TODAS las
+        // visitas — con esto se mide visitas vs "Empezar a chatear" y el pixel siembra _fbp acá.
+        if (pub.data.pixelId) fireMetaPixel(pub.data.pixelId, "PageView", {});
         if (!pub.data.active) {
           setError("El chat no está disponible en este momento. Probá más tarde.");
           return;
@@ -44,9 +47,12 @@ export default function DirectChatPage() {
           navigate("/chat", { replace: true });
           return;
         }
-        // 3) redblack = chat estilo WhatsApp (sin casino self-service): el link del cliente entra DERECHO
-        //    a la conversación, sin gate ni registro. La cookie de sesión evita duplicar en el regreso.
-        if (pub.data.branding?.chatTheme === "redblack") { await enterAsNew(pub.data.accountSlug); return; }
+        // 3) redblack = chat estilo WhatsApp: pedimos el NOMBRE antes de crear nada. Sin este gate,
+        //    CADA apertura del link (curiosos, refreshes, WebViews sin cookie) creaba un jugador
+        //    fantasma web* + conversación vacía en el panel (caso 01/09: 13 en una hora) y disparaba
+        //    un CompleteRegistration sin intención real. Un tap con nombre = jugador con intención,
+        //    username real (no web*) y el bot lo atiende sin re-preguntar el nombre.
+        if (pub.data.branding?.chatTheme === "redblack") { setPhase("name"); return; }
         // 3b) Resto (cuentas casino): preguntamos antes de crear (no auto-creamos = no duplicamos ganamos).
         setPhase("gate");
       } catch (e) {
@@ -59,7 +65,7 @@ export default function DirectChatPage() {
 
   // "Soy nuevo" (o entrada directa de redblack): crea el jugador anónimo + la conversación con el 1er
   // mensaje del bot. Recibe el slug por parámetro (en la entrada automática el state todavía no se asentó).
-  const enterAsNew = async (accSlug: string) => {
+  const enterAsNew = async (accSlug: string, nickname?: string) => {
     setPhase("creating");
     setError(null);
     try {
@@ -71,10 +77,11 @@ export default function DirectChatPage() {
         fbp: params.get("fbp") || cookie("_fbp") || undefined,
         fbc: params.get("fbc") || cookie("_fbc") || undefined,
       };
-      const { data } = await api.post("/api/chat/direct", { accountSlug: accSlug, ...ids });
+      const { data } = await api.post("/api/chat/direct", { accountSlug: accSlug, ...(nickname ? { nickname } : {}), ...ids });
       setToken(data.token);
       localStorage.setItem(SESSION_SLUG_KEY, accSlug);
       // Pixel del navegador (además de la CAPI del server), deduplicado por eventId. Best-effort.
+      // (El PageView ya se disparó al abrir el gate — acá solo el registro.)
       if (data.pixel) fireMetaPixel(data.pixel, "CompleteRegistration", { eventId: data.eventId, externalId: data.username });
       navigate("/chat", { replace: true });
     } catch (e) {
@@ -93,6 +100,22 @@ export default function DirectChatPage() {
 
       {error ? (
         <div className="mt-5 w-full rounded-xl border border-amber-700/50 bg-amber-500/10 p-3 text-sm text-amber-200">{error}</div>
+      ) : phase === "name" ? (
+        <>
+          {/* Gancho del bono (el gate evita los jugadores fantasma: nada se crea sin este tap).
+              El NOMBRE lo pregunta el bot adentro del chat y con eso arma el usuario. */}
+          <div className="mt-4 w-full rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4">
+            <p className="text-lg font-extrabold text-amber-300">🎁 50% EXTRA en tu primera carga</p>
+            <p className="mt-1 text-sm text-slate-300">Activá el chat y reclamá tu bono al toque</p>
+          </div>
+          <button
+            onClick={() => void enterAsNew(accountSlug)}
+            className="mt-4 w-full rounded-xl py-3.5 text-base font-extrabold text-white transition active:scale-[.98]"
+            style={{ background: primary }}
+          >
+            💬 Empezar a chatear
+          </button>
+        </>
       ) : phase === "gate" ? (
         <>
           <p className="mt-2 text-sm text-slate-400">¿Ya tenés cuenta?</p>

@@ -10,6 +10,7 @@ import crypto from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { sendToContact } from "../lib/wa-send.js";
 import { markPurchase } from "../lib/purchase.js";
+import { postBotChatMessage, updateChatPlayerUsername, fireChatBridgePurchase } from "../lib/chat-bridge.js";
 
 export const botRelayRouter = Router();
 
@@ -59,6 +60,45 @@ botRelayRouter.post("/send", requireBotToken, async (req, res) => {
   }
 });
 
+const chatSendSchema = z.object({
+  playerRef: z.string().min(6).max(64),   // "chat:<chatPlayerId>" (el phone sintético del puente)
+  message: z.string().min(1).max(4096),
+});
+
+// POST /api/bot-relay/chat-send — el bot responde a un jugador del CHAT APP (no WhatsApp). Postea el
+// mensaje en la conversación como cajero y lo emite en vivo. Gateado por User.chatBotBridge (sombra =
+// loguea sin postear). Devuelve 200 con skipped en vez de error para no provocar reintentos del bot.
+botRelayRouter.post("/chat-send", requireBotToken, async (req, res) => {
+  const parsed = chatSendSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "input inválido" });
+  try {
+    const r = await postBotChatMessage(parsed.data.playerRef, parsed.data.message);
+    return res.json(r);
+  } catch (e) {
+    console.error("[bot-relay/chat-send]", e instanceof Error ? e.message : String(e));
+    return res.status(500).json({ error: "error interno" });
+  }
+});
+
+const chatUsernameSchema = z.object({
+  playerRef: z.string().min(6).max(64),
+  username: z.string().min(2).max(64),
+});
+
+// POST /api/bot-relay/chat-username — el bot creó el username DEFINITIVO de un jugador del Chat App
+// (el flujo directo genera web* provisional que la app no muestra; el bot pregunta el nombre y crea
+// el real). Acá se sincroniza para que el login de la app use ese mismo usuario. Best-effort.
+botRelayRouter.post("/chat-username", requireBotToken, async (req, res) => {
+  const parsed = chatUsernameSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "input inválido" });
+  try {
+    return res.json(await updateChatPlayerUsername(parsed.data.playerRef, parsed.data.username));
+  } catch (e) {
+    console.error("[bot-relay/chat-username]", e instanceof Error ? e.message : String(e));
+    return res.status(500).json({ error: "error interno" });
+  }
+});
+
 const purchaseSchema = z.object({
   phone: z.string().min(6),
   amount: z.number().positive(),
@@ -73,6 +113,13 @@ botRelayRouter.post("/purchase", requireBotToken, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "input inválido" });
   const { phone, amount, currency } = parsed.data;
   try {
+    // Canal CHAT APP: el "phone" es el ref sintético chat:<chatPlayerId> — la carga es de un
+    // jugador del Chat App (no hay Contact de WhatsApp). Dispara el Purchase por el camino del
+    // chat (pixel de la cuenta + atribución guardada del alta). 200 siempre: sin reintentos.
+    if (phone.startsWith("chat:")) {
+      const r = await fireChatBridgePurchase(phone, amount, currency ?? "ARS");
+      return res.json(r.ok ? { ok: true } : { ok: true, skipped: r.skipped });
+    }
     const digits = phone.replace(/\D/g, "");
     // Resolvemos el tenant por el contacto cuya línea está en el forward (la del socio): así no cruzamos
     // cuentas ni dependemos de recibir el tenant en el body. Si no hay forward, caemos a match global.
