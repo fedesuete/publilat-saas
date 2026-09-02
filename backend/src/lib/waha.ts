@@ -336,6 +336,20 @@ export function normalizeWahaEvent(body: any): Record<string, any> | null {
           ? { audioMessage: { mimetype: mime || "audio/ogg" } }
           : { documentMessage: { mimetype: mime || "application/octet-stream" } }
       : {};
+  // Número REAL detrás de un @lid: Baileys lo trae DENTRO del propio mensaje (key.senderPn /
+  // remoteJidAlt, según versión). Lo pasamos como key.senderPn para que webhook.ts matchee al
+  // contacto por su teléfono SIN depender del store de WAHA — que puede estar apagado o no tener
+  // el mapeo todavía en el PRIMER mensaje de un chat nuevo (carrera que duplicaba leads
+  // contactados por la tanda y les disparaba el funnel equivocado, visto 2026-09-02).
+  const rk = (p?._data?.key ?? {}) as Record<string, unknown>;
+  const senderPnRaw = [rk.senderPn, rk.participantPn, rk.remoteJidAlt, rk.senderAlt, p?.senderPn, p?.participantPn].find(
+    (v): v is string => typeof v === "string" && v.includes("@") && !v.endsWith("@lid"),
+  );
+  const remoteJid = p.fromMe ? (p.to ?? p.from) : p.from;
+  if (typeof remoteJid === "string" && remoteJid.endsWith("@lid") && !senderPnRaw) {
+    // Diagnóstico temporal: qué campos trae la key cruda cuando NO encontramos el número real.
+    console.log("[lid-diag] @lid sin senderPn; key cruda:", JSON.stringify(rk).slice(0, 300));
+  }
   return {
     event: "messages.upsert",
     instance: session,
@@ -345,7 +359,12 @@ export function normalizeWahaEvent(body: any): Record<string, any> | null {
       // el remoteJid quedaba vacío → webhook.ts descartaba el mensaje → lo hablado desde el celular
       // NUNCA aparecía en el Inbox (y el CRM creía que el contacto seguía sin contactar). El `??` solo
       // actúa cuando `to` falta, así WEBJS/Cloud siguen exactamente igual.
-      key: { id: serializeId(p.id), remoteJid: p.fromMe ? (p.to ?? p.from) : p.from, fromMe: !!p.fromMe },
+      key: {
+        id: serializeId(p.id),
+        remoteJid,
+        fromMe: !!p.fromMe,
+        ...(senderPnRaw ? { senderPn: senderPnRaw.replace("@s.whatsapp.net", "@c.us") } : {}),
+      },
       pushName: p?._data?.notifyName ?? p?._data?.pushName ?? undefined,
       message: { conversation: typeof p.body === "string" ? p.body : "", ...mediaHint },
       ...(mediaUrl ? { _wahaMedia: { url: mediaUrl, mimetype: mime || undefined } } : {}),

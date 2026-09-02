@@ -366,12 +366,20 @@ webhookRouter.post("/", async (req, res) => {
               orderBy: { createdAt: "desc" },
             });
             if (existing) return { contact: existing, isNew: false };
-            // Remitente con teléfono OCULTO (@lid) que no matcheó tal cual: resolvemos el número
-            // REAL contra WAHA y buscamos por ese (leads de formulario guardados por su teléfono).
-            // Si matchea, guardamos el LID como waJid → los próximos mensajes matchean directo.
+            // Remitente con teléfono OCULTO (@lid) que no matcheó tal cual: buscamos el número REAL
+            // primero DENTRO del mensaje (key.senderPn, lo trae Baileys — sin carreras ni store) y
+            // si no viene, le preguntamos a WAHA. Con el número buscamos al contacto (leads de
+            // formulario guardados por su teléfono). Si matchea, guardamos el LID como waJid → los
+            // próximos mensajes matchean directo.
             let lidRealPhone = "";
-            if (rawJid?.endsWith("@lid") && line.sessionId) {
-              const realJid = await resolveLidJid(line.sessionId, rawJid);
+            if (rawJid?.endsWith("@lid")) {
+              const inlinePn = (item.key as { senderPn?: string })?.senderPn;
+              const realJid =
+                inlinePn && !inlinePn.endsWith("@lid")
+                  ? inlinePn
+                  : line.sessionId
+                    ? await resolveLidJid(line.sessionId, rawJid)
+                    : null;
               lidRealPhone = jidToPhone(realJid ?? undefined);
               if (lidRealPhone) {
                 const byReal = await prisma.contact.findFirst({
