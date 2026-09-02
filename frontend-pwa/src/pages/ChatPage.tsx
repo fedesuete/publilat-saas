@@ -143,6 +143,14 @@ export default function ChatPage() {
   const [pushBusy, setPushBusy] = useState(false);
   const [popup, setPopup] = useState<Popup | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  // Auto-scroll SOLO si el jugador ya estaba al fondo. Antes, CUALQUIER cambio de messages
+  // (socket, resync) disparaba un scrollIntoView con animación — si estabas scrolleando leyendo,
+  // el scroll te peleaba el dedo y el chat se veía "a trozos" para arriba y para abajo.
+  const nearBottomRef = useRef(true);
+  const onListScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+  };
 
   // --- Cajero (Fase E3): saldo + cargar/retirar ---
   const [wallet, setWallet] = useState<Wallet | null>(null);
@@ -260,7 +268,8 @@ export default function ChatPage() {
     setPopup(null);
   };
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  // Sin animación (auto): el smooth encadenado con varios mensajes seguidos daba tirones.
+  useEffect(() => { if (nearBottomRef.current) endRef.current?.scrollIntoView({ behavior: "auto" }); }, [messages]);
 
   // Si ya dio permiso, re-suscribimos en silencio (refresca el endpoint en el backend).
   useEffect(() => { if (pushSupported() && Notification.permission === "granted") void subscribeToPush(); }, []);
@@ -473,13 +482,16 @@ export default function ChatPage() {
         </div>
       )}
 
-      <div className="flex-1 space-y-1.5 overflow-y-auto px-3 py-3">
+      <div className="flex-1 space-y-1.5 overflow-y-auto px-3 py-3" onScroll={onListScroll}>
         {messages.map((m) => {
           const mine = m.senderType === "player";
           const time = new Date(m.createdAt).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
           const img = m.image && (
             <a href={m.image} target="_blank" rel="noopener noreferrer">
-              <img src={m.image} alt="" className="mb-1 max-h-72 w-full rounded-lg object-cover" />
+              {/* lazy + async: sin esto, al scrollear arriba TODAS las fotos cargaban de golpe y
+                  cada una empujaba el layout al llegar (el "a trozos"). El navegador ancla el
+                  scroll solo (overflow-anchor) mientras no lo pisemos con scrollIntoView. */}
+              <img src={m.image} alt="" loading="lazy" decoding="async" className="mb-1 max-h-72 w-full rounded-lg object-cover" />
             </a>
           );
           const linkBtn = m.link && (
