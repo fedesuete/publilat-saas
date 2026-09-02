@@ -504,16 +504,18 @@ inboundIntegrationsRouter.post("/kommo-bot", express.json({ limit: "1mb" }), exp
 
   void (async () => {
     const reply = await computeKommoBotReply(integ.userId, incoming);
-    if (!reply) { console.log(`[kommo-bot] user ${integ.userId}: sin respuesta (bot mudo)`); return; }
     const creds = kommoCreds(integ);
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (creds) headers.Authorization = "Bearer " + creds.token; // el continue vive en el dominio del cliente
+    // SIEMPRE continuamos la sesión (aunque el bot esté mudo, con handlers vacíos): el flujo del widget es
+    // un bucle widget_request→wait_answer, y si no llamamos al continue la sesión queda COLGADA y el
+    // jugador no recibe más respuestas.
     const payload = {
       data: {},
-      execute_handlers: [{ handler: "show", params: { type: "text", value: reply } }],
+      execute_handlers: reply ? [{ handler: "show", params: { type: "text", value: reply } }] : [],
     };
     const r = await fetch(returnUrl, { method: "POST", headers, body: JSON.stringify(payload) });
-    console.log(`[kommo-bot] user ${integ.userId}: in(${incoming.length} chars) -> continue ${r.status}`);
+    console.log(`[kommo-bot] user ${integ.userId}: in(${incoming.length} chars) -> ${reply ? "respuesta" : "mudo"} -> continue ${r.status}`);
   })().catch((e) => console.error("[kommo-bot] error:", e instanceof Error ? e.message : e));
 });
 
