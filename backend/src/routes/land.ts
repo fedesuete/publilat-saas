@@ -83,6 +83,10 @@ const trackSchema = z.object({
   fbp: z.string().max(255).optional(),
   fbc: z.string().max(600).optional(),
   eventId: z.string().max(120).optional(), // dedup con el Lead del pixel del navegador
+  // Datos del FORMULARIO de la landing (opcionales): el lead queda con nombre/teléfono en el CRM
+  // aunque nunca llegue a mandar el mensaje de WhatsApp.
+  nombre: z.string().trim().max(80).optional(),
+  telefono: z.string().trim().max(40).optional(),
 });
 
 const shortRef = () => crypto.randomBytes(4).toString("hex").toUpperCase().slice(0, 7);
@@ -99,6 +103,17 @@ landRouter.post("/track", async (req, res) => {
   const acc = await prisma.user.findUnique({ where: { slug: accountSlug }, select: { id: true } });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   const ref = (parsed.data.ref ?? shortRef()).toUpperCase();
+  // Teléfono del formulario: solo dígitos y con un largo creíble; si no, se descarta (el match
+  // fuerte del inbound es por el `ref:` — el teléfono es un extra para el CRM/contacto manual).
+  // Y si YA existe un contacto con ese teléfono en la cuenta, NO lo guardamos acá: dos contactos
+  // con el mismo phone hacen que el inbound matchee al más nuevo (vacío) y la charla se parta.
+  const formPhone = (parsed.data.telefono ?? "").replace(/\D/g, "");
+  let phoneOk = formPhone.length >= 8 && formPhone.length <= 15 ? formPhone : null;
+  if (phoneOk) {
+    const dupPhone = await prisma.contact.findFirst({ where: { userId: acc.id, phone: phoneOk }, select: { id: true } });
+    if (dupPhone) phoneOk = null;
+  }
+  const formName = parsed.data.nombre?.slice(0, 80) || null;
   try {
     const externalId = crypto.randomUUID();
     const eid = eventId || externalId;
@@ -106,7 +121,7 @@ landRouter.post("/track", async (req, res) => {
     let contact: { id: string; createdAt: Date };
     try {
       contact = await prisma.contact.create({
-        data: { userId: acc.id, externalId, code: ref, fbclid: fbclid ?? null, fbp: fbp ?? null, fbc: fbc ?? null, source: "an", stage: "NUEVO", clientIp: req.ip ?? null, clientUserAgent: req.get("user-agent") ?? null },
+        data: { userId: acc.id, externalId, code: ref, fbclid: fbclid ?? null, fbp: fbp ?? null, fbc: fbc ?? null, source: "an", stage: "NUEVO", clientIp: req.ip ?? null, clientUserAgent: req.get("user-agent") ?? null, ...(formName ? { name: formName } : {}), ...(phoneOk ? { phone: phoneOk } : {}) },
         select: { id: true, createdAt: true },
       });
     } catch (e) {

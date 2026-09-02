@@ -225,7 +225,7 @@ export async function onInboundFlow(userId: string, contactId: string, text: str
     // son para los que nos escriben espontáneamente. Mezclarlos manda el funnel de Publi.lat a
     // clientes de plataformas (pasó el 2026-08-31). A estos contactos los atiende una persona.
     const src = await prisma.contact.findUnique({ where: { id: contactId }, select: { source: true } });
-    if (src?.source === "leadform" || src?.source === "kommo") return;
+    if (src?.source === "leadform" || src?.source === "kommo" || src?.source === "an") return;
     // Bienvenida automática de líneas QR (independiente de los flows; con su propio dedup).
     await maybeSendQrWelcome(userId, contactId).catch((e) =>
       console.error("[qr-welcome] error:", e instanceof Error ? e.message : String(e)));
