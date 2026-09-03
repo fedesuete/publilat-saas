@@ -8,6 +8,7 @@ import { sendToContact } from "./wa-send.js";
 import { scheduleFlowResume } from "./queue.js";
 import { parseVariants, pickVariant, sendLeadVariant } from "./leadgen-send.js";
 import { renderLeadReply } from "./lead-template.js";
+import { runExclusive } from "./keyed-lock.js";
 
 // ---- Bienvenida automática de líneas QR (waQrWelcomeEnabled + waQrWelcomeReplies) ----
 // Al PRIMER mensaje de un contacto NUEVO se manda UNA variante al azar (texto o audio). Dedup en dos
@@ -220,6 +221,11 @@ export async function resumeFlowRun(runId: string): Promise<void> {
 // Se llama por cada mensaje ENTRANTE.
 export async function onInboundFlow(userId: string, contactId: string, text: string): Promise<void> {
   try {
+    // SERIALIZADO por contacto: cuando una línea reconecta, WhatsApp entrega el backlog — VARIOS
+    // mensajes del mismo contacto con milisegundos de diferencia, cada uno en su propio webhook.
+    // Sin el lock, todos pasaban el chequeo "¿ya tiene una corrida?" ANTES de que el primero la
+    // creara → 4 FlowRuns → la bienvenida salió 4 veces (visto en prod 2026-09-03, contacto Juanma).
+    await runExclusive(`flow:${contactId}`, async () => {
     // SEPARACIÓN DE FUNNELS (regla dura): los contactos que NOSOTROS salimos a buscar (leads de
     // formulario de Meta, Kommo) NUNCA entran a la bienvenida automática ni a las secuencias — esas
     // son para los que nos escriben espontáneamente. Mezclarlos manda el funnel de Publi.lat a
@@ -292,6 +298,7 @@ export async function onInboundFlow(userId: string, contactId: string, text: str
       await resumeFlowRun(run.id);
       return;
     }
+    }); // fin del runExclusive por contacto
   } catch (e) {
     console.error("[flow] onInboundFlow error:", e instanceof Error ? e.message : String(e));
   }
