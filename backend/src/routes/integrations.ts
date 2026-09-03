@@ -466,6 +466,11 @@ inboundIntegrationsRouter.post("/kommo", express.urlencoded({ extended: true, li
   // Visibilidad: un renglón por webhook (sin esto, un evento ignorado no deja rastro y el debug es a ciegas).
   const otros = Object.keys(body).filter((k) => k !== "leads" && k !== "message" && k !== "account");
   console.log(`[kommo] webhook (user ${integ.userId}): ${statusEvents.length} etapa(s), ${messageEvents.length} mensaje(s)${otros.length ? `, otros: ${otros.join(",")}` : ""}`);
+  // TEMP (debug raul): payload crudo de los MENSAJES para ver cómo llega una IMAGEN (¿message_type +
+  // link del archivo?) — define si el lector IA de comprobantes puede funcionar en el canal Kommo.
+  if (integ.userId === "cmt3e2son037fbo08qcd6ohdf" && messageEvents.length) {
+    console.log("[kommo] RAW msg raul:", JSON.stringify(messageEvents).slice(0, 900));
+  }
   void (async () => {
     await processKommoMessages(integ.userId, creds, messageEvents);
     await processKommoStatus(integ.userId, creds, statusEvents);
