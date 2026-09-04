@@ -11,6 +11,7 @@ import { hashPassword, signToken } from "../lib/auth.js";
 import { uniqueSlug } from "./auth.js";
 import { resolveReferrerByCode } from "../lib/referrals.js";
 import { notifyNewSignup } from "../lib/signup-notify.js";
+import { sendRegistrationOutreach } from "../lib/signup-outreach.js";
 import { fireMarketingEvent } from "../lib/marketing-capi.js";
 import { sendCapiEvent } from "../lib/meta-capi.js";
 import { resolveUserPixel } from "../lib/pixel.js";
@@ -63,6 +64,7 @@ landRouter.post("/signup", async (req, res) => {
     });
 
     void notifyNewSignup({ name, email, phone, interests }); // aviso al dueño con lo que le interesó (best-effort)
+    void sendRegistrationOutreach({ name, email, phone });   // embudo de registro: "vi que te registraste…"
 
     const token = signToken({ userId: user.id, tv: user.tokenVersion });
     const base = (process.env.APP_BASE_URL ?? "https://app.publi.lat").replace(/\/$/, "");

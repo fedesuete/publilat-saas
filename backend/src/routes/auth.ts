@@ -7,6 +7,7 @@ import { hashPassword, verifyPassword, signToken, slugify, verifyToken } from ".
 import { requireAuth, AUTH_COOKIE } from "../middleware/requireAuth.js";
 import { resolveReferrerByCode } from "../lib/referrals.js";
 import { notifyNewSignup } from "../lib/signup-notify.js";
+import { sendRegistrationOutreach } from "../lib/signup-outreach.js";
 import type { Response } from "express";
 
 export const authRouter = Router();
@@ -75,6 +76,8 @@ authRouter.post("/register", async (req, res) => {
 
     // Aviso al dueño (WhatsApp + email) del cliente nuevo, para contactarlo. Best-effort, no bloquea.
     void notifyNewSignup({ name, email, phone });
+    // Embudo de registro: le escribimos al registrado por WhatsApp ("vi que te registraste…").
+    void sendRegistrationOutreach({ name, email, phone });
 
     const token = signToken({ userId: user.id, tv: user.tokenVersion });
     setAuthCookie(res, token);
