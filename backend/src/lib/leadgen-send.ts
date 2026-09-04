@@ -19,6 +19,21 @@ export type LeadReplyVariant =
 // WAHA check-exists devuelve el chatId correcto (le agrega el 9 solo). Lo persistimos en waJid: los
 // envíos usan waJid primero, así que UNA resolución arregla todos los envíos futuros a ese contacto.
 // Devuelve true si el número EXISTE en WhatsApp (con jid ya guardado); false si no existe o falló.
+// Variantes creíbles de un número argentino mal cargado en el formulario: local sin país
+// ("2214970427"), con 54 pero sin el 9, o con el 15 viejo. Se prueban en orden hasta que
+// WhatsApp reconozca una (verificado en prod 2026-09-04: 10 de 21 "sin WhatsApp" eran
+// números locales perfectamente válidos con el 549 adelante).
+function phoneCandidates(raw: string): string[] {
+  const p = raw.replace(/\D/g, "").replace(/^0+/, "");
+  const out = new Set<string>();
+  if (p.startsWith("549")) out.add(p);
+  else if (p.startsWith("54")) { out.add(p); out.add("549" + p.slice(2)); }
+  else if (p.length === 10) out.add("549" + p);
+  else if (p.length === 11 && p.startsWith("15")) out.add("549" + p.slice(2));
+  else out.add(p);
+  return [...out];
+}
+
 export async function ensureContactJid(
   contact: { id: string; phone: string | null; waJid: string | null },
   sessionId: string | null,
@@ -28,13 +43,17 @@ export async function ensureContactJid(
   const base = process.env.WAHA_BASE_URL, key = process.env.WAHA_API_KEY;
   if ((process.env.WA_ENGINE ?? "").toLowerCase() !== "waha" || !base || !key) return true; // otros motores: sin chequeo, se envía como siempre
   try {
-    const r = await fetch(
-      `${base}/api/contacts/check-exists?phone=${encodeURIComponent(contact.phone)}&session=${encodeURIComponent(sessionId)}`,
-      { headers: { "X-Api-Key": key }, signal: AbortSignal.timeout(9000) },
-    );
-    if (!r.ok) return true; // API caída: no bloqueamos el envío por esto
-    const d = (await r.json()) as { numberExists?: boolean; chatId?: string };
-    if (!d.numberExists || !d.chatId) return false; // el número NO tiene WhatsApp
+    let d: { numberExists?: boolean; chatId?: string } = {};
+    for (const cand of phoneCandidates(contact.phone)) {
+      const r = await fetch(
+        `${base}/api/contacts/check-exists?phone=${encodeURIComponent(cand)}&session=${encodeURIComponent(sessionId)}`,
+        { headers: { "X-Api-Key": key }, signal: AbortSignal.timeout(9000) },
+      );
+      if (!r.ok) return true; // API caída: no bloqueamos el envío por esto
+      d = (await r.json()) as { numberExists?: boolean; chatId?: string };
+      if (d.numberExists && d.chatId) break;
+    }
+    if (!d.numberExists || !d.chatId) return false; // el número NO tiene WhatsApp (en ninguna variante)
     // Persistimos el jid Y el teléfono CANÓNICO (con el 9). Sin actualizar el phone, la RESPUESTA
     // del cliente entra por el webhook con el número canónico, no matchea al contacto (guardado sin
     // 9) y nace un DUPLICADO "orgánico" — que encima dispara el funnel de bienvenida equivocado
