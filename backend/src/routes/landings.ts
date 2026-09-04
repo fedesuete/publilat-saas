@@ -149,6 +149,15 @@ landingsRouter.put("/:id", async (req, res) => {
     data.html = parsed.data.html;
     data.config = { raw: true };
   } else if (parsed.data.config) {
+    // CANDADO: una landing de diseño CUSTOM (html libre) no se regenera desde el editor visual.
+    // Guardar config sobre una custom la pisaba con el template básico y el cliente perdía el
+    // diseño (pasó 2026-09-04 con la landing violeta de maripinkwin, "se volvió atrás").
+    if ((existing.config as { raw?: boolean } | null)?.raw) {
+      return res.status(409).json({
+        error: "Esta landing tiene un diseño personalizado y no se puede editar desde acá. Pedile los cambios a soporte para no perder el diseño.",
+        code: "RAW_LANDING",
+      });
+    }
     const merged = { ...(existing.config as Cfg | null ?? {}), ...parsed.data.config };
     data.config = merged;
     data.html = await buildHtml(req.userId!, user!.slug, merged);
