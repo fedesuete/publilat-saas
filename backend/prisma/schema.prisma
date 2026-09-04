@@ -666,6 +666,21 @@ model KommoLink {
   @@unique([userId, kommoLeadId])
 }
 
+// Estado del BOT de carga/descarga en el canal KOMMO (Fase 1, semi-automático). Una fila por
+// conversación (lead de Kommo): en qué paso del flujo está y el monto en curso. Aislado del bot del
+// Chat App (que usa ChatConversation.botStep) — mismo cerebro, otro canal.
+model KommoBotState {
+  id          String   @id @default(cuid())
+  userId      String
+  kommoLeadId String
+  step        String?  // null=menú | carga_monto | carga_pago | desc_monto | desc_datos | human | welcomed
+  amountCents Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@unique([userId, kommoLeadId])
+}
+
 // Pago de días/tokens (Fase 5). Real con pasarela (MercadoPago) o stub en dev.
 model Payment {
   id         String   @id @default(cuid())

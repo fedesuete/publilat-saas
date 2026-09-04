@@ -11,6 +11,7 @@ import {
   normalizeKommoBase, kommoLead, kommoContactPhone, kommoStatusName,
   isWonStageName, extractRefFromText, KOMMO_WON_STATUS_ID,
 } from "../lib/kommo.js";
+import { runKommoBot } from "../lib/kommo-bot.js";
 
 export const integrationsRouter = Router();
 // Webhook ENTRANTE (público, sin Bearer): lo llama el CRM externo (Kommo) al cerrar una venta.
@@ -466,11 +467,6 @@ inboundIntegrationsRouter.post("/kommo", express.urlencoded({ extended: true, li
   // Visibilidad: un renglón por webhook (sin esto, un evento ignorado no deja rastro y el debug es a ciegas).
   const otros = Object.keys(body).filter((k) => k !== "leads" && k !== "message" && k !== "account");
   console.log(`[kommo] webhook (user ${integ.userId}): ${statusEvents.length} etapa(s), ${messageEvents.length} mensaje(s)${otros.length ? `, otros: ${otros.join(",")}` : ""}`);
-  // TEMP (debug raul): payload crudo de los MENSAJES para ver cómo llega una IMAGEN (¿message_type +
-  // link del archivo?) — define si el lector IA de comprobantes puede funcionar en el canal Kommo.
-  if (integ.userId === "cmt3e2son037fbo08qcd6ohdf" && messageEvents.length) {
-    console.log("[kommo] RAW msg raul:", JSON.stringify(messageEvents).slice(0, 900));
-  }
   void (async () => {
     await processKommoMessages(integ.userId, creds, messageEvents);
     await processKommoStatus(integ.userId, creds, statusEvents);
@@ -489,8 +485,6 @@ inboundIntegrationsRouter.post("/kommo-bot", express.json({ limit: "1mb" }), exp
   if (!integ) return res.status(401).json({ error: "Token inválido." });
 
   const body = (req.body ?? {}) as Record<string, unknown>;
-  // TEMP (debug): ver el formato EXACTO con el que Kommo llama al widget_request (content-type + payload).
-  console.log(`[kommo-bot] ct=${req.get("content-type") ?? "?"} keys=${Object.keys(body).join(",")} raw=${JSON.stringify(body).slice(0, 700)}`);
   const data = (body.data ?? {}) as Record<string, unknown>;
   const returnUrl = String(body.return_url ?? "").trim();
   const incoming = String(data.message ?? data.text ?? "").trim();
@@ -507,8 +501,12 @@ inboundIntegrationsRouter.post("/kommo-bot", express.json({ limit: "1mb" }), exp
     return;
   }
 
+  // Lead de Kommo (la "conversación"): viene en el JWT del widget_request (entity_id). Decodificamos el
+  // payload sin verificar firma — la auth real es el inboundToken opaco de la query, privado por cuenta.
+  const kommoLeadId = kommoJwtLeadId(String(body.token ?? ""));
+
   void (async () => {
-    const reply = await computeKommoBotReply(integ.userId, incoming);
+    const reply = await runKommoBot(integ.userId, kommoLeadId, incoming);
     const creds = kommoCreds(integ);
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (creds) headers.Authorization = "Bearer " + creds.token; // el continue vive en el dominio del cliente
@@ -524,13 +522,14 @@ inboundIntegrationsRouter.post("/kommo-bot", express.json({ limit: "1mb" }), exp
   })().catch((e) => console.error("[kommo-bot] error:", e instanceof Error ? e.message : e));
 });
 
-// Respuesta del bot para un mensaje entrante que llega por el Salesbot de Kommo.
-// MVP: usa el `botWelcome` de la cuenta (o un saludo por defecto) para PROBAR el circuito de punta a punta.
-// Fase 2: enganchar el bot de carga/descarga real (runChatBot) con estado por conversación.
-async function computeKommoBotReply(userId: string, _incoming: string): Promise<string> {
-  const u = await prisma.user.findUnique({ where: { id: userId }, select: { botWelcome: true, brandName: true } });
-  const welcome = (u?.botWelcome ?? "").trim();
-  if (welcome) return welcome;
-  const marca = (u?.brandName ?? "").trim();
-  return `¡Hola! 👋 Gracias por escribir${marca ? ` a ${marca}` : ""}. Ya te atendemos por acá. ¿Qué necesitás?`;
+// Saca el lead (entity_id) del JWT que manda el widget_request de Kommo. Solo decodifica el payload
+// (base64url) — NO valida la firma: la autenticación es el inboundToken opaco de la URL.
+function kommoJwtLeadId(jwt: string): string {
+  try {
+    const part = jwt.split(".")[1] ?? "";
+    const json = JSON.parse(Buffer.from(part, "base64url").toString("utf8")) as Record<string, unknown>;
+    return String(json.entity_id ?? "0");
+  } catch {
+    return "0";
+  }
 }
