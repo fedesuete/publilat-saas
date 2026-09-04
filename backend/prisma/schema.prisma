@@ -673,8 +673,12 @@ model KommoBotState {
   id          String   @id @default(cuid())
   userId      String
   kommoLeadId String
-  step        String?  // null=menú | carga_monto | carga_pago | desc_monto | desc_datos | human | welcomed
+  step        String?  // null=menú | carga_monto | carga_pago | carga_nombre | desc_monto | desc_datos | human | welcomed
   amountCents Int?
+  // MODELO B (auto-carga): identidad del jugador en el casino, creada por el bot (shadow ChatPlayer
+  // para que la carga aparezca en el Cajero y el intent/CasinoTx tengan jugador).
+  casinoUsername String?
+  playerId       String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt
 
