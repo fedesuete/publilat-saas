@@ -679,6 +679,7 @@ model KommoBotState {
   // para que la carga aparezca en el Cajero y el intent/CasinoTx tengan jugador).
   casinoUsername String?
   playerId       String?
+  titular        String?  // nombre completo del jugador (como figura en su banco) — vínculo para el matcheo
   createdAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt
 

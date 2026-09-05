@@ -1,16 +1,16 @@
-// Bot de carga/descarga para el canal KOMMO (Fase 1, semi-automático). Es el MISMO flujo del bot del
-// Chat App (lib/chat-bot.ts) hablando por otro caño: acá no podemos empujar mensajes — solo devolver
-// UNA respuesta cuando el jugador escribe (el Salesbot de Kommo la entrega por WhatsApp). Por eso el
-// estado vive en KommoBotState (por lead de Kommo) y los avisos al cajero van por la campanita
-// (Notification) + el espejo del chat que ya cae al Inbox.
+// Bot de carga/descarga para el canal KOMMO. Mismo cerebro que el bot del Chat App hablando por otro
+// caño: acá no podemos empujar mensajes — solo devolver UNA respuesta cuando el jugador escribe (el
+// Salesbot de Kommo la entrega por WhatsApp). Estado en KommoBotState (por lead de Kommo).
 //
-// LÍMITES del canal (verificados):
-//  - Las FOTOS llegan como texto placeholder ("Recibiste un mensaje multimedia (id: ...)"), SIN el
-//    archivo → acá no hay lectura IA del comprobante; el cajero lo mira en Kommo y aprueba.
-//  - Regla dura §9.2: NUNCA acreditar fichas automático por un comprobante. El bot junta monto+aviso;
-//    acredita el cajero (o la recaudadora en Fase 3).
-// Fase 2 (socio): creación de usuario ganamos (ensureCasinoUser) + autocarga vía CasinoTx cuando la
-// cuenta tenga su casinoApiKey.
+// FLUJO "RAUL" (cuenta con casino conectado = modelo B, 100% automático sin cajero):
+//   hola → el bot pide el NOMBRE COMPLETO (como figura en el banco; UNA vez, queda VINCULADO) →
+//   crea el usuario del casino + entrega accesos + CVU de la recaudadora → el jugador transfiere lo
+//   que quiera y manda el comprobante (acá la FOTO llega como placeholder, sin archivo — es solo la
+//   señal de "ya pagué") → el bot pregunta cuánto transfirió → intent (titular vinculado + monto) →
+//   la recaudadora confirma la PLATA REAL → acredita solo. Sin plata no hay fichas (§9.2 OK).
+//   [Etapa 2, cuando el matcher del socio soporte vínculo sin monto: ni el número se pregunta.]
+//
+// SIN casino conectado: flujo semi-automático (menú → monto → botPaymentInfo → aviso al cajero).
 import crypto from "node:crypto";
 import { prisma } from "./prisma.js";
 import { notify } from "./notifications.js";
@@ -18,8 +18,11 @@ import { casinoLiveForAccount, casinoCvuForAccount, ensureCasinoUser, casinoPlay
 
 const num = (s: string): number => { const m = s.replace(/[.,\s]/g, "").match(/\d+/); return m ? parseInt(m[0], 10) : NaN; };
 const has = (t: string, ...words: string[]): boolean => words.some((w) => t.includes(w));
+const nickSlug = (s: string) => s.toLowerCase().normalize("NFD").replace(/[^a-z0-9]/g, "").slice(0, 12);
 // Placeholder con el que Kommo (WhatsApp Lite) entrega los mensajes con imagen/archivo.
 const MULTIMEDIA_RE = /mensaje multimedia|multimedia message/i;
+
+type St = { id: string; step: string | null; amountCents: number | null; casinoUsername: string | null; playerId: string | null; titular: string | null };
 
 async function setStep(id: string, step: string | null, amountCents?: number | null): Promise<void> {
   await prisma.kommoBotState.update({
@@ -28,19 +31,16 @@ async function setStep(id: string, step: string | null, amountCents?: number | n
   });
 }
 
-// Identidad del jugador en el casino para este chat de Kommo: shadow ChatPlayer (así la carga aparece
-// en el Cajero del panel y el intent/CasinoTx tienen jugador). Username autogenerado (user+dígitos),
-// misma clave por defecto que el un-tap. Idempotente: si ya existe en el estado, lo reusa.
-async function ensureKommoPlayer(
-  userId: string,
-  st: { id: string; casinoUsername: string | null; playerId: string | null },
-): Promise<{ username: string; playerId: string }> {
+// Identidad del jugador en el casino: shadow ChatPlayer (para que la carga aparezca en el Cajero y el
+// intent/CasinoTx tengan jugador). Username = apodo del nombre + dígitos (como el un-tap del Chat App).
+async function ensureKommoPlayer(userId: string, st: St, name?: string): Promise<{ username: string; playerId: string }> {
   if (st.casinoUsername && st.playerId) return { username: st.casinoUsername, playerId: st.playerId };
+  const base = nickSlug(name ?? "") || "user";
   for (let i = 0; i < 6; i++) {
-    const username = `user${crypto.randomInt(10000, 99999)}`;
+    const username = `${base}${crypto.randomInt(1000, 9999)}`;
     try {
       const p = await prisma.chatPlayer.create({
-        data: { userId, casinoUsername: username, estatus: "active" },
+        data: { userId, casinoUsername: username, nombre: name?.trim() || null, estatus: "active" },
         select: { id: true },
       });
       await prisma.kommoBotState.update({ where: { id: st.id }, data: { casinoUsername: username, playerId: p.id } });
@@ -52,6 +52,9 @@ async function ensureKommoPlayer(
   throw new Error("no se pudo generar el usuario del casino");
 }
 
+const cvuBlock = (cvu: { cvu?: string | null; alias?: string | null; titular?: string | null }): string =>
+  `💳 CVU: *${cvu.cvu}*\n🏷️ Alias: *${cvu.alias}*\n👤 Titular: ${cvu.titular}`;
+
 // Procesa un mensaje entrante del canal Kommo y devuelve la respuesta del bot (o null = mudo).
 export async function runKommoBot(userId: string, kommoLeadId: string, rawText: string): Promise<string | null> {
   const acc = await prisma.user.findUnique({
@@ -60,11 +63,11 @@ export async function runKommoBot(userId: string, kommoLeadId: string, rawText: 
   });
   if (!acc) return null;
 
-  const st = await prisma.kommoBotState.upsert({
+  const st = (await prisma.kommoBotState.upsert({
     where: { userId_kommoLeadId: { userId, kommoLeadId } },
     create: { userId, kommoLeadId },
     update: {},
-  });
+  })) as St & { userId: string };
 
   // Bot APAGADO: saludo de cortesía UNA sola vez por conversación (no spamear cada mensaje).
   if (!acc.botEnabled) {
@@ -79,67 +82,114 @@ export async function runKommoBot(userId: string, kommoLeadId: string, rawText: 
   const lead = `lead ${kommoLeadId}`;
 
   // Pedir cajero en CUALQUIER momento corta el bot y avisa (se responde a mano DESDE KOMMO).
-  if (has(t, "cajero", "humano", "persona", "operador", "atencion", "atención") || t === "3") {
+  if (has(t, "cajero", "humano", "persona", "operador", "atencion", "atención")) {
     await setStep(st.id, "human");
     void notify(userId, "system", "🙋 Piden un cajero (Kommo)", `El ${lead} pidió hablar con un cajero. Respondele desde Kommo.`);
     return "Te paso con un cajero 👤. Aguardá un momento que te responden.";
   }
   if (st.step === "human") return null; // lo maneja un humano: el bot se calla
 
-  // ---------- CARGA ----------
-  if (st.step === "carga_monto") {
+  // ---------- RETIRO (igual en ambos modos: monto → datos → aviso) ----------
+  if (st.step === "desc_monto") {
     const amount = num(t);
     if (!amount || amount <= 0) return "No entendí el monto 🤔. Escribí solo el número, por ejemplo *5000*.";
+    await setStep(st.id, "desc_datos", amount * 100);
+    return `Perfecto, retirás *$${amount}* 💸\n\nPasame tus datos para el pago:\n*Alias o CBU* + *nombre del titular*.`;
+  }
+  if (st.step === "desc_datos") {
+    const amount = (st.amountCents ?? 0) / 100;
+    await setStep(st.id, null, null);
+    void notify(userId, "system", `💸 RETIRO PENDIENTE (Kommo): $${amount}`, `${lead}${st.casinoUsername ? ` · jugador ${st.casinoUsername}` : ""}. Pagar a: ${rawText.trim().slice(0, 200)}`);
+    return "¡Listo! 🙌 Estamos procesando tu retiro y te avisamos en unos minutos ⏳";
+  }
 
-    // MODELO B (cuenta con casino conectado): 100% automático, SIN cajero. El bot crea el usuario en
-    // el casino, muestra el CVU de la recaudadora y pide el NOMBRE del titular que transfiere — con
-    // nombre+monto ganamos matchea la transferencia REAL (webhook) y acredita solo (§9.2 OK: acredita
-    // la plata confirmada, no una foto — acá ni siquiera vemos la foto).
-    if (await casinoLiveForAccount(userId)) {
+  // ══════════ MODO AUTOMÁTICO (casino conectado) — flujo "raul" ══════════
+  if (await casinoLiveForAccount(userId)) {
+    const marca = (acc.brandName ?? "").trim();
+
+    // Paso 1 — VINCULACIÓN (una sola vez): nombre completo → usuario + accesos + CVU.
+    if (!st.titular) {
+      if (st.step !== "ask_name") {
+        await setStep(st.id, "ask_name");
+        const welcome = (acc.botWelcome ?? "").trim();
+        return `${welcome || `¡Hola! 👋 Bienvenido${marca ? ` a ${marca}` : ""}.`}\n\nPara crearte el usuario decime tu *nombre completo* (como figura en tu cuenta del banco) 👇`;
+      }
+      if (isFoto) return "Primero decime tu *nombre completo* (como figura en tu banco) 🙌 — después mandás el comprobante.";
+      const name = rawText.trim().replace(/\s+/g, " ").slice(0, 60);
+      if (name.length < 3 || !/[a-záéíóúñ]/i.test(name) || /\d{4,}/.test(name)) {
+        return "Decime tu *nombre y apellido* (como figura en el banco) 🙌";
+      }
       try {
-        const { username } = await ensureKommoPlayer(userId, st);
+        const { username } = await ensureKommoPlayer(userId, st, name);
+        await prisma.kommoBotState.update({ where: { id: st.id }, data: { titular: name, step: null } });
+        st.titular = name;
         void ensureCasinoUser(userId, username).then((u) => {
-          if (!u.ok) void notify(userId, "system", "⚠️ Alta en el casino tardó/falló", `El alta de ${username} falló (${u.errorCode ?? "error"}). Si la carga no acredita sola, revisala.`);
+          if (!u.ok) void notify(userId, "system", "⚠️ Alta en el casino tardó/falló", `El alta de ${username} falló (${u.errorCode ?? "error"}). Si su carga no acredita sola, revisala.`);
         }).catch(() => undefined);
+        const first = name.split(" ")[0];
         const cvu = await casinoCvuForAccount(userId);
+        const acceso = `¡Listo, ${first}! 🎉 Tu cuenta para jugar:\n\n👤 Usuario: *${username}*\n🔑 Clave: *${casinoPlayerPassword()}*\n\n📌 Guardá estos datos.`;
         if (!cvu.ok) {
-          await setStep(st.id, null, null);
-          void notify(userId, "system", "⚠️ La recaudadora no dio CVU (Kommo)", `Error ${cvu.errorCode ?? "?"} — saturada o desactivada. Avisar al casino.`);
-          return "En este momento no podemos procesar cargas 😔. Probá de nuevo en unos minutos.";
+          void notify(userId, "system", "⚠️ La recaudadora no dio CVU (Kommo)", `Error ${cvu.errorCode ?? "?"} — saturada o desactivada.`);
+          return `${acceso}\n\nPara cargar, escribime *cargar* en unos minutos (estamos actualizando los datos de pago) 🙌`;
         }
-        await setStep(st.id, "carga_nombre", amount * 100);
-        return `Perfecto, cargás *$${amount}* ✅\n\n🎰 Tu cuenta para jugar:\n👤 Usuario: *${username}*\n🔑 Clave: *${casinoPlayerPassword()}*\n\nTransferí desde tu banco a:\n💳 CVU: *${cvu.cvu}*\n🏷️ Alias: *${cvu.alias}*\n👤 Titular: ${cvu.titular}\n\nCuando transfieras, escribime el *nombre del titular* de la cuenta desde la que mandaste la plata (así te acreditamos al instante) 🚀`;
+        return `${acceso}\n\n💰 Para cargar, transferí *el monto que quieras* a:\n${cvuBlock(cvu)}\n\nCuando transfieras, mandame el *comprobante* 📎 y las fichas entran solas 🚀`;
       } catch {
-        // si algo del casino falla, caemos al flujo semi-automático de siempre
+        return "Uy, algo falló creando tu usuario 😔. Mandame tu *nombre completo* de nuevo.";
       }
     }
 
-    // SEMI-AUTOMÁTICO (sin casino conectado): datos de pago manuales + aviso al cajero.
+    // Paso 3 — dijo cuánto transfirió → intent (titular vinculado + monto) → acredita el callback.
+    if (st.step === "carga_monto_confirm") {
+      if (isFoto) return "¿Cuánto transferiste? Escribí *solo el número* 🙌 (ej: 5000)";
+      const amount = num(t);
+      if (!amount || amount <= 0) return "¿Cuánto transferiste? Escribí *solo el número* 🙌 (ej: 5000)";
+      await setStep(st.id, null, null);
+      if (!st.casinoUsername || !st.playerId) return "Algo salió mal con tu usuario 😔. Escribí *cargar* y lo rehacemos.";
+      const dep = await prisma.chatDeposit.create({
+        data: { userId, playerId: st.playerId, amount, currency: "ARS", method: "transferencia" },
+        select: { id: true },
+      });
+      await sendDepositIntent(
+        { id: dep.id, userId, playerId: st.playerId, amount, currency: "ARS" },
+        st.casinoUsername,
+        { senderName: st.titular, codigoOperacion: null },
+      );
+      void notify(userId, "system", `💰 Carga automática en curso (Kommo): $${amount}`, `Jugador ${st.casinoUsername} · titular "${st.titular}". Se acredita sola cuando impacte; si no impacta, revisala en el Cajero.`);
+      return `¡Perfecto! *$${amount}* en verificación ✅\n\nNi bien impacte tu transferencia se acreditan las fichas *solas* 🚀\n\n👤 Tu usuario: *${st.casinoUsername}*`;
+    }
+
+    // Paso 2 — mandó el comprobante (o avisa que pagó) → preguntamos el monto.
+    if (isFoto || has(t, "pague", "pagué", "transferi", "transferí", "comprobante", "ya esta", "ya está", "cargue", "cargué", "hecho", "listo")) {
+      await setStep(st.id, "carga_monto_confirm");
+      return "¡Recibido! 🙌 ¿Cuánto transferiste? Escribí *solo el número* (ej: 5000)";
+    }
+
+    // Pide los datos de pago de nuevo.
+    if (has(t, "cargar", "carga", "cargame", "cvu", "alias", "depositar", "deposito", "depósito", "meter", "datos") || t === "1") {
+      const cvu = await casinoCvuForAccount(userId);
+      if (!cvu.ok) {
+        void notify(userId, "system", "⚠️ La recaudadora no dio CVU (Kommo)", `Error ${cvu.errorCode ?? "?"}.`);
+        return "En este momento no puedo darte los datos 😔. Probá de nuevo en unos minutos.";
+      }
+      return `💰 Transferí *el monto que quieras* a:\n${cvuBlock(cvu)}\n\nDespués mandame el *comprobante* 📎 y las fichas entran solas 🚀`;
+    }
+    if (has(t, "retirar", "retiro", "descarga", "descargar", "cobrar", "sacar") || t === "2") {
+      await setStep(st.id, "desc_monto");
+      return "¿Cuánto querés retirar? Escribí el monto 💸";
+    }
+
+    // Guía corta para cualquier otra cosa.
+    return `¿Qué necesitás? 👇\n\n💰 Para cargar: escribí *cargar* (te paso los datos) y después mandá el *comprobante* 📎\n💸 Para sacar: *retirar*\n🙋 ¿Un humano?: *cajero*`;
+  }
+
+  // ══════════ MODO SEMI-AUTOMÁTICO (sin casino conectado) ══════════
+  if (st.step === "carga_monto") {
+    const amount = num(t);
+    if (!amount || amount <= 0) return "No entendí el monto 🤔. Escribí solo el número, por ejemplo *5000*.";
     await setStep(st.id, "carga_pago", amount * 100);
     const pay = acc.botPaymentInfo?.trim() || "En un momento un cajero te pasa los datos de pago.";
     return `Perfecto, cargás *$${amount}* ✅\n\nPagá así:\n${pay}\n\nCuando pagues, mandá la *foto del comprobante* 📎 acá y te acreditamos en minutos 🚀`;
-  }
-  // MODELO B: esperando el nombre del titular que transfirió → intent a ganamos → acredita el callback.
-  if (st.step === "carga_nombre") {
-    if (isFoto) return "¡Recibido! 📎 Para acreditarte al instante, *escribime el nombre del titular* de la cuenta que hizo la transferencia 👇";
-    const senderName = rawText.trim().replace(/\s+/g, " ").slice(0, 80);
-    if (senderName.length < 3 || !/[a-záéíóúñ]/i.test(senderName)) {
-      return "Pasame el *nombre y apellido del titular* de la cuenta que transfirió (como figura en el banco) 🙌";
-    }
-    const amount = (st.amountCents ?? 0) / 100;
-    await setStep(st.id, null, null);
-    if (!st.casinoUsername || !st.playerId) return "Algo salió mal con tu usuario 😔. Escribí *cargar* de nuevo y lo rehacemos.";
-    const dep = await prisma.chatDeposit.create({
-      data: { userId, playerId: st.playerId, amount, currency: "ARS", method: "transferencia" },
-      select: { id: true },
-    });
-    await sendDepositIntent(
-      { id: dep.id, userId, playerId: st.playerId, amount, currency: "ARS" },
-      st.casinoUsername,
-      { senderName, codigoOperacion: null },
-    );
-    void notify(userId, "system", `💰 Carga automática en curso (Kommo): $${amount}`, `Jugador ${st.casinoUsername} · titular "${senderName}". Se acredita sola cuando impacte la transferencia; si no impacta, revisala en el Cajero.`);
-    return `¡Listo! 🙌 Ni bien impacte tu transferencia se acreditan las fichas solas 🚀\n\nRecordá tus datos:\n👤 Usuario: *${st.casinoUsername}*\n🔑 Clave: *${casinoPlayerPassword()}*\n\nCualquier cosa escribí *cajero* 👤`;
   }
   if (st.step === "carga_pago") {
     if (isFoto || has(t, "pague", "pagué", "listo", "pago", "transferi", "transferí", "ya esta", "ya está", "hecho")) {
@@ -154,22 +204,6 @@ export async function runKommoBot(userId: string, kommoLeadId: string, rawText: 
     }
     return "Cuando pagues, mandá la *foto del comprobante* 📎 acá y lo verificamos ✅";
   }
-
-  // ---------- DESCARGA / RETIRO ----------
-  if (st.step === "desc_monto") {
-    const amount = num(t);
-    if (!amount || amount <= 0) return "No entendí el monto 🤔. Escribí solo el número, por ejemplo *5000*.";
-    await setStep(st.id, "desc_datos", amount * 100);
-    return `Perfecto, retirás *$${amount}* 💸\n\nPasame tus datos para el pago:\n*Alias o CBU* + *nombre del titular*.`;
-  }
-  if (st.step === "desc_datos") {
-    const amount = (st.amountCents ?? 0) / 100;
-    await setStep(st.id, null, null);
-    void notify(userId, "system", `💸 RETIRO PENDIENTE (Kommo): $${amount}`, `${lead}. Pagar a: ${rawText.trim().slice(0, 200)}`);
-    return "¡Listo! 🙌 Un cajero está procesando tu retiro y te avisa en unos minutos ⏳";
-  }
-
-  // ---------- SIN PASO ACTIVO: intención directa o menú ----------
   if (has(t, "cargar", "carga", "cargame", "cárgame", "depositar", "deposito", "depósito", "meter") || t === "1") {
     await setStep(st.id, "carga_monto");
     return "¿Cuánto querés cargar? Escribí el monto 💰";
@@ -179,11 +213,9 @@ export async function runKommoBot(userId: string, kommoLeadId: string, rawText: 
     return "¿Cuánto querés retirar? Escribí el monto 💸";
   }
   if (isFoto) {
-    // Foto fuera del flujo de carga: probable comprobante suelto → avisar igual.
     void notify(userId, "system", "📎 Foto recibida (Kommo)", `El ${lead} mandó una imagen — miralo en Kommo.`);
     return "¡Recibido! 📎 Un cajero lo revisa y te responde en un momento.";
   }
-
   const welcome = acc.botWelcome?.trim() ? acc.botWelcome.trim() + "\n\n" : "";
-  return `${welcome}¿Qué querés hacer? 👇\n\n*1* 💰 Cargar\n*2* 💸 Retirar\n*3* 🙋 Hablar con un cajero`;
+  return `${welcome}¿Qué querés hacer? 👇\n\n*1* 💰 Cargar\n*2* 💸 Retirar\n🙋 ¿Un humano?: escribí *cajero*`;
 }
