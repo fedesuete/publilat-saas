@@ -552,7 +552,11 @@ enum Stage {
 model Message {
   id         String   @id @default(cuid())
   contactId  String
-  lineId     String
+  // NULLABLE a propósito (2026-09-06): la conversación SOBREVIVE a la línea. Antes lineId era
+  // obligatorio y "Eliminar línea" tenía que borrar TODOS los mensajes de esa línea para poder
+  // borrarla (los clientes que borraban una línea muerta y la recreaban perdían el historial
+  // entero — la clave del CRM es que eso no pase). null = la línea que lo envió ya no existe.
+  lineId     String?
   direction  String   // in | out
   body       String
   status     String   @default("sent") // salientes: sent | delivered | read | failed (ack de WhatsApp)
@@ -562,7 +566,7 @@ model Message {
   waMessageId String?  @unique // idempotencia: no procesar dos veces el mismo evento de WhatsApp
   createdAt  DateTime @default(now())
   contact    Contact  @relation(fields: [contactId], references: [id])
-  line       WaLine   @relation(fields: [lineId], references: [id])
+  line       WaLine?  @relation(fields: [lineId], references: [id])
 
   @@index([contactId, createdAt])          // historial de conversación
   @@index([lineId, direction, createdAt])  // cupo de warmup + heatmap por línea

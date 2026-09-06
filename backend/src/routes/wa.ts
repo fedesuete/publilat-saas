@@ -686,8 +686,11 @@ waRouter.delete("/lines/:id", async (req, res) => {
   if (!line) return res.status(404).json({ error: "Línea no encontrada" });
   try {
     if (line.provider === "baileys") await getEngine().deleteInstance(line.sessionId ?? `line_${line.id}`);
-    // Orden por las FKs: mensajes (lineId obligatorio) -> soltar contactos -> línea.
-    await prisma.message.deleteMany({ where: { lineId: line.id } });
+    // El HISTORIAL SOBREVIVE a la línea (2026-09-06): antes acá se hacía deleteMany de los
+    // mensajes (lineId era FK obligatoria) y el cliente que borraba una línea muerta para
+    // recrearla perdía TODAS sus conversaciones — la clave del CRM es que eso no pase.
+    // Ahora los mensajes quedan (lineId null) y solo se suelta la referencia.
+    await prisma.message.updateMany({ where: { lineId: line.id }, data: { lineId: null } });
     await prisma.contact.updateMany({ where: { lineId: line.id }, data: { lineId: null } });
     await prisma.waLine.delete({ where: { id: line.id } });
     return res.json({ ok: true });
