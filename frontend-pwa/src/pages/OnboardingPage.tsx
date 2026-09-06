@@ -8,6 +8,44 @@ import { fireMetaPixel } from "../lib/pixel";
 // y ya tenés sesión de esa cuenta, ofrecemos entrar en vez de crear OTRA cuenta nueva.
 const SESSION_SLUG_KEY = "publilat_session_slug";
 
+// Confetti liviano (sin librerías): papelitos que caen al llegar a "Cuenta creada" / "Bono recibido".
+// Canvas fijo a pantalla completa, ~2.6s y se limpia solo. Colores: marca + dorado + verde + blanco.
+function fireConfetti(count = 120) {
+  const cs = getComputedStyle(document.documentElement);
+  const brand = (cs.getPropertyValue("--brand-accent") || "#c084fc").trim() || "#c084fc";
+  const colors = [brand, "#facc15", "#22c55e", "#ffffff", "#f472b6"];
+  const canvas = document.createElement("canvas");
+  canvas.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:9999";
+  canvas.width = innerWidth; canvas.height = innerHeight;
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) { canvas.remove(); return; }
+  const parts = Array.from({ length: count }, () => ({
+    x: innerWidth / 2 + (Math.random() - 0.5) * innerWidth * 0.5,
+    y: -20 - Math.random() * 60,
+    vx: (Math.random() - 0.5) * 6,
+    vy: 2 + Math.random() * 4,
+    w: 6 + Math.random() * 6,
+    h: 8 + Math.random() * 8,
+    rot: Math.random() * Math.PI,
+    vr: (Math.random() - 0.5) * 0.3,
+    color: colors[Math.floor(Math.random() * colors.length)],
+  }));
+  const t0 = performance.now();
+  const tick = (t: number) => {
+    const dt = t - t0;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (const p of parts) {
+      p.x += p.vx; p.y += p.vy; p.vy += 0.12; p.rot += p.vr;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      ctx.fillStyle = p.color; ctx.globalAlpha = Math.max(0, 1 - dt / 2600);
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); ctx.restore();
+    }
+    if (dt < 2600) requestAnimationFrame(tick); else canvas.remove();
+  };
+  requestAnimationFrame(tick);
+}
+
 function cookie(name: string): string {
   const m = document.cookie.match("(^|;)\\s*" + name + "\\s*=\\s*([^;]+)");
   return m ? decodeURIComponent(m.pop()!) : "";
@@ -73,9 +111,14 @@ export default function OnboardingPage() {
     if (step !== "creating") return;
     setStage(0); setProg(12);
     const t0 = setTimeout(() => setProg(38), 60);
-    const t1 = setTimeout(() => { setStage(1); setProg(66); }, 1300);
+    const t1 = setTimeout(() => { setStage(1); setProg(66); fireConfetti(110); }, 1300); // 🎊 cuenta creada
     const t2 = setTimeout(() => { setStage(2); setProg(88); }, 2600);
     return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); };
+  }, [step]);
+
+  // Segunda lluvia de papelitos al mostrar la tarjeta final con las credenciales.
+  useEffect(() => {
+    if (step === "done") fireConfetti(160);
   }, [step]);
 
   // UN TAP: el server genera usuario + clave y los devuelve mientras corre la animación del embudo.
