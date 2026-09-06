@@ -36,6 +36,7 @@ export default function OnboardingPage() {
   const [step, setStep] = useState<Step>("form");
   const [nickname, setNickname] = useState("");
   const [prog, setProg] = useState(8);
+  const [stage, setStage] = useState(0); // etapas del embudo: creando -> creada -> bono
   const [creds, setCreds] = useState<{ username: string; password: string | null } | null>(null);
   const [forceForm, setForceForm] = useState(false); // "continuar igual" desde el aviso in-app
   const [copied, setCopied] = useState(false);
@@ -65,15 +66,19 @@ export default function OnboardingPage() {
       .finally(() => setLoading(false));
   }, [code, slug]);
 
-  // Barra de progreso de "Preparando tu acceso…": crece al entrar al paso.
+  // EMBUDO por etapas (estilo un-tap de casino): la barra avanza mientras cambian los mensajes
+  // 🔐 Creando tu cuenta… → ✅ Cuenta creada → 🎉 ¡Bono recibido! Cada etapa ~1.2s; el registro
+  // real corre en paralelo (el server suele tardar menos que la animación).
   useEffect(() => {
     if (step !== "creating") return;
-    setProg(8);
-    const t = setTimeout(() => setProg(92), 60);
-    return () => clearTimeout(t);
+    setStage(0); setProg(12);
+    const t0 = setTimeout(() => setProg(38), 60);
+    const t1 = setTimeout(() => { setStage(1); setProg(66); }, 1300);
+    const t2 = setTimeout(() => { setStage(2); setProg(88); }, 2600);
+    return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); };
   }, [step]);
 
-  // UN TAP: el server genera usuario + clave y los devuelve. Dejamos ver ~1s el "preparando".
+  // UN TAP: el server genera usuario + clave y los devuelve mientras corre la animación del embudo.
   const register = async (e?: FormEvent) => {
     e?.preventDefault();
     if (!code && !slug) return;
@@ -93,7 +98,7 @@ export default function OnboardingPage() {
         code
           ? api.post("/api/chat/register", { code, ...common })
           : api.post("/api/chat/start", { accountSlug: slug, ...common }),
-        new Promise((r) => setTimeout(r, 1000)),
+        new Promise((r) => setTimeout(r, 3600)), // deja ver las 3 etapas del embudo
       ]);
       setToken(data.token);
       if (slug) localStorage.setItem(SESSION_SLUG_KEY, slug); // marca la cuenta de esta sesión
@@ -121,8 +126,10 @@ export default function OnboardingPage() {
   return (
     <div className="mx-auto flex min-h-full max-w-md flex-col items-center justify-center p-5">
       <div
-        className="w-full rounded-3xl border border-white/10 bg-black/40 p-6 text-center shadow-2xl backdrop-blur"
-        style={{ boxShadow: "0 0 70px -24px var(--brand-primary, #7c3aed)" }}
+        className="w-full rounded-3xl border bg-black/40 p-6 text-center shadow-2xl backdrop-blur"
+        style={step === "done"
+          ? { borderColor: "rgba(34,197,94,.45)", boxShadow: "0 0 70px -24px #22c55e" }
+          : { borderColor: "rgba(255,255,255,.1)", boxShadow: "0 0 70px -24px var(--brand-primary, #7c3aed)" }}
       >
         {branding?.logoUrl && (
           <img src={branding.logoUrl} alt={name} className="mx-auto mb-4 h-20 w-20 rounded-2xl object-cover"
@@ -174,10 +181,10 @@ export default function OnboardingPage() {
             </button>
           </>
         ) : step === "done" && creds ? (
-          /* --------- PASO: cuenta creada --------- */
+          /* --------- PASO: cuenta creada (cierre en VERDE = éxito universal) --------- */
           <>
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full text-3xl font-bold text-white"
-              style={{ background: primary, boxShadow: "0 0 30px -4px var(--brand-primary, #7c3aed)" }}>✓</div>
+              style={{ background: "#22c55e", boxShadow: "0 0 30px -4px #22c55e" }}>✓</div>
             <h1 className="text-2xl font-extrabold tracking-tight">¡CUENTA CREADA!</h1>
             <div className="mt-5 space-y-2">
               <Field label="USUARIO" value={creds.username} />
@@ -185,7 +192,7 @@ export default function OnboardingPage() {
             </div>
             <button onClick={() => navigate("/chat", { replace: true })}
               className="mt-5 w-full rounded-xl py-3.5 text-base font-extrabold text-white transition active:scale-[.98]"
-              style={{ background: primary, boxShadow: "0 12px 30px -10px var(--brand-primary, #7c3aed)" }}>
+              style={{ background: "#22c55e", boxShadow: "0 12px 30px -10px #22c55e" }}>
               JUGAR YA!
             </button>
             <p className="mt-3 text-xs text-slate-500">Guardá tus datos para volver a entrar cuando quieras.</p>
@@ -197,19 +204,23 @@ export default function OnboardingPage() {
             )}
           </>
         ) : step === "creating" ? (
-          /* --------- PASO: preparando --------- */
+          /* --------- PASO: embudo por etapas (creando -> creada -> bono) --------- */
           <>
             <h1 className="text-2xl font-extrabold tracking-tight">
               Creá tu <span style={{ color: accent }}>cuenta gratis</span>
             </h1>
+            <p className="mt-1 text-sm text-slate-400">{branding?.welcomeText || "Estamos Online 24hs!"}</p>
+            <BonoBanner accent={accent} />
             {nickname.trim() && (
-              <div className="mt-5 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left text-base">{nickname.trim()}</div>
+              <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left text-base text-slate-400">{nickname.trim()}</div>
             )}
-            <div className="mt-5 h-2 w-full overflow-hidden rounded-full bg-white/10">
-              <div className="h-full rounded-full transition-[width] duration-[900ms] ease-out"
-                style={{ width: `${prog}%`, background: primary }} />
+            <div className="mt-6 text-2xl font-extrabold uppercase leading-tight tracking-tight">
+              {stage === 0 ? <>🔐 Creando<br />tu cuenta…</> : stage === 1 ? <>✅ Cuenta creada</> : <>🎉 ¡Bono recibido!</>}
             </div>
-            <p className="mt-3 text-sm text-slate-400">Preparando tu acceso…</p>
+            <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-white/10">
+              <div className="h-full rounded-full transition-[width] duration-[1100ms] ease-out"
+                style={{ width: `${prog}%`, background: `linear-gradient(90deg, ${String(primary)}, var(--brand-accent, #c084fc))` }} />
+            </div>
           </>
         ) : (
           /* --------- PASO: formulario (un tap) --------- */
@@ -218,6 +229,8 @@ export default function OnboardingPage() {
               Creá tu <span style={{ color: accent }}>cuenta gratis</span>
             </h1>
             <p className="mt-1 text-sm text-slate-400">{branding?.welcomeText || "Estamos Online 24hs!"}</p>
+
+            <BonoBanner accent={accent} />
 
             <input value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="Ej: Martín"
               autoFocus
@@ -238,6 +251,17 @@ export default function OnboardingPage() {
       {step !== "done" && (
         <a href="/login" className="mt-4 text-xs text-slate-500 underline">Ya tengo cuenta</a>
       )}
+    </div>
+  );
+}
+
+// Banner del bono de bienvenida: el gancho del embudo un-tap (borde y glow con el acento de la marca).
+function BonoBanner({ accent }: { accent: string }) {
+  return (
+    <div className="mt-4 rounded-2xl border px-4 py-3"
+      style={{ borderColor: "color-mix(in srgb, var(--brand-accent, #c084fc) 55%, transparent)", boxShadow: "0 0 26px -10px var(--brand-accent, #c084fc)" }}>
+      <div className="text-sm font-extrabold uppercase leading-snug">🎁 ¡Ganaste un bono de bienvenida!</div>
+      <div className="mt-0.5 text-xs font-semibold" style={{ color: accent }}>Creá tu cuenta y activalo</div>
     </div>
   );
 }
