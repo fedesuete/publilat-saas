@@ -66,41 +66,76 @@ export function AndroidInstallGuide({ onClose }: { onClose: () => void }) {
   );
 }
 
-// Tarjeta para instalar la PWA. Se muestra donde el usuario YA tiene sesión (el chat) para que
-// el orden natural sea registrarse -> instalar -> abrir la app y entrar directo al chat.
-// Se oculta si ya está instalada o si el usuario la descartó.
-export default function InstallPrompt() {
+// Modal "PASO 1 DE 2" para instalar la PWA (estilo widget de casino: tarjeta con degradé de la
+// marca, ícono de la app, instrucción de Compartir → Agregar a inicio y "Entendido"). El paso 2 es
+// el modal de notificaciones (PushPrompt): el padre los encadena — este primero, aquel después.
+// Texto del shell NEUTRO (§9.3); la marca la pone el branding del cliente.
+export default function InstallPrompt({ branding, onClose }: { branding?: { brandName?: string | null; logoUrl?: string | null } | null; onClose?: () => void }) {
   const [canInstall, setCanInstall] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
-  const [hidden, setHidden] = useState(() => localStorage.getItem(HIDE_KEY) === "1");
+  const [logoBroken, setLogoBroken] = useState(false);
+  const [ready, setReady] = useState(false); // pequeño delay para no saltar en el primer paint
   useEffect(() => onInstallAvailable(setCanInstall), []);
+  useEffect(() => { const t = setTimeout(() => setReady(true), 700); return () => clearTimeout(t); }, []);
 
-  if (isStandalone() || hidden) return null;
-  const dismiss = () => { localStorage.setItem(HIDE_KEY, "1"); setHidden(true); };
+  if (isStandalone() || !ready) return null;
+  const dismiss = () => { localStorage.setItem(HIDE_KEY, "1"); onClose?.(); };
+  const brand = branding?.brandName?.trim();
+  const logo = branding?.logoUrl?.trim();
 
   return (
-    <div className="mx-3 mt-3 rounded-xl border border-slate-700 bg-slate-900/70 p-3 text-sm">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="font-semibold text-slate-100">📲 Instalá la app</span>
-        <button onClick={dismiss} className="text-xs text-slate-500 hover:text-slate-300" aria-label="Cerrar">✕</button>
-      </div>
-      {canInstall ? (
-        <button onClick={() => void promptInstall()} className="w-full rounded-full py-2.5 font-semibold text-slate-900" style={{ background: "var(--brand-primary)" }}>
-          Instalar app
-        </button>
-      ) : isInAppBrowser() ? (
-        <div className="rounded-lg border border-amber-600 bg-amber-900/30 p-2.5 text-left text-xs text-amber-100">
-          Estás en un navegador dentro de otra app. Para instalar y recibir notificaciones, abrí este
-          link en <b>Chrome</b> (Android) o <b>Safari</b> (iPhone): tocá el menú <b>⋮ / •••</b> → <b>Abrir en Chrome/Safari</b>.
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-5 backdrop-blur-sm" onClick={dismiss}>
+      <div
+        className="modal-pop relative w-full max-w-sm rounded-3xl px-6 pb-5 pt-5 text-center text-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "linear-gradient(160deg, rgba(255,255,255,0.10), rgba(0,0,0,0.30)), var(--brand-primary, #7c2fd6)",
+          boxShadow: "0 24px 60px -12px rgba(0,0,0,0.7)",
+        }}
+      >
+        <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.25em] text-white/75">Paso 1 de 2</div>
+
+        <div className="mb-4 flex justify-center">
+          {logo && !logoBroken ? (
+            <img src={logo} alt={brand || ""} onError={() => setLogoBroken(true)}
+              className="h-20 w-20 rounded-2xl object-cover shadow-lg ring-4 ring-white/20" />
+          ) : (
+            <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-white/15 text-3xl shadow-lg ring-4 ring-white/20">📲</div>
+          )}
         </div>
-      ) : isIos() ? (
-        <button onClick={() => { bakeSessionIntoUrl(); setShowGuide(true); }} className="flex w-full items-center justify-center gap-2 rounded-full py-2.5 font-semibold text-slate-900" style={{ background: "var(--brand-primary)" }}>
-          <ShareIcon /> Cómo instalar en iPhone
+
+        <h2 className="text-2xl font-extrabold leading-tight" style={{ textShadow: "0 1px 2px rgba(0,0,0,0.25)" }}>
+          {brand ? `Instalá la app de ${brand}` : "Instalá la app"}
+        </h2>
+        <p className="mx-auto mt-2 max-w-xs text-sm text-white/85">
+          Accedé más rápido desde tu pantalla de inicio.
+        </p>
+
+        {canInstall ? (
+          <button onClick={() => { void promptInstall().finally(dismiss); }}
+            className="mt-4 w-full rounded-2xl bg-white py-3.5 text-base font-extrabold text-slate-900 shadow-lg transition active:scale-[.98]">
+            Instalar app
+          </button>
+        ) : isInAppBrowser() ? (
+          <div className="mt-4 rounded-2xl border border-amber-300/40 bg-amber-500/20 p-3.5 text-left text-sm text-amber-50">
+            Estás en un navegador dentro de otra app. Abrí este link en <b>Chrome</b> (Android) o <b>Safari</b> (iPhone): menú <b>⋮ / •••</b> → <b>Abrir en el navegador</b>.
+          </div>
+        ) : isIos() ? (
+          <button onClick={() => { bakeSessionIntoUrl(); setShowGuide(true); }}
+            className="mt-4 w-full rounded-2xl bg-white/15 p-4 text-left text-[15px] leading-relaxed ring-1 ring-white/25 transition active:scale-[.99]">
+            Tocá <b className="inline-flex items-center gap-1">Compartir <ShareIcon /></b> y después{" "}
+            <b>Agregar a inicio <span className="text-emerald-300">＋</span></b> .
+          </button>
+        ) : (
+          <div className="mt-4 rounded-2xl bg-white/15 p-4 text-left text-[15px] leading-relaxed ring-1 ring-white/25">
+            Abrí el menú del navegador → <b>Instalar app</b> / <b>Agregar a pantalla de inicio</b>.
+          </div>
+        )}
+
+        <button onClick={dismiss} className="mx-auto mt-4 block text-sm font-medium text-white/70 hover:text-white">
+          Entendido
         </button>
-      ) : (
-        <p className="text-xs text-slate-400">Abrí el menú del navegador → <b>Instalar app</b> / <b>Agregar a pantalla de inicio</b>.</p>
-      )}
-      <p className="mt-2 text-[11px] text-slate-600">Sirve para el ícono y las notificaciones. No es obligatorio.</p>
+      </div>
       {showGuide && <InstallGuide onClose={() => setShowGuide(false)} />}
     </div>
   );

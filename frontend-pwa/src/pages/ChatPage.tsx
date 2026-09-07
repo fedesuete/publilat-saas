@@ -366,6 +366,11 @@ export default function ChatPage() {
   // que la IA lee igual). El cajero opera hablando, como en un WhatsApp real.
   const bare = (branding?.chatTheme || "whatsapp") === "redblack";
 
+  // Secuencia de bienvenida en dos pasos: PASO 1 = instalar la app (modal), PASO 2 = notificaciones.
+  // El paso 2 espera a que el 1 se cierre para no encimar modales.
+  const [installDismissed, setInstallDismissed] = useState(() => localStorage.getItem("publilat_install_hidden") === "1");
+  const installActive = !!branding?.chatInstallPromptEnabled && !bare && !isStandalone() && !installDismissed;
+
   // Fondo "plataforma" (chatBgUrl): el chat se ve como un PANEL FLOTANTE estilo widget sobre una
   // captura del casino del cliente (como el chat integrado de las plataformas). Solo visual: adentro
   // es el mismo chat de siempre.
@@ -480,13 +485,14 @@ export default function ChatPage() {
 
       {/* Instalar la app (post-registro, ya con sesión) -> al abrir la app instalada entra directo.
           Solo si el operador lo activó en el panel (apagado por defecto). */}
-      {branding?.chatInstallPromptEnabled && !bare && <InstallPrompt />}
+      {/* PASO 1 DE 2: modal de instalación (estilo widget). Al cerrarlo pasa el PASO 2 (notificaciones). */}
+      {installActive && <InstallPrompt branding={branding} onClose={() => setInstallDismissed(true)} />}
 
       {/* Modal GRANDE para activar notificaciones (solo si el navegador las soporta y aún no decidió).
           Branded por cuenta; se posterga unos días al tocar "Ahora no". Oculto en redblack (chat pelado). */}
       {/* En bare (chat pelado) el modal solo aparece si la cuenta configuró un pitch propio
           (chatNotifTitle en Marca) — ej. el bono por activar notis. Sin pitch, queda el banner chico. */}
-      {push === "default" && (!bare || !!branding?.chatNotifTitle?.trim()) && <PushPrompt branding={branding} onEnable={enablePush} busy={pushBusy} />}
+      {push === "default" && !installActive && (!bare || !!branding?.chatNotifTitle?.trim()) && <PushPrompt branding={branding} onEnable={enablePush} busy={pushBusy} />}
       {push === "denied" && !bare && (
         <div className="px-4 py-2 text-center text-xs" style={{ background: "var(--c-surface)", color: "var(--c-muted)" }}>
           Notificaciones bloqueadas. Podés activarlas desde los ajustes del navegador.

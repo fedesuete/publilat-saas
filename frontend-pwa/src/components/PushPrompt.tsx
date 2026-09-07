@@ -63,6 +63,10 @@ export default function PushPrompt({
           boxShadow: "0 24px 60px -12px rgba(0,0,0,0.7)",
         }}
       >
+        {/* Si hay flujo de instalación (paso 1), este modal es el paso 2 de la secuencia. */}
+        {branding?.chatInstallPromptEnabled && (
+          <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.25em] text-white/75">Paso 2 de 2</div>
+        )}
         {/* Badge superior */}
         <div className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-bold tracking-wide backdrop-blur-sm">
           {badge}
