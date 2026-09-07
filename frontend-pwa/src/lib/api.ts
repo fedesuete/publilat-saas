@@ -32,7 +32,15 @@ export async function recoverSession(): Promise<boolean> {
     const { data } = await api.get<{ token: string; accountSlug: string | null }>("/api/chat/session");
     if (!data?.token) return false;
     setToken(data.token);
-    if (data.accountSlug) {
+    // ¿Estamos parados en una página de ENTRADA de otra marca (/r/x, /c/x, /i/x)? Esas páginas
+    // manejan su propia marca y pueden crear un jugador NUEVO para ESA skin. Si la recuperación
+    // (async, corre en paralelo al boot) pisa acá el slug/branding con los de la sesión VIEJA,
+    // gana la carrera y el chat queda pintado con la marca equivocada (visto 2026-09-07: registró
+    // en demo-bet30 y el chat salió con el diseño de demo-ganamos). En entrada ajena: solo token.
+    const entryMatch = location.pathname.match(/^\/(r|c|i)\/([^/]+)/);
+    const entrySlug = entryMatch ? decodeURIComponent(entryMatch[2]) : null;
+    const foreignEntry = !!entrySlug && !!data.accountSlug && entrySlug !== data.accountSlug;
+    if (data.accountSlug && !foreignEntry) {
       localStorage.setItem("publilat_session_slug", data.accountSlug);
       // App instalada (storage AISLADO / vacío): si no hay branding guardado para esta cuenta, lo
       // traemos y aplicamos por el slug de sesión. Sin esto la app instalada arranca con el estilo

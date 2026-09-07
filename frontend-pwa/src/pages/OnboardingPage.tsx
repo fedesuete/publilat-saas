@@ -145,6 +145,10 @@ export default function OnboardingPage() {
       ]);
       setToken(data.token);
       if (slug) localStorage.setItem(SESSION_SLUG_KEY, slug); // marca la cuenta de esta sesión
+      // Re-afirmar LA MARCA DE ESTA ENTRADA antes de ir al chat: la recuperación de sesión por
+      // cookie corre en paralelo y podía pisar el branding guardado con el de una skin anterior
+      // (el chat quedaba pintado con la marca equivocada). Acá gana SIEMPRE la marca del link.
+      if (branding) { applyBranding(branding); saveBranding(branding.accountSlug, branding); }
       // Pixel del navegador (además de la CAPI del server), deduplicado por eventId. Best-effort.
       if (data.pixel) fireMetaPixel(data.pixel, "CompleteRegistration", { eventId: data.eventId, externalId: data.username });
       // Cuenta MANUAL (chatManualAccount): NO mostramos usuario/clave; entramos derecho al chat, donde el

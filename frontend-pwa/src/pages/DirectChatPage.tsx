@@ -80,6 +80,9 @@ export default function DirectChatPage() {
       const { data } = await api.post("/api/chat/direct", { accountSlug: accSlug, ...(nickname ? { nickname } : {}), ...ids });
       setToken(data.token);
       localStorage.setItem(SESSION_SLUG_KEY, accSlug);
+      // Re-afirmar la marca de ESTA entrada (la recuperación de sesión en paralelo podía pisarla
+      // con la de una skin anterior y el chat quedaba con el diseño equivocado).
+      if (brand) { applyBranding(brand); saveBranding(accSlug, brand); }
       // Pixel del navegador (además de la CAPI del server), deduplicado por eventId. Best-effort.
       // (El PageView ya se disparó al abrir el gate — acá solo el registro.)
       if (data.pixel) fireMetaPixel(data.pixel, "CompleteRegistration", { eventId: data.eventId, externalId: data.username });
