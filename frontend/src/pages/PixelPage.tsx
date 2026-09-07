@@ -35,6 +35,22 @@ export default function PixelPage() {
   const [testCode, setTestCode] = useState("");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [currency, setCurrency] = useState("ARS");
+  const [currencySaved, setCurrencySaved] = useState(false);
+
+  // Moneda de las ventas: la que el operador usa al cargar montos ("Compró"). Meta convierte solo
+  // a la moneda de la cuenta publicitaria — acá solo declaramos la moneda REAL del monto.
+  const saveCurrency = async (c: string) => {
+    setCurrency(c);
+    setCurrencySaved(false);
+    try {
+      await api.put("/api/pixels/currency", { currency: c });
+      setCurrencySaved(true);
+      setTimeout(() => setCurrencySaved(false), 2000);
+    } catch (err) {
+      setError(apiError(err));
+    }
+  };
 
   const editing = form.id !== null;
 
@@ -43,10 +59,11 @@ export default function PixelPage() {
     setError(null);
     try {
       const [{ data }, healthRes] = await Promise.all([
-        api.get<{ pixels: Pixel[] }>("/api/pixels"),
+        api.get<{ pixels: Pixel[]; purchaseCurrency?: string }>("/api/pixels"),
         api.get<Health>("/api/pixels/health").catch(() => null),
       ]);
       setPixels(data.pixels);
+      if (data.purchaseCurrency) setCurrency(data.purchaseCurrency);
       if (healthRes) setHealth(healthRes.data);
     } catch (err) {
       setError(apiError(err));
@@ -143,6 +160,30 @@ export default function PixelPage() {
       </p>
 
       {health && <HealthBanner health={health} />}
+
+      <div className="mb-4">
+        <Card>
+          <div className="mb-1 text-sm font-semibold text-slate-200">💱 Moneda de tus ventas</div>
+          <p className="mb-3 text-xs text-slate-500">
+            La moneda en la que cargás los montos al marcar <b className="text-slate-300">Compró</b>. No hace falta
+            cambiar tu cuenta publicitaria: Meta convierte solo — lo importante es que el monto viaje con su moneda
+            real para que el ROAS te dé bien.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {["ARS", "PYG", "USD", "BRL", "CLP", "MXN", "COP", "PEN"].map((c) => (
+              <button key={c} onClick={() => void saveCurrency(c)}
+                className={`rounded-full border px-3.5 py-1.5 text-sm font-bold transition ${
+                  currency === c
+                    ? "border-emerald-400 bg-emerald-500/15 text-emerald-300"
+                    : "border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200"
+                }`}>
+                {c}
+              </button>
+            ))}
+            {currencySaved && <span className="text-xs text-emerald-300">✓ Guardado</span>}
+          </div>
+        </Card>
+      </div>
 
       {pixels.length > 0 && (
         <div className="mb-4">

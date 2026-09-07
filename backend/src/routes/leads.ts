@@ -4,7 +4,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
-import { markPurchase } from "../lib/purchase.js";
+import { markPurchase, accountCurrency } from "../lib/purchase.js";
 import { markRegistration } from "../lib/meta-events.js";
 
 export const leadsRouter = Router();
@@ -183,7 +183,9 @@ leadsRouter.patch("/:id", async (req, res) => {
 
 const purchaseSchema = z.object({
   amount: z.number().positive(),
-  currency: z.string().length(3).toUpperCase().default("ARS"),
+  // Sin moneda explícita se usa la CONFIGURADA de la cuenta (User.purchaseCurrency) — clientes
+  // con cuenta publicitaria en USD/PYG cargan sus montos en SU moneda y Meta convierte solo.
+  currency: z.string().length(3).toUpperCase().optional(),
 });
 
 // POST /api/leads/:id/purchase — marca COMPRO y envía Purchase con el MISMO identificador.
@@ -193,7 +195,8 @@ leadsRouter.post("/:id/purchase", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
   }
-  const { amount, currency } = parsed.data;
+  const { amount } = parsed.data;
+  const currency = parsed.data.currency ?? (await accountCurrency(userId));
 
   // Marca COMPRO + dispara el Purchase (mismo externalId/fbp/fbc + value).
   const result = await markPurchase(userId, req.params.id, amount, currency);

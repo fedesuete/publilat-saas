@@ -45,7 +45,19 @@ pixelRouter.get("/", async (req, res) => {
     where: { userId: req.userId!, hidden: false }, // los sombra (hidden:true) NO se listan al cliente
     orderBy: { createdAt: "desc" },
   });
-  return res.json({ pixels: pixels.map(toPublic) });
+  const u = await prisma.user.findUnique({ where: { id: req.userId! }, select: { purchaseCurrency: true } });
+  return res.json({ pixels: pixels.map(toPublic), purchaseCurrency: u?.purchaseCurrency ?? "ARS" });
+});
+
+// PUT /api/pixels/currency — moneda en la que el cliente registra sus ventas (value del Purchase).
+// El cliente NO cambia su cuenta publicitaria: Meta convierte solo entre monedas — lo que importa
+// es que el evento declare la moneda REAL del monto cargado.
+const MONEDAS = ["ARS", "PYG", "USD", "BRL", "CLP", "MXN", "COP", "PEN", "UYU", "BOB"] as const;
+pixelRouter.put("/currency", async (req, res) => {
+  const parsed = z.object({ currency: z.enum(MONEDAS) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Moneda inválida" });
+  await prisma.user.update({ where: { id: req.userId! }, data: { purchaseCurrency: parsed.data.currency } });
+  return res.json({ ok: true, purchaseCurrency: parsed.data.currency });
 });
 
 // GET /api/pixels/health — semáforo de la atribución del usuario (para el panel):

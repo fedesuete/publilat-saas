@@ -7,7 +7,7 @@ import { prisma } from "./prisma.js";
 import { emitToUser } from "./io.js";
 import { analyzeReceipt, aiEnabled } from "./ai-receipt.js";
 import { getMediaBase64 } from "./evolution.js";
-import { markPurchase } from "./purchase.js";
+import { markPurchase, accountCurrency } from "./purchase.js";
 
 // Moneda de las ventas. TODAS las líneas son ARS (confirmado por el dueño 2026-07-29): forzamos ARS
 // e IGNORAMOS la moneda que adivina la IA del comprobante (leía "PYG" en recibos que eran ARS y
@@ -137,7 +137,8 @@ export async function detectPayment(args: DetectPaymentArgs): Promise<void> {
       // eventId ÚNICO por comprobante (waMessageId) → Meta cuenta CADA recarga como un Purchase distinto
       // en vez de deduplicarlas contra la primera (BUG 2). El "Compró" manual mantiene el eventId estable.
       const detKey = String(item?.key?.id ?? Date.now());
-      await markPurchase(userId, contact.id, amount, DEFAULT_CURRENCY, { eventId: rechargeEventId(contact.externalId, detKey), payerName: payerName ?? undefined });
+      // Moneda: la del COMPROBANTE si la IA la leyó; si no, la configurada de la cuenta.
+      await markPurchase(userId, contact.id, amount, currency ?? (await accountCurrency(userId)), { eventId: rechargeEventId(contact.externalId, detKey), payerName: payerName ?? undefined });
       return;
     }
 

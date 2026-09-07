@@ -55,6 +55,10 @@ model User {
   maxLandings   Int       @default(50)       // landings permitidas
   maxAudioClips Int       @default(2)        // audios en la biblioteca (el admin no tiene tope)
   tokenVersion  Int       @default(0)        // revocación de sesiones: al subir, invalida los JWT viejos
+  // Moneda en la que el cliente registra sus ventas (value del Purchase a Meta). El cliente NO
+  // necesita cambiar su cuenta publicitaria: Meta convierte solo — lo que importa es declarar
+  // la moneda REAL del monto (un "2000" en USD etiquetado ARS destroza el ROAS reportado).
+  purchaseCurrency String @default("ARS")
   // --- Landings aisladas en S3+CloudFront (anti-quemado, modelo ScaleOS) ---
   // Cada cliente tiene su PROPIA distribución CloudFront (dominio descartable): si Meta
   // quema una landing, cae solo ese dominio, no publi.lat ni los otros clientes.

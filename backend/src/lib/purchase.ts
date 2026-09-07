@@ -31,6 +31,13 @@ export function choosePayerName(ocrName: string | null, contactName: string | nu
   return contactName?.trim() || ocr || undefined;
 }
 
+// Moneda configurada de la cuenta (User.purchaseCurrency). El Purchase debe declarar la moneda
+// REAL del monto; Meta convierte solo a la moneda de la cuenta publicitaria del cliente.
+export async function accountCurrency(userId: string): Promise<string> {
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { purchaseCurrency: true } });
+  return u?.purchaseCurrency || "ARS";
+}
+
 export async function markPurchase(
   userId: string,
   contactId: string,
