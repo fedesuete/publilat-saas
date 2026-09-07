@@ -385,7 +385,9 @@ export default function ChatPage() {
         ...(bare
           ? { backgroundColor: "var(--c-bg)", backgroundImage: "url(/chat-bg-redblack.jpg)", backgroundSize: "cover", backgroundPosition: "center" }
           : { backgroundColor: "var(--c-bg)" }),
-        ...(floatBg ? { height: "76%", boxShadow: "0 -18px 60px -18px rgba(0,0,0,.85)" } : {}),
+        // Altura del widget: ~58% de la pantalla (como el chat integrado real: se ve la plataforma
+        // y el personaje arriba). Piso de 430px para que en teléfonos chicos no quede aplastado.
+        ...(floatBg ? { height: "58%", minHeight: "430px", boxShadow: "0 -18px 60px -18px rgba(0,0,0,.85)" } : {}),
       }}>
       {bare ? (
         /* Header estilo WhatsApp: flecha ← + avatar + nombre + "en línea" + videollamada + llamada. */
