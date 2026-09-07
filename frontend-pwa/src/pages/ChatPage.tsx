@@ -366,11 +366,22 @@ export default function ChatPage() {
   // que la IA lee igual). El cajero opera hablando, como en un WhatsApp real.
   const bare = (branding?.chatTheme || "whatsapp") === "redblack";
 
+  // Fondo "plataforma" (chatBgUrl): el chat se ve como un PANEL FLOTANTE estilo widget sobre una
+  // captura del casino del cliente (como el chat integrado de las plataformas). Solo visual: adentro
+  // es el mismo chat de siempre.
+  const floatBg = branding?.chatBgUrl || null;
+
   return (
-    <div className="chat-root flex h-full flex-col" data-theme={branding?.chatTheme || "whatsapp"}
-      style={bare
-        ? { backgroundColor: "var(--c-bg)", backgroundImage: "url(/chat-bg-redblack.jpg)", backgroundSize: "cover", backgroundPosition: "center" }
-        : { backgroundColor: "var(--c-bg)" }}>
+    <div className={floatBg ? "flex h-full flex-col justify-end" : "contents"}
+      style={floatBg ? { backgroundImage: `url(${floatBg})`, backgroundSize: "cover", backgroundPosition: "top center", backgroundColor: "#0d0618" } : undefined}>
+    <div className={`chat-root flex flex-col ${floatBg ? "mx-2 mb-2 overflow-hidden rounded-3xl shadow-2xl" : "h-full"}`}
+      data-theme={branding?.chatTheme || "whatsapp"}
+      style={{
+        ...(bare
+          ? { backgroundColor: "var(--c-bg)", backgroundImage: "url(/chat-bg-redblack.jpg)", backgroundSize: "cover", backgroundPosition: "center" }
+          : { backgroundColor: "var(--c-bg)" }),
+        ...(floatBg ? { height: "76%", boxShadow: "0 -18px 60px -18px rgba(0,0,0,.85)" } : {}),
+      }}>
       {bare ? (
         /* Header estilo WhatsApp: flecha ← + avatar + nombre + "en línea" + videollamada + llamada. */
         <header className="flex items-center gap-2.5 px-2.5 py-2 shadow-sm" style={{ background: "var(--c-header)", color: "var(--c-header-text)" }}>
@@ -699,6 +710,7 @@ export default function ChatPage() {
       {/* Guía de instalación en iPhone (al tocar "INSTALAR APP" cuando no hay instalador nativo). */}
       {guide === "ios" && <InstallGuide onClose={() => setGuide(null)} />}
       {guide === "android" && <AndroidInstallGuide onClose={() => setGuide(null)} />}
+    </div>
     </div>
   );
 }

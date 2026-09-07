@@ -68,6 +68,7 @@ export interface Branding {
   chatInstallPromptEnabled?: boolean; // muestra el cartel "Instalá la app" dentro del chat
   chatNotifTitle?: string | null; // título del modal de notificaciones (branded; default neutro)
   chatNotifText?: string | null; // bajada del modal de notificaciones (branded; default neutro)
+  chatBgUrl?: string | null; // fondo "plataforma": el chat se muestra como panel flotante encima
 }
 
 export function saveBranding(accountSlug: string, b: Branding) {

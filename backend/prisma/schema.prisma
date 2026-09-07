@@ -90,6 +90,7 @@ model User {
   chatInstallPromptEnabled Boolean @default(false) // muestra el cartel "Instalá la app" dentro del chat
   chatNotifTitle  String?   // título del modal "Activá las notificaciones" (branded por cuenta; default neutro)
   chatNotifText   String?   // bajada del modal de notificaciones (branded por cuenta; default neutro)
+  chatBgUrl       String?   // fondo "plataforma" detrás del chat flotante (estilo widget sobre el casino)
   // Día de Chat App INDEPENDIENTE de WhatsApp: el cliente que no quiere/puede usar WhatsApp gasta
   // 1 día del saldo (mismo pool) y opera por el canal propio. Se auto-renueva 24h mientras esté
   // prendido y haya saldo (igual que las líneas). El Chat App se prende si hay línea WA con día
@@ -752,6 +753,7 @@ model ChatSkin {
   chatPlatformUrl   String?  // link de juego, si difiere
   chatNotifTitle    String?
   chatNotifText     String?
+  chatBgUrl         String?  // fondo "plataforma" detrás del chat flotante (demo/estilo widget)
   createdAt         DateTime @default(now())
   user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   players           ChatPlayer[]

@@ -90,6 +90,7 @@ type EntrySkin = {
   primaryColor: string | null; accentColor: string | null; chatTheme: string;
   welcomeText: string | null; welcomeMsgText: string | null; chatDirectWelcome: string | null;
   chatPlatformUrl: string | null; chatNotifTitle: string | null; chatNotifText: string | null;
+  chatBgUrl: string | null;
 };
 async function resolveEntrySlug(slug: string): Promise<{ accountId: string; skin: EntrySkin | null } | null> {
   const acc = await prisma.user.findUnique({ where: { slug }, select: { id: true } });
@@ -396,6 +397,7 @@ const skinSchema = z.object({
   welcomeMsgText: z.string().max(1000).nullish(),
   chatDirectWelcome: z.string().max(1000).nullish(),
   chatPlatformUrl: z.string().max(300).nullish(),
+  chatBgUrl: z.string().url().max(600).nullish(), // fondo "plataforma" del chat flotante
   chatNotifTitle: z.string().max(60).nullish(),
   chatNotifText: z.string().max(200).nullish(),
 });
@@ -771,7 +773,7 @@ chatRouter.get("/broadcasts", async (req, res) => {
 
 // Solo estos campos del User son "branding" del Chat App. El PATCH NUNCA toca otra cosa
 // (nada de plan, tokenVersion, líneas de WhatsApp, etc.).
-const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "chatTheme", "welcomeText", "welcomeMsgText", "welcomeMsgImage", "chatWaLink", "chatPlatformUrl", "chatPayCbu", "chatPayAlias", "chatPayTitular", "chatInstallMsg1", "chatInstallMsg2", "chatInstallMsg3", "chatTutIosImg", "chatTutIosImg2", "chatTutIosImg3", "chatTutIosImg4", "chatTutAndroidImg", "chatDirectWelcome", "chatInstallPromptEnabled", "chatNotifTitle", "chatNotifText"] as const;
+const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "chatTheme", "welcomeText", "welcomeMsgText", "welcomeMsgImage", "chatWaLink", "chatPlatformUrl", "chatPayCbu", "chatPayAlias", "chatPayTitular", "chatInstallMsg1", "chatInstallMsg2", "chatInstallMsg3", "chatTutIosImg", "chatTutIosImg2", "chatTutIosImg3", "chatTutIosImg4", "chatTutAndroidImg", "chatDirectWelcome", "chatInstallPromptEnabled", "chatNotifTitle", "chatNotifText", "chatBgUrl"] as const;
 // Select del branding del OPERADOR (incluye los campos de instalación; NO se exponen al jugador).
 const BRANDING_SELECT = { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true, chatPayCbu: true, chatPayAlias: true, chatPayTitular: true, chatInstallMsg1: true, chatInstallMsg2: true, chatInstallMsg3: true, chatTutIosImg: true, chatTutIosImg2: true, chatTutIosImg3: true, chatTutIosImg4: true, chatTutAndroidImg: true, chatDirectWelcome: true, chatInstallPromptEnabled: true, chatNotifTitle: true, chatNotifText: true, chatManualAccount: true } as const;
 
@@ -1226,7 +1228,7 @@ chatPublicRouter.get("/branding/:code", async (req, res) => {
   if (!invite) return res.status(404).json({ error: "Link inválido" });
   const acc = await prisma.user.findUnique({
     where: { id: invite.userId },
-    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, chatWaLink: true, chatPlatformUrl: true, chatNotifTitle: true, chatNotifText: true },
+    select: { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, chatWaLink: true, chatPlatformUrl: true, chatNotifTitle: true, chatNotifText: true, chatBgUrl: true },
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   return res.json({
@@ -1241,6 +1243,7 @@ chatPublicRouter.get("/branding/:code", async (req, res) => {
       welcomeText: acc.welcomeText,
       chatWaLink: acc.chatWaLink, chatPlatformUrl: acc.chatPlatformUrl,
       chatNotifTitle: acc.chatNotifTitle, chatNotifText: acc.chatNotifText,
+      chatBgUrl: acc.chatBgUrl,
     },
   });
 });
@@ -1454,7 +1457,7 @@ chatPublicRouter.get("/public/:slug", async (req, res) => {
   if (!entry) return res.status(404).json({ error: "Cuenta no encontrada" });
   const acc = await prisma.user.findUnique({
     where: { id: entry.accountId },
-    select: { id: true, slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, chatWaLink: true, chatPlatformUrl: true, chatInstallPromptEnabled: true, chatNotifTitle: true, chatNotifText: true },
+    select: { id: true, slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, chatWaLink: true, chatPlatformUrl: true, chatInstallPromptEnabled: true, chatNotifTitle: true, chatNotifText: true, chatBgUrl: true },
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   const s = entry.skin;
@@ -1471,6 +1474,7 @@ chatPublicRouter.get("/public/:slug", async (req, res) => {
       welcomeText: s?.welcomeText ?? acc.welcomeText, chatWaLink: acc.chatWaLink, chatPlatformUrl: s?.chatPlatformUrl ?? acc.chatPlatformUrl,
       chatInstallPromptEnabled: acc.chatInstallPromptEnabled,
       chatNotifTitle: s?.chatNotifTitle ?? acc.chatNotifTitle, chatNotifText: s?.chatNotifText ?? acc.chatNotifText,
+      chatBgUrl: s?.chatBgUrl ?? acc.chatBgUrl,
     },
   });
 });
