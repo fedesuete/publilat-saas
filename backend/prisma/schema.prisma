@@ -379,8 +379,12 @@ model Pixel {
   capiToken   String
   eventType   String   // "Lead" | "Purchase"
   siteUrl     String?
-  hidden      Boolean  @default(false) // sombra server-side: recibe copia de los eventos por CAPI pero
+  hidden      Boolean  @default(false) // sombra INTERNA (nuestra): recibe copia de los eventos por CAPI pero
                                        // NO se lista/edita/borra desde el dashboard "Mi Pixel". Se carga a mano (SQL).
+  mirror      Boolean  @default(false) // ESPEJO DEL CLIENTE: pixel de respaldo que el cliente crea desde el
+                                       // panel. Recibe copia de todos los eventos (CAPI + navegador en la
+                                       // landing) para entrenarse en paralelo; si Meta bloquea el principal,
+                                       // el espejo ya está caliente. Nunca se elige como primario.
   createdAt   DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id])
 }

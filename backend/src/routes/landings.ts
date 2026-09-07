@@ -3,8 +3,8 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
-import { resolveUserPixel } from "../lib/pixel.js";
-import { renderTrackedLanding, injectGoTracking, injectCurrentPixel, injectInAppEscape, type LandingConfig } from "../lib/landing-template.js";
+import { resolveUserPixel, resolveMirrorPixelIds } from "../lib/pixel.js";
+import { renderTrackedLanding, injectGoTracking, injectCurrentPixel, injectMirrorPixels, injectInAppEscape, type LandingConfig } from "../lib/landing-template.js";
 import { getTemplate, renderTemplate } from "../lib/landing-templates/index.js";
 import { publishToS3, uploadHtml, s3Enabled } from "../lib/s3.js";
 import { ensureClientCdn, reprovisionClientDomain, invalidate } from "../lib/cloudfront.js";
@@ -204,7 +204,11 @@ landingsRouter.post("/:id/publish", async (req, res) => {
   // la versión publicada en CloudFront (estática) quedaba pegada al pixel viejo/de ejemplo del HTML guardado.
   // Ahora cada publicación toma el pixel actual (igual que el serve local /p/:slug). Best-effort.
   const cur = await resolveUserPixel(req.userId!, "Lead").catch(() => undefined);
-  const outHtml = cur?.pixelId ? injectCurrentPixel(goHtml, cur.pixelId) : goHtml;
+  const withPixel = cur?.pixelId ? injectCurrentPixel(goHtml, cur.pixelId) : goHtml;
+  // Pixeles ESPEJO del cliente: aprenden en paralelo desde el navegador (y por CAPI en el fan-out),
+  // para tener un pixel de respaldo ya entrenado si Meta le bloquea el principal.
+  const mirrors = await resolveMirrorPixelIds(req.userId!).catch(() => [] as string[]);
+  const outHtml = injectMirrorPixels(withPixel, mirrors);
   const cdn = await ensureClientCdn(req.userId!); // null si AWS no está configurado
   if (cdn) {
     const ok = await uploadHtml(`${cdn.s3Prefix}/${landing.slug}/index.html`, outHtml);

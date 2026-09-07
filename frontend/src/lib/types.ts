@@ -75,4 +75,5 @@ export interface Pixel {
   siteUrl: string | null;
   tokenMask: string;
   createdAt: string;
+  mirror?: boolean; // espejo: pixel de respaldo, recibe copia de todos los eventos
 }

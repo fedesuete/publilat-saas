@@ -83,6 +83,22 @@ export function injectCurrentPixel(html: string, pixelId: string): string {
   return out;
 }
 
+// Suma los pixeles ESPEJO del cliente (respaldo entrenado en paralelo) al HTML ya publicado.
+// Va DESPUÉS del snippet del pixel principal: `trackSingle` manda el PageView SOLO al espejo, así
+// el principal no cuenta dos veces. Si el espejo ya está en el HTML, no se duplica.
+export function injectMirrorPixels(html: string, mirrorIds: string[]): string {
+  const ids = [...new Set(mirrorIds.map((m) => m.replace(/\D/g, "")).filter(Boolean))]
+    .filter((id) => !html.includes(`'${id}'`) && !html.includes(`"${id}"`));
+  if (!html || ids.length === 0) return html;
+  const inits = ids.map((id) => `fbq('init','${id}');fbq('trackSingle','${id}','PageView');`).join("");
+  const noscript = ids
+    .map((id) => `<noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=${id}&ev=PageView&noscript=1"/></noscript>`)
+    .join("");
+  const snippet = `\n<!-- Meta Pixel ESPEJO (respaldo del cliente) -->\n<script>try{if(window.fbq){${inits}}}catch(e){}</script>\n${noscript}\n<!-- End Meta Pixel espejo -->\n`;
+  const idx = html.toLowerCase().indexOf("</head>");
+  return idx >= 0 ? html.slice(0, idx) + snippet + html.slice(idx) : html + snippet;
+}
+
 // Escape de navegador IN-APP (webview de Facebook/Instagram/TikTok): adentro de esas apps el link a
 // WhatsApp (wa.me) suele NO abrir y las cookies _fbp/_fbc no persisten → se pierde casi todo el
 // tráfico CTWA (victor: 2681 clics → 45 chats). Muestra una barra "abrí en tu navegador"; en Android

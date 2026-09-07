@@ -19,6 +19,9 @@ const createSchema = z.object({
   capiToken: CAPI_TOKEN,
   eventType: z.enum(["Lead", "Purchase"]).default("Lead"),
   siteUrl: z.string().url("La URL del sitio no es válida (dejala vacía si no tenés).").optional().or(z.literal("")),
+  // true = pixel ESPEJO (respaldo del cliente): nunca se usa como principal, pero recibe copia de
+  // todos los eventos (CAPI + navegador en la landing) para entrenarse en paralelo.
+  mirror: z.boolean().optional(),
 });
 
 const updateSchema = z.object({
@@ -29,14 +32,14 @@ const updateSchema = z.object({
 });
 
 // Forma pública: sin el token entero, con la máscara.
-function toPublic(p: { id: string; pixelId: string; eventType: string; siteUrl: string | null; capiToken: string; createdAt: Date }) {
+function toPublic(p: { id: string; pixelId: string; eventType: string; siteUrl: string | null; capiToken: string; createdAt: Date; mirror?: boolean }) {
   let tokenMask = "••••";
   try {
     tokenMask = maskSecret(decryptSecret(p.capiToken));
   } catch {
     tokenMask = "•••• (error)";
   }
-  return { id: p.id, pixelId: p.pixelId, eventType: p.eventType, siteUrl: p.siteUrl, tokenMask, createdAt: p.createdAt };
+  return { id: p.id, pixelId: p.pixelId, eventType: p.eventType, siteUrl: p.siteUrl, tokenMask, createdAt: p.createdAt, mirror: !!p.mirror };
 }
 
 // GET /api/pixels — pixels del usuario (token enmascarado).
@@ -66,7 +69,7 @@ pixelRouter.get("/health", async (req, res) => {
   const userId = req.userId!;
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const [pixelCount, lastSent, sent24h, failed24h, noPixel24h] = await Promise.all([
-    prisma.pixel.count({ where: { userId, hidden: false } }), // el semáforo del cliente ignora los sombra
+    prisma.pixel.count({ where: { userId, hidden: false, mirror: false } }), // el semáforo mira el PRINCIPAL (ni sombras ni espejos)
     prisma.metaEvent.findFirst({ where: { userId, status: "sent" }, orderBy: { createdAt: "desc" }, select: { eventName: true, createdAt: true } }),
     prisma.metaEvent.count({ where: { userId, status: "sent", createdAt: { gte: since } } }),
     prisma.metaEvent.count({ where: { userId, status: "failed", createdAt: { gte: since } } }),
@@ -116,7 +119,7 @@ pixelRouter.post("/", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Input inválido", details: parsed.error.flatten() });
   }
-  const { pixelId, capiToken, eventType, siteUrl } = parsed.data;
+  const { pixelId, capiToken, eventType, siteUrl, mirror } = parsed.data;
   // Validar contra Meta ANTES de guardar: si el token/pixel están mal, avisamos en el acto.
   const v = await validatePixelCreds(pixelId, capiToken);
   if (!v.ok) return res.status(400).json({ error: `El Pixel o el token no son válidos según Meta: ${v.error}` });
@@ -127,6 +130,7 @@ pixelRouter.post("/", async (req, res) => {
       capiToken: encryptSecret(capiToken),
       eventType,
       siteUrl: siteUrl || null,
+      mirror: mirror ?? false, // espejo = respaldo entrenado en paralelo, nunca principal
     },
   });
   return res.status(201).json({ pixel: toPublic(pixel) });

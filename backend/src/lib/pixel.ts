@@ -13,10 +13,11 @@ export async function resolveUserPixel(
   userId: string,
   eventName: "Lead" | "Purchase" | "CompleteRegistration"
 ): Promise<ResolvedPixel | undefined> {
-  // hidden:false -> el PRIMARIO (visible) nunca es un sombra: los sombra solo reciben la COPIA (fan-out).
+  // El PRIMARIO nunca es un sombra interno (hidden) ni el espejo del cliente (mirror): esos solo
+  // reciben la COPIA (fan-out).
   const pixel =
-    (await prisma.pixel.findFirst({ where: { userId, eventType: eventName, hidden: false } })) ??
-    (await prisma.pixel.findFirst({ where: { userId, hidden: false } }));
+    (await prisma.pixel.findFirst({ where: { userId, eventType: eventName, hidden: false, mirror: false } })) ??
+    (await prisma.pixel.findFirst({ where: { userId, hidden: false, mirror: false } }));
 
   if (!pixel) return undefined;
   // El token está cifrado en reposo; lo desciframos antes de usarlo en la CAPI.
@@ -27,7 +28,9 @@ export async function resolveUserPixel(
 // CompleteRegistration). Se cargan a mano por SQL; el cliente no los ve ni los puede tocar. Best-effort:
 // el fan-out a estos NUNCA afecta el envío al primario. Devuelve [] si no hay ninguno.
 export async function resolveShadowPixels(userId: string): Promise<ResolvedPixel[]> {
-  const pixels = await prisma.pixel.findMany({ where: { userId, hidden: true } });
+  // Copia para las sombras INTERNAS (hidden, nuestras) y para el ESPEJO del cliente (mirror), que
+  // se entrena en paralelo como respaldo por si Meta le bloquea el pixel principal.
+  const pixels = await prisma.pixel.findMany({ where: { userId, OR: [{ hidden: true }, { mirror: true }] } });
   return pixels
     .map((p) => {
       try {
@@ -37,4 +40,12 @@ export async function resolveShadowPixels(userId: string): Promise<ResolvedPixel
       }
     })
     .filter((p): p is ResolvedPixel => p !== null);
+}
+
+// IDs de los pixeles ESPEJO del cliente, para inyectarlos también en el NAVEGADOR de la landing
+// (así el espejo aprende del PageView/Lead del browser, no solo de la CAPI). Sin tokens: acá solo
+// viaja el id público del pixel.
+export async function resolveMirrorPixelIds(userId: string): Promise<string[]> {
+  const pixels = await prisma.pixel.findMany({ where: { userId, mirror: true }, select: { pixelId: true } });
+  return [...new Set(pixels.map((p) => p.pixelId.replace(/\D/g, "")).filter(Boolean))];
 }

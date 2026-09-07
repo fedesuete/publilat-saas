@@ -12,9 +12,10 @@ interface FormState {
   capiToken: string;
   eventType: EventType;
   siteUrl: string;
+  mirror: boolean; // true = pixel ESPEJO (respaldo entrenado en paralelo)
 }
 
-const EMPTY: FormState = { id: null, pixelId: "", capiToken: "", eventType: "Lead", siteUrl: "" };
+const EMPTY: FormState = { id: null, pixelId: "", capiToken: "", eventType: "Lead", siteUrl: "", mirror: false };
 
 interface Health {
   hasPixel: boolean;
@@ -77,7 +78,7 @@ export default function PixelPage() {
   }, []);
 
   const startEdit = (p: Pixel) => {
-    setForm({ id: p.id, pixelId: p.pixelId, capiToken: "", eventType: p.eventType, siteUrl: p.siteUrl ?? "" });
+    setForm({ id: p.id, pixelId: p.pixelId, capiToken: "", eventType: p.eventType, siteUrl: p.siteUrl ?? "", mirror: !!p.mirror });
     setError(null);
   };
 
@@ -102,6 +103,7 @@ export default function PixelPage() {
           capiToken: form.capiToken,
           eventType: form.eventType,
           siteUrl: form.siteUrl,
+          mirror: form.mirror,
         });
       }
       reset();
@@ -263,9 +265,27 @@ export default function PixelPage() {
                 placeholder="https://tudominio.com"
               />
             </div>
+            {!editing && (
+              <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-slate-700 bg-slate-800/50 p-3">
+                <input
+                  type="checkbox"
+                  checked={form.mirror}
+                  onChange={(e) => setForm({ ...form, mirror: e.target.checked })}
+                  className="mt-0.5 h-4 w-4 accent-emerald-500"
+                />
+                <span className="text-xs text-slate-300">
+                  <b className="text-slate-100">🪞 Pixel espejo (respaldo)</b>
+                  <span className="mt-0.5 block text-slate-400">
+                    Recibe una copia de TODOS los eventos (landing + servidor) para entrenarse en paralelo.
+                    Si Meta te bloquea el pixel principal, este ya está caliente y solo tenés que ponerlo
+                    como principal. No cambia lo que reporta el pixel actual.
+                  </span>
+                </span>
+              </label>
+            )}
             <div className="flex gap-2">
               <Button type="submit" disabled={saving}>
-                {saving ? "Guardando…" : editing ? "Guardar cambios" : "Agregar pixel"}
+                {saving ? "Guardando…" : editing ? "Guardar cambios" : form.mirror ? "Agregar espejo" : "Agregar pixel"}
               </Button>
               {editing && (
                 <Button type="button" variant="ghost" onClick={reset}>
@@ -303,7 +323,14 @@ export default function PixelPage() {
                 <Card key={p.id}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="font-mono text-sm text-slate-100">{p.pixelId}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm text-slate-100">{p.pixelId}</span>
+                        {p.mirror && (
+                          <span className="rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[10px] font-bold text-sky-300">
+                            🪞 ESPEJO
+                          </span>
+                        )}
+                      </div>
                       <div className="mt-0.5 text-xs text-slate-400">
                         Evento: <span className="text-slate-200">{p.eventType}</span> · Token:{" "}
                         <span className="font-mono">{p.tokenMask}</span>

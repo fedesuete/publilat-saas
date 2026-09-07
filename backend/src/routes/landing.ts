@@ -3,8 +3,8 @@
 //   GET /p/:slug  -> landing GUARDADA del editor (Fase 5), por slug de Landing.
 import { Router } from "express";
 import { prisma } from "../lib/prisma.js";
-import { resolveUserPixel } from "../lib/pixel.js";
-import { renderTrackedLanding, injectGoTracking, injectCurrentPixel, injectInAppEscape } from "../lib/landing-template.js";
+import { resolveUserPixel, resolveMirrorPixelIds } from "../lib/pixel.js";
+import { renderTrackedLanding, injectGoTracking, injectCurrentPixel, injectMirrorPixels, injectInAppEscape } from "../lib/landing-template.js";
 
 export const landingRouter = Router();
 
@@ -47,6 +47,7 @@ landingRouter.get("/p/:slug", async (req, res) => {
   try {
     const creds = await resolveUserPixel(landing.userId, "Lead");
     if (creds?.pixelId) html = injectCurrentPixel(html, creds.pixelId);
+    html = injectMirrorPixels(html, await resolveMirrorPixelIds(landing.userId)); // espejo(s) del cliente
   } catch {
     /* sin pixel vigente: se sirve el HTML tal cual */
   }
