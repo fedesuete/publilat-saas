@@ -40,7 +40,16 @@ export async function recoverSession(): Promise<boolean> {
     const entryMatch = location.pathname.match(/^\/(r|c|i)\/([^/]+)/);
     const entrySlug = entryMatch ? decodeURIComponent(entryMatch[2]) : null;
     const foreignEntry = !!entrySlug && !!data.accountSlug && entrySlug !== data.accountSlug;
-    if (data.accountSlug && !foreignEntry) {
+    // Entrada por el link de OTRA marca: la sesión anterior no vale acá. La cerramos (cookie
+    // httpOnly incluida) para que esta visita arranque LIMPIA con la marca del link — si no, el
+    // jugador/demo veía el chat de la marca anterior. Cada link se comporta como una app aparte.
+    if (foreignEntry) {
+      try { await api.post("/api/chat/logout"); } catch { /* seguimos igual */ }
+      clearToken();
+      try { localStorage.removeItem("publilat_session_slug"); } catch { /* noop */ }
+      return false;
+    }
+    if (data.accountSlug) {
       localStorage.setItem("publilat_session_slug", data.accountSlug);
       // App instalada (storage AISLADO / vacío): si no hay branding guardado para esta cuenta, lo
       // traemos y aplicamos por el slug de sesión. Sin esto la app instalada arranca con el estilo
