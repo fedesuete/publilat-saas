@@ -95,6 +95,8 @@ model User {
   chatNotifTitle  String?   // título del modal "Activá las notificaciones" (branded por cuenta; default neutro)
   chatNotifText   String?   // bajada del modal de notificaciones (branded por cuenta; default neutro)
   chatBgUrl       String?   // fondo "plataforma" detrás del chat flotante (estilo widget sobre el casino)
+  chatMinDeposit    Int?    // mínimos del cajero POR CUENTA (null = los del sistema: 2000 / 5000).
+  chatMinWithdrawal Int?    // cada operador tiene su propia política (ej. retiro mínimo 6000).
   // Día de Chat App INDEPENDIENTE de WhatsApp: el cliente que no quiere/puede usar WhatsApp gasta
   // 1 día del saldo (mismo pool) y opera por el canal propio. Se auto-renueva 24h mientras esté
   // prendido y haya saldo (igual que las líneas). El Chat App se prende si hay línea WA con día

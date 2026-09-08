@@ -773,7 +773,7 @@ chatRouter.get("/broadcasts", async (req, res) => {
 
 // Solo estos campos del User son "branding" del Chat App. El PATCH NUNCA toca otra cosa
 // (nada de plan, tokenVersion, líneas de WhatsApp, etc.).
-const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "chatTheme", "welcomeText", "welcomeMsgText", "welcomeMsgImage", "chatWaLink", "chatPlatformUrl", "chatPayCbu", "chatPayAlias", "chatPayTitular", "chatInstallMsg1", "chatInstallMsg2", "chatInstallMsg3", "chatTutIosImg", "chatTutIosImg2", "chatTutIosImg3", "chatTutIosImg4", "chatTutAndroidImg", "chatDirectWelcome", "chatInstallPromptEnabled", "chatNotifTitle", "chatNotifText", "chatBgUrl"] as const;
+const BRANDING_FIELDS = ["brandName", "logoUrl", "primaryColor", "accentColor", "chatTheme", "welcomeText", "welcomeMsgText", "welcomeMsgImage", "chatWaLink", "chatPlatformUrl", "chatPayCbu", "chatPayAlias", "chatPayTitular", "chatInstallMsg1", "chatInstallMsg2", "chatInstallMsg3", "chatTutIosImg", "chatTutIosImg2", "chatTutIosImg3", "chatTutIosImg4", "chatTutAndroidImg", "chatDirectWelcome", "chatInstallPromptEnabled", "chatNotifTitle", "chatNotifText", "chatBgUrl", "chatMinDeposit", "chatMinWithdrawal"] as const;
 // Select del branding del OPERADOR (incluye los campos de instalación; NO se exponen al jugador).
 const BRANDING_SELECT = { slug: true, brandName: true, logoUrl: true, primaryColor: true, accentColor: true, chatTheme: true, welcomeText: true, welcomeMsgText: true, welcomeMsgImage: true, chatWaLink: true, chatPlatformUrl: true, chatPayCbu: true, chatPayAlias: true, chatPayTitular: true, chatInstallMsg1: true, chatInstallMsg2: true, chatInstallMsg3: true, chatTutIosImg: true, chatTutIosImg2: true, chatTutIosImg3: true, chatTutIosImg4: true, chatTutAndroidImg: true, chatDirectWelcome: true, chatInstallPromptEnabled: true, chatNotifTitle: true, chatNotifText: true, chatManualAccount: true } as const;
 
@@ -814,6 +814,10 @@ const brandingSchema = z.object({
   chatInstallPromptEnabled: z.boolean().optional(),
   chatNotifTitle: z.string().max(60).nullish(), // título del modal de notificaciones (branded)
   chatNotifText: z.string().max(200).nullish(), // bajada del modal de notificaciones (branded)
+  chatBgUrl: z.string().url().max(600).nullish(), // fondo "plataforma" del chat flotante
+  // Mínimos del cajero por cuenta (null = los del sistema). Cada operador tiene su política.
+  chatMinDeposit: z.number().int().min(0).max(10_000_000).nullish(),
+  chatMinWithdrawal: z.number().int().min(0).max(10_000_000).nullish(),
 });
 
 // PATCH /api/chat/branding — actualiza SOLO los campos de branding del User del token.
@@ -1954,10 +1958,13 @@ chatPublicRouter.get("/me/wallet", requireChatClient, async (req, res) => {
   const [deposits, withdrawals, acc] = await Promise.all([
     prisma.chatDeposit.findMany({ where: { playerId: req.chatPlayerId! }, orderBy: { createdAt: "desc" }, take: 20, select: { id: true, amount: true, method: true, status: true, createdAt: true } }),
     prisma.chatWithdrawal.findMany({ where: { playerId: req.chatPlayerId! }, orderBy: { createdAt: "desc" }, take: 20, select: { id: true, amount: true, destino: true, status: true, createdAt: true } }),
-    prisma.user.findUnique({ where: { id: req.accountId! }, select: { botPaymentInfo: true, chatPayCbu: true, chatPayAlias: true, chatPayTitular: true } }),
+    prisma.user.findUnique({ where: { id: req.accountId! }, select: { botPaymentInfo: true, chatPayCbu: true, chatPayAlias: true, chatPayTitular: true, chatMinDeposit: true, chatMinWithdrawal: true } }),
   ]);
   return res.json({
-    balance: wallet.balance, currency: wallet.currency, minDeposit: MIN_DEPOSIT, minWithdrawal: MIN_WITHDRAWAL,
+    // Mínimos POR CUENTA (cada operador tiene su política); si no los configuró, los del sistema.
+    balance: wallet.balance, currency: wallet.currency,
+    minDeposit: acc?.chatMinDeposit ?? MIN_DEPOSIT,
+    minWithdrawal: acc?.chatMinWithdrawal ?? MIN_WITHDRAWAL,
     paymentInfo: acc?.botPaymentInfo ?? null,
     pay: { cbu: acc?.chatPayCbu ?? null, alias: acc?.chatPayAlias ?? null, titular: acc?.chatPayTitular ?? null },
     deposits, withdrawals,
@@ -2031,7 +2038,10 @@ const withdrawalSchema = z.object({ amount: z.number().int().positive(), destino
 chatPublicRouter.post("/me/withdrawal", requireChatClient, async (req, res) => {
   const parsed = withdrawalSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
-  if (parsed.data.amount < MIN_WITHDRAWAL) return res.status(400).json({ error: `El retiro mínimo es ${ars(MIN_WITHDRAWAL)}.` });
+  // Mínimo POR CUENTA (cada operador tiene su política; null = el del sistema).
+  const accMin = await prisma.user.findUnique({ where: { id: req.accountId! }, select: { chatMinWithdrawal: true } });
+  const minW = accMin?.chatMinWithdrawal ?? MIN_WITHDRAWAL;
+  if (parsed.data.amount < minW) return res.status(400).json({ error: `El retiro mínimo es ${ars(minW)}.` });
   const wallet = await prisma.chatWallet.findUnique({ where: { playerId: req.chatPlayerId! }, select: { balance: true } });
   if (!wallet || wallet.balance < parsed.data.amount) return res.status(400).json({ error: "Saldo insuficiente para ese retiro." });
   const w = await prisma.chatWithdrawal.create({

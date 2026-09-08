@@ -26,6 +26,44 @@ interface Conv { id: string; playerId: string; player: string; alias: string | n
 interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; metadata?: Record<string, unknown>; createdAt: string }
 
 // Agrega un mensaje evitando duplicados por id (optimistic add + echo del socket).
+// Comprime/redimensiona una foto antes de subirla (mismo criterio que la app del jugador). Las fotos
+// de celular pesan varios MB y el server acepta ~700 KB: sin esto, el cajero no podía mandar los
+// comprobantes de retiro. Redibuja en un canvas a máx 1280px y baja calidad hasta entrar (~620 KB).
+async function compressImage(file: File, maxDim = 1280, targetBytes = 620 * 1024): Promise<string> {
+  const dataUrl: string = await new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result as string);
+    r.onerror = () => reject(new Error("read"));
+    r.readAsDataURL(file);
+  });
+  const img: HTMLImageElement = await new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error("decode"));
+    im.src = dataUrl;
+  });
+  let w = img.naturalWidth || img.width;
+  let h = img.naturalHeight || img.height;
+  if (Math.max(w, h) > maxDim) {
+    const s = maxDim / Math.max(w, h);
+    w = Math.round(w * s);
+    h = Math.round(h * s);
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return dataUrl; // sin canvas: fallback al original (no perdemos la foto)
+  ctx.drawImage(img, 0, 0, w, h);
+  let q = 0.82;
+  let out = canvas.toDataURL("image/jpeg", q);
+  while (out.length * 0.75 > targetBytes && q > 0.4) {
+    q -= 0.12;
+    out = canvas.toDataURL("image/jpeg", q);
+  }
+  return out;
+}
+
 function appendUnique(list: Msg[], m: Msg): Msg[] {
   if (list.some((x) => x.id === m.id)) return list;
   return [...list, m];
@@ -210,18 +248,16 @@ export default function ChatAppPage() {
     } catch (e) { setError(apiError(e)); } finally { setSending(false); }
   };
 
-  // Adjuntar FOTO (ej. comprobante de un retiro): lee el archivo como dataURL y lo manda por la ruta
-  // /messages/image. Límite 700 KB (igual que el resto del chat). Aislado del envío de texto.
+  // Adjuntar FOTO (ej. comprobante de un retiro): la COMPRIME en el navegador antes de subirla, igual
+  // que la app del jugador. Sin esto, cualquier foto sacada con el celular (3-5 MB) se rechazaba por
+  // el límite de 2 MB y el cajero no podía mandar los comprobantes de retiro por el CRM.
   const imgRef = useRef<HTMLInputElement>(null);
   const sendImage = async (file: File) => {
     if (!selected) return;
-    if (file.size > 2 * 1024 * 1024) { setError("La imagen supera 2 MB. Usá una más liviana."); return; }
     const target = selected;
     setSending(true); setError(null);
     try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const r = new FileReader(); r.onload = () => resolve(String(r.result ?? "")); r.onerror = reject; r.readAsDataURL(file);
-      });
+      const dataUrl = await compressImage(file);
       const { data } = await api.post<{ message: Msg }>("/api/chat/messages/image", { conversationId: target, image: dataUrl });
       if (selectedRef.current === target) setMessages((prev) => appendUnique(prev, data.message));
       void loadConvs();
