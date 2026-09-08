@@ -686,6 +686,20 @@ waRouter.delete("/lines/:id", async (req, res) => {
   if (!line) return res.status(404).json({ error: "Línea no encontrada" });
   try {
     if (line.provider === "baileys") await getEngine().deleteInstance(line.sessionId ?? `line_${line.id}`);
+    // DEVOLVER LOS DÍAS PAGADOS que le quedaban a la línea (2026-09-08): los días vivían SOLO en
+    // el expiresAt de la línea, así que borrarla los quemaba. Como la reacción natural a una sesión
+    // trabada es "borrar y volver a crear", los clientes perdían semanas pagadas (caso lorenzo: 23
+    // días). Ahora vuelven al crédito y se pueden activar en la línea nueva.
+    const restantes = line.expiresAt ? Math.floor((line.expiresAt.getTime() - Date.now()) / 86_400_000) : 0;
+    if (restantes > 0) {
+      const credit =
+        (await prisma.credit.findUnique({ where: { userId: line.userId } })) ??
+        (await prisma.credit.create({ data: { userId: line.userId, days: 0 } }));
+      await prisma.credit.update({ where: { id: credit.id }, data: { days: { increment: restantes } } });
+      await prisma.creditLedger.create({
+        data: { creditId: credit.id, delta: restantes, reason: `${restantes} día(s) devueltos al borrar la línea${line.label ? ` «${line.label}»` : ""}` },
+      });
+    }
     // El HISTORIAL SOBREVIVE a la línea (2026-09-06): antes acá se hacía deleteMany de los
     // mensajes (lineId era FK obligatoria) y el cliente que borraba una línea muerta para
     // recrearla perdía TODAS sus conversaciones — la clave del CRM es que eso no pase.
