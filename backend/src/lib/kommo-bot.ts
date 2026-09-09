@@ -3,18 +3,20 @@
 // Salesbot de Kommo la entrega por WhatsApp). Estado en KommoBotState (por lead de Kommo).
 //
 // FLUJO "RAUL" (cuenta con casino conectado = modelo B, 100% automático sin cajero):
-//   hola → el bot pide el NOMBRE COMPLETO (como figura en el banco; UNA vez, queda VINCULADO) →
-//   crea el usuario del casino + entrega accesos + CVU de la recaudadora → el jugador transfiere lo
-//   que quiera y manda el comprobante (acá la FOTO llega como placeholder, sin archivo — es solo la
-//   señal de "ya pagué") → el bot pregunta cuánto transfirió → intent (titular vinculado + monto) →
-//   la recaudadora confirma la PLATA REAL → acredita solo. Sin plata no hay fichas (§9.2 OK).
-//   [Etapa 2, cuando el matcher del socio soporte vínculo sin monto: ni el número se pregunta.]
+//   hola → el bot pide el nombre (UNA vez, arma el usuario) → crea el usuario del casino + entrega
+//   accesos + CVU de la recaudadora → el jugador transfiere lo que quiera y manda el comprobante →
+//   el webhook trae un placeholder (sin archivo) PERO la foto se BAJA por la API de archivos de
+//   Kommo (lib/kommo-files.ts) → la lee la IA (ai-receipt): titular + monto + código de operación →
+//   intent → la recaudadora confirma la PLATA REAL → acredita solo. Sin plata no hay fichas (§9.2:
+//   la IA solo aporta el MATCHEO, nunca acredita). Si la IA no puede leer, fallback: pregunta el monto.
 //
 // SIN casino conectado: flujo semi-automático (menú → monto → botPaymentInfo → aviso al cajero).
 import crypto from "node:crypto";
 import { prisma } from "./prisma.js";
 import { notify } from "./notifications.js";
 import { casinoLiveForAccount, casinoCvuForAccount, ensureCasinoUser, casinoPlayerPassword, sendDepositIntent } from "./casino-cashier.js";
+import { fetchLatestKommoLeadImage } from "./kommo-files.js";
+import { analyzeReceipt } from "./ai-receipt.js";
 
 const num = (s: string): number => { const m = s.replace(/[.,\s]/g, "").match(/\d+/); return m ? parseInt(m[0], 10) : NaN; };
 const has = (t: string, ...words: string[]): boolean => words.some((w) => t.includes(w));
@@ -54,6 +56,37 @@ async function ensureKommoPlayer(userId: string, st: St, name?: string): Promise
 
 const cvuBlock = (cvu: { cvu?: string | null; alias?: string | null; titular?: string | null }): string =>
   `💳 CVU: *${cvu.cvu}*\n🏷️ Alias: *${cvu.alias}*\n👤 Titular: ${cvu.titular}`;
+
+const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T | null> =>
+  Promise.race([p, new Promise<null>((resolve) => setTimeout(() => resolve(null), ms))]);
+
+// Comprobante 100% automático: baja la última imagen del lead desde Kommo, la lee la IA y, si es un
+// pago legible, manda el intent (el crédito lo dispara la recaudadora al confirmar la plata REAL).
+// Devuelve el mensaje para el jugador, o null si no se pudo leer (el caller cae al fallback).
+async function tryAutoReceipt(userId: string, st: St, kommoLeadId: string): Promise<string | null> {
+  if (!st.casinoUsername || !st.playerId) return null;
+  const img = await withTimeout(fetchLatestKommoLeadImage(userId, kommoLeadId), 12000).catch(() => null);
+  if (!img) return null;
+  const ai = await withTimeout(analyzeReceipt(img.base64, img.mime), 20000).catch(() => null);
+  if (!ai || !ai.isReceipt || !ai.amount || ai.amount <= 0 || ai.confidence < 0.6) return null;
+  const amount = Math.floor(ai.amount);
+  await setStep(st.id, null, null);
+  const dep = await prisma.chatDeposit.create({
+    data: { userId, playerId: st.playerId, amount, currency: "ARS", method: "transferencia" },
+    select: { id: true },
+  });
+  await sendDepositIntent(
+    { id: dep.id, userId, playerId: st.playerId, amount, currency: "ARS" },
+    st.casinoUsername,
+    { senderName: ai.senderName ?? st.titular, codigoOperacion: ai.codigoOperacion },
+  );
+  void notify(
+    userId, "system",
+    `💰 Carga automática (Kommo): $${amount}`,
+    `Jugador ${st.casinoUsername} · comprobante leído por IA${ai.senderName ? ` · titular "${ai.senderName}"` : ""}${ai.codigoOperacion ? ` · op ${ai.codigoOperacion}` : ""}. Se acredita sola cuando impacte; si no impacta, revisala en el Cajero.`,
+  );
+  return `¡Comprobante recibido! ✅ Cargás *$${amount}*\n\nNi bien impacte tu transferencia se acreditan las fichas *solas* 🚀\n\n👤 Tu usuario: *${st.casinoUsername}*`;
+}
 
 // Procesa un mensaje entrante del canal Kommo y devuelve la respuesta del bot (o null = mudo).
 export async function runKommoBot(userId: string, kommoLeadId: string, rawText: string): Promise<string | null> {
@@ -107,17 +140,18 @@ export async function runKommoBot(userId: string, kommoLeadId: string, rawText: 
   if (await casinoLiveForAccount(userId)) {
     const marca = (acc.brandName ?? "").trim();
 
-    // Paso 1 — VINCULACIÓN (una sola vez): nombre completo → usuario + accesos + CVU.
+    // Paso 1 — REGISTRO (una sola vez): nombre → usuario + accesos + CVU. El nombre arma el usuario
+    // (y queda como pista de matcheo de respaldo); el matcheo real sale del comprobante leído por IA.
     if (!st.titular) {
       if (st.step !== "ask_name") {
         await setStep(st.id, "ask_name");
         const welcome = (acc.botWelcome ?? "").trim();
-        return `${welcome || `¡Hola! 👋 Bienvenido${marca ? ` a ${marca}` : ""}.`}\n\nPara crearte el usuario decime tu *nombre completo* (como figura en tu cuenta del banco) 👇`;
+        return `${welcome || `¡Hola! 👋 Bienvenido${marca ? ` a ${marca}` : ""}.`}\n\nPara crearte el usuario decime tu *nombre* 👇`;
       }
-      if (isFoto) return "Primero decime tu *nombre completo* (como figura en tu banco) 🙌 — después mandás el comprobante.";
+      if (isFoto) return "Primero decime tu *nombre* 🙌 — después mandás el comprobante.";
       const name = rawText.trim().replace(/\s+/g, " ").slice(0, 60);
-      if (name.length < 3 || !/[a-záéíóúñ]/i.test(name) || /\d{4,}/.test(name)) {
-        return "Decime tu *nombre y apellido* (como figura en el banco) 🙌";
+      if (name.length < 2 || !/[a-záéíóúñ]/i.test(name) || /\d{4,}/.test(name)) {
+        return "Decime tu *nombre* 🙌 (con eso te creo el usuario)";
       }
       try {
         const { username } = await ensureKommoPlayer(userId, st, name);
@@ -139,9 +173,13 @@ export async function runKommoBot(userId: string, kommoLeadId: string, rawText: 
       }
     }
 
-    // Paso 3 — dijo cuánto transfirió → intent (titular vinculado + monto) → acredita el callback.
+    // Paso 3 (fallback) — dijo cuánto transfirió → intent (titular + monto) → acredita el callback.
     if (st.step === "carga_monto_confirm") {
-      if (isFoto) return "¿Cuánto transferiste? Escribí *solo el número* 🙌 (ej: 5000)";
+      if (isFoto) {
+        const auto = await tryAutoReceipt(userId, st, kommoLeadId);
+        if (auto) return auto;
+        return "¿Cuánto transferiste? Escribí *solo el número* 🙌 (ej: 5000)";
+      }
       const amount = num(t);
       if (!amount || amount <= 0) return "¿Cuánto transferiste? Escribí *solo el número* 🙌 (ej: 5000)";
       await setStep(st.id, null, null);
@@ -159,10 +197,17 @@ export async function runKommoBot(userId: string, kommoLeadId: string, rawText: 
       return `¡Perfecto! *$${amount}* en verificación ✅\n\nNi bien impacte tu transferencia se acreditan las fichas *solas* 🚀\n\n👤 Tu usuario: *${st.casinoUsername}*`;
     }
 
-    // Paso 2 — mandó el comprobante (o avisa que pagó) → preguntamos el monto.
-    if (isFoto || has(t, "pague", "pagué", "transferi", "transferí", "comprobante", "ya esta", "ya está", "cargue", "cargué", "hecho", "listo")) {
+    // Paso 2 — mandó el comprobante → lo bajamos de Kommo y lo LEE LA IA (todo automático). Si no se
+    // pudo leer (foto borrosa, IA caída, drive lento), fallback: preguntamos el monto.
+    if (isFoto) {
+      const auto = await tryAutoReceipt(userId, st, kommoLeadId);
+      if (auto) return auto;
       await setStep(st.id, "carga_monto_confirm");
-      return "¡Recibido! 🙌 ¿Cuánto transferiste? Escribí *solo el número* (ej: 5000)";
+      return "¡Recibido! 📎 No pude leer bien el comprobante — ¿cuánto transferiste? Escribí *solo el número* (ej: 5000)";
+    }
+    if (has(t, "pague", "pagué", "transferi", "transferí", "comprobante", "ya esta", "ya está", "cargue", "cargué", "hecho", "listo")) {
+      await setStep(st.id, "carga_monto_confirm");
+      return "¡Genial! 🙌 Mandame la *foto del comprobante* 📎 (o decime cuánto transferiste)";
     }
 
     // Pide los datos de pago de nuevo.
