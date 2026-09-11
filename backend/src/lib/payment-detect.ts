@@ -8,6 +8,7 @@ import { emitToUser } from "./io.js";
 import { analyzeReceipt, aiEnabled } from "./ai-receipt.js";
 import { getMediaBase64 } from "./evolution.js";
 import { markPurchase, accountCurrency } from "./purchase.js";
+import { isBotManaged } from "./bot-managed.js";
 
 // Moneda de las ventas. TODAS las líneas son ARS (confirmado por el dueño 2026-07-29): forzamos ARS
 // e IGNORAMOS la moneda que adivina la IA del comprobante (leía "PYG" en recibos que eran ARS y
@@ -67,7 +68,7 @@ export const textSignalsPayment = (text: string): boolean =>
 export interface DetectPaymentArgs {
   mode: string; // off | assisted | auto
   userId: string;
-  contact: { id: string; externalId: string; stage: string; name: string | null; paymentDetectedAt?: Date | null };
+  contact: { id: string; externalId: string; stage: string; name: string | null; paymentDetectedAt?: Date | null; lineId?: string | null };
   instance: string; // sessionId de la línea (instancia Evolution)
   item: Record<string, any>; // mensaje crudo del webhook
   text: string;
@@ -80,18 +81,26 @@ export interface DetectPaymentArgs {
  * Best-effort: cualquier error se traga (no rompe el webhook).
  */
 export async function detectPayment(args: DetectPaymentArgs): Promise<void> {
-  const { mode, userId, contact, instance, item, text } = args;
+  const { userId, contact, instance, item, text } = args;
+  let mode = args.mode;
   if (mode !== "assisted" && mode !== "auto") return;
   // BUG 2: cooldown por contacto en vez del guard duro "ya compró". Antes, al pasar a COMPRO el OCR no
   // volvía a correr NUNCA → las recargas (mismo jugador cargando 5/10/30 veces) eran invisibles para Meta.
   // Ahora se re-analiza pasada la ventana; el throttle receiptAnalysisAllowed sigue acotando el gasto de IA.
   // El cooldown se evalúa SIEMPRE contra la DB: el caller de Cloud API (wa-cloud.ts) no pasaba
   // paymentDetectedAt y el mismo comprobante re-enviado disparaba 2-3 Purchase (11/09: 3 en 27 min).
-  const lastAt =
-    contact.paymentDetectedAt !== undefined
-      ? contact.paymentDetectedAt
-      : (await prisma.contact.findUnique({ where: { id: contact.id }, select: { paymentDetectedAt: true } }))?.paymentDetectedAt;
+  let lastAt = contact.paymentDetectedAt;
+  let lineId = contact.lineId;
+  if (lastAt === undefined || lineId === undefined) {
+    const fresh = await prisma.contact.findUnique({ where: { id: contact.id }, select: { paymentDetectedAt: true, lineId: true } });
+    if (lastAt === undefined) lastAt = fresh?.paymentDetectedAt ?? null;
+    if (lineId === undefined) lineId = fresh?.lineId ?? null;
+  }
   if (withinRecheckCooldown(lastAt)) return;
+  // Cuenta/línea manejada por el bot cajero de un socio: el Purchase lo avisa EL BOT al acreditar
+  // (bot-relay /purchase, monto depositado y moneda real). Acá solo pre-detectamos (assisted) para
+  // que el operador vea el comprobante; nunca disparamos Purchase solos (duplicaba y leía mal la moneda).
+  if (mode === "auto" && isBotManaged({ userId, lineId })) mode = "assisted";
 
   try {
     let signal = textSignalsPayment(text);
