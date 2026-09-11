@@ -73,14 +73,18 @@ describe("detectPayment en cuenta bot-managed", () => {
     imageBase64: "QUFB",
     imageMediaType: "image/jpeg",
   });
-  it("modo auto se degrada a assisted: NO dispara Purchase, deja el pago pre-detectado", async () => {
+  it("el OCR no hace NADA: ni Purchase ni 'pago detectado' (un operador confirmándolo duplicaría el Purchase del bot)", async () => {
     process.env.BOT_FORWARD = JSON.stringify({ "user:u1": "http://y" });
     prismaMock.contact.findUnique.mockResolvedValue({ paymentDetectedAt: null, lineId: "line-x" });
     await detectPayment(args());
     expect(markPurchase).not.toHaveBeenCalled();
-    expect(prismaMock.contact.update).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ paymentDetected: true, paymentDetectedAmount: 500000 }),
-    }));
+    expect(prismaMock.contact.update).not.toHaveBeenCalled();
+  });
+  it("también en modo assisted queda apagado para cuentas bot-managed", async () => {
+    process.env.BOT_FORWARD = JSON.stringify({ "line-x": "http://y" });
+    prismaMock.contact.findUnique.mockResolvedValue({ paymentDetectedAt: null, lineId: "line-x" });
+    await detectPayment({ ...args(), mode: "assisted" });
+    expect(prismaMock.contact.update).not.toHaveBeenCalled();
   });
   it("cuenta NO bot-managed sigue disparando en auto", async () => {
     process.env.BOT_FORWARD = JSON.stringify({ "user:otro": "http://y" });

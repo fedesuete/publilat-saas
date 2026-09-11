@@ -98,9 +98,10 @@ export async function detectPayment(args: DetectPaymentArgs): Promise<void> {
   }
   if (withinRecheckCooldown(lastAt)) return;
   // Cuenta/línea manejada por el bot cajero de un socio: el Purchase lo avisa EL BOT al acreditar
-  // (bot-relay /purchase, monto depositado y moneda real). Acá solo pre-detectamos (assisted) para
-  // que el operador vea el comprobante; nunca disparamos Purchase solos (duplicaba y leía mal la moneda).
-  if (mode === "auto" && isBotManaged({ userId, lineId })) mode = "assisted";
+  // (bot-relay /purchase, monto depositado y moneda real). Acá NO hacemos nada: ni Purchase (duplicaba
+  // comprobantes re-enviados y leía mal la moneda) ni "pago detectado" (un operador confirmándolo desde
+  // el inbox dispararía OTRO Purchase con otro event_id y Meta contaría la carga dos veces).
+  if (isBotManaged({ userId, lineId })) return;
 
   try {
     let signal = textSignalsPayment(text);
