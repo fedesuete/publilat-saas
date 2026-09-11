@@ -1,7 +1,8 @@
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { apiError } from "../lib/api";
+import { loadMktPixel, rememberFbclid, mktClickIds, trackMktRegistration, newEventId } from "../lib/mkt-pixel";
 import { Button, Input, ErrorMsg } from "../components/ui";
 
 export default function LoginPage() {
@@ -10,8 +11,11 @@ export default function LoginPage() {
   const [searchParams] = useSearchParams();
   const ref = searchParams.get("ref") || ""; // código de referido (/login?ref=CODE)
 
-  // Si vino con ?ref (referido) o ?signup=1 (desde la landing de ventas), arrancamos en "Crear cuenta".
-  const signupIntent = searchParams.get("signup") === "1" || searchParams.get("registro") === "1";
+  // Si vino con ?ref (referido), ?signup=1 o directo a /register (CTA de publi.lat), arrancamos en "Crear cuenta".
+  const signupIntent =
+    searchParams.get("signup") === "1" ||
+    searchParams.get("registro") === "1" ||
+    window.location.pathname === "/register";
   const [mode, setMode] = useState<"login" | "register">(ref || signupIntent ? "register" : "login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,19 +26,31 @@ export default function LoginPage() {
 
   const isRegister = mode === "register";
 
+  // Pixel de marketing de Publi.lat: solo acá (login/registro), nunca en el panel logueado.
+  // Guarda el fbclid del anuncio y setea las cookies _fbp/_fbc que después viajan con el alta.
+  useEffect(() => {
+    rememberFbclid(window.location.search);
+    void loadMktPixel();
+  }, []);
+
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
     try {
       if (isRegister) {
+        const eventId = newEventId();
         await register({
           email,
           password,
           name: name || undefined,
           phone: phone || undefined,
           ref: ref || undefined,
+          ...mktClickIds(),
+          eventId,
         });
+        // Mismo eventID que el CompleteRegistration server-side → Meta deduplica.
+        trackMktRegistration(eventId);
         // Recién creada la cuenta: marcamos para disparar el recorrido guiado y
         // aterrizamos en "Empezá acá".
         localStorage.setItem("pl_start_tour", "1");
