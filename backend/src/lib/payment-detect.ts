@@ -85,7 +85,13 @@ export async function detectPayment(args: DetectPaymentArgs): Promise<void> {
   // BUG 2: cooldown por contacto en vez del guard duro "ya compró". Antes, al pasar a COMPRO el OCR no
   // volvía a correr NUNCA → las recargas (mismo jugador cargando 5/10/30 veces) eran invisibles para Meta.
   // Ahora se re-analiza pasada la ventana; el throttle receiptAnalysisAllowed sigue acotando el gasto de IA.
-  if (withinRecheckCooldown(contact.paymentDetectedAt)) return;
+  // El cooldown se evalúa SIEMPRE contra la DB: el caller de Cloud API (wa-cloud.ts) no pasaba
+  // paymentDetectedAt y el mismo comprobante re-enviado disparaba 2-3 Purchase (11/09: 3 en 27 min).
+  const lastAt =
+    contact.paymentDetectedAt !== undefined
+      ? contact.paymentDetectedAt
+      : (await prisma.contact.findUnique({ where: { id: contact.id }, select: { paymentDetectedAt: true } }))?.paymentDetectedAt;
+  if (withinRecheckCooldown(lastAt)) return;
 
   try {
     let signal = textSignalsPayment(text);
@@ -137,8 +143,10 @@ export async function detectPayment(args: DetectPaymentArgs): Promise<void> {
       // eventId ÚNICO por comprobante (waMessageId) → Meta cuenta CADA recarga como un Purchase distinto
       // en vez de deduplicarlas contra la primera (BUG 2). El "Compró" manual mantiene el eventId estable.
       const detKey = String(item?.key?.id ?? Date.now());
-      // Moneda: la del COMPROBANTE si la IA la leyó; si no, la configurada de la cuenta.
-      await markPurchase(userId, contact.id, amount, currency ?? (await accountCurrency(userId)), { eventId: rechargeEventId(contact.externalId, detKey), payerName: payerName ?? undefined });
+      // Moneda: SIEMPRE la de la cuenta (User.purchaseCurrency, default ARS). La que adivina la IA en el
+      // comprobante NO se usa: leía "PYG" en recibos ARS y Meta valuaba esas ventas 5 veces menos
+      // (11/09: 7 de 20 Purchase de la cuenta matias salieron en PYG). Un cliente PYG lo configura por cuenta.
+      await markPurchase(userId, contact.id, amount, await accountCurrency(userId), { eventId: rechargeEventId(contact.externalId, detKey), payerName: payerName ?? undefined });
       return;
     }
 
