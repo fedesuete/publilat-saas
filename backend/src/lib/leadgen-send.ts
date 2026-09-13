@@ -34,25 +34,50 @@ function phoneCandidates(raw: string): string[] {
   return [...out];
 }
 
+// ¿Este número tiene WhatsApp? Devuelve el JID canónico y el teléfono normalizado probando las
+// variantes argentinas. NO toca la DB: lo usan tanto ensureContactJid (leads de formulario) como el
+// alta MANUAL de un chat nuevo desde el Inbox.
+//   "ok"          -> existe, con chatId/phone canónicos
+//   "no_existe"   -> WhatsApp dice que ese número no está
+//   "sin_chequeo" -> no se pudo consultar (otro motor o API caída): NO bloquea el envío
+export type ChequeoNumero =
+  | { estado: "ok"; chatId: string; phone: string }
+  | { estado: "no_existe" }
+  | { estado: "sin_chequeo" };
+
+export async function resolveWhatsAppNumber(phone: string, sessionId: string | null): Promise<ChequeoNumero> {
+  if (!phone || !sessionId) return { estado: "sin_chequeo" };
+  const base = process.env.WAHA_BASE_URL, key = process.env.WAHA_API_KEY;
+  if ((process.env.WA_ENGINE ?? "").toLowerCase() !== "waha" || !base || !key) return { estado: "sin_chequeo" };
+  try {
+    for (const cand of phoneCandidates(phone)) {
+      const r = await fetch(
+        `${base}/api/contacts/check-exists?phone=${encodeURIComponent(cand)}&session=${encodeURIComponent(sessionId)}`,
+        { headers: { "X-Api-Key": key }, signal: AbortSignal.timeout(9000) },
+      );
+      if (!r.ok) return { estado: "sin_chequeo" }; // API caída: no bloqueamos por esto
+      const d = (await r.json()) as { numberExists?: boolean; chatId?: string };
+      if (d.numberExists && d.chatId) {
+        return { estado: "ok", chatId: d.chatId, phone: d.chatId.split("@")[0].replace(/\D/g, "") || phone };
+      }
+    }
+    return { estado: "no_existe" };
+  } catch {
+    return { estado: "sin_chequeo" }; // error de red: mejor intentar el envío que perderlo
+  }
+}
+
 export async function ensureContactJid(
   contact: { id: string; phone: string | null; waJid: string | null },
   sessionId: string | null,
 ): Promise<boolean> {
   if (contact.waJid) return true;           // ya resuelto (contactos que escribieron ellos)
   if (!contact.phone || !sessionId) return false;
-  const base = process.env.WAHA_BASE_URL, key = process.env.WAHA_API_KEY;
-  if ((process.env.WA_ENGINE ?? "").toLowerCase() !== "waha" || !base || !key) return true; // otros motores: sin chequeo, se envía como siempre
   try {
-    let d: { numberExists?: boolean; chatId?: string } = {};
-    for (const cand of phoneCandidates(contact.phone)) {
-      const r = await fetch(
-        `${base}/api/contacts/check-exists?phone=${encodeURIComponent(cand)}&session=${encodeURIComponent(sessionId)}`,
-        { headers: { "X-Api-Key": key }, signal: AbortSignal.timeout(9000) },
-      );
-      if (!r.ok) return true; // API caída: no bloqueamos el envío por esto
-      d = (await r.json()) as { numberExists?: boolean; chatId?: string };
-      if (d.numberExists && d.chatId) break;
-    }
+    const chequeo = await resolveWhatsAppNumber(contact.phone, sessionId);
+    if (chequeo.estado === "sin_chequeo") return true; // otros motores / API caída: se envía como siempre
+    const d: { numberExists?: boolean; chatId?: string } =
+      chequeo.estado === "ok" ? { numberExists: true, chatId: chequeo.chatId } : {};
     if (!d.numberExists || !d.chatId) return false; // el número NO tiene WhatsApp (en ninguna variante)
     // Persistimos el jid Y el teléfono CANÓNICO (con el 9). Sin actualizar el phone, la RESPUESTA
     // del cliente entra por el webhook con el número canónico, no matchea al contacto (guardado sin

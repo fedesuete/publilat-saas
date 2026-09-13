@@ -4,7 +4,7 @@ import { api, apiError } from "../lib/api";
 import { getSocket, type InboxMessagePayload, type InboxMessageStatusPayload } from "../lib/socket";
 import type { Msg, Stage } from "../lib/types";
 import { fmtDate } from "../lib/format";
-import { Button, StageBadge, ErrorMsg } from "../components/ui";
+import { Button, Input, StageBadge, ErrorMsg } from "../components/ui";
 
 interface Conversation {
   id: string;
@@ -84,6 +84,10 @@ export default function InboxPage() {
   const [chatError, setChatError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [listOpen, setListOpen] = useState(true);
+  // "Nuevo chat": arrancar una conversación con un número que nunca escribió. null = modal cerrado.
+  const [nuevo, setNuevo] = useState<{ phone: string; name: string; message: string } | null>(null);
+  const [nuevoBusy, setNuevoBusy] = useState(false);
+  const [nuevoError, setNuevoError] = useState<string | null>(null);
   const [showEmoji, setShowEmoji] = useState(false);
   const [showQuick, setShowQuick] = useState(false);
   const [quick, setQuick] = useState<QuickReply[]>([]);
@@ -128,6 +132,27 @@ export default function InboxPage() {
       await api.patch(`/api/inbox/${contactId}/alias`, { alias });
       setConvs((prev) => prev.map((c) => (c.id === contactId ? { ...c, alias } : c)));
     } catch (err) { setChatError(apiError(err)); }
+  };
+
+  // Crea (o reusa) el contacto y manda el primer mensaje; después abre esa conversación.
+  const iniciarChat = async () => {
+    if (!nuevo) return;
+    setNuevoBusy(true);
+    setNuevoError(null);
+    try {
+      const { data } = await api.post<{ contactId: string; yaExistia: boolean }>("/api/nuevo-chat", {
+        phone: nuevo.phone,
+        name: nuevo.name.trim() || undefined,
+        message: nuevo.message,
+      });
+      setNuevo(null);
+      await loadConvs();
+      setSelected(data.contactId); // abre la charla recién empezada
+    } catch (err) {
+      setNuevoError(apiError(err));
+    } finally {
+      setNuevoBusy(false);
+    }
   };
 
   const loadConvs = async () => {
@@ -374,9 +399,17 @@ export default function InboxPage() {
               <h1 className="font-bold">WhatsApp Inbox</h1>
               <div className="text-xs text-slate-500">{convs.length} conversaciones</div>
             </div>
-            <button onClick={() => setListOpen(false)} title="Ocultar lista" className="hidden rounded p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white lg:inline-flex">
-              <PanelLeftClose className="h-5 w-5" />
-            </button>
+            <div className="flex items-center gap-1">
+              {/* Empezar una charla con un número que nunca escribió (antes había que hacerlo del
+                  celular y el CRM no se enteraba). */}
+              <button onClick={() => { setNuevo({ phone: "", name: "", message: "" }); setNuevoError(null); }}
+                title="Nuevo chat" className="rounded-full bg-wa-green px-3 py-1.5 text-sm font-bold text-slate-900 transition hover:brightness-110">
+                + Nuevo chat
+              </button>
+              <button onClick={() => setListOpen(false)} title="Ocultar lista" className="hidden rounded p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white lg:inline-flex">
+                <PanelLeftClose className="h-5 w-5" />
+              </button>
+            </div>
           </div>
           {listError && <div className="p-3"><ErrorMsg>{listError}</ErrorMsg></div>}
           <div className="flex-1 overflow-y-auto">
@@ -655,6 +688,41 @@ export default function InboxPage() {
           </>
         )}
       </div>
+
+      {/* ---- Modal "Nuevo chat": número + primer mensaje. Verifica contra WhatsApp que el número
+           exista antes de crear nada, y si ya lo tenías abre SU conversación en vez de duplicarla. ---- */}
+      {nuevo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => !nuevoBusy && setNuevo(null)}>
+          <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-5" onClick={(e) => e.stopPropagation()}>
+            <h2 className="mb-1 text-lg font-bold text-slate-100">Nuevo chat</h2>
+            <p className="mb-4 text-xs text-slate-500">
+              Escribile a un número que nunca te contactó. La conversación te queda en el Inbox y en el CRM.
+            </p>
+
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Número de WhatsApp</label>
+            <Input value={nuevo.phone} onChange={(e) => setNuevo({ ...nuevo, phone: e.target.value })}
+              placeholder="Ej: 11 2345 6789 o +54 9 11 2345 6789" inputMode="tel" autoFocus />
+            <p className="mb-3 mt-1 text-[11px] text-slate-500">Con o sin código de país: lo completamos solos.</p>
+
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Nombre (opcional)</label>
+            <Input value={nuevo.name} onChange={(e) => setNuevo({ ...nuevo, name: e.target.value })} placeholder="Ej: Martín" />
+
+            <label className="mb-1 mt-3 block text-xs font-semibold uppercase tracking-wide text-slate-400">Primer mensaje</label>
+            <textarea value={nuevo.message} onChange={(e) => setNuevo({ ...nuevo, message: e.target.value })}
+              rows={3} placeholder="Hola! ¿Cómo estás?"
+              className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
+
+            {nuevoError && <div className="mt-3"><ErrorMsg>{nuevoError}</ErrorMsg></div>}
+
+            <div className="mt-4 flex gap-2">
+              <Button onClick={() => void iniciarChat()} disabled={nuevoBusy || !nuevo.phone.trim() || !nuevo.message.trim()}>
+                {nuevoBusy ? "Enviando…" : "Enviar y abrir chat"}
+              </Button>
+              <Button variant="ghost" onClick={() => setNuevo(null)} disabled={nuevoBusy}>Cancelar</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
