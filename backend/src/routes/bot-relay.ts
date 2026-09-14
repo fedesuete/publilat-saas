@@ -10,6 +10,7 @@ import crypto from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { sendToContact } from "../lib/wa-send.js";
 import { markPurchase } from "../lib/purchase.js";
+import { findBotRelayContact } from "../lib/bot-managed.js";
 import { postBotChatMessage, updateChatPlayerUsername, fireChatBridgePurchase } from "../lib/chat-bridge.js";
 
 export const botRelayRouter = Router();
@@ -123,11 +124,9 @@ botRelayRouter.post("/purchase", requireBotToken, async (req, res) => {
     const digits = phone.replace(/\D/g, "");
     // Resolvemos el tenant por el contacto cuya línea está en el forward (la del socio): así no cruzamos
     // cuentas ni dependemos de recibir el tenant en el body. Si no hay forward, caemos a match global.
-    let forwardLineIds: string[] = [];
-    try { forwardLineIds = Object.keys(JSON.parse(process.env.BOT_FORWARD || "{}")); } catch { forwardLineIds = []; }
-    const contact = forwardLineIds.length
-      ? await prisma.contact.findFirst({ where: { phone: digits, lineId: { in: forwardLineIds } }, orderBy: { createdAt: "desc" } })
-      : await prisma.contact.findFirst({ where: { phone: digits }, orderBy: { createdAt: "desc" } });
+    // Líneas Y cuentas (`user:<id>`) del forward: las cuentas mapeadas por usuario no matcheaban por
+    // lineId y el Purchase se salteaba en silencio (skipped no_contact). Ver lib/bot-managed.ts.
+    const contact = await findBotRelayContact(digits);
     if (!contact) {
       console.warn("[bot-relay/purchase] sin contacto para el teléfono → no disparo Purchase");
       return res.json({ ok: true, skipped: "no_contact" }); // 200 igual: no queremos reintentos infinitos del bot

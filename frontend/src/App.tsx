@@ -45,6 +45,8 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          {/* "Crear cuenta" desde publi.lat: misma pantalla, arranca en registro (antes caía en /dashboard → /login). */}
+          <Route path="/register" element={<LoginPage />} />
           <Route
             element={
               <ProtectedRoute>

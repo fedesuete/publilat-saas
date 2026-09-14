@@ -17,6 +17,11 @@ export interface RegisterPayload {
   name?: string;
   phone?: string;
   ref?: string; // código de referido (viene del ?ref= en la URL)
+  // Ids del clic de Meta (pixel de marketing de Publi.lat): los junta LoginPage al crear la cuenta.
+  fbp?: string;
+  fbc?: string;
+  fbclid?: string;
+  eventId?: string; // dedup navegador↔CAPI del CompleteRegistration
 }
 
 interface AuthContextValue {

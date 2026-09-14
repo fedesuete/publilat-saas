@@ -12,7 +12,10 @@ api.interceptors.response.use(
   (error) => {
     if (error?.response?.status === 401) {
       localStorage.removeItem(USER_KEY);
-      if (window.location.pathname !== "/login") {
+      // Páginas públicas de auth: el /me inicial da 401 sin sesión y NO hay que redirigir. Antes
+      // /register saltaba a /login (perdiendo ?fbclid y la pestaña "Crear cuenta").
+      const publicAuthPaths = ["/login", "/register"];
+      if (!publicAuthPaths.includes(window.location.pathname)) {
         window.location.href = "/login";
       }
     }

@@ -12,71 +12,15 @@ import {
   nowpaymentsEnabled, usdtDirectEnabled, usdtAddress, verifyUsdtPayment,
   pagoparEnabled, createPagoparOrder, verifyPagoparWebhook, getPagoparOrder,
 } from "../lib/payments.js";
-import { sendAdminMail } from "../lib/mailer.js";
-import { settleReferralOnFirstPayment } from "../lib/referrals.js";
-import { fireMarketingEvent } from "../lib/marketing-capi.js";
+// Acreditación (días + ledger + Purchase al pixel de marketing + CRM + referidos + aviso) vive en
+// lib/billing-approve.ts para poder testearla sin Express.
+import { ensureCredit, approvePayment } from "../lib/billing-approve.js";
 
 export const billingRouter = Router();
 // Webhooks públicos (los monta index.ts sin requireAuth).
 export const billingWebhookRouter = Router(); // MercadoPago
 export const usdtWebhookRouter = Router(); // NOWPayments (USDT)
 export const pagoparWebhookRouter = Router(); // Pagopar (Paraguay)
-
-async function ensureCredit(userId: string) {
-  return (
-    (await prisma.credit.findUnique({ where: { userId } })) ??
-    (await prisma.credit.create({ data: { userId, days: 0 } }))
-  );
-}
-
-// Acredita los días de un pago aprobado. Idempotente de verdad: la transición
-// pending->approved es una escritura CONDICIONAL atómica (updateMany where status=pending);
-// si N llamadas concurrentes entran con el mismo pago (webhook reenviado, o el usuario
-// dispara /usdt/verify en paralelo), solo UNA transiciona y solo esa acredita. El
-// read-check-write anterior tenía una ventana TOCTOU que permitía doble/N-ple crédito.
-async function approvePayment(paymentId: string, providerLabel: string): Promise<void> {
-  const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
-  if (!payment || payment.status === "approved") return;
-  const credit = await ensureCredit(payment.userId);
-  const claimed = await prisma.payment.updateMany({
-    where: { id: paymentId, status: { not: "approved" } },
-    data: { status: "approved" },
-  });
-  if (claimed.count !== 1) return; // otra ejecución ya lo aprobó: no acreditar de nuevo
-  await prisma.credit.update({
-    where: { id: credit.id },
-    data: {
-      days: { increment: payment.days },
-      ledger: { create: { delta: payment.days, reason: `compra ${providerLabel} (${payment.days}d)` } },
-    },
-  });
-  console.log(`[billing] ${providerLabel}: +${payment.days} días a user ${payment.userId}`);
-  // Pixel Clientes-publilat: si la cuenta vino de la LANDING de ventas, dispara el Purchase (comprador
-  // real) con el valor → Meta optimiza el anuncio por compradores. Usa los IDs del clic guardados al alta.
-  void (async () => {
-    const u = await prisma.user.findUnique({ where: { id: payment.userId }, select: { source: true, phone: true, name: true, fbp: true, fbc: true } });
-    if (u?.source !== "landing") return;
-    await fireMarketingEvent({
-      eventName: "Purchase",
-      externalId: payment.userId,
-      fbp: u.fbp, fbc: u.fbc, phone: u.phone, firstName: u.name,
-      value: (payment.amount ?? 0) / 100, currency: payment.currency ?? "ARS",
-    });
-  })().catch(() => undefined);
-  // Referidos: si esta cuenta fue referida por un cliente, su 1ra compra genera la comisión del
-  // 10% (pending, USDT manual). Best-effort: nunca frena la acreditación del pago.
-  void settleReferralOnFirstPayment(payment).catch(() => undefined);
-  // Aviso por email al equipo (ADMIN_ALERT_EMAIL: publilat.meta@gmail.com + federicobogado1997@gmail.com).
-  // Best-effort: no frena la acreditación.
-  void (async () => {
-    const u = await prisma.user.findUnique({ where: { id: payment.userId }, select: { slug: true, email: true } });
-    const monto = ((payment.amount ?? 0) / 100).toLocaleString("es-AR");
-    await sendAdminMail(
-      `💰 Pago acreditado — ${u?.slug ?? payment.userId} (${providerLabel})`,
-      `Cliente: ${u?.slug ?? ""} (${u?.email ?? ""})\nProveedor: ${providerLabel}\nDías: ${payment.days}\nMonto: ${monto} ${payment.currency}`,
-    );
-  })().catch(() => undefined);
-}
 
 // GET /api/billing/credit — días disponibles + últimos movimientos + métodos habilitados.
 billingRouter.get("/credit", async (req, res) => {

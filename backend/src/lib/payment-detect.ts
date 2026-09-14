@@ -8,6 +8,7 @@ import { emitToUser } from "./io.js";
 import { analyzeReceipt, aiEnabled } from "./ai-receipt.js";
 import { getMediaBase64 } from "./evolution.js";
 import { markPurchase, accountCurrency } from "./purchase.js";
+import { isBotManaged } from "./bot-managed.js";
 
 // Moneda de las ventas. TODAS las líneas son ARS (confirmado por el dueño 2026-07-29): forzamos ARS
 // e IGNORAMOS la moneda que adivina la IA del comprobante (leía "PYG" en recibos que eran ARS y
@@ -67,7 +68,7 @@ export const textSignalsPayment = (text: string): boolean =>
 export interface DetectPaymentArgs {
   mode: string; // off | assisted | auto
   userId: string;
-  contact: { id: string; externalId: string; stage: string; name: string | null; paymentDetectedAt?: Date | null };
+  contact: { id: string; externalId: string; stage: string; name: string | null; paymentDetectedAt?: Date | null; lineId?: string | null };
   instance: string; // sessionId de la línea (instancia Evolution)
   item: Record<string, any>; // mensaje crudo del webhook
   text: string;
@@ -80,12 +81,27 @@ export interface DetectPaymentArgs {
  * Best-effort: cualquier error se traga (no rompe el webhook).
  */
 export async function detectPayment(args: DetectPaymentArgs): Promise<void> {
-  const { mode, userId, contact, instance, item, text } = args;
+  const { userId, contact, instance, item, text } = args;
+  let mode = args.mode;
   if (mode !== "assisted" && mode !== "auto") return;
   // BUG 2: cooldown por contacto en vez del guard duro "ya compró". Antes, al pasar a COMPRO el OCR no
   // volvía a correr NUNCA → las recargas (mismo jugador cargando 5/10/30 veces) eran invisibles para Meta.
   // Ahora se re-analiza pasada la ventana; el throttle receiptAnalysisAllowed sigue acotando el gasto de IA.
-  if (withinRecheckCooldown(contact.paymentDetectedAt)) return;
+  // El cooldown se evalúa SIEMPRE contra la DB: el caller de Cloud API (wa-cloud.ts) no pasaba
+  // paymentDetectedAt y el mismo comprobante re-enviado disparaba 2-3 Purchase (11/09: 3 en 27 min).
+  let lastAt = contact.paymentDetectedAt;
+  let lineId = contact.lineId;
+  if (lastAt === undefined || lineId === undefined) {
+    const fresh = await prisma.contact.findUnique({ where: { id: contact.id }, select: { paymentDetectedAt: true, lineId: true } });
+    if (lastAt === undefined) lastAt = fresh?.paymentDetectedAt ?? null;
+    if (lineId === undefined) lineId = fresh?.lineId ?? null;
+  }
+  if (withinRecheckCooldown(lastAt)) return;
+  // Cuenta/línea manejada por el bot cajero de un socio: el Purchase lo avisa EL BOT al acreditar
+  // (bot-relay /purchase, monto depositado y moneda real). Acá NO hacemos nada: ni Purchase (duplicaba
+  // comprobantes re-enviados y leía mal la moneda) ni "pago detectado" (un operador confirmándolo desde
+  // el inbox dispararía OTRO Purchase con otro event_id y Meta contaría la carga dos veces).
+  if (isBotManaged({ userId, lineId })) return;
 
   try {
     let signal = textSignalsPayment(text);
@@ -137,8 +153,10 @@ export async function detectPayment(args: DetectPaymentArgs): Promise<void> {
       // eventId ÚNICO por comprobante (waMessageId) → Meta cuenta CADA recarga como un Purchase distinto
       // en vez de deduplicarlas contra la primera (BUG 2). El "Compró" manual mantiene el eventId estable.
       const detKey = String(item?.key?.id ?? Date.now());
-      // Moneda: la del COMPROBANTE si la IA la leyó; si no, la configurada de la cuenta.
-      await markPurchase(userId, contact.id, amount, currency ?? (await accountCurrency(userId)), { eventId: rechargeEventId(contact.externalId, detKey), payerName: payerName ?? undefined });
+      // Moneda: SIEMPRE la de la cuenta (User.purchaseCurrency, default ARS). La que adivina la IA en el
+      // comprobante NO se usa: leía "PYG" en recibos ARS y Meta valuaba esas ventas 5 veces menos
+      // (11/09: 7 de 20 Purchase de la cuenta matias salieron en PYG). Un cliente PYG lo configura por cuenta.
+      await markPurchase(userId, contact.id, amount, await accountCurrency(userId), { eventId: rechargeEventId(contact.externalId, detKey), payerName: payerName ?? undefined });
       return;
     }
 

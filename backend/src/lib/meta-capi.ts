@@ -42,6 +42,7 @@ export interface CapiEventInput {
   clientIp?: string;
   userAgent?: string;
   phone?: string;
+  email?: string;              // email del comprador -> em hasheado (embudo de venta de Publi.lat)
   firstName?: string;          // nombre del contacto -> fn hasheado (sube el Event Match Quality)
   value?: number;              // sólo Purchase
   currency?: string;           // ej "ARS"
@@ -101,6 +102,7 @@ export async function sendCapiEvent(input: CapiEventInput): Promise<CapiResult> 
   if (input.fbp) userData.fbp = input.fbp;          // fbp/fbc NO se hashean
   if (input.fbc) userData.fbc = input.fbc;
   if (input.phone) userData.ph = sha256(input.phone);
+  if (input.email) userData.em = sha256(input.email); // email normalizado (trim+lower) y hasheado
   if (input.firstName) {
     // fn = primer nombre, ln = último apellido: dos claves de match en vez de una (Meta
     // matchea fn y ln por separado; el apellido descartado era EMQ regalado).

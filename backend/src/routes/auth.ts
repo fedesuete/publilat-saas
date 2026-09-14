@@ -8,6 +8,8 @@ import { requireAuth, AUTH_COOKIE } from "../middleware/requireAuth.js";
 import { resolveReferrerByCode } from "../lib/referrals.js";
 import { notifyNewSignup } from "../lib/signup-notify.js";
 import { sendRegistrationOutreach } from "../lib/signup-outreach.js";
+import { clickIdsFromSignup, signupSource } from "../lib/attribution.js";
+import { fireMarketingEvent } from "../lib/marketing-capi.js";
 import type { Response } from "express";
 
 export const authRouter = Router();
@@ -31,6 +33,12 @@ const registerSchema = z.object({
   name: z.string().min(1).optional(),
   phone: z.string().max(30).optional(), // WhatsApp del usuario (opcional)
   ref: z.string().max(20).optional(), // código de referido (/register?ref=CODE)
+  // Ids del clic de Meta (embudo de venta de Publi.lat): los manda el panel en /register para cerrar
+  // el loop del pixel de marketing (CompleteRegistration ahora, Purchase cuando pague).
+  fbp: z.string().max(255).optional(),
+  fbc: z.string().max(600).optional(),
+  fbclid: z.string().max(600).optional(),
+  eventId: z.string().max(120).optional(), // dedup con el CompleteRegistration del pixel del navegador
 });
 
 const loginSchema = z.object({
@@ -55,13 +63,14 @@ authRouter.post("/register", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
   }
-  const { email, password, name, phone, ref } = parsed.data;
+  const { email, password, name, phone, ref, eventId } = parsed.data;
 
   try {
     const slug = await uniqueSlug(name ?? email.split("@")[0]);
     // Referido: si vino un ?ref válido, guardamos quién lo refirió. La comisión (10%) recién se
     // liquida cuando ESTA cuenta hace su 1ra compra Y el referidor ya es cliente (ver referrals.ts).
     const referredById = ref ? await resolveReferrerByCode(ref) : null;
+    const ids = clickIdsFromSignup(parsed.data);
     const user = await prisma.user.create({
       data: {
         email,
@@ -69,9 +78,20 @@ authRouter.post("/register", async (req, res) => {
         name,
         phone,
         password: await hashPassword(password),
-        ...(referredById ? { referredById, source: "referido" } : {}),
+        source: signupSource({ referred: Boolean(referredById) }),
+        fbp: ids.fbp,
+        fbc: ids.fbc,
+        fbclid: ids.fbclid,
+        ...(referredById ? { referredById } : {}),
       },
       select: { id: true, email: true, slug: true, name: true, role: true, tokenVersion: true },
+    });
+
+    // Pixel "Publi.lat Clientes": se registró un cliente desde el panel (dedup con el evento del navegador).
+    void fireMarketingEvent({
+      eventName: "CompleteRegistration",
+      externalId: user.id, email, phone, firstName: name, fbp: ids.fbp, fbc: ids.fbc, eventId,
+      clientIp: req.ip, userAgent: req.get("user-agent") ?? undefined,
     });
 
     // Aviso al dueño (WhatsApp + email) del cliente nuevo, para contactarlo. Best-effort, no bloquea.

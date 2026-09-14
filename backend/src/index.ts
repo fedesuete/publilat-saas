@@ -11,6 +11,7 @@ import { Server as SocketServer } from "socket.io";
 import { goRouter } from "./routes/go.js";
 import { landingRouter } from "./routes/landing.js";
 import { authRouter } from "./routes/auth.js";
+import { publicConfigRouter } from "./routes/public-config.js";
 import { landRouter } from "./routes/land.js";
 import { leadsRouter } from "./routes/leads.js";
 import { bulkRouter } from "./routes/bulk.js";
@@ -138,6 +139,8 @@ app.use("/", trackRouter);
 
 // Auth (público, rate-limit estricto contra fuerza bruta)
 app.use("/api/auth", authLimiter, authRouter);
+// Config pública para el panel antes del login (pixel de marketing en /login y /register).
+app.use("/api/public/config", apiLimiter, publicConfigRouter);
 // Alta self-service desde landing EXTERNA (el CORS abierto se montó arriba, antes del cors global).
 app.use("/api/land", apiLimiter, landRouter);
 
