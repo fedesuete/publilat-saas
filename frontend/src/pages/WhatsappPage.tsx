@@ -44,6 +44,7 @@ function WelcomeConfig() {
   const [saving, setSaving] = useState(false);
   const [ok, setOk] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false); // panel plegado: se abre al tocar "Configurar"
 
   useEffect(() => {
     api.get<{ welcome: WelcomeCfg | null }>("/api/wa/welcome")
@@ -56,6 +57,7 @@ function WelcomeConfig() {
           setBtns([parts[0] ?? "", parts[1] ?? "", parts[2] ?? ""]);
           setAEnabled(w.waAutoEnabled); setAWelcome(w.waAutoWelcome ?? ""); setAFollowup(w.waAutoFollowup ?? "");
           setABtnLabel(w.waAutoBtnLabel ?? ""); setABtnUrl(w.waAutoBtnUrl ?? "");
+          if (w.waWelcomeEnabled || w.waAutoEnabled) setOpen(true); // ya lo usa: no se lo escondemos
         }
       })
       .catch((e) => setError(apiError(e)))
@@ -78,8 +80,37 @@ function WelcomeConfig() {
 
   if (loading) return null;
 
+  // Estas dos configuraciones son avanzadas y sólo aplican a líneas Cloud API: abiertas de entrada
+  // tapaban lo importante (conectar el número). Van plegadas detrás de un botón; si el cliente ya
+  // tiene alguna activa, se abren solas para que no queden "escondidas".
+  if (!open) {
+    const activas = [enabled, aEnabled].filter(Boolean).length;
+    return (
+      <Card className="mb-6 max-w-xl">
+        <button type="button" onClick={() => setOpen(true)} className="flex w-full items-center gap-3 text-left">
+          <span className="text-xl">💬</span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-slate-100">Respuestas automáticas</span>
+            <span className="block text-xs text-slate-500">
+              Saludo con botones y auto-respuesta para anuncios (líneas Cloud API).
+            </span>
+          </span>
+          {activas > 0 && (
+            <span className="shrink-0 rounded-full bg-wa-green/15 px-2 py-0.5 text-[11px] font-bold text-wa-green">
+              {activas} activa{activas > 1 ? "s" : ""}
+            </span>
+          )}
+          <span className="shrink-0 text-slate-400">Configurar ›</span>
+        </button>
+      </Card>
+    );
+  }
+
   return (
     <Card className="mb-6 max-w-xl">
+      <button type="button" onClick={() => setOpen(false)} className="mb-3 text-xs font-medium text-slate-400 hover:text-slate-200">
+        ‹ Ocultar respuestas automáticas
+      </button>
       <div className="mb-1 flex items-center justify-between">
         <div className="text-sm font-semibold text-slate-100">💬 Saludo automático con botones (anuncios)</div>
         <label className="flex items-center gap-2 text-xs text-slate-400">
@@ -155,6 +186,11 @@ export default function WhatsappPage() {
   const [activateDays, setActivateDays] = useState<Record<string, string>>({});
   const [activatingId, setActivatingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ id: string; text: string } | null>(null);
+  // Días de crédito disponibles (encabezado de la sección).
+  const [credit, setCredit] = useState<number | null>(null);
+  useEffect(() => {
+    api.get<{ days: number }>("/api/billing/credit").then(({ data }) => setCredit(data.days)).catch(() => undefined);
+  }, []);
   // Alta: tipo de conexión + datos de Cloud API (CTWA).
   const [provider, setProvider] = useState<"baileys" | "cloud" | "external">("baileys");
   const [cloud, setCloud] = useState({ phoneNumberId: "", wabaId: "", accessToken: "", verifyToken: "", phone: "" });
@@ -590,8 +626,39 @@ export default function WhatsappPage() {
     <div className="p-6">
       <h1 className="mb-2 text-xl font-bold">WhatsApp</h1>
       <p className="mb-5 text-sm text-slate-400">
-        Conectá por QR (Baileys) o con la API oficial (Cloud API) para anuncios Click-to-WhatsApp.
+        Conecte su número por QR o con la API oficial de Meta para anuncios Click-to-WhatsApp.
       </p>
+
+      {/* Días disponibles arriba de todo: es lo que define si el servicio está prendido. */}
+      <div className="mb-5 flex max-w-xl flex-wrap items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+        <div>
+          <div className="text-xs text-slate-400">Días disponibles</div>
+          <div className={`text-2xl font-extrabold ${credit != null && credit <= 3 ? "text-rose-400" : "text-slate-100"}`}>
+            {credit ?? "—"}
+          </div>
+        </div>
+        <p className="min-w-[180px] flex-1 text-xs text-slate-500">
+          Cada día activa <b className="text-slate-300">una línea por 24 horas</b>. Si tiene 2 líneas prendidas,
+          consume 2 días por jornada.
+        </p>
+        <a href="/billing" className="rounded-lg bg-wa-green px-4 py-2 text-sm font-bold text-slate-900 transition hover:brightness-110">
+          + Agregar días
+        </a>
+      </div>
+
+      {/* Guía corta de conexión: lo primero que necesita quien entra por primera vez. */}
+      <div className="mb-5 max-w-xl rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+        <div className="mb-2 text-sm font-semibold text-slate-100">📲 Cómo conectar su número</div>
+        <ol className="space-y-1.5 text-xs text-slate-400">
+          <li><b className="text-slate-300">1.</b> Agregue el número abajo (con código de país, sin + ni espacios).</li>
+          <li><b className="text-slate-300">2.</b> Asígnele días para activarlo.</li>
+          <li><b className="text-slate-300">3.</b> Toque <b className="text-slate-300">Conectar QR</b> y escanee desde ese teléfono: WhatsApp → Dispositivos vinculados → Vincular un dispositivo.</li>
+          <li><b className="text-slate-300">4.</b> Listo: los mensajes entran en la sección Mensajes y quedan registrados en el CRM.</li>
+        </ol>
+        <p className="mt-2 text-[11px] text-slate-500">
+          Importante: mantenga el teléfono con internet. Si se desconecta, vuelva a escanear el QR desde esta pantalla.
+        </p>
+      </div>
 
       <WelcomeConfig />
 
