@@ -134,6 +134,35 @@ export default function InboxPage() {
     } catch (err) { setChatError(apiError(err)); }
   };
 
+  // Eliminar la CONVERSACIÓN: borra los mensajes, no el contacto (el lead y su atribución quedan
+  // en el CRM). Si la persona vuelve a escribir, el chat reaparece limpio.
+  const borrarChat = async (contactId: string) => {
+    const quien = convs.find((c) => c.id === contactId);
+    const nombre = quien?.alias || quien?.name || quien?.number || "esta conversación";
+    if (!window.confirm(`¿Eliminar la conversación con ${nombre}?\n\nSe borran los mensajes de este panel. El contacto sigue en Leads con su historial de etapas.`)) return;
+    try {
+      await api.delete(`/api/chats/${contactId}`);
+      setSelected(null);
+      setMessages([]);
+      await loadConvs();
+    } catch (err) { setChatError(apiError(err)); }
+  };
+
+  // Eliminar UN mensaje. Si lo mandamos nosotros hace poco, también se borra en WhatsApp ("para todos").
+  const borrarMensaje = async (messageId: string) => {
+    if (!selected) return;
+    if (!window.confirm("¿Eliminar este mensaje?")) return;
+    try {
+      const { data } = await api.delete<{ enWhatsApp: boolean }>(`/api/chats/${selected}/mensajes/${messageId}`);
+      setMessages((prev) => prev.filter((m) => m.id !== messageId));
+      if (!data.enWhatsApp) {
+        setChatError("Se borró del panel. En el teléfono del cliente sigue: WhatsApp sólo permite borrarlo para todos durante un rato después de enviarlo.");
+        setTimeout(() => setChatError(null), 6000);
+      }
+      void loadConvs();
+    } catch (err) { setChatError(apiError(err)); }
+  };
+
   // Crea (o reusa) el contacto y manda el primer mensaje; después abre esa conversación.
   const iniciarChat = async () => {
     if (!nuevo) return;
@@ -490,12 +519,33 @@ export default function InboxPage() {
                 </div>
               </div>
               {current && <StageBadge stage={current.stage} />}
+              {current && (
+                <button
+                  onClick={() => void borrarChat(current.id)}
+                  title="Eliminar conversación"
+                  aria-label="Eliminar conversación"
+                  className="rounded-full p-2 text-slate-500 transition hover:bg-rose-500/10 hover:text-rose-400"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
             </div>
 
             <div className="flex-1 space-y-2 overflow-y-auto bg-slate-900/40 p-4">
               {chatError && <ErrorMsg>{chatError}</ErrorMsg>}
               {messages.map((m) => (
-                <div key={m.id} className={`flex ${m.direction === "out" ? "justify-end" : "justify-start"}`}>
+                <div key={m.id} className={`group flex items-center gap-1.5 ${m.direction === "out" ? "justify-end" : "justify-start"}`}>
+                  {/* Eliminar mensaje (aparece al pasar el mouse, como en WhatsApp). */}
+                  {m.direction === "out" && (
+                    <button
+                      onClick={() => void borrarMensaje(m.id)}
+                      title="Eliminar mensaje"
+                      aria-label="Eliminar mensaje"
+                      className="order-first shrink-0 rounded-full p-1.5 text-slate-600 opacity-0 transition hover:bg-rose-500/10 hover:text-rose-400 focus:opacity-100 group-hover:opacity-100"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                   <div className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${
                     m.direction === "out"
                       ? m.status === "failed"

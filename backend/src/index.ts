@@ -20,6 +20,7 @@ import { webhookRouter } from "./routes/webhook.js";
 import { cloudWebhookRouter } from "./routes/wa-cloud.js";
 import { inboxRouter } from "./routes/inbox.js";
 import { nuevoChatRouter } from "./routes/nuevo-chat.js";
+import { chatsRouter } from "./routes/chats.js";
 import { analyticsRouter } from "./routes/analytics.js";
 import { billingRouter, billingWebhookRouter, usdtWebhookRouter, pagoparWebhookRouter, stripeWebhookHandler } from "./routes/billing.js";
 import { referralsRouter } from "./routes/referrals.js";
@@ -180,6 +181,7 @@ app.use("/api/bulk", apiLimiter, requireAuth, bulkRouter); // envíos masivos (g
 app.use("/api/wa", apiLimiter, requireAuth, waRouter);
 app.use("/api/inbox", apiLimiter, requireAuth, inboxRouter);
 app.use("/api/nuevo-chat", apiLimiter, requireAuth, nuevoChatRouter); // iniciar conversación desde cero
+app.use("/api/chats", apiLimiter, requireAuth, chatsRouter);          // borrar conversaciones/mensajes
 app.use("/api/analytics", apiLimiter, requireAuth, analyticsRouter);
 app.use("/api/billing", apiLimiter, requireAuth, billingRouter);
 app.use("/api/referrals", apiLimiter, requireAuth, referralsRouter);
