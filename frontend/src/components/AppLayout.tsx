@@ -187,6 +187,18 @@ export default function AppLayout() {
   const [clientesOpen, setClientesOpen] = useState(() =>
     ["/leads", "/kanban", "/agenda", "/referidos"].some((p) => window.location.pathname.startsWith(p)),
   );
+  // Días de crédito (pie del menú): al abrir y cada 60s. Best-effort: si falla, muestra "—".
+  const [days, setDays] = useState<number | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    const traer = () =>
+      api.get<{ days: number }>("/api/billing/credit")
+        .then(({ data }) => { if (vivo) setDays(data.days); })
+        .catch(() => undefined);
+    void traer();
+    const t = setInterval(traer, 60_000);
+    return () => { vivo = false; clearInterval(t); };
+  }, []);
   // Recorrido guiado de bienvenida (se dispara al crear la cuenta o desde "Empezá acá").
   const [tour, setTour] = useState(false);
 
@@ -380,8 +392,41 @@ export default function AppLayout() {
         </nav>
         <InstallPWA />
         <div className="border-t border-slate-800 p-4 text-xs text-slate-400">
-          <div className="truncate font-medium text-slate-200">{user?.email}</div>
-          <div className="mb-3 truncate">slug: {user?.slug}</div>
+          {/* Días disponibles + "Agregar días": lo más importante del pie (si se quedan sin días,
+              se les apaga el servicio). Barra sobre 30 días como referencia visual. */}
+          <div className="mb-3 rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+            <div className="flex items-baseline justify-between">
+              <span className="text-[11px] font-medium text-slate-400">Días disponibles</span>
+              <span className={`text-lg font-extrabold ${days != null && days <= 3 ? "text-rose-400" : "text-slate-100"}`}>
+                {days ?? "—"}
+              </span>
+            </div>
+            <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+              <div
+                className={`h-full rounded-full transition-[width] duration-500 ${days != null && days <= 3 ? "bg-rose-500" : "bg-wa-green"}`}
+                style={{ width: `${Math.min(100, Math.max(days ? 4 : 0, ((days ?? 0) / 30) * 100))}%` }}
+              />
+            </div>
+            <NavLink
+              to="/billing"
+              onClick={() => setMenuOpen(false)}
+              className="mt-2.5 flex items-center justify-center gap-1.5 rounded-lg bg-wa-green px-3 py-2 text-sm font-bold text-slate-900 transition hover:brightness-110"
+            >
+              + Agregar días
+            </NavLink>
+          </div>
+
+          {/* Usuario */}
+          <div className="mb-2 flex items-center gap-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-wa-green/20 text-sm font-bold text-wa-green">
+              {(user?.name || user?.email || "?").charAt(0).toUpperCase()}
+            </span>
+            <div className="min-w-0">
+              {user?.name && <div className="truncate text-sm font-semibold text-slate-100">{user.name}</div>}
+              <div className="truncate text-[11px] text-slate-400">{user?.email}</div>
+            </div>
+          </div>
+
           <button
             onClick={onToggleTheme}
             className="mb-2 flex w-full items-center justify-center gap-2 rounded-md border border-slate-700 px-3 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800 hover:text-white"
