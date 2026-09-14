@@ -219,12 +219,17 @@ export default function DashboardPage() {
         <Card><p className="text-slate-300">No hay datos para mostrar.</p></Card>
       ) : (
         <div className="space-y-6">
-          {/* 4 tarjetas limpias según el período elegido (estilo claro: clic ≠ chat ≠ venta) */}
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <StatCard label="Clics en el período" value={String(w.clicks)} sub="personas que tocaron el anuncio" accent="text-sky-300" />
-            <StatCard label="Chats reales" value={String(w.chats)} sub="personas que te escribieron" accent="text-violet-300" />
-            <StatCard label="Ventas en el período" value={String(w.sales)} sub={`${pct(w.closeRate)} de cierre · ${fmtAmount(w.revenue)}`} accent="text-wa-green" />
-            <StatCard label="Líneas activas" value={String(data.activeLines)} sub="en rotación ahora" accent="text-amber-300" />
+          {/* 4 tarjetas limpias según el período elegido (estilo claro: clic ≠ chat ≠ venta).
+              Con título propio para que se lea de un vistazo que estos números son de WhatsApp y no
+              se confundan con los del Chat App de abajo. */}
+          <div>
+            <h2 className="mb-2 text-sm font-semibold text-slate-200">💬 WhatsApp — anuncios y ventas</h2>
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+              <StatCard label="Clics en el período" value={String(w.clicks)} sub="personas que tocaron el anuncio" accent="text-sky-300" />
+              <StatCard label="Chats reales" value={String(w.chats)} sub="personas que te escribieron" accent="text-violet-300" />
+              <StatCard label="Ventas en el período" value={String(w.sales)} sub={`${pct(w.closeRate)} de cierre · ${fmtAmount(w.revenue)}`} accent="text-wa-green" />
+              <StatCard label="Líneas activas" value={String(data.activeLines)} sub="en rotación ahora" accent="text-amber-300" />
+            </div>
           </div>
 
           {/* Chat App: descargas/instalaciones de tu aplicación (PWA cliente↔operador) */}
