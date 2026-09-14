@@ -17,7 +17,6 @@ import {
   Coins,
   Gift,
   Target,
-  Link2,
   LayoutTemplate,
   Plug,
   Settings,
@@ -25,6 +24,7 @@ import {
   LifeBuoy,
   Shield,
   Menu,
+  ChevronDown,
   X,
   Zap,
   Sun,
@@ -141,21 +141,25 @@ const NAV: Array<{ to: string; label: string; icon: LucideIcon | typeof WhatsApp
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/inbox", label: "Mensajes", icon: WhatsAppIcon },
   { to: "/chat", label: "Chat App", icon: MessagesSquare },
-  { to: "/leads", label: "Leads", icon: Users },
   // Envíos masivos: en prueba, solo para las cuentas de BULK_EMAILS (el backend también lo gatea).
   { to: "/envios", label: "Envíos masivos", icon: Send, onlyFor: "bulk" },
-  { to: "/agenda", label: "Agenda", icon: CalendarDays },
-  { to: "/kanban", label: "Kanban", icon: KanbanSquare },
   { to: "/automatizaciones", label: "Automatizaciones", icon: Workflow },
   { to: "/whatsapp", label: "WhatsApp", icon: MessageCircle },
   { to: "/billing", label: "Créditos", icon: Coins },
-  { to: "/referidos", label: "Referidos", icon: Gift },
   { to: "/pixel", label: "Mi Pixel", icon: Target },
-  { to: "/links", label: "Links", icon: Link2 },
   { to: "/landings", label: "Landings", icon: LayoutTemplate },
   { to: "/integraciones", label: "Integraciones", icon: Plug },
   { to: "/configuracion", label: "Configuración", icon: Settings },
   { to: "/soporte", label: "Soporte", icon: LifeBuoy },
+];
+
+// Secciones de uso puntual (no del día a día): van juntas en un desplegable para que el menú
+// principal quede corto. /links se quitó: no aportaba nada y confundía.
+const NAV_CLIENTES: Array<{ to: string; label: string; icon: LucideIcon }> = [
+  { to: "/leads", label: "Leads", icon: Users },
+  { to: "/kanban", label: "Kanban", icon: KanbanSquare },
+  { to: "/agenda", label: "Agenda", icon: CalendarDays },
+  { to: "/referidos", label: "Referidos", icon: Gift },
 ];
 
 // Pasos del recorrido guiado de bienvenida (se dispara al crear la cuenta).
@@ -179,6 +183,10 @@ export default function AppLayout() {
   const onToggleTheme = () => setThemeState(toggleTheme());
   // Menú lateral en MÓVIL: cajón deslizable (en desktop es fijo, siempre visible).
   const [menuOpen, setMenuOpen] = useState(false);
+  // Desplegable "Clientes": arranca abierto si ya estás en una de esas secciones.
+  const [clientesOpen, setClientesOpen] = useState(() =>
+    ["/leads", "/kanban", "/agenda", "/referidos"].some((p) => window.location.pathname.startsWith(p)),
+  );
   // Recorrido guiado de bienvenida (se dispara al crear la cuenta o desde "Empezá acá").
   const [tour, setTour] = useState(false);
 
@@ -327,6 +335,38 @@ export default function AppLayout() {
               )}
             </NavLink>
           ))}
+
+          {/* Desplegable "Clientes": Leads, Kanban, Agenda y Referidos. Se abre solo si estás
+              parado en alguna de ellas, así no perdés de vista dónde estás. */}
+          <button
+            type="button"
+            onClick={() => setClientesOpen((v) => !v)}
+            className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800 hover:text-white"
+          >
+            <Users className="h-4 w-4 shrink-0" />
+            Clientes
+            <ChevronDown className={`ml-auto h-4 w-4 shrink-0 transition-transform ${clientesOpen ? "rotate-180" : ""}`} />
+          </button>
+          {clientesOpen && (
+            <div className="flex flex-col gap-1 border-l border-slate-800 pl-3">
+              {NAV_CLIENTES.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  onClick={() => setMenuOpen(false)}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition ${
+                      isActive ? "bg-wa-green/15 text-wa-green" : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                    }`
+                  }
+                >
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
+          )}
+
           {user?.role === "ADMIN" && (
             <NavLink
               to="/admin"
