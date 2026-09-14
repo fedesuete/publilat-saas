@@ -136,7 +136,7 @@ function WhatsAppIcon({ className }: { className?: string }) {
 }
 
 const NAV: Array<{ to: string; label: string; icon: LucideIcon | typeof WhatsAppIcon; id?: string; end?: boolean; onlyFor?: "bulk" }> = [
-  { to: "/empezar", label: "Empezá acá", icon: Zap, id: "nav-empezar" },
+  { to: "/empezar", label: "Primeros pasos", icon: Zap, id: "nav-empezar" },
   { to: "/tutoriales", label: "Tutoriales", icon: GraduationCap, id: "nav-tutoriales" },
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/inbox", label: "Mensajes", icon: WhatsAppIcon },
@@ -163,10 +163,11 @@ const NAV_CLIENTES: Array<{ to: string; label: string; icon: LucideIcon }> = [
 ];
 
 // Pasos del recorrido guiado de bienvenida (se dispara al crear la cuenta).
+// Textos en español NEUTRO y formal (sin modismos regionales): la plataforma se usa en varios países.
 const TOUR_STEPS: TourStep[] = [
-  { targetId: "nav-empezar", title: "Empezá acá 🚀", body: "Tu punto de partida. Acá tenés los pasos para dejar tu cuenta lista y vendiendo. Volvé cuando quieras." },
-  { targetId: "nav-tutoriales", title: "Tutoriales 🎓", body: "Videos y guías paso a paso de cada sección. Si te trabás en algo, mirá acá primero." },
-  { targetId: "support-bubble", title: "Soporte por WhatsApp 💬", body: "¿Tenés una duda? Tocá este globo y nos escribís directo por WhatsApp. Te ayudamos al toque." },
+  { targetId: "nav-empezar", title: "Primeros pasos 🚀", body: "Su punto de partida: los pasos para dejar la cuenta lista y funcionando. Puede volver cuando quiera." },
+  { targetId: "nav-tutoriales", title: "Tutoriales 🎓", body: "Videos y guías paso a paso de cada sección. Ante cualquier duda, consulte esta sección primero." },
+  { targetId: "support-bubble", title: "Soporte por WhatsApp 💬", body: "¿Necesita ayuda? Toque este botón para escribirnos por WhatsApp. Le respondemos a la brevedad." },
 ];
 
 export default function AppLayout() {
@@ -318,7 +319,7 @@ export default function AppLayout() {
             </button>
           </div>
         </div>
-        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3">
+        <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-1">
           {NAV.filter((item) => item.onlyFor !== "bulk" || BULK_EMAILS.includes((user?.email ?? "").toLowerCase())).map((item) => (
             <NavLink
               key={item.to}
@@ -326,7 +327,7 @@ export default function AppLayout() {
               id={item.id}
               onClick={() => setMenuOpen(false)}
               className={({ isActive }) =>
-                `flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition ${
+                `flex items-center gap-3 rounded-md px-3 py-1.5 text-sm font-medium transition ${
                   isActive
                     ? "bg-wa-green/15 text-wa-green"
                     : "text-slate-300 hover:bg-slate-800 hover:text-white"
@@ -353,7 +354,7 @@ export default function AppLayout() {
           <button
             type="button"
             onClick={() => setClientesOpen((v) => !v)}
-            className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800 hover:text-white"
+            className="flex items-center gap-3 rounded-md px-3 py-1.5 text-sm font-medium text-slate-300 transition hover:bg-slate-800 hover:text-white"
           >
             <Users className="h-4 w-4 shrink-0" />
             Clientes
@@ -367,7 +368,7 @@ export default function AppLayout() {
                   to={item.to}
                   onClick={() => setMenuOpen(false)}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition ${
+                    `flex items-center gap-3 rounded-md px-3 py-1.5 text-sm font-medium transition ${
                       isActive ? "bg-wa-green/15 text-wa-green" : "text-slate-300 hover:bg-slate-800 hover:text-white"
                     }`
                   }
@@ -383,7 +384,7 @@ export default function AppLayout() {
             <NavLink
               to="/admin"
               onClick={() => setMenuOpen(false)}
-              className="mt-1 flex items-center gap-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-300 transition hover:bg-amber-500/20"
+              className="mt-1 flex items-center gap-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-sm font-semibold text-amber-300 transition hover:bg-amber-500/20"
             >
               <Shield className="h-4 w-4 shrink-0" />
               Admin
@@ -437,11 +438,8 @@ export default function AppLayout() {
           <Button variant="ghost" className="w-full" onClick={handleLogout}>
             Cerrar sesión
           </Button>
-          <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
-            <a href="https://publi.lat/privacidad" target="_blank" rel="noopener noreferrer" className="hover:text-slate-300">Privacidad</a>
-            <a href="https://publi.lat/terminos" target="_blank" rel="noopener noreferrer" className="hover:text-slate-300">Términos</a>
-            <a href="https://publi.lat/eliminacion-datos" target="_blank" rel="noopener noreferrer" className="hover:text-slate-300">Eliminación de datos</a>
-          </div>
+          {/* Los enlaces legales (Privacidad / Términos / Eliminación de datos) viven en
+              Configuración: acá ocupaban lugar y empujaban el menú. */}
         </div>
       </aside>
       <div className="flex flex-1 flex-col overflow-hidden">

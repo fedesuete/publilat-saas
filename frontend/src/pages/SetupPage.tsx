@@ -307,6 +307,13 @@ export default function SetupPage() {
           </Card>
         </div>
       )}
+
+      {/* Enlaces legales: viven acá (antes estaban al pie del menú, donde ocupaban lugar). */}
+      <div className="mt-6 flex flex-wrap gap-x-4 gap-y-1 border-t border-slate-800 pt-4 text-xs text-slate-500">
+        <a href="https://publi.lat/privacidad" target="_blank" rel="noopener noreferrer" className="hover:text-slate-300">Política de privacidad</a>
+        <a href="https://publi.lat/terminos" target="_blank" rel="noopener noreferrer" className="hover:text-slate-300">Términos y condiciones</a>
+        <a href="https://publi.lat/eliminacion-datos" target="_blank" rel="noopener noreferrer" className="hover:text-slate-300">Eliminación de datos</a>
+      </div>
     </div>
   );
 }
