@@ -1241,7 +1241,24 @@ function BotTab() {
           <li><b className="text-slate-200">3.</b> En carga: le pide el monto y le muestra tus datos de pago.</li>
           <li><b className="text-slate-200">4.</b> Cuando el cliente dice “ya pagué”, te avisa en <b>Conversaciones</b> para que verifiques y cargues.</li>
         </ol>
-        <p className="mt-3 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-[11px] leading-tight text-slate-500">Próximamente: conectamos el sistema de tu socio para que la carga/descarga sea 100% automática. Por ahora vos das el OK final desde el chat.</p>
+        {/* Antes decía "Próximamente". La carga/descarga automática YA existe (se conecta la
+            plataforma del cliente), así que esto pasa a ser una oferta concreta: que nos escriba. */}
+        <div className="mt-3 rounded-lg border border-wa-green/30 bg-wa-green/10 px-3 py-2.5">
+          <p className="text-[11px] font-semibold leading-tight text-slate-200">
+            ⚡ ¿Quiere que la carga y la descarga sean 100% automáticas?
+          </p>
+          <p className="mt-1 text-[11px] leading-tight text-slate-400">
+            Conectamos su plataforma para que el bot acredite solo, sin que usted tenga que dar el OK.
+          </p>
+          <a
+            href={`https://wa.me/595975112248?text=${encodeURIComponent("Hola! Quiero activar la carga y descarga automática en el Chat App 🙌")}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-wa-green px-3 py-1.5 text-[11px] font-bold text-slate-900 transition hover:brightness-110"
+          >
+            💬 Contactar para activarlo
+          </a>
+        </div>
       </Card>
 
       {link && (
