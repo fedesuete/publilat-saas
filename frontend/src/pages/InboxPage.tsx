@@ -75,13 +75,24 @@ function ClipRow({ clip, disabled, onSend, onDelete }: {
   );
 }
 
+// Lista de conversaciones cacheada en la pestaña: al volver al Inbox se pinta al instante y el
+// refresco ocurre por detrás (el server tarda ~200ms, pero la espera en blanco se notaba mucho).
+const CONVS_CACHE = "inbox_convs_v1";
+
 export default function InboxPage() {
-  const [convs, setConvs] = useState<Conversation[]>([]);
+  const [convs, setConvs] = useState<Conversation[]>(() => {
+    try { return JSON.parse(sessionStorage.getItem(CONVS_CACHE) || "[]") as Conversation[]; } catch { return []; }
+  });
+  // Sólo es "cargando" si no había nada cacheado para mostrar mientras tanto.
+  const [loadingConvs, setLoadingConvs] = useState(() => {
+    try { return !sessionStorage.getItem(CONVS_CACHE); } catch { return true; }
+  });
   const [selected, setSelected] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [draft, setDraft] = useState("");
   const [listError, setListError] = useState<string | null>(null);
   const [chatError, setChatError] = useState<string | null>(null);
+  const [loadingMsgs, setLoadingMsgs] = useState(false); // esqueleto al abrir un chat
   const [sending, setSending] = useState(false);
   const [listOpen, setListOpen] = useState(true);
   // "Nuevo chat": arrancar una conversación con un número que nunca escribió. null = modal cerrado.
@@ -188,7 +199,12 @@ export default function InboxPage() {
     try {
       const { data } = await api.get<{ conversations: Conversation[] }>("/api/inbox/conversations");
       setConvs(data.conversations); // el badge se calcula en el render con readMap (leído hasta por chat)
+      // Cache para la PRÓXIMA apertura: al volver al Inbox se pinta al instante con esto y recién
+      // después se refresca. Antes se veía "No hay conversaciones aún" mientras cargaba y parecía
+      // que el Inbox estaba vacío o roto (reporte del dueño, 2026-09-15).
+      try { sessionStorage.setItem(CONVS_CACHE, JSON.stringify(data.conversations)); } catch { /* storage lleno */ }
     } catch (err) { setListError(apiError(err)); }
+    finally { setLoadingConvs(false); }
   };
   const loadQuick = async () => {
     try { const { data } = await api.get<{ items: QuickReply[] }>("/api/inbox/quick-replies"); setQuick(data.items); }
@@ -222,9 +238,11 @@ export default function InboxPage() {
     markRead(selected); // lo abriste = leído (persiste en localStorage, no revive en verde)
     setChatError(null); setMessages([]); setShowEmoji(false); setShowQuick(false); setShowAudios(false); setNeedTemplate(false); setTemplates([]);
     setConvs((prev) => prev.map((c) => (c.id === selected ? { ...c, unread: 0 } : c)));
+    setLoadingMsgs(true);
     api.get<{ messages: Msg[] }>(`/api/inbox/${selected}/messages`)
       .then(({ data }) => setMessages(data.messages))
-      .catch((err) => setChatError(apiError(err)));
+      .catch((err) => setChatError(apiError(err)))
+      .finally(() => setLoadingMsgs(false));
   }, [selected]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
@@ -426,7 +444,7 @@ export default function InboxPage() {
           <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
             <div>
               <h1 className="font-bold">WhatsApp Inbox</h1>
-              <div className="text-xs text-slate-500">{convs.length} conversaciones</div>
+              <div className="text-xs text-slate-500">{loadingConvs && convs.length === 0 ? "cargando…" : `${convs.length} conversaciones`}</div>
             </div>
             <div className="flex items-center gap-1">
               {/* Empezar una charla con un número que nunca escribió (antes había que hacerlo del
@@ -442,7 +460,22 @@ export default function InboxPage() {
           </div>
           {listError && <div className="p-3"><ErrorMsg>{listError}</ErrorMsg></div>}
           <div className="flex-1 overflow-y-auto">
-            {convs.length === 0 ? (
+            {convs.length === 0 && loadingConvs ? (
+              /* Esqueleto mientras carga: sin esto se leía "No hay conversaciones aún" y parecía
+                 que el Inbox estaba vacío. */
+              <div className="space-y-2 p-4">
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <div key={i} className="flex animate-pulse items-center gap-3">
+                    <div className="h-9 w-9 shrink-0 rounded-full bg-slate-800" />
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <div className="h-3 w-1/2 rounded bg-slate-800" />
+                      <div className="h-2.5 w-3/4 rounded bg-slate-800/70" />
+                    </div>
+                  </div>
+                ))}
+                <p className="pt-1 text-center text-xs text-slate-600">Cargando conversaciones…</p>
+              </div>
+            ) : convs.length === 0 ? (
               <p className="p-4 text-sm text-slate-500">No hay conversaciones aún.</p>
             ) : convs.map((c) => {
               // Badge efectivo: si ya lo leíste (marca de lectura >= último mensaje) va gris con la inicial,
@@ -533,6 +566,16 @@ export default function InboxPage() {
 
             <div className="flex-1 space-y-2 overflow-y-auto bg-slate-900/40 p-4">
               {chatError && <ErrorMsg>{chatError}</ErrorMsg>}
+              {/* Esqueleto de burbujas mientras traemos el historial del chat. */}
+              {loadingMsgs && messages.length === 0 && (
+                <div className="space-y-3">
+                  {[0, 1, 2, 3].map((i) => (
+                    <div key={i} className={`flex ${i % 2 ? "justify-end" : "justify-start"}`}>
+                      <div className={`h-9 animate-pulse rounded-lg bg-slate-800 ${i % 2 ? "w-40" : "w-52"}`} />
+                    </div>
+                  ))}
+                </div>
+              )}
               {messages.map((m) => (
                 <div key={m.id} className={`group flex items-center gap-1.5 ${m.direction === "out" ? "justify-end" : "justify-start"}`}>
                   {/* Eliminar mensaje (aparece al pasar el mouse, como en WhatsApp). */}
