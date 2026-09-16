@@ -10,6 +10,8 @@ import { applyLineProxy, autoAssignEnabled, assignProxyPreferred, setLineWaiting
 import { enqueueProxyWatch } from "../lib/queue.js";
 import { getEngine } from "../lib/wa-engine.js";
 import { dedupeSameNumberLines } from "../lib/dedupe-lines.js";
+import { conectarSesion, pedirCodigoVinculacion, usaWaha } from "../lib/qr-connect.js";
+import { markUserConnecting } from "../lib/session-guard.js";
 import { warmupState } from "../lib/warmup.js";
 import axios from "axios";
 import crypto from "node:crypto";
@@ -98,10 +100,12 @@ const createSchema = z.object({
 // quedó viejo. Re-pedimos el QR ya por el proxy y lo emitimos por socket (async: no frena el alta).
 function emitProxyQrSoon(userId: string, instanceName: string, lineId: string): void {
   setTimeout(() => {
-    void getEngine()
-      .connectInstance(instanceName)
-      .then((r) => { if (r.base64) emitToUser(userId, "wa:qr", { lineId, qr: r.base64 }); })
-      .catch(() => undefined);
+    // conectarSesion NO reinicia una sesión que está arrancando: espera el QR. (connectInstance hacía
+    // /start + PUT config sobre la sesión recién creada = la volvía a cero a los 3,5 s del alta.)
+    const p = usaWaha()
+      ? conectarSesion(instanceName, lineId).then((r) => r.qr)
+      : getEngine().connectInstance(instanceName).then((r) => r.base64 ?? null);
+    void p.then((qr) => { if (qr) emitToUser(userId, "wa:qr", { lineId, qr }); }).catch(() => undefined);
   }, 3500);
 }
 
@@ -216,6 +220,7 @@ waRouter.post("/lines", async (req, res) => {
   let qr;
   try {
     qr = await getEngine().createInstance(instanceName);
+    markUserConnecting(instanceName); // recién creada: los automáticos no la tocan mientras el cliente escanea
   } catch (e) {
     await prisma.waLine.delete({ where: { id: line.id } }).catch(() => undefined);
     const message = e instanceof Error ? e.message : String(e);
@@ -511,7 +516,24 @@ waRouter.post("/lines/:id/connect", async (req, res) => {
   try {
     // Auto-asigna proxy si el flag está ON y la línea no tiene (líneas existentes que reconectan).
     await ensureProxyOnReconnect(line.id);
-    // Aplica el proxy (pool o manual) ANTES de conectar → la sesión sale por la IP del proxy.
+
+    if (usaWaha()) {
+      // FIX 2026-09-16 (bug "no me genera el QR"): antes esto hacía /start a ciegas y, si fallaba,
+      // PUT config + start (= REINICIO) aunque la sesión estuviera arrancando bien; el auto-refresco
+      // del panel lo repetía cada 18 s y la sesión nunca llegaba al QR. Ahora se mira el estado real,
+      // se hace SOLO lo necesario y se ESPERA el QR antes de responder. También marca la sesión como
+      // "el usuario está en esto" para que los jobs automáticos no la toquen por 10 min.
+      const out = await conectarSesion(instanceName, line.id);
+      if (out.status === "connected") {
+        return res.json({ qr: null, pairingCode: null, alreadyConnected: true, status: "connected" });
+      }
+      let pairingCode: string | null = null;
+      if (number && out.status === "qr") pairingCode = await pedirCodigoVinculacion(instanceName, number);
+      if (out.qr && !pairingCode) emitToUser(req.userId!, "wa:qr", { lineId: line.id, qr: out.qr });
+      return res.json({ qr: pairingCode ? null : out.qr, pairingCode, status: out.status, detail: out.detalle ?? null });
+    }
+
+    // Otros motores (Evolution): camino de siempre.
     await applyLineProxy(instanceName, line.id);
     const qr = await getEngine().connectInstance(instanceName, number || undefined);
     if (qr.base64) emitToUser(req.userId!, "wa:qr", { lineId: line.id, qr: qr.base64 });
@@ -530,6 +552,7 @@ waRouter.post("/lines/:id/reset", async (req, res) => {
   if (line.provider !== "baileys") return res.status(400).json({ error: "El reinicio aplica a líneas por QR (Baileys)" });
   const instanceName = line.sessionId ?? `line_${line.id}`;
   try {
+    markUserConnecting(instanceName); // reinicio pedido por el usuario: los automáticos esperan 10 min
     await getEngine().logoutInstance(instanceName);
     await getEngine().deleteInstance(instanceName);
     const qr = await getEngine().createInstance(instanceName);
@@ -540,8 +563,12 @@ waRouter.post("/lines/:id/reset", async (req, res) => {
       where: { id: line.id },
       data: { sessionId: instanceName, connected: false, status: "inactive" },
     });
-    if (qr.base64) emitToUser(req.userId!, "wa:qr", { lineId: line.id, qr: qr.base64 });
-    return res.json({ ok: true, qr: qr.base64 ?? null });
+    // Esperamos el QR acá mismo: la sesión recién creada tarda unos segundos en llegar a SCAN_QR_CODE
+    // y antes se respondía sin QR (el cliente tenía que volver a apretar "a ver si ahora sí").
+    let qrBase64 = qr.base64 ?? null;
+    if (!qrBase64 && usaWaha()) qrBase64 = (await conectarSesion(instanceName, line.id)).qr;
+    if (qrBase64) emitToUser(req.userId!, "wa:qr", { lineId: line.id, qr: qrBase64 });
+    return res.json({ ok: true, qr: qrBase64 });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     console.error("[wa/lines/reset] error:", message);

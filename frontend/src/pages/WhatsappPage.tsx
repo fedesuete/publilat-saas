@@ -177,6 +177,9 @@ function WelcomeConfig() {
 export default function WhatsappPage() {
   const [lines, setLines] = useState<Line[]>([]);
   const [qrs, setQrs] = useState<Record<string, string>>({});
+  // Líneas cuya sesión está ARRANCANDO (todavía sin QR): se muestra "generando…" y se re-pide solo.
+  const [qrPending, setQrPending] = useState<Record<string, boolean>>({});
+  const pendingTriesRef = useRef<Record<string, number>>({});
   const [pairingCodes, setPairingCodes] = useState<Record<string, string>>({});
   const [numberInputs, setNumberInputs] = useState<Record<string, string>>({});
   const [label, setLabel] = useState("");
@@ -406,6 +409,11 @@ export default function WhatsappPage() {
           delete next[p.lineId];
           return next;
         });
+        setQrPending((prev) => {
+          const next = { ...prev };
+          delete next[p.lineId];
+          return next;
+        });
         setPairingCodes((prev) => {
           const next = { ...prev };
           delete next[p.lineId];
@@ -448,6 +456,7 @@ export default function WhatsappPage() {
       const { data } = await api.post<{ line: Line; qr: string | null }>("/api/wa/lines", payload);
       setLines((prev) => [...prev, data.line]);
       if (data.qr) setQrs((prev) => ({ ...prev, [data.line.id]: data.qr! }));
+      else if (data.line.provider === "baileys") setQrPending((prev) => ({ ...prev, [data.line.id]: true })); // el QR llega en segundos
       setLabel("");
       setExternalPhone("");
       setCloud({ phoneNumberId: "", wabaId: "", accessToken: "", verifyToken: "", phone: "" });
@@ -458,18 +467,42 @@ export default function WhatsappPage() {
     }
   };
 
+  const quitarPending = (id: string) => {
+    setQrPending((prev) => { const n = { ...prev }; delete n[id]; return n; });
+    pendingTriesRef.current[id] = 0;
+  };
+
   const connect = async (id: string, number?: string) => {
     setError(null);
     try {
-      const { data } = await api.post<{ qr: string | null; pairingCode: string | null }>(
-        `/api/wa/lines/${id}/connect`,
-        number ? { number } : {}
-      );
-      if (data.qr) setQrs((prev) => ({ ...prev, [id]: data.qr! }));
+      const { data } = await api.post<{
+        qr: string | null; pairingCode: string | null; alreadyConnected?: boolean; status?: string; detail?: string | null;
+      }>(`/api/wa/lines/${id}/connect`, number ? { number } : {});
+      if (data.alreadyConnected) {
+        // Ya estaba conectada: no hay QR que mostrar (y tocarla la desvincularía).
+        quitarPending(id);
+        setLines((prev) => prev.map((l) => (l.id === id ? { ...l, connected: true } : l)));
+        setNotice({ id, text: "Esta línea ya está conectada ✓" });
+        return;
+      }
+      if (data.qr) {
+        setQrs((prev) => ({ ...prev, [id]: data.qr! }));
+        quitarPending(id);
+      }
       if (data.pairingCode) {
         setPairingCodes((prev) => ({ ...prev, [id]: data.pairingCode! }));
         // al vincular por número no usamos el QR
         setQrs((prev) => { const n = { ...prev }; delete n[id]; return n; });
+        quitarPending(id);
+      }
+      if (!data.qr && !data.pairingCode) {
+        if (data.status === "failed") {
+          quitarPending(id);
+          setError(data.detail || "WhatsApp rechazó la sesión. Probá «Reiniciar conexión».");
+        } else {
+          // La sesión todavía está arrancando: "generando…" y el poll de abajo lo vuelve a pedir.
+          setQrPending((prev) => ({ ...prev, [id]: true }));
+        }
       }
     } catch (err) {
       setError(apiError(err));
@@ -492,6 +525,29 @@ export default function WhatsappPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // "Generando el código…": mientras una línea está en qrPending (sesión arrancando), re-pedimos el QR
+  // cada 4 s hasta 15 veces (~1 min). El server ya NO reinicia nada al pedirlo, así que insistir es
+  // seguro. Antes: la primera respuesta venía sin QR y no pasaba nada más → "no me genera el QR".
+  const pendingRef = useRef(qrPending); pendingRef.current = qrPending;
+  useEffect(() => {
+    const iv = window.setInterval(() => {
+      for (const id of Object.keys(pendingRef.current)) {
+        const l = linesRef.current.find((x) => x.id === id);
+        if (!l || l.connected || l.provider !== "baileys") { quitarPending(id); continue; }
+        const tries = (pendingTriesRef.current[id] ?? 0) + 1;
+        pendingTriesRef.current[id] = tries;
+        if (tries > 15) {
+          quitarPending(id);
+          setError("La sesión no llegó a generar el código. Probá «Reiniciar conexión».");
+          continue;
+        }
+        void connect(id);
+      }
+    }, 4000);
+    return () => window.clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const linkByNumber = async (id: string) => {
     const raw = (numberInputs[id] ?? "").replace(/\D/g, "");
     if (raw.length < 8) {
@@ -510,6 +566,7 @@ export default function WhatsappPage() {
     try {
       const { data } = await api.post<{ ok: boolean; qr: string | null }>(`/api/wa/lines/${id}/reset`);
       if (data.qr) setQrs((prev) => ({ ...prev, [id]: data.qr! }));
+      else setQrPending((prev) => ({ ...prev, [id]: true })); // todavía arrancando: el poll lo trae
       setNotice({ id, text: "Conexión reiniciada. Escaneá el QR o vinculá por número de nuevo." });
     } catch (err) {
       setError(apiError(err));
@@ -970,6 +1027,11 @@ export default function WhatsappPage() {
                 ) : qr ? (
                   <div className="mb-3 flex justify-center rounded-md bg-white p-2">
                     <img src={qr} alt="QR" className="h-44 w-44" />
+                  </div>
+                ) : qrPending[line.id] ? (
+                  <div className="mb-3 flex items-center gap-2 rounded-md border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-sm text-sky-200">
+                    <span className="inline-block h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-sky-300 border-t-transparent" />
+                    Generando el código QR… tarda unos segundos.
                   </div>
                 ) : null}
 

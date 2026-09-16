@@ -182,7 +182,9 @@ leadsRouter.patch("/:id", async (req, res) => {
 });
 
 const purchaseSchema = z.object({
-  amount: z.number().positive(),
+  // Tope: el monto se guarda en centavos (×100) en una columna INT4 → más de 21.474.836 reventaba el
+  // update con un 500 críptico (visto en prod 2026-09-16). Ahora es un error claro para el operador.
+  amount: z.number().positive().max(21_474_836, "Monto demasiado grande (máximo 21.474.836)"),
   // Sin moneda explícita se usa la CONFIGURADA de la cuenta (User.purchaseCurrency) — clientes
   // con cuenta publicitaria en USD/PYG cargan sus montos en SU moneda y Meta convierte solo.
   currency: z.string().length(3).toUpperCase().optional(),

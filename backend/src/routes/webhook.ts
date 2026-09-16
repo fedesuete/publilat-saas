@@ -194,7 +194,13 @@ webhookRouter.post("/", async (req, res) => {
           continue; // PENDING / SERVER_ACK: sin cambio visible
         }
 
-        const msg = await prisma.message.findUnique({ where: { waMessageId } });
+        // El ack llega con el id SERIALIZADO ("true_<jid>_<id>"), pero según quién ganó la carrera al
+        // guardar el mensaje (el POST del panel o el eco fromMe del webhook) quedó con el id crudo
+        // ("<id>") o el serializado → probamos las dos formas. Sin esto, la mayoría de los envíos quedaba
+        // en "sent" para siempre aunque el cliente ya había respondido (medido 2026-09-16: 2.083 casos
+        // en 48 h; freydis 983 enviados / 0 entregados).
+        const colaId = waMessageId.includes("_") ? waMessageId.split("_").pop()! : waMessageId;
+        const msg = await prisma.message.findFirst({ where: { waMessageId: { in: [...new Set([waMessageId, colaId])] } } });
         if (!msg || msg.direction !== "out") continue;
         // Los acks llegan duplicados y fuera de orden (uno por dispositivo del destinatario):
         // solo avanzamos (sent < delivered < read) y "failed" pisa todo.

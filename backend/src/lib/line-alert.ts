@@ -8,6 +8,7 @@ import { notify } from "./notifications.js";
 import { sendMail, sendAdminMail } from "./mailer.js";
 import { getEngine } from "./wa-engine.js";
 import { emitToUser } from "./io.js";
+import { safeAutoRestart } from "./session-guard.js";
 
 // Diagnóstico automático de POR QUÉ se cayó una línea: consulta el estado de la sesión (WAHA, con su
 // `me.reachoutTimelock`) + la DB (duplicados / baneo) y devuelve el motivo + la acción concreta. Así
@@ -171,8 +172,11 @@ export function scheduleLineDownAlert(line: { id: string; userId: string; label:
       const restrictedUntil = await lineRestrictedUntil(s.inst);
       if (!s.banned && !s.paused && !restrictedUntil) {
         console.log(`[line-recover] ${line.id}: sigue caída ${Math.round(FAST_RECOVER_MS / 1000)}s -> restart automático (sin QR)`);
-        emitToUser(line.userId, "wa:status", { lineId: line.id, state: "recovering", connected: false, recovering: true });
-        await getEngine().restartInstance(s.inst).catch(() => undefined);
+        // Candado (session-guard): NO si el usuario está conectando, si la sesión espera el QR, o si ya
+        // se reinició hace poco / demasiadas veces. Si la está atendiendo el usuario, tampoco avisamos.
+        const veredicto = await safeAutoRestart(s.inst, "line-recover 45s", await lineRawStatus(s.inst));
+        if (veredicto === "usuario" || veredicto === "escaneando") return;
+        if (veredicto === "ok") emitToUser(line.userId, "wa:status", { lineId: line.id, state: "recovering", connected: false, recovering: true });
         await new Promise((r) => setTimeout(r, RECHECK_MS));
         if (!(await stillDown(line.id))) {
           console.log(`[line-recover] ${line.id}: reconectó sola tras el restart ✓`);

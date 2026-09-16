@@ -165,7 +165,10 @@ export async function detectPayment(args: DetectPaymentArgs): Promise<void> {
       where: { id: contact.id },
       data: {
         paymentDetected: true,
-        paymentDetectedAmount: amount ? Math.round(amount * 100) : null,
+        // Tope INT4 de la columna: la IA a veces lee un número absurdo (p.ej. 1.799.960.346) y el update
+        // ENTERO fallaba → el "pago detectado" nunca se guardaba (visto en prod 2026-09-16). Un monto
+        // dudoso pasa como "sin monto": el operador lo confirma a mano.
+        paymentDetectedAmount: amount && Math.round(amount * 100) <= 2_147_483_647 ? Math.round(amount * 100) : null,
         paymentDetectedAt: new Date(),
       },
     });

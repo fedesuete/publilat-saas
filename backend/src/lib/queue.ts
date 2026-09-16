@@ -20,6 +20,10 @@ import { alertLineDown, alertLowBalance, lineRestrictedUntil, lineRawStatus, lin
 import { dedupeSameNumberLines } from "./dedupe-lines.js";
 import { alertCapiFailures } from "./capi-guard.js";
 import { rotateProxy, releaseProxy, applyLineProxy, logProxyEvent, alertAdminProxy, probeProxy, assignFallback, assignProxyPreferred, setLineWaitingProxy, verifyIproyalLine, IPROYAL_PROVIDER } from "./proxy-pool.js";
+// Candado de sesión (2026-09-16): TODO reinicio/recreación automática pasa por acá para no pisar al
+// usuario que está escaneando ni entrar en bucle (ver session-guard.ts).
+import { safeAutoRestart, autoRestartAllowed, recordAutoRestart, userIsConnecting, stuckInStarting } from "./session-guard.js";
+import { conectarSesion, usaWaha } from "./qr-connect.js";
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const parsed = new URL(REDIS_URL);
@@ -247,9 +251,12 @@ export async function checkLineHealth(): Promise<void> {
         // chequeos (5 min) quedó colgada (típico tras un update del motor). El auto-recupero normal NO la
         // agarra porque solo dispara en la CAÍDA (line.connected && !connected). La reiniciamos igual (mismo
         // camino, sin QR). NO tocamos SCAN_QR_CODE (necesita al usuario) ni pausadas/baneadas.
+        // Paciencia (session-guard): solo cuenta como trabada si lleva >8 min en STARTING. Antes bastaba
+        // verla UNA vez en STARTING (o sea, mientras arrancaba bien) para reiniciarla → bucle sin fin.
+        const rawNow = !connected ? await lineRawStatus(inst) : null;
         const stuckStarting = !connected && !line.connected && line.status !== "paused" && !line.banned
-          && (await lineRawStatus(inst)) === "STARTING";
-        if (stuckStarting) console.log(`[line-health] línea ${line.id} TRABADA en STARTING -> restart automático`);
+          && stuckInStarting(inst, rawNow);
+        if (stuckStarting) console.log(`[line-health] línea ${line.id} TRABADA en STARTING (>8 min) -> restart automático`);
         if ((line.connected && !connected) || stuckStarting) {
           // BACKOFF de restricción: si WhatsApp restringió el número, reintentar NO lo recupera hasta que
           // venza y solo genera ruido (515/428 en loop) → NO reiniciamos ni encolamos recuperación, solo
@@ -262,7 +269,9 @@ export async function checkLineHealth(): Promise<void> {
           // Auto-recuperación: sesiones que quedan trabadas en close/connecting suelen
           // volver con un restart de la instancia, SIN re-escanear el QR (flapping 428).
           console.log(`[line-health] línea ${line.id} en "${state}": intento restart automático`);
-          const restarted = await getEngine().restartInstance(inst);
+          // Con candado: NO si el usuario está conectando, si la sesión espera el QR, si se reinició
+          // hace <3 min o si ya van 3 reinicios en la hora (ahí se avisa en vez de insistir).
+          const restarted = (await safeAutoRestart(inst, `line-health ${state}`, rawNow)) === "ok";
           if (restarted) {
             await new Promise((r) => setTimeout(r, 15000));
             connected = (await getEngine().connectionState(inst)) === "open";
@@ -450,8 +459,17 @@ export async function recoverProxyLine(lineId: string): Promise<void> {
       await logProxyEvent(lineId, line.proxyId, "reconnected", `reconectó sola (intento ${attempt})`);
       return;
     }
+    // Candado (session-guard): si el usuario está conectando/escaneando, o ya reiniciamos hace poco, NO
+    // tocamos la sesión. OJO: createInstance sobre una sesión EXISTENTE hace PUT config + start = la
+    // REINICIA (no es "no la toca" como decía el comentario viejo) → también cuenta como reinicio.
+    const veredicto = autoRestartAllowed(inst, await lineRawStatus(inst));
+    if (veredicto !== "ok") {
+      await logProxyEvent(lineId, line.proxyId, "line_down", `recupero pausado (${veredicto})`);
+      return;
+    }
+    recordAutoRestart(inst);
     // La sesión puede haber sido BORRADA (404 — p.ej. por el waha-cleanup si la vio no-WORKING). La
-    // re-creamos en vez de contarlo como "no reconecta". Idempotente: si existe, no la toca.
+    // re-creamos en vez de contarlo como "no reconecta".
     await getEngine().createInstance(inst).catch(() => undefined);
     // NUNCA rotamos la IP: WhatsApp RESTRINGE los números cuando detecta cambios de IP en el
     // dispositivo vinculado (cada salto de IP = "el número saltó de lugar" -> chequeo de seguridad ->
@@ -580,6 +598,7 @@ export async function watchProxyRegistration(lineId: string, attempt = 1): Promi
   if (line.status === "paused" || line.banned || line.proxyWait) return; // pausada/baneada/ya esperando
   if (!line.proxyId) return; // sin proxy (flag off o resuelta): nada que vigilar
   const inst = line.sessionId ?? `line_${line.id}`;
+  if (userIsConnecting(inst)) return; // el usuario está escaneando/conectando: el vigía no se mete
 
   const state = await getEngine().connectionState(inst).catch(() => "unknown");
   // "open" = WORKING; "connecting" = SCAN_QR_CODE (QR ya visible POR el proxy) → el túnel sale OK.
@@ -595,11 +614,13 @@ export async function watchProxyRegistration(lineId: string, attempt = 1): Promi
     if (attempt >= WATCH_MAX_ATTEMPTS) { await setLineWaitingProxy(lineId, `IPRoyal no llegó al QR tras ${attempt} intentos`); return; }
     const v = await verifyIproyalLine(lineId);
     if (!v.ok) return; // verifyIproyalLine ya dejó waiting_proxy si agotó los intentos
+    if (autoRestartAllowed(inst) !== "ok") { enqueueProxyWatch(lineId, attempt + 1); return; } // candado: más tarde
+    recordAutoRestart(inst);
     await applyLineProxy(inst, lineId).catch(() => undefined);
     await getEngine().restartInstance(inst).catch(() => undefined);
     await logProxyEvent(lineId, line.proxyId, "reconnected", `IPRoyal re-verificado (intento ${attempt}→${attempt + 1})`);
-    const freshIpr = await getEngine().connectInstance(inst).catch(() => ({} as { base64?: string }));
-    if (freshIpr.base64) emitToUser(line.userId, "wa:qr", { lineId, qr: freshIpr.base64 });
+    const freshIpr = await pedirQrSinReiniciar(inst, lineId);
+    if (freshIpr) emitToUser(line.userId, "wa:qr", { lineId, qr: freshIpr });
     enqueueProxyWatch(lineId, attempt + 1);
     return;
   }
@@ -612,12 +633,21 @@ export async function watchProxyRegistration(lineId: string, attempt = 1): Promi
     await setLineWaitingProxy(lineId, "sin proxy sano para el fallback del registro");
     return;
   }
+  if (autoRestartAllowed(inst) !== "ok") { enqueueProxyWatch(lineId, attempt + 1); return; } // candado: más tarde
+  recordAutoRestart(inst);
   await applyLineProxy(inst, lineId).catch(() => undefined);
   await getEngine().restartInstance(inst).catch(() => undefined);
   await logProxyEvent(lineId, r.proxyId, "rotated", `fallback de registro (intento ${attempt}→${attempt + 1})`);
-  const fresh = await getEngine().connectInstance(inst).catch(() => ({} as { base64?: string }));
-  if (fresh.base64) emitToUser(line.userId, "wa:qr", { lineId, qr: fresh.base64 });
+  const fresh = await pedirQrSinReiniciar(inst, lineId);
+  if (fresh) emitToUser(line.userId, "wa:qr", { lineId, qr: fresh });
   enqueueProxyWatch(lineId, attempt + 1);
+}
+
+// QR fresco para emitir por socket desde un job automático, SIN reiniciar la sesión (connectInstance
+// hacía /start + PUT config = reinicio sobre una sesión que ya estaba arrancando).
+async function pedirQrSinReiniciar(inst: string, lineId: string): Promise<string | null> {
+  if (usaWaha()) return (await conectarSesion(inst, lineId, { marcarUsuario: false }).catch(() => ({ qr: null }))).qr;
+  return (await getEngine().connectInstance(inst).catch(() => ({} as { base64?: string }))).base64 ?? null;
 }
 
 // Encola un reporte de proxies IPRoyal UNA vez, con delay (ej. a las 24h de arrancar el test shadow).
@@ -648,15 +678,26 @@ export async function recoverWaitingProxyLines(): Promise<void> {
     select: { id: true, userId: true, sessionId: true },
   });
   for (const l of lines) {
+    const inst = l.sessionId ?? `line_${l.id}`;
+    // Flag viejo: si la sesión YA está WORKING (el cliente la conectó igual), no hay nada que recuperar
+    // → limpiamos proxyWait y NO la tocamos. (Antes: createInstance = REINICIO de una línea sana, cada
+    // 2 min, para siempre — le pasó a lorenzo y a naturalcosmetica el 2026-09-16.)
+    if ((await lineRawStatus(inst)) === "WORKING") {
+      await prisma.waLine.update({ where: { id: l.id }, data: { proxyWait: false } }).catch(() => undefined);
+      console.log(`[proxy-waiting] ${l.id} ya está WORKING: limpio proxyWait sin tocarla`);
+      continue;
+    }
+    if (userIsConnecting(inst)) continue; // el usuario está en eso
     const a = await assignProxyPreferred(l.id);
     if (!a.ok) continue; // el pool sigue sin cupo sano: la línea sigue esperando
-    const inst = l.sessionId ?? `line_${l.id}`;
+    if (autoRestartAllowed(inst) !== "ok") continue; // candado: se reintenta en la próxima pasada
+    recordAutoRestart(inst);
     await getEngine().createInstance(inst).catch(() => undefined); // crea o reusa la sesión
     await applyLineProxy(inst, l.id).catch(() => undefined);
     await prisma.waLine.update({ where: { id: l.id }, data: { proxyWait: false } }).catch(() => undefined);
     await logProxyEvent(l.id, a.proxyId, "reconnected", "waiting_proxy → proxy asignado, reconectando");
-    const fresh = await getEngine().connectInstance(inst).catch(() => ({} as { base64?: string }));
-    if (fresh.base64) emitToUser(l.userId, "wa:qr", { lineId: l.id, qr: fresh.base64 });
+    const fresh = await pedirQrSinReiniciar(inst, l.id);
+    if (fresh) emitToUser(l.userId, "wa:qr", { lineId: l.id, qr: fresh });
     enqueueProxyWatch(l.id);
   }
 }
