@@ -7,6 +7,18 @@ import { Button, Input, ErrorMsg } from "../../components/ui";
 
 interface Thread { userId: string; email: string; name: string | null; last: string; lastAt: string; unread: number }
 interface Msg { id: string; userId: string; fromAdmin: boolean; body: string; createdAt: string }
+// Revisión automática (IA) de un reclamo: la IA propone; el admin aprueba o rechaza acá.
+interface Triage {
+  id: string; userId: string; status: string; diagnosis: string; suggestedReply: string;
+  action: string; actionLineId: string | null; actionReason: string | null; confidence: number; model: string | null; result: string | null; createdAt: string;
+}
+const ACCION_LABEL: Record<string, string> = {
+  ninguna: "Sin acción (solo informar)",
+  responder: "Responder al cliente",
+  reiniciar_linea: "Reiniciar la línea del cliente",
+  guia_qr: "Enviarle la guía para volver a escanear el QR",
+  revisar_humano: "Necesita revisión humana",
+};
 
 export default function AdminSupport() {
   const [threads, setThreads] = useState<Thread[]>([]);
@@ -14,6 +26,9 @@ export default function AdminSupport() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [triage, setTriage] = useState<Triage | null>(null);
+  const [triageReply, setTriageReply] = useState("");
+  const [triageBusy, setTriageBusy] = useState(false);
   const selRef = useRef<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   selRef.current = sel;
@@ -22,10 +37,30 @@ export default function AdminSupport() {
     try { const { data } = await api.get<{ threads: Thread[] }>("/api/admin/support"); setThreads(data.threads); }
     catch (e) { setError(apiError(e)); }
   };
+  const loadTriage = async (userId: string) => {
+    try {
+      const { data } = await api.get<{ items: Triage[] }>(`/api/admin/support/${userId}/triage`);
+      const pendiente = data.items.find((t) => t.status === "pending") ?? null;
+      setTriage(pendiente);
+      setTriageReply(pendiente?.suggestedReply ?? "");
+    } catch { setTriage(null); }
+  };
   const openThread = async (userId: string) => {
     setSel(userId);
     try { const { data } = await api.get<{ messages: Msg[] }>(`/api/admin/support/${userId}`); setMessages(data.messages); await loadThreads(); }
     catch (e) { setError(apiError(e)); }
+    void loadTriage(userId);
+  };
+  const decidir = async (decision: "approve" | "reject") => {
+    if (!triage) return;
+    setTriageBusy(true); setError(null);
+    try {
+      const { data } = await api.post<{ triage: Triage }>(`/api/admin/support/triage/${triage.id}/${decision}`, decision === "approve" ? { reply: triageReply } : {});
+      setTriage(null);
+      if (decision === "approve" && sel) { const { data: m } = await api.get<{ messages: Msg[] }>(`/api/admin/support/${sel}`); setMessages(m.messages); }
+      if (data.triage.status === "failed") setError(`La acción falló: ${data.triage.result ?? ""}`);
+    } catch (e) { setError(apiError(e)); }
+    finally { setTriageBusy(false); }
   };
 
   useEffect(() => { void loadThreads(); }, []);
@@ -35,8 +70,12 @@ export default function AdminSupport() {
       if (p.userId === selRef.current) setMessages((m) => [...m, p.message]);
       void loadThreads();
     };
+    const onTriage = (p: { userId: string; triage: Triage }) => {
+      if (p.userId === selRef.current) { setTriage(p.triage); setTriageReply(p.triage.suggestedReply); }
+    };
     s.on("support:incoming", onIncoming);
-    return () => { s.off("support:incoming", onIncoming); };
+    s.on("support:triage", onTriage);
+    return () => { s.off("support:incoming", onIncoming); s.off("support:triage", onTriage); };
   }, []);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
@@ -87,6 +126,28 @@ export default function AdminSupport() {
               ))}
               <div ref={bottomRef} />
             </div>
+            {/* Propuesta de la IA: nada se ejecuta hasta que el admin aprueba. La respuesta es editable. */}
+            {triage && (
+              <div className="border-t border-violet-500/40 bg-violet-500/10 p-3">
+                <div className="mb-1 flex items-center justify-between">
+                  <div className="text-sm font-semibold text-violet-200">🤖 Revisión automática — esperando tu aprobación</div>
+                  <div className="text-[11px] text-slate-400">confianza {triage.confidence}% · {triage.model ?? "IA"}</div>
+                </div>
+                <p className="mb-2 text-xs text-slate-200"><b>Diagnóstico:</b> {triage.diagnosis}</p>
+                <p className="mb-2 text-xs text-slate-300">
+                  <b>Acción propuesta:</b> {ACCION_LABEL[triage.action] ?? triage.action}
+                  {triage.actionLineId && <span className="text-slate-400"> (línea …{triage.actionLineId.slice(-6)})</span>}
+                  {triage.actionReason && <span className="text-slate-400"> — {triage.actionReason}</span>}
+                </p>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Respuesta al cliente (editable; vacía = no responder)</label>
+                <textarea value={triageReply} onChange={(e) => setTriageReply(e.target.value)} rows={4}
+                  className="mb-2 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-violet-400" />
+                <div className="flex gap-2">
+                  <Button onClick={() => void decidir("approve")} disabled={triageBusy}>{triageBusy ? "Aplicando…" : "✅ Aprobar y ejecutar"}</Button>
+                  <Button variant="ghost" onClick={() => void decidir("reject")} disabled={triageBusy}>Rechazar</Button>
+                </div>
+              </div>
+            )}
             <form onSubmit={reply} className="flex gap-2 border-t border-slate-800 p-3">
               <Input placeholder="Responder al cliente…" value={draft} onChange={(e) => setDraft(e.target.value)} />
               <Button type="submit" disabled={!draft.trim()}>Enviar</Button>

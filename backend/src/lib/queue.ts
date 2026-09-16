@@ -661,6 +661,17 @@ export function enqueueProxyReport(delayMs: number, windowHours = 24, tag = ""):
   );
 }
 
+// Revisión por IA de un reclamo de soporte, con DEBOUNCE por cliente (jobId fijo: mientras haya una
+// encolada, los mensajes siguientes no agregan otra; se revisa el hilo completo a los 2 min).
+export function enqueueSupportTriage(userId: string): void {
+  const DELAY = 120_000;
+  if (queue) {
+    void queue.add("support-triage", { userId }, { delay: DELAY, jobId: `triage-${userId}-${Math.floor(Date.now() / DELAY)}`, removeOnComplete: true, removeOnFail: 20 });
+  } else {
+    setTimeout(() => void import("./support-triage.js").then((m) => m.runSupportTriage(userId)).catch(() => undefined), DELAY);
+  }
+}
+
 // Encola el watchdog de una línea con delay (dedup por jobId línea+intento).
 export function enqueueProxyWatch(lineId: string, attempt = 1): void {
   if (queue) {
@@ -762,6 +773,7 @@ export async function initQueues(): Promise<void> {
         if (job.name === "carga-reminder") { const { remindAbandonedCargas } = await import("./chat-bot.js"); return remindAbandonedCargas(); }
         if (job.name === "proxy-report") { const { sendProxyHealthReport } = await import("./proxy-report.js"); await sendProxyHealthReport((job.data.windowHours as number) ?? 24, (job.data.tag as string) ?? ""); return; }
         if (job.name === "waha-cleanup") return cleanupOrphanWahaSessions();
+        if (job.name === "support-triage") { const { runSupportTriage } = await import("./support-triage.js"); return runSupportTriage(job.data.userId as string); }
         if (job.name === "flow-resume") {
           const { resumeFlowRun } = await import("./flow-engine.js");
           return resumeFlowRun(job.data.runId as string);

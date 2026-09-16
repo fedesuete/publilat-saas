@@ -5,6 +5,7 @@ import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
 import { emitToAdmins } from "./admin.js";
 import { sendAdminMail } from "../lib/mailer.js";
+import { enqueueSupportTriage } from "../lib/queue.js";
 
 export const supportRouter = Router();
 
@@ -26,6 +27,33 @@ supportRouter.post("/", async (req, res) => {
   const msg = await prisma.supportMessage.create({ data: { userId, fromAdmin: false, body: parsed.data.body } });
   emitToUser(userId, "support:message", msg); // eco para otras pestañas del cliente
   void emitToAdmins("support:incoming", { userId, message: msg });
+
+  // ACUSE AUTOMÁTICO (pedido del dueño 2026-09-16): el cliente sabe al instante que su reclamo fue
+  // derivado. Una vez por "episodio": no si un humano respondió en las últimas 2 h ni si ya se mandó un
+  // acuse en las últimas 6 h (si escribe 5 mensajes seguidos, recibe UN acuse).
+  void (async () => {
+    const h2 = new Date(Date.now() - 2 * 3_600_000), h6 = new Date(Date.now() - 6 * 3_600_000);
+    const [humano, acuse] = await Promise.all([
+      prisma.supportMessage.findFirst({ where: { userId, fromAdmin: true, createdAt: { gte: h2 }, NOT: { body: { startsWith: "🤖" } } } }),
+      prisma.supportMessage.findFirst({ where: { userId, fromAdmin: true, createdAt: { gte: h6 }, body: { startsWith: "🤖" } } }),
+    ]);
+    if (humano || acuse) return;
+    const ack = await prisma.supportMessage.create({
+      data: {
+        userId,
+        fromAdmin: true,
+        readAt: new Date(),
+        body:
+          "🤖 Mensaje automático: recibimos su mensaje y ya lo derivamos al área correspondiente. " +
+          "Estamos trabajando para resolverlo lo antes posible y le respondemos por este mismo medio.",
+      },
+    });
+    emitToUser(userId, "support:message", ack);
+  })().catch(() => undefined);
+
+  // REVISIÓN POR IA (solo propone; el admin aprueba en el panel). Debounce de 2 min por cliente para
+  // revisar el hilo completo y no cada mensaje suelto.
+  enqueueSupportTriage(userId);
   // Aviso por email al equipo (ADMIN_ALERT_EMAIL). Best-effort, no frena la respuesta.
   void (async () => {
     const u = await prisma.user.findUnique({ where: { id: userId }, select: { slug: true, email: true } });

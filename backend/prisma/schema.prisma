@@ -363,6 +363,30 @@ model SupportMessage {
   user      User     @relation(fields: [userId], references: [id])
 }
 
+// Revisión automática (IA) de un reclamo de soporte. La IA SOLO PROPONE: diagnóstico, respuesta
+// sugerida y una acción de una lista cerrada. NADA se ejecuta hasta que un admin aprueba desde el
+// panel (protección contra "hackeo por soporte": el texto del cliente es dato, no instrucción).
+model SupportTriage {
+  id             String    @id @default(cuid())
+  userId         String    // cliente que reclamó
+  status         String    @default("pending") // pending | approved | rejected | executed | failed
+  diagnosis      String    // qué pasa, según la IA + datos reales de la cuenta
+  suggestedReply String    // respuesta propuesta al cliente (el admin la puede editar)
+  action         String    @default("ninguna") // ninguna | responder | reiniciar_linea | guia_qr | revisar_humano
+  actionLineId   String?   // línea sobre la que aplica la acción (validada: es del cliente)
+  actionReason   String?
+  confidence     Int       @default(0) // 0-100
+  model          String?   // modelo que revisó (auditoría)
+  contextSummary String?   // resumen de los datos reales que vio la IA
+  decidedById    String?   // admin que aprobó/rechazó
+  decidedAt      DateTime?
+  result         String?   // qué pasó al ejecutar
+  createdAt      DateTime  @default(now())
+
+  @@index([userId, status])
+  @@index([status, createdAt])
+}
+
 // Auditoría de acciones del admin (dar días, demo, suspender, responder soporte).
 model AdminLog {
   id           String   @id @default(cuid())

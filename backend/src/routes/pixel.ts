@@ -77,9 +77,13 @@ pixelRouter.get("/health", async (req, res) => {
   ]);
   const hasPixel = pixelCount > 0;
   let status: "ok" | "warning" | "error" | "no_pixel";
-  if (!hasPixel || noPixel24h > 0) status = "no_pixel";
+  // "Sin pixel" SOLO si de verdad no hay pixel. Antes, UN evento viejo sin pixel (p.ej. el rato en que el
+  // cliente borró y volvió a cargar el pixel) dejaba el cartel rojo 24 h aunque ya estuviera todo bien
+  // (caso lorenzo 2026-09-16: "cargué el pixel de 3 maneras y sigue en rojo"). Si hay pixel y hubo eventos
+  // sin pixel pero ahora se envían, está OK; si hay pixel pero NADA sale, es error/aviso.
+  if (!hasPixel) status = "no_pixel";
   else if (failed24h > 0 && sent24h === 0) status = "error";
-  else if (failed24h > 0) status = "warning";
+  else if (failed24h > 0 || (noPixel24h > 0 && sent24h === 0)) status = "warning";
   else if (!lastSent) status = "warning"; // pixel cargado pero todavía sin eventos
   else status = "ok";
   return res.json({ hasPixel, lastSent, sent24h, failed24h, noPixel24h, status });

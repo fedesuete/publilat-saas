@@ -561,6 +561,29 @@ adminRouter.post("/support/:userId/reply", async (req, res) => {
   return res.status(201).json({ message: msg });
 });
 
+// ---- Revisión automática (IA) de soporte: la IA PROPONE, el admin APRUEBA. Nunca se ejecuta sola. ----
+adminRouter.get("/support/:userId/triage", async (req, res) => {
+  const items = await prisma.supportTriage.findMany({ where: { userId: req.params.userId }, orderBy: { createdAt: "desc" }, take: 5 });
+  return res.json({ items });
+});
+const triageDecisionSchema = z.object({ reply: z.string().max(4000).optional() });
+adminRouter.post("/support/triage/:id/approve", async (req, res) => {
+  const parsed = triageDecisionSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const { decidirTriage } = await import("../lib/support-triage.js");
+  const out = await decidirTriage(req.params.id, req.userId!, "approve", parsed.data.reply);
+  if (!out.ok) return res.status(out.status).json({ error: out.error });
+  void adminLog(req.userId!, "support_triage_approve", out.triage.userId, { triageId: out.triage.id, action: out.triage.action, result: out.triage.result });
+  return res.json({ triage: out.triage });
+});
+adminRouter.post("/support/triage/:id/reject", async (req, res) => {
+  const { decidirTriage } = await import("../lib/support-triage.js");
+  const out = await decidirTriage(req.params.id, req.userId!, "reject");
+  if (!out.ok) return res.status(out.status).json({ error: out.error });
+  void adminLog(req.userId!, "support_triage_reject", out.triage.userId, { triageId: out.triage.id });
+  return res.json({ triage: out.triage });
+});
+
 // ============================ 4G. EXPORTAR CSV ============================
 function csv(rows: Array<Record<string, unknown>>): string {
   if (rows.length === 0) return "";
