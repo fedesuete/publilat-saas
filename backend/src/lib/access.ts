@@ -6,6 +6,22 @@ export async function getAvailableDays(userId: string): Promise<number> {
   return c?.days ?? 0;
 }
 
+// ¿El cliente tiene el SERVICIO ACTIVO? Días sin asignar, o una línea de WhatsApp con día vigente,
+// o el Chat App con día vigente. Es el gate correcto para lo que NO consume un día nuevo (publicar
+// una landing, por ejemplo).
+//
+// Por qué existe (incidente 2026-09-16, cliente hernantrubiano): el paywall de publicar landing
+// miraba SOLO el crédito sin asignar. El cliente compró 2 días, los activó en su línea (crédito → 0)
+// y al publicar recibía "Necesitás días para publicar" con el servicio andando. Compró 2 días más,
+// los volvió a activar y le pasó lo mismo: pagó dos veces sin poder publicar.
+export async function hasActiveService(userId: string): Promise<boolean> {
+  if ((await getAvailableDays(userId)) > 0) return true;
+  const now = new Date();
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { chatDayExpiresAt: true } });
+  if (u?.chatDayExpiresAt && u.chatDayExpiresAt > now) return true;
+  return hasActiveWaLine(userId);
+}
+
 // Consume 1 día y deja la línea activa por 24h (activación inicial o renovación diaria).
 // Devuelve true si quedó activa (o ya lo estaba); false si no había crédito.
 //

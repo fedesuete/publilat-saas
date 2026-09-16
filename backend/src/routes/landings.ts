@@ -9,7 +9,7 @@ import { getTemplate, renderTemplate } from "../lib/landing-templates/index.js";
 import { publishToS3, uploadHtml, s3Enabled } from "../lib/s3.js";
 import { ensureClientCdn, reprovisionClientDomain, invalidate } from "../lib/cloudfront.js";
 import { slugify } from "../lib/auth.js";
-import { getAvailableDays } from "../lib/access.js";
+import { hasActiveService } from "../lib/access.js";
 
 export const landingsRouter = Router();
 
@@ -183,9 +183,10 @@ landingsRouter.post("/:id/publish", async (req, res) => {
   const landing = await prisma.landing.findFirst({ where: { id: req.params.id, userId: req.userId! } });
   if (!landing) return res.status(404).json({ error: "Landing no encontrada" });
 
-  // Paywall: publicar requiere días. Sin crédito, le pedimos pagar.
-  const days = await getAvailableDays(req.userId!);
-  if (days < 1) {
+  // Paywall: publicar requiere SERVICIO ACTIVO (días sin asignar, o una línea/Chat App con día
+  // vigente). Publicar NO consume un día: exigir crédito sin asignar dejaba afuera justo al cliente
+  // que ya pagó y activó sus días en la línea (ver hasActiveService en lib/access.ts).
+  if (!(await hasActiveService(req.userId!))) {
     return res.status(402).json({
       error: "Necesitás días para publicar. Comprá días en Créditos y volvé a publicar tu landing.",
       code: "NEEDS_CREDITS",

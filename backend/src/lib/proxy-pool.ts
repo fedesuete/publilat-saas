@@ -44,7 +44,10 @@ export const IPROYAL_PROVIDER = "iproyal_residential_ar";
 const isIproyal = (provider: string) => provider === IPROYAL_PROVIDER;
 // Proveedores RESERVADOS: el auto-asignar general NUNCA los elige (se asignan por su flujo dedicado).
 // MÓVIL = premium chico (manual admin); IPRoyal = test shadow, AISLADO de las 9 líneas viejas.
-function reservedProviders(): string[] { return [MOBILE_PROVIDER, IPROYAL_PROVIDER]; }
+// IPRoyal SALIÓ de reservados (2026-09-16, decisión del dueño): Webshare y DataImpulse murieron y era
+// el único proveedor sano, así que el auto-asignar se quedaba sin opciones y las líneas NUEVAS nacían
+// SIN proxy (por la IP del VPS) → flapping y números restringidos (caso lorenzo, línea del 13/09).
+function reservedProviders(): string[] { return [MOBILE_PROVIDER]; }
 
 // Arma el ProxyConfig para el motor (Evolution/WAHA), con el username sticky del proveedor.
 // DataImpulse (confirmado en docs.dataimpulse.com): LOGIN__cr.<país>;sessid.<sesión> en el puerto
