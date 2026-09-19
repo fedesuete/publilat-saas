@@ -12,7 +12,14 @@ export async function sampleProxyHealth(): Promise<void> {
   // Solo las líneas de prueba: proxy IPRoyal, no cloud. (Si no hay ninguna, no hace nada.)
   const lines = await prisma.waLine
     .findMany({
-      where: { provider: { not: "cloud" }, proxy: { is: { provider: IPROYAL_PROVIDER } } },
+      // Sólo líneas EN SERVICIO (día pagado vigente). Antes se sondeaban todas las que tuvieran proxy
+      // asignado, incluidas las muertas: 16 líneas sin días generaban ~7.300 sondeos por día contra
+      // IPRoyal, gastando datos del plan para medir la salud de sesiones que no existen (2026-09-19).
+      where: {
+        provider: { not: "cloud" },
+        proxy: { is: { provider: IPROYAL_PROVIDER } },
+        expiresAt: { gt: new Date() },
+      },
       select: { id: true, proxyId: true, sessionId: true },
     })
     .catch(() => [] as { id: string; proxyId: string | null; sessionId: string | null }[]);
