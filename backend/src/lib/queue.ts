@@ -59,8 +59,13 @@ export async function expireLines(): Promise<number> {
     await prisma.waLine.update({ where: { id: l.id }, data: { status: "inactive" } });
     emitToUser(l.userId, "wa:status", { lineId: l.id, state: "expired", connected: l.connected });
     deactivated++;
+    // DEVOLVER EL PROXY al pool (2026-09-19): una línea sin días no usa el proxy, pero se lo quedaba
+    // para siempre. Se habían acumulado 16 líneas muertas ocupando 16 de las 25 asignaciones, y el
+    // monitor las sondeaba cada 5 min gastando datos del plan de IPRoyal a lo pavote. Si el cliente
+    // vuelve a pagar, `ensureProxyOnReconnect` le asigna uno nuevo al reconectar.
+    await releaseProxy(l.id).catch(() => undefined);
   }
-  if (deactivated) console.log(`[line-expiry] desactivadas ${deactivated} línea(s) sin crédito`);
+  if (deactivated) console.log(`[line-expiry] desactivadas ${deactivated} línea(s) sin crédito (proxy devuelto al pool)`);
   // Poda de la tabla de idempotencia de webhooks: 2 días alcanzan de sobra (los eventos
   // duplicados llegan en segundos). Mantiene la tabla chica.
   await prisma.inboundDedup
