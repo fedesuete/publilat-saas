@@ -66,12 +66,45 @@ export async function expireLines(): Promise<number> {
     await releaseProxy(l.id).catch(() => undefined);
   }
   if (deactivated) console.log(`[line-expiry] desactivadas ${deactivated} línea(s) sin crédito (proxy devuelto al pool)`);
+  await releaseProxiesFromDeadLines();
   // Poda de la tabla de idempotencia de webhooks: 2 días alcanzan de sobra (los eventos
   // duplicados llegan en segundos). Mantiene la tabla chica.
   await prisma.inboundDedup
     .deleteMany({ where: { createdAt: { lt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) } } })
     .catch(() => undefined);
   return deactivated;
+}
+
+// Barrido de proxies huérfanos: devuelve al pool el proxy de CUALQUIER línea que no lo esté usando.
+// El release de expireLines() solo alcanza a las que vencen estando `active`; las que ya quedaron
+// `inactive` antes (o las que nunca se activaron) se quedaban el cupo para siempre. Encontradas 3 así
+// el 2026-09-21, una vencida en julio.
+//
+// Condiciones CONSERVADORAS (nunca le saca el proxy a una línea en uso):
+//   · desconectada (`connected: false`) — a una sesión viva jamás se le cambia la IP, y
+//   · sin día pagado vigente, o creada hace más de 24 h y nunca activada (expiresAt null).
+// Si el cliente vuelve a pagar, `ensureProxyOnReconnect` le asigna uno nuevo al reconectar.
+export async function releaseProxiesFromDeadLines(): Promise<number> {
+  const now = new Date();
+  const huerfanas = await prisma.waLine.findMany({
+    where: {
+      proxyId: { not: null },
+      provider: { not: "cloud" },
+      connected: false,
+      OR: [
+        { expiresAt: { lt: now } },
+        { expiresAt: null, createdAt: { lt: new Date(now.getTime() - 24 * 60 * 60 * 1000) } },
+      ],
+    },
+    select: { id: true },
+  });
+  let liberadas = 0;
+  for (const l of huerfanas) {
+    await releaseProxy(l.id).catch(() => undefined);
+    liberadas++;
+  }
+  if (liberadas) console.log(`[proxy-pool] ${liberadas} proxy(s) devuelto(s) al pool de líneas sin uso`);
+  return liberadas;
 }
 
 // Renueva/vence los "días de Chat App" (canal propio, sin WhatsApp): por cada cliente con el día
