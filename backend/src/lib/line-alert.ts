@@ -9,6 +9,7 @@ import { sendMail, sendAdminMail } from "./mailer.js";
 import { getEngine } from "./wa-engine.js";
 import { emitToUser } from "./io.js";
 import { safeAutoRestart } from "./session-guard.js";
+import { recordLineFlap } from "./line-weights.js";
 
 // Diagnóstico automático de POR QUÉ se cayó una línea: consulta el estado de la sesión (WAHA, con su
 // `me.reachoutTimelock`) + la DB (duplicados / baneo) y devuelve el motivo + la acción concreta. Así
@@ -161,6 +162,9 @@ async function stillDown(lineId: string): Promise<{ inst: string; banned: boolea
 }
 
 export function scheduleLineDownAlert(line: { id: string; userId: string; label: string | null; phone: string }): void {
+  // La rotación de clics manda menos tráfico a las líneas que se están cayendo (ver line-weights.ts):
+  // acá es donde nos enteramos de cada caída, así que la registramos.
+  recordLineFlap(line.id);
   const t = setTimeout(() => {
     void (async () => {
       // 1) ¿ya volvió sola? (flapping típico)
