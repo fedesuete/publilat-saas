@@ -11,6 +11,8 @@ import fs from "node:fs";
 import path from "node:path";
 import multer from "multer";
 import { prisma } from "../lib/prisma.js";
+import rateLimit from "express-rate-limit";
+import { rangoDeCabecera, enviarStream } from "../lib/video-stream.js";
 
 export const tutorialsRouter = Router();
 export const tutorialsAdminRouter = Router();
@@ -141,7 +143,18 @@ tutorialsAdminRouter.post(
 // ---- Público: sirve el video subido desde el disco con soporte de Range (seek) ----
 // El <video> del navegador no manda token → ruta pública, pero acotada a TUT_DIR y a un nombre
 // saneado (nada de rutas ni "..") para no exponer otros archivos.
-tutorialVideoRouter.get("/:name", (req, res) => {
+// 2026-09-17: un cliente dejó un <video> en loop: 2.391 pedidos de rango y 10 GB en 6 h del mismo tutorial
+// de 163 MB, en ráfagas que saturaban la salida del VPS. Una reproducción completa son unos 40 pedidos y un seek
+// intenso unos pocos por segundo: 60 por minuto por IP alcanza para uso real y frena el loop.
+const videoLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Demasiados pedidos de video desde esta conexión; esperá un minuto." },
+});
+
+tutorialVideoRouter.get("/:name", videoLimiter, (req, res) => {
   const name = req.params.name;
   if (!/^[A-Za-z0-9._-]+$/.test(name) || name.includes("..")) return res.status(400).end();
   const filePath = path.join(TUT_DIR, name);
@@ -152,29 +165,15 @@ tutorialVideoRouter.get("/:name", (req, res) => {
     res.setHeader("Content-Type", VIDEO_MIME[ext] || "application/octet-stream");
     res.setHeader("Accept-Ranges", "bytes");
     res.setHeader("Cache-Control", "public, max-age=86400");
-    const range = req.headers.range;
-    if (typeof range === "string") {
-      const m = /bytes=(\d*)-(\d*)/.exec(range);
-      let start = m && m[1] ? parseInt(m[1], 10) : 0;
-      let end = m && m[2] ? parseInt(m[2], 10) : total - 1;
-      if (!Number.isFinite(start) || start < 0) start = 0;
-      if (!Number.isFinite(end) || end >= total) end = total - 1;
-      if (start > end) {
-        res.setHeader("Content-Range", `bytes */${total}`);
-        return res.status(416).end();
-      }
-      res.status(206);
-      res.setHeader("Content-Range", `bytes ${start}-${end}/${total}`);
-      res.setHeader("Content-Length", String(end - start + 1));
-      const s = fs.createReadStream(filePath, { start, end });
-      s.on("error", () => res.destroy());
-      s.pipe(res);
-    } else {
-      res.status(200);
-      res.setHeader("Content-Length", String(total));
-      const s = fs.createReadStream(filePath);
-      s.on("error", () => res.destroy());
-      s.pipe(res);
+    const rango = rangoDeCabecera(req.headers.range, total);
+    if (rango.status === 416) {
+      res.setHeader("Content-Range", `bytes */${total}`);
+      return res.status(416).end();
     }
+    res.status(rango.status);
+    if (rango.status === 206) res.setHeader("Content-Range", `bytes ${rango.start}-${rango.end}/${total}`);
+    res.setHeader("Content-Length", String(rango.end - rango.start + 1));
+    // pipeline destruye el read stream si el cliente corta (antes: pipe dejaba el fd abierto para siempre)
+    enviarStream(fs.createReadStream(filePath, { start: rango.start, end: rango.end }), res);
   });
 });
