@@ -151,6 +151,23 @@ function matchOption(step: FlowStep, text: string): number | null {
 }
 
 // Ejecuta desde el cursor hasta la próxima pausa (delay/wait_reply/menu) o el final.
+/**
+ * Reanuda un flujo cuyo "esperar respuesta" VENCIÓ, pero SOLO si el contacto no contestó mientras
+ * tanto. Dos candados, porque el costo de equivocarse es mandarle la secuencia dos veces a la misma
+ * persona (eso sí parece un bot):
+ *   1) el run tiene que seguir en "waiting" — si contestó, onInboundFlow ya lo pasó a "running";
+ *   2) el cursor tiene que ser EL MISMO de cuando se programó — si avanzó, alguien más lo movió.
+ */
+export async function resumeIfStillWaiting(runId: string, cursorEsperado: string): Promise<void> {
+  const run = await prisma.flowRun.findUnique({ where: { id: runId }, select: { id: true, status: true, cursor: true, contactId: true } });
+  if (!run || run.status !== "waiting" || run.cursor !== cursorEsperado) return; // contestó o ya siguió
+  // Evita que dos vencimientos simultáneos lo reanuden dos veces: el update CONDICIONAL es el claim.
+  const claim = await prisma.flowRun.updateMany({ where: { id: runId, status: "waiting", cursor: cursorEsperado }, data: { status: "running" } });
+  if (claim.count === 0) return;
+  console.log(`[flow] venció la espera de respuesta del contacto ${run.contactId}: sigo la secuencia igual`);
+  await resumeFlowRun(runId);
+}
+
 export async function resumeFlowRun(runId: string): Promise<void> {
   const run = await prisma.flowRun.findUnique({ where: { id: runId }, include: { flow: true } });
   if (!run || run.status === "done") return;
@@ -227,6 +244,10 @@ export async function resumeFlowRun(runId: string): Promise<void> {
     } else if (step.type === "wait_reply") {
       cursor = cursorWith(cursor, pos.index + 1);
       await prisma.flowRun.update({ where: { id: run.id }, data: { cursor, status: "waiting" } });
+      // Con `minutes` la espera VENCE: si el contacto no contestó en ese rato, el flujo sigue igual
+      // (pedido del dueño 2026-09-22: "si no responde en 10 u 11 min le mandamos la secuencia
+      // también"). Sin `minutes` espera para siempre, como antes.
+      if (step.minutes != null) scheduleFlowResume(run.id, delaySeconds(step), cursor);
       return;
     } else if (step.type === "menu") {
       await sendToContact(userId, run.contactId, renderMenu(step));

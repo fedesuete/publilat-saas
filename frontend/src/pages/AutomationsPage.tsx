@@ -195,6 +195,34 @@ function AudioEditor({ step, onChange }: { step: Step; onChange: (p: Partial<Ste
   );
 }
 
+// Paso "esperar respuesta": puede esperar para siempre, o VENCER a los X minutos y seguir igual
+// (para no perder al que hizo clic, vio el mensaje y no contestó).
+function WaitReplyEditor({ step, onChange }: { step: Step; onChange: (p: Partial<Step>) => void }) {
+  const vence = step.minutes != null;
+  return (
+    <div className="space-y-2">
+      <label className="flex items-center gap-2 text-xs text-slate-300">
+        <input type="checkbox" checked={vence} onChange={(e) => onChange(e.target.checked ? { minutes: 10, minutesTo: 11 } : { minutes: undefined, minutesTo: undefined })} />
+        Si no responde, seguir igual después de un rato
+      </label>
+      {vence ? (
+        <div className="space-y-1 pl-6">
+          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-300">
+            Esperar entre
+            <Input type="number" min={1} value={String(step.minutes ?? 10)} onChange={(e) => onChange({ minutes: Number(e.target.value) })} className="w-20" />
+            y
+            <Input type="number" min={1} value={String(step.minutesTo ?? step.minutes ?? 11)} onChange={(e) => onChange({ minutesTo: Number(e.target.value) })} className="w-20" />
+            minutos.
+          </div>
+          <p className="text-[11px] text-slate-500">Si contesta antes, sigue en ese momento. Si no contesta, sigue igual al vencer.</p>
+        </div>
+      ) : (
+        <p className="pl-6 text-[11px] text-slate-500">Se pausa hasta que el cliente responda. Si nunca responde, el flujo queda ahí.</p>
+      )}
+    </div>
+  );
+}
+
 function StepsEditor({ steps, onChange, depth = 0, linkStats }: { steps: Step[]; onChange: (s: Step[]) => void; depth?: number; linkStats?: LinkStat[] }) {
   const set = (i: number, patch: Partial<Step>) => onChange(steps.map((s, k) => (k === i ? { ...s, ...patch } : s)));
   const move = (i: number, dir: -1 | 1) => { const j = i + dir; if (j < 0 || j >= steps.length) return; const arr = [...steps]; [arr[i], arr[j]] = [arr[j], arr[i]]; onChange(arr); };
@@ -251,9 +279,7 @@ function StepsEditor({ steps, onChange, depth = 0, linkStats }: { steps: Step[];
                 <p className="text-[11px] text-slate-500">Poné valores distintos (ej: 3 y 4) para que cada persona espere un rato diferente: así no parece un bot.</p>
               </div>
             )}
-            {s.type === "wait_reply" && (
-              <p className="text-xs text-slate-500">Se pausa hasta que el cliente responda; después sigue.</p>
-            )}
+            {s.type === "wait_reply" && <WaitReplyEditor step={s} onChange={(p) => set(i, p)} />}
             {s.type === "link" && (
               <div className="space-y-2">
                 <textarea value={s.text ?? ""} onChange={(e) => set(i, { text: e.target.value })} placeholder="Mensaje que acompaña al link (ej: Registrate acá 👇)"
@@ -464,7 +490,7 @@ export default function AutomationsPage() {
                           <p className="text-[11px] text-slate-500">Valores distintos = espera al azar (no parece bot).</p>
                         </div>
                       )}
-                      {step.type === "wait_reply" && <p className="text-xs text-slate-500">Se pausa hasta que el cliente responda.</p>}
+                      {step.type === "wait_reply" && <WaitReplyEditor step={step} onChange={upd} />}
                       {step.type === "set_stage" && (
                         <select value={step.stage ?? "INTERESADO"} onChange={(e) => upd({ stage: e.target.value })}
                           className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green">

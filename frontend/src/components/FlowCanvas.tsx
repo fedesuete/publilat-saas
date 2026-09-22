@@ -31,7 +31,7 @@ function preview(s: Step): string {
   if (s.type === "image") return s.assetId ? (s.text?.slice(0, 70) || "imagen sin texto") : "(sin imagen elegida)";
   if (s.type === "link") return `${s.urlLabel ?? "Abrir link"} → ${s.url?.slice(0, 50) || "(sin URL)"}`;
   if (s.type === "delay") return s.minutesTo != null && s.minutesTo !== s.minutes ? `Esperar entre ${s.minutes ?? 0} y ${s.minutesTo} min (al azar)` : `Esperar ${s.minutes ?? 0} min`;
-  if (s.type === "wait_reply") return "Pausa hasta que el cliente responda";
+  if (s.type === "wait_reply") return s.minutes != null ? `Espera respuesta (o sigue a los ${s.minutesTo && s.minutesTo !== s.minutes ? `${s.minutes}-${s.minutesTo}` : s.minutes} min)` : "Espera a que el cliente responda";
   if (s.type === "menu") return s.text?.slice(0, 80) || "Elegí una opción:";
   if (s.type === "set_stage") return `→ ${s.stage ?? "?"}`;
   return "";

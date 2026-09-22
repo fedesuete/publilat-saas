@@ -779,12 +779,20 @@ export async function cleanupOrphanWahaSessions(): Promise<void> {
 }
 
 // Programa la reanudación de una secuencia tras un delay (para el motor de automatizaciones).
-export function scheduleFlowResume(runId: string, delaySec: number): void {
+// `waitingCursor` = reanudación por VENCIMIENTO de un "esperar respuesta": sólo sigue si el contacto
+// NO contestó en ese rato (si contestó, el flujo ya avanzó y esta reanudación no hace nada). Sin ese
+// dato es una espera normal y se reanuda derecho.
+export function scheduleFlowResume(runId: string, delaySec: number, waitingCursor?: string): void {
+  const correr = async () => {
+    const m = await import("./flow-engine.js");
+    if (waitingCursor !== undefined) await m.resumeIfStillWaiting(runId, waitingCursor);
+    else await m.resumeFlowRun(runId);
+  };
   if (queue) {
-    void queue.add("flow-resume", { runId }, { delay: delaySec * 1000, removeOnComplete: true, removeOnFail: 50 });
+    void queue.add("flow-resume", { runId, waitingCursor }, { delay: delaySec * 1000, removeOnComplete: true, removeOnFail: 50 });
   } else {
     // Fallback en proceso si la cola no está lista (dev sin Redis).
-    setTimeout(() => { void import("./flow-engine.js").then((m) => m.resumeFlowRun(runId)).catch(() => undefined); }, delaySec * 1000);
+    setTimeout(() => { void correr().catch(() => undefined); }, delaySec * 1000);
   }
 }
 
@@ -813,8 +821,11 @@ export async function initQueues(): Promise<void> {
         if (job.name === "waha-cleanup") return cleanupOrphanWahaSessions();
         if (job.name === "support-triage") { const { runSupportTriage } = await import("./support-triage.js"); return runSupportTriage(job.data.userId as string); }
         if (job.name === "flow-resume") {
-          const { resumeFlowRun } = await import("./flow-engine.js");
-          return resumeFlowRun(job.data.runId as string);
+          const m = await import("./flow-engine.js");
+          const runId = job.data.runId as string;
+          const waitingCursor = job.data.waitingCursor as string | undefined;
+          // Con waitingCursor es el VENCIMIENTO de un "esperar respuesta": sigue sólo si no contestó.
+          return waitingCursor !== undefined ? m.resumeIfStillWaiting(runId, waitingCursor) : m.resumeFlowRun(runId);
         }
         // Renovar las LÍNEAS primero, DESPUÉS el día de Chat App: si el cliente tiene una línea con día
         // vigente, el Chat App queda cubierto por esa línea (hasActiveWaLine) y NO consume un día aparte.
