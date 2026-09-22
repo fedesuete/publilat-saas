@@ -9,6 +9,7 @@ import { scheduleFlowResume } from "./queue.js";
 import { parseVariants, pickVariant, sendLeadVariant } from "./leadgen-send.js";
 import { renderLeadReply } from "./lead-template.js";
 import { runExclusive } from "./keyed-lock.js";
+import { sendImageToContact } from "./wa-image.js";
 
 // ---- Bienvenida automática de líneas QR (waQrWelcomeEnabled + waQrWelcomeReplies) ----
 // Al PRIMER mensaje de un contacto NUEVO se manda UNA variante al azar (texto o audio). Dedup en dos
@@ -69,16 +70,29 @@ export interface FlowOption {
 
 export interface FlowStep {
   id: string;
-  type: "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage" | "audio";
-  text?: string;          // message, menu (encabezado) y link (mensaje que acompaña)
-  alts?: string[];        // message: VARIANTES extra — se manda UNA al azar entre text y alts
+  type: "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage" | "audio" | "image";
+  text?: string;          // message, menu (encabezado), link (mensaje que acompaña) e image (pie de foto)
+  alts?: string[];        // message e image: VARIANTES extra — se manda UNA al azar entre text y alts
                           // (mensajes idénticos en masa = patrón que WhatsApp detecta como bot)
-  minutes?: number;       // delay
+  minutes?: number;       // delay: espera fija, o MÍNIMO si viene minutesTo
+  minutesTo?: number;     // delay: con minutes arma un RANGO y se elige al azar dentro (ver abajo)
   options?: FlowOption[]; // menu
   url?: string;           // link: destino real
   urlLabel?: string;      // link: texto del "botón"
   stage?: string;         // set_stage: NUEVO | CONTACTADO | INTERESADO | PERDIDO
   clipIds?: string[];     // audio: biblioteca de audios — se manda UNO al azar (copia única por envío)
+  assetId?: string;       // image: id del BrandingAsset a mandar
+}
+
+// Segundos que espera un paso "delay". Con `minutesTo` la espera es AL AZAR dentro del rango
+// [minutes, minutesTo] y con segundos sueltos: dos personas nunca reciben la respuesta al mismo
+// tiempo exacto, que es lo que delata a un bot (pedido del dueño 2026-09-22: "esperamos 3-4 min
+// variado así no parece un bot"). Sin minutesTo se comporta como siempre (espera fija).
+export function delaySeconds(step: { minutes?: number; minutesTo?: number }, random: () => number = Math.random): number {
+  const desde = Math.max(0, step.minutes ?? 1);
+  const hasta = step.minutesTo != null ? Math.max(desde, step.minutesTo) : desde;
+  const minutos = hasta > desde ? desde + random() * (hasta - desde) : desde;
+  return Math.max(1, Math.round(minutos * 60));
 }
 
 const NUM_EMOJI = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
@@ -171,6 +185,17 @@ export async function resumeFlowRun(runId: string): Promise<void> {
       }
       cursor = cursorWith(cursor, pos.index + 1);
       await prisma.flowRun.update({ where: { id: run.id }, data: { cursor, status: "running" } });
+    } else if (step.type === "image") {
+      // Imagen de la biblioteca (BrandingAsset) con pie de foto opcional, que también rota entre
+      // variantes para no mandar siempre el mismo texto.
+      if (step.assetId) {
+        const pool = [step.text, ...(step.alts ?? [])].filter((t): t is string => Boolean(t && t.trim()));
+        const caption = pool.length ? pool[Math.floor(Math.random() * pool.length)] : undefined;
+        await sendImageToContact(userId, run.contactId, step.assetId, caption).catch((e) =>
+          console.error("[flow] imagen no enviada:", e instanceof Error ? e.message : String(e)));
+      }
+      cursor = cursorWith(cursor, pos.index + 1);
+      await prisma.flowRun.update({ where: { id: run.id }, data: { cursor, status: "running" } });
     } else if (step.type === "link") {
       // "Botón" con link medible: creamos un link rastreado ÚNICO para este contacto
       // y lo mandamos en el mensaje. El clic se registra en GET /r/:code (CTR por paso).
@@ -197,7 +222,7 @@ export async function resumeFlowRun(runId: string): Promise<void> {
     } else if (step.type === "delay") {
       cursor = cursorWith(cursor, pos.index + 1);
       await prisma.flowRun.update({ where: { id: run.id }, data: { cursor, status: "running" } });
-      scheduleFlowResume(run.id, Math.max(1, Math.round((step.minutes ?? 1) * 60)));
+      scheduleFlowResume(run.id, delaySeconds(step));
       return;
     } else if (step.type === "wait_reply") {
       cursor = cursorWith(cursor, pos.index + 1);

@@ -8,25 +8,29 @@ export const flowsRouter = Router();
 // Pasos recursivos: un menú tiene opciones y cada opción su propia rama de pasos.
 type StepInput = {
   id: string;
-  type: "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage" | "audio";
+  type: "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage" | "audio" | "image";
   text?: string;
   alts?: string[];    // message: variantes que rotan al azar
   minutes?: number;
+  minutesTo?: number;  // delay: con minutes arma un RANGO y la espera sale al azar adentro
   options?: Array<{ id: string; label: string; keywords?: string[]; steps: StepInput[] }>;
   url?: string;
   urlLabel?: string;
   stage?: string;
   clipIds?: string[]; // audio: pool de audios de la biblioteca (uno al azar)
+  assetId?: string;   // image: id del BrandingAsset a mandar
 };
 
 const stepSchema: z.ZodType<StepInput> = z.lazy(() =>
   z.object({
     id: z.string().min(1),
-    type: z.enum(["message", "delay", "wait_reply", "menu", "link", "set_stage", "audio"]),
+    type: z.enum(["message", "delay", "wait_reply", "menu", "link", "set_stage", "audio", "image"]),
     text: z.string().max(2000).optional(),
     alts: z.array(z.string().max(2000)).max(9).optional(),    // variantes rotativas del mensaje
     minutes: z.number().min(0).max(10080).optional(),
+    minutesTo: z.number().min(0).max(10080).optional(),      // espera al azar entre minutes y minutesTo
     clipIds: z.array(z.string().max(40)).max(9).optional(),   // audios de la biblioteca (rota al azar)
+    assetId: z.string().max(40).optional(),                   // image: imagen guardada de la cuenta
     url: z.string().url().max(500).refine((u) => /^https?:\/\//i.test(u), "Solo http(s)").optional(),
     urlLabel: z.string().max(40).optional(),
     stage: z.enum(["NUEVO", "CONTACTADO", "INTERESADO", "PERDIDO"]).optional(),
@@ -129,4 +133,35 @@ flowsRouter.delete("/:id", async (req, res) => {
   if (!existing) return res.status(404).json({ error: "No encontrado" });
   await prisma.flow.delete({ where: { id: existing.id } });
   return res.json({ ok: true });
+});
+
+// ---- Imágenes de los pasos "image" -------------------------------------------------------------
+// Se guardan en BrandingAsset (la misma tabla que usa el Chat App para logos): no hace falta S3 ni
+// una tabla nueva, y el envío las manda en base64 por WAHA (lib/wa-image.ts).
+const flowImageSchema = z.object({
+  dataUrl: z.string().regex(/^data:image\/(png|jpeg|jpg|webp);base64,/, "Tiene que ser una imagen PNG, JPG o WEBP"),
+});
+
+// POST /api/flows/imagenes — sube una imagen y devuelve su id para usarlo en un paso.
+flowsRouter.post("/imagenes", async (req, res) => {
+  const parsed = flowImageSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Imagen inválida" });
+  const { dataUrl } = parsed.data;
+  const contentType = dataUrl.slice(5, dataUrl.indexOf(";"));
+  const bytes = Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64");
+  // WhatsApp corta las imágenes grandes: 5 MB es de sobra para una lámina de precios.
+  if (bytes.length > 5 * 1024 * 1024) return res.status(413).json({ error: "La imagen pesa más de 5 MB. Probá con una más liviana." });
+  const asset = await prisma.brandingAsset.create({ data: { userId: req.userId!, contentType, data: bytes }, select: { id: true, contentType: true, createdAt: true } });
+  return res.status(201).json({ imagen: { id: asset.id, contentType: asset.contentType, bytes: bytes.length, createdAt: asset.createdAt } });
+});
+
+// GET /api/flows/imagenes — las imágenes de la cuenta, para elegir una en el editor.
+flowsRouter.get("/imagenes", async (req, res) => {
+  const items = await prisma.brandingAsset.findMany({
+    where: { userId: req.userId! },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, contentType: true, createdAt: true },
+    take: 50,
+  });
+  return res.json({ imagenes: items });
 });

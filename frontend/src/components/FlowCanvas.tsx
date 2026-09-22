@@ -5,9 +5,9 @@ import { useMemo } from "react";
 import { ReactFlow, Background, Controls, type Node, type Edge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-type StepType = "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage" | "audio";
+type StepType = "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage" | "audio" | "image";
 interface Option { id: string; label: string; keywords?: string[]; steps: Step[] }
-interface Step { id: string; type: StepType; text?: string; alts?: string[]; minutes?: number; options?: Option[]; url?: string; urlLabel?: string; stage?: string; clipIds?: string[] }
+interface Step { id: string; type: StepType; text?: string; alts?: string[]; minutes?: number; minutesTo?: number; options?: Option[]; url?: string; urlLabel?: string; stage?: string; clipIds?: string[]; assetId?: string }
 interface LinkStat { stepId: string; sent: number; clicked: number }
 
 const COL_W = 320;
@@ -17,6 +17,7 @@ const NODE_W = 250;
 const META: Record<StepType, { emoji: string; title: string; border: string; chip: string }> = {
   message: { emoji: "💬", title: "Mensaje", border: "border-emerald-500/50", chip: "bg-emerald-500/15 text-emerald-300" },
   audio: { emoji: "🎤", title: "Audio", border: "border-fuchsia-500/50", chip: "bg-fuchsia-500/15 text-fuchsia-300" },
+  image: { emoji: "🖼️", title: "Imagen", border: "border-pink-500/50", chip: "bg-pink-500/15 text-pink-300" },
   link: { emoji: "🔗", title: "Botón con link", border: "border-teal-400/50", chip: "bg-teal-500/15 text-teal-300" },
   delay: { emoji: "⏱️", title: "Espera", border: "border-amber-500/50", chip: "bg-amber-500/15 text-amber-300" },
   wait_reply: { emoji: "↩️", title: "Esperar respuesta", border: "border-sky-500/50", chip: "bg-sky-500/15 text-sky-300" },
@@ -27,8 +28,9 @@ const META: Record<StepType, { emoji: string; title: string; border: string; chi
 function preview(s: Step): string {
   if (s.type === "message") return (s.text?.slice(0, 90) || "(sin texto)") + (s.alts?.length ? ` (+${s.alts.length} variantes)` : "");
   if (s.type === "audio") return s.clipIds?.length ? `${s.clipIds.length} audio(s) — rota al azar` : "(sin audios)";
+  if (s.type === "image") return s.assetId ? (s.text?.slice(0, 70) || "imagen sin texto") : "(sin imagen elegida)";
   if (s.type === "link") return `${s.urlLabel ?? "Abrir link"} → ${s.url?.slice(0, 50) || "(sin URL)"}`;
-  if (s.type === "delay") return `Esperar ${s.minutes ?? 0} min`;
+  if (s.type === "delay") return s.minutesTo != null && s.minutesTo !== s.minutes ? `Esperar entre ${s.minutes ?? 0} y ${s.minutesTo} min (al azar)` : `Esperar ${s.minutes ?? 0} min`;
   if (s.type === "wait_reply") return "Pausa hasta que el cliente responda";
   if (s.type === "menu") return s.text?.slice(0, 80) || "Elegí una opción:";
   if (s.type === "set_stage") return `→ ${s.stage ?? "?"}`;

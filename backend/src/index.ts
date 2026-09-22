@@ -192,6 +192,7 @@ app.use("/api/pixels", apiLimiter, requireAuth, pixelRouter);
 app.use("/api/setup", apiLimiter, requireAuth, setupRouter);
 app.use("/api/support", apiLimiter, requireAuth, supportRouter);
 app.use("/api/notifications", apiLimiter, requireAuth, notificationsRouter);
+app.use("/api/flows", express.json({ limit: "8mb" })); // las imágenes de los pasos viajan en base64
 app.use("/api/flows", apiLimiter, requireAuth, flowsRouter);
 app.use("/api/tutorials", apiLimiter, requireAuth, tutorialsRouter); // tutoriales en video (cliente)
 // Stream de video de tutoriales subidos a Publi. PÚBLICO (el <video> no manda token) y SIN
