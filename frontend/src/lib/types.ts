@@ -50,6 +50,10 @@ export interface Line {
   warmupEnabled?: boolean;
   warmup?: { active: boolean; day?: number; totalDays?: number; cap?: number; used?: number } | null;
   proxyLabel?: string | null; // proxy de salida (sin credenciales), ej "socks5://host:1080"
+  // Tope diario de la rotación: cuántas personas como máximo se mandan a este número por día
+  // (0 = sin tope) y cuántas van hoy.
+  dailyCap?: number;
+  usedToday?: number;
 }
 
 export interface Msg {

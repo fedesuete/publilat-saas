@@ -174,6 +174,48 @@ function WelcomeConfig() {
   );
 }
 
+
+// TOPE DIARIO por número: cuántas personas como máximo le manda la landing a esta línea por día.
+// 0 = sin tope. Sirve para repartir el tráfico y no quemar los números nuevos: los recién vinculados
+// reciben poco, los viejos más. Si TODOS los números llegan a su tope, el sistema sigue repartiendo
+// igual (nunca se pierde un clic pago) y avisa por la campanita.
+function CapDiario({ line, onSave }: { line: Line; onSave: (id: string, cap: number) => Promise<void> }) {
+  const [valor, setValor] = useState(String(line.dailyCap ?? 0));
+  const [guardando, setGuardando] = useState(false);
+  useEffect(() => { setValor(String(line.dailyCap ?? 0)); }, [line.dailyCap]);
+  const cambio = Number(valor) !== (line.dailyCap ?? 0);
+  const usadas = line.usedToday ?? 0;
+  const tope = line.dailyCap ?? 0;
+  const guardar = async () => {
+    setGuardando(true);
+    try { await onSave(line.id, Math.max(0, Math.round(Number(valor) || 0))); }
+    finally { setGuardando(false); }
+  };
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2">
+      <span className="text-xs text-slate-300">Máximo de personas por día a este número:</span>
+      <Input
+        type="number"
+        min={0}
+        value={valor}
+        onChange={(e) => setValor(e.target.value)}
+        className="w-24"
+        title="0 = sin tope"
+      />
+      {cambio && (
+        <Button variant="secondary" onClick={() => void guardar()} disabled={guardando}>
+          {guardando ? "Guardando…" : "Guardar"}
+        </Button>
+      )}
+      <span className="text-xs text-slate-500">
+        {tope > 0
+          ? `Hoy van ${usadas} de ${tope}${usadas >= tope ? " — llegó al tope" : ""}`
+          : `Sin tope (hoy van ${usadas})`}
+      </span>
+    </div>
+  );
+}
+
 export default function WhatsappPage() {
   const [lines, setLines] = useState<Line[]>([]);
   const [qrs, setQrs] = useState<Record<string, string>>({});
@@ -592,6 +634,20 @@ export default function WhatsappPage() {
         `/api/wa/lines/${id}/logout`
       );
       setLines((prev) => prev.map((l) => (l.id === id ? data.line : l)));
+    } catch (err) {
+      setError(apiError(err));
+    }
+  };
+
+  // Guarda el tope diario de una línea y refresca la tarjeta con lo que devuelve el server.
+  const saveCap = async (id: string, dailyCap: number) => {
+    setError(null);
+    try {
+      const { data } = await api.post<{ line: { id: string; dailyCap: number; usedToday: number } }>(
+        `/api/wa/lines/${id}/cap`,
+        { dailyCap },
+      );
+      setLines((prev) => prev.map((l) => (l.id === id ? { ...l, dailyCap: data.line.dailyCap, usedToday: data.line.usedToday } : l)));
     } catch (err) {
       setError(apiError(err));
     }
@@ -1087,6 +1143,8 @@ export default function WhatsappPage() {
                     Borrar
                   </Button>
                 </div>
+
+                <CapDiario line={line} onSave={saveCap} />
 
                 {isBaileys && !line.connected && (
                   <div className="mt-2 flex flex-wrap items-center gap-2">

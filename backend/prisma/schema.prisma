@@ -16,149 +16,153 @@ enum Role {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  slug      String   @unique          // identifica al usuario en /go?u=<slug>
-  password  String
-  name      String?
-  phone     String?                    // WhatsApp del usuario (registro)
-  paymentDetection String @default("auto") // off | assisted | auto — lector de comprobantes (default auto)
+  id                       String    @id @default(cuid())
+  email                    String    @unique
+  slug                     String    @unique // identifica al usuario en /go?u=<slug>
+  password                 String
+  name                     String?
+  phone                    String? // WhatsApp del usuario (registro)
+  paymentDetection         String    @default("auto") // off | assisted | auto — lector de comprobantes (default auto)
   // Embudo de eventos a Meta: si true, el Lead se dispara en el 1er INBOUND real (no en el clic).
   // Default false = comportamiento de hoy (Lead en el clic). Se prende por cuenta (ON para victor).
-  leadOnInbound    Boolean @default(false)
+  leadOnInbound            Boolean   @default(false)
   // --- Puente Chat App → bot cajero EXTERNO (combatwin/mijoker). Ver lib/chat-bridge.ts ---
   // ON: el bot externo atiende el Chat App de esta cuenta (bypassa el bot nativo runChatBot).
-  chatBotBridge       Boolean @default(false)
+  chatBotBridge            Boolean   @default(false)
   // Modo sombra: forwardea y loguea lo que el bot respondería, SIN postear en la conversación.
-  chatBotBridgeShadow Boolean @default(false)
+  chatBotBridgeShadow      Boolean   @default(false)
   // Clave que el Chat App muestra a los jugadores nuevos de ESTA cuenta (null = "123456", la
   // histórica). Con puente al bot, el alta en el casino usa la MISMA (viaja como chatPassword).
-  chatPlayerPassword  String?
+  chatPlayerPassword       String?
   // --- Panel maestro (super-admin) ---
-  role          Role      @default(USER)
-  suspended     Boolean   @default(false)
-  isDemo        Boolean   @default(false)
-  demoExpiresAt DateTime?
-  source        String?                    // cómo llegó la cuenta (demo, referido, landing, etc.)
+  role                     Role      @default(USER)
+  suspended                Boolean   @default(false)
+  isDemo                   Boolean   @default(false)
+  demoExpiresAt            DateTime?
+  source                   String? // cómo llegó la cuenta (demo, referido, landing, etc.)
   // Identificadores del clic de Meta (landing de ventas de Publi.lat) para cerrar el loop del pixel
   // Clientes-publilat: Lead al alta + Purchase al pagar, atados al anuncio. Nullable/aditivo.
-  fbp           String?
-  fbc           String?
-  fbclid        String?
-  lastLoginAt   DateTime?
+  fbp                      String?
+  fbc                      String?
+  fbclid                   String?
+  lastLoginAt              DateTime?
   // --- Referidos: 10% de la PRIMERA compra del referido, pagado en USDT a mano por el admin.
   // Solo clientes existentes (con ≥1 compra aprobada) pueden referir. Ver lib/referrals.ts. ---
-  referralCode  String?   @unique          // código propio para compartir (/register?ref=CODE)
-  referredById  String?                    // quién refirió a esta cuenta (User.id del referidor)
+  referralCode             String?   @unique // código propio para compartir (/register?ref=CODE)
+  referredById             String? // quién refirió a esta cuenta (User.id del referidor)
   // --- Límites de plan (configurables por cliente desde el panel) ---
-  maxLines      Int       @default(5)        // líneas de WhatsApp permitidas (5 por defecto; más = soporte)
-  maxLandings   Int       @default(50)       // landings permitidas
-  maxAudioClips Int       @default(2)        // audios en la biblioteca (el admin no tiene tope)
-  tokenVersion  Int       @default(0)        // revocación de sesiones: al subir, invalida los JWT viejos
+  maxLines                 Int       @default(5) // líneas de WhatsApp permitidas (5 por defecto; más = soporte)
+  maxLandings              Int       @default(50) // landings permitidas
+  maxAudioClips            Int       @default(2) // audios en la biblioteca (el admin no tiene tope)
+  // SUB-CUENTAS: cuentas hijas que este cliente maneja desde su propio panel (cada una con SUS
+  // líneas, landings, contactos y pixel). Campo plano como referredById (sin FK ni relación).
+  parentUserId             String? // cuenta padre; null = cuenta independiente
+  maxSubAccounts           Int       @default(0) // cuántas sub-cuentas puede crear (0 = función apagada)
+  tokenVersion             Int       @default(0) // revocación de sesiones: al subir, invalida los JWT viejos
   // Moneda en la que el cliente registra sus ventas (value del Purchase a Meta). El cliente NO
   // necesita cambiar su cuenta publicitaria: Meta convierte solo — lo que importa es declarar
   // la moneda REAL del monto (un "2000" en USD etiquetado ARS destroza el ROAS reportado).
-  purchaseCurrency String @default("ARS")
+  purchaseCurrency         String    @default("ARS")
   // --- Landings aisladas en S3+CloudFront (anti-quemado, modelo ScaleOS) ---
   // Cada cliente tiene su PROPIA distribución CloudFront (dominio descartable): si Meta
   // quema una landing, cae solo ese dominio, no publi.lat ni los otros clientes.
-  s3Prefix        String?   // carpeta del cliente en el bucket (default = slug)
-  cloudfrontDomain String?  // dominio de la distribución del cliente (ej d50ti8s.cloudfront.net)
-  cloudfrontDistId String?  // id de la distribución (para invalidar / reprovisionar)
+  s3Prefix                 String? // carpeta del cliente en el bucket (default = slug)
+  cloudfrontDomain         String? // dominio de la distribución del cliente (ej d50ti8s.cloudfront.net)
+  cloudfrontDistId         String? // id de la distribución (para invalidar / reprovisionar)
   // --- Chat App (canal jugador↔cajero, módulo aislado): marca white-label por cuenta ---
-  brandName       String?
-  logoUrl         String?
-  notifSoundUrl   String?   // sonido custom del panel al llegar un mensaje nuevo (URL de un BrandingAsset)
-  casinoApiKey    String?   // API key del partner-api del casino de ESTA cuenta (cifrada). Si está, la
-                            // cuenta opera su propio tenant; si no, cae a la key global del .env (legacy).
-  primaryColor    String?
-  accentColor     String?
-  chatTheme       String    @default("whatsapp") // diseño de la PWA del chat: whatsapp | midnight | redblack (WhatsApp pelado, sin botones)
-  welcomeText     String?   // texto de bienvenida en la PWA
-  welcomeMsgText  String?   // primer mensaje automático de la conversación
-  welcomeMsgImage String?
-  chatWaLink      String?   // link wa.me para el CTA "Escribinos por WhatsApp" (registro un-tap)
-  chatPlatformUrl String?   // link a la plataforma de juego (botón "Entrar a la plataforma" + 1er msg)
-  chatPayCbu      String?   // datos de pago estructurados (botones copiar individual en el cajero)
-  chatPayAlias    String?
-  chatPayTitular  String?
-  chatInstallMsg1 String?   // secuencia de instalación (mensajes guardados que el operador envía)
-  chatInstallMsg2 String?   // el 2do lleva botón "INSTALAR APP" en la PWA
-  chatInstallMsg3 String?
-  chatTutIosImg     String? // foto tutorial de instalación iPhone, paso 1 (URL /branding/asset/:id)
-  chatTutIosImg2    String? // foto tutorial iPhone, paso 2
-  chatTutIosImg3    String? // foto tutorial iPhone, paso 3
-  chatTutIosImg4    String? // foto tutorial iPhone, paso 4
-  chatTutAndroidImg String? // foto tutorial de instalación Android
-  chatDirectWelcome String? // 1er mensaje del "chat directo" (/c/:slug, sin registro): pide el nombre
-  chatInstallPromptEnabled Boolean @default(false) // muestra el cartel "Instalá la app" dentro del chat
-  chatNotifTitle  String?   // título del modal "Activá las notificaciones" (branded por cuenta; default neutro)
-  chatNotifText   String?   // bajada del modal de notificaciones (branded por cuenta; default neutro)
-  chatBgUrl       String?   // fondo "plataforma" detrás del chat flotante (estilo widget sobre el casino)
-  chatMinDeposit    Int?    // mínimos del cajero POR CUENTA (null = los del sistema: 2000 / 5000).
-  chatMinWithdrawal Int?    // cada operador tiene su propia política (ej. retiro mínimo 6000).
+  brandName                String?
+  logoUrl                  String?
+  notifSoundUrl            String? // sonido custom del panel al llegar un mensaje nuevo (URL de un BrandingAsset)
+  casinoApiKey             String? // API key del partner-api del casino de ESTA cuenta (cifrada). Si está, la
+  // cuenta opera su propio tenant; si no, cae a la key global del .env (legacy).
+  primaryColor             String?
+  accentColor              String?
+  chatTheme                String    @default("whatsapp") // diseño de la PWA del chat: whatsapp | midnight | redblack (WhatsApp pelado, sin botones)
+  welcomeText              String? // texto de bienvenida en la PWA
+  welcomeMsgText           String? // primer mensaje automático de la conversación
+  welcomeMsgImage          String?
+  chatWaLink               String? // link wa.me para el CTA "Escribinos por WhatsApp" (registro un-tap)
+  chatPlatformUrl          String? // link a la plataforma de juego (botón "Entrar a la plataforma" + 1er msg)
+  chatPayCbu               String? // datos de pago estructurados (botones copiar individual en el cajero)
+  chatPayAlias             String?
+  chatPayTitular           String?
+  chatInstallMsg1          String? // secuencia de instalación (mensajes guardados que el operador envía)
+  chatInstallMsg2          String? // el 2do lleva botón "INSTALAR APP" en la PWA
+  chatInstallMsg3          String?
+  chatTutIosImg            String? // foto tutorial de instalación iPhone, paso 1 (URL /branding/asset/:id)
+  chatTutIosImg2           String? // foto tutorial iPhone, paso 2
+  chatTutIosImg3           String? // foto tutorial iPhone, paso 3
+  chatTutIosImg4           String? // foto tutorial iPhone, paso 4
+  chatTutAndroidImg        String? // foto tutorial de instalación Android
+  chatDirectWelcome        String? // 1er mensaje del "chat directo" (/c/:slug, sin registro): pide el nombre
+  chatInstallPromptEnabled Boolean   @default(false) // muestra el cartel "Instalá la app" dentro del chat
+  chatNotifTitle           String? // título del modal "Activá las notificaciones" (branded por cuenta; default neutro)
+  chatNotifText            String? // bajada del modal de notificaciones (branded por cuenta; default neutro)
+  chatBgUrl                String? // fondo "plataforma" detrás del chat flotante (estilo widget sobre el casino)
+  chatMinDeposit           Int? // mínimos del cajero POR CUENTA (null = los del sistema: 2000 / 5000).
+  chatMinWithdrawal        Int? // cada operador tiene su propia política (ej. retiro mínimo 6000).
   // Día de Chat App INDEPENDIENTE de WhatsApp: el cliente que no quiere/puede usar WhatsApp gasta
   // 1 día del saldo (mismo pool) y opera por el canal propio. Se auto-renueva 24h mientras esté
   // prendido y haya saldo (igual que las líneas). El Chat App se prende si hay línea WA con día
   // vigente O este día vigente.
-  chatDayEnabled   Boolean   @default(false)
-  chatDayExpiresAt DateTime?
+  chatDayEnabled           Boolean   @default(false)
+  chatDayExpiresAt         DateTime?
   // Registro SIN usuario automático: en el modo un-tap (/r/:slug), la cuenta con esto en true igual
   // registra al jugador y dispara Lead+Registro al pixel, PERO no le muestra usuario/clave generados;
   // postea un mensaje de bienvenida y el CAJERO le crea la cuenta a mano en el chat. El loop del pixel
   // sigue intacto (external_id = usuario interno del jugador; el Purchase de la carga matchea igual).
-  chatManualAccount Boolean  @default(false)
+  chatManualAccount        Boolean   @default(false)
   // Popup/promo que ve el jugador al entrar a la PWA (imagen + texto + link). popupUpdatedAt
   // versiona el aviso: el jugador lo ve de nuevo cada vez que cambia (dedupe en el cliente).
-  popupActive     Boolean   @default(false)
-  popupImageUrl   String?
-  popupTitle      String?
-  popupText       String?
-  popupLink       String?
-  popupFrom       DateTime? // ventana opcional: no se muestra antes de esta fecha/hora
-  popupUntil      DateTime? // ni después de esta
-  popupUpdatedAt  DateTime?
+  popupActive              Boolean   @default(false)
+  popupImageUrl            String?
+  popupTitle               String?
+  popupText                String?
+  popupLink                String?
+  popupFrom                DateTime? // ventana opcional: no se muestra antes de esta fecha/hora
+  popupUntil               DateTime? // ni después de esta
+  popupUpdatedAt           DateTime?
   // Acreditación AUTOMÁTICA de la carga (modelo B) POR CUENTA. null = se decide como siempre (el
   // global CHAT_PAY_WEBHOOK_SECRET); true = auto-carga por callback; false = la acredita el cajero a
   // mano aunque la cuenta tenga casino. Permite tener clientes automáticos y manuales a la vez.
-  casinoAutoCredit Boolean?
+  casinoAutoCredit         Boolean?
   // --- Bot de carga/descarga del Chat App (opcional, por cuenta; aislado, no toca WhatsApp) ---
-  botEnabled     Boolean  @default(false)  // prende/apaga el bot para esta cuenta
-  botPaymentInfo String?                   // datos de pago que muestra el bot (alias/CBU/QR/USDT del cliente)
-  botWelcome     String?                   // saludo inicial del bot (opcional)
-  botLoadWebhook String?                   // URL del sistema del socio para disparar la carga (Fase 3)
+  botEnabled               Boolean   @default(false) // prende/apaga el bot para esta cuenta
+  botPaymentInfo           String? // datos de pago que muestra el bot (alias/CBU/QR/USDT del cliente)
+  botWelcome               String? // saludo inicial del bot (opcional)
+  botLoadWebhook           String? // URL del sistema del socio para disparar la carga (Fase 3)
   // --- Saludo automático con botones para chats de anuncio (CTWA / Cloud API) ---
-  waWelcomeEnabled Boolean @default(false) // prende el auto-saludo al entrar el 1er msg del anuncio
-  waWelcomeText    String?                 // cuerpo del saludo (ej. "¡Hola! ¿Cómo podemos ayudarte?")
-  waWelcomeButtons String?                 // hasta 3 botones, etiquetas separadas por "|"
+  waWelcomeEnabled         Boolean   @default(false) // prende el auto-saludo al entrar el 1er msg del anuncio
+  waWelcomeText            String? // cuerpo del saludo (ej. "¡Hola! ¿Cómo podemos ayudarte?")
+  waWelcomeButtons         String? // hasta 3 botones, etiquetas separadas por "|"
   // Bienvenida automática para líneas QR (Baileys/WAHA): al PRIMER mensaje de un contacto nuevo se
   // manda UNA variante al azar (texto o audio, mismo formato que leadgenReplies). Dedup atómico por
   // etapa (NUEVO→CONTACTADO) + sin salientes previos → jamás se repite ni pisa charlas ya iniciadas.
-  waQrWelcomeEnabled Boolean @default(false)
-  waQrWelcomeReplies Json?
+  waQrWelcomeEnabled       Boolean   @default(false)
+  waQrWelcomeReplies       Json?
   // Auto-responder con botón CTA (link) en la Cloud API: bienvenida al 1er msg + follow-up en cada
   // msg siguiente, con un botón que abre un URL (funnel neutro; el casino NO va en el texto).
-  waAutoEnabled    Boolean @default(false)
-  waAutoWelcome    String?                 // texto del 1er mensaje
-  waAutoFollowup   String?                 // texto de los mensajes siguientes (ej. "Ya te pasamos el contacto 👇")
-  waAutoBtnLabel   String?                 // etiqueta del botón (ej. "Hablar con Meli", ≤20 chars)
-  waAutoBtnUrl     String?                 // URL del botón (wa.me, Chat App, o el link que sea)
-  createdAt DateTime @default(now())
+  waAutoEnabled            Boolean   @default(false)
+  waAutoWelcome            String? // texto del 1er mensaje
+  waAutoFollowup           String? // texto de los mensajes siguientes (ej. "Ya te pasamos el contacto 👇")
+  waAutoBtnLabel           String? // etiqueta del botón (ej. "Hablar con Meli", ≤20 chars)
+  waAutoBtnUrl             String? // URL del botón (wa.me, Chat App, o el link que sea)
+  createdAt                DateTime  @default(now())
 
-  lines       WaLine[]
-  contacts    Contact[]
-  landings    Landing[]
-  pixels      Pixel[]
-  events      MetaEvent[]
-  credit      Credit?
-  integration Integration?
-  payments    Payment[]
-  referralsMade Referral[] @relation("ReferralReferrer") // comisiones que ganó como referidor
-  supportMessages SupportMessage[]
-  quickReplies QuickReply[]
-  audioClips  AudioClip[]
-  notifications Notification[]
-  flows       Flow[]
+  lines             WaLine[]
+  contacts          Contact[]
+  landings          Landing[]
+  pixels            Pixel[]
+  events            MetaEvent[]
+  credit            Credit?
+  integration       Integration?
+  payments          Payment[]
+  referralsMade     Referral[]         @relation("ReferralReferrer") // comisiones que ganó como referidor
+  supportMessages   SupportMessage[]
+  quickReplies      QuickReply[]
+  audioClips        AudioClip[]
+  notifications     Notification[]
+  flows             Flow[]
   // Chat App (módulo aislado)
   chatPlayers       ChatPlayer[]
   chatSkins         ChatSkin[]
@@ -172,6 +176,8 @@ model User {
   chatWallets       ChatWallet[]
   chatDeposits      ChatDeposit[]
   chatWithdrawals   ChatWithdrawal[]
+
+  @@index([parentUserId])
 }
 
 // Carga/descarga contra la plataforma del socio (ganamos). Idempotencia y reversa por `referencia`,
@@ -179,17 +185,17 @@ model User {
 // concurrente). El monto va ENTERO en la moneda del tenant (ARS), sin centavos.
 model CasinoTx {
   id             String   @id @default(cuid())
-  userId         String   // cuenta (tenant) de Publi
-  conversationId String?  // conversación del chat que la originó
+  userId         String // cuenta (tenant) de Publi
+  conversationId String? // conversación del chat que la originó
   playerId       String?
-  type           String   // credit | debit
-  usuario        String   // username del casino (ganamos)
-  amount         Int      // entero en la moneda del tenant (ARS), sin centavos
+  type           String // credit | debit
+  usuario        String // username del casino (ganamos)
+  amount         Int // entero en la moneda del tenant (ARS), sin centavos
   currency       String   @default("ARS")
   referencia     String   @unique // idempotency key end-to-end
   status         String   @default("pending") // pending | completed | failed | reversed
-  txId           String?  // id de transacción que devuelve ganamos
-  errorCode      String?  // code del error de ganamos (ej. player_not_found)
+  txId           String? // id de transacción que devuelve ganamos
+  errorCode      String? // code del error de ganamos (ej. player_not_found)
   attempts       Int      @default(0)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -203,7 +209,7 @@ model CasinoTx {
 //     NUNCA por la imagen del comprobante sola. El Purchase CAPI se dispara SOLO al acreditar. ---
 model ChatWallet {
   id        String   @id @default(cuid())
-  userId    String   // cuenta (tenant)
+  userId    String // cuenta (tenant)
   playerId  String   @unique // saldo por jugador
   balance   Int      @default(0) // ARS entero
   currency  String   @default("ARS")
@@ -218,15 +224,15 @@ model ChatDeposit {
   id              String    @id @default(cuid())
   userId          String
   playerId        String
-  amount          Int       // ARS entero
+  amount          Int // ARS entero
   currency        String    @default("ARS")
-  method          String    // método que eligió el jugador (transferencia/alias/etc.)
-  comprobanteType String?   // mime de la imagen del comprobante (si subió)
-  comprobanteData Bytes?    // bytes del comprobante — NO acredita por sí solo
-  gatewayRef      String?   // referencia si vino por webhook de gateway real
+  method          String // método que eligió el jugador (transferencia/alias/etc.)
+  comprobanteType String? // mime de la imagen del comprobante (si subió)
+  comprobanteData Bytes? // bytes del comprobante — NO acredita por sí solo
+  gatewayRef      String? // referencia si vino por webhook de gateway real
   status          String    @default("pending") // pending | verified | credited | rejected
-  purchaseFiredAt DateTime?  // cuándo se disparó el Purchase a Meta (idempotencia: 1 por carga).
-                             // OJO: marketing a Meta ≠ acreditar fichas (eso sigue en approve/webhook).
+  purchaseFiredAt DateTime? // cuándo se disparó el Purchase a Meta (idempotencia: 1 por carga).
+  // OJO: marketing a Meta ≠ acreditar fichas (eso sigue en approve/webhook).
   createdAt       DateTime  @default(now())
   resolvedAt      DateTime?
   user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -238,9 +244,9 @@ model ChatWithdrawal {
   id         String    @id @default(cuid())
   userId     String
   playerId   String
-  amount     Int       // ARS entero
+  amount     Int // ARS entero
   currency   String    @default("ARS")
-  destino    String    // CBU/CVU/alias del jugador
+  destino    String // CBU/CVU/alias del jugador
   status     String    @default("requested") // requested | approved | paid | rejected
   createdAt  DateTime  @default(now())
   resolvedAt DateTime?
@@ -251,15 +257,15 @@ model ChatWithdrawal {
 
 // Automatización / secuencia (tipo ManyChat) para WhatsApp.
 model Flow {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
   name      String
-  enabled   Boolean  @default(false)
-  trigger   String   @default("first_message") // first_message | keyword
-  keyword   String?                            // si trigger = keyword
-  steps     Json     // [{ id, type: "message"|"delay"|"wait_reply", text?, minutes? }]
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  enabled   Boolean   @default(false)
+  trigger   String    @default("first_message") // first_message | keyword
+  keyword   String? // si trigger = keyword
+  steps     Json // [{ id, type: "message"|"delay"|"wait_reply", text?, minutes? }]
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   runs      FlowRun[]
 
   @@index([userId])
@@ -287,9 +293,9 @@ model FlowRun {
   id        String   @id @default(cuid())
   flowId    String
   contactId String
-  stepIndex Int      @default(0)          // legacy (flujos lineales viejos)
-  cursor    String   @default("0")        // posición en el árbol: "2" o "2:1:0" (paso:opción:subpaso)
-  status    String   @default("running")  // running | waiting | waiting_option | done
+  stepIndex Int      @default(0) // legacy (flujos lineales viejos)
+  cursor    String   @default("0") // posición en el árbol: "2" o "2:1:0" (paso:opción:subpaso)
+  status    String   @default("running") // running | waiting | waiting_option | done
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   flow      Flow     @relation(fields: [flowId], references: [id], onDelete: Cascade)
@@ -314,7 +320,7 @@ model InboundDedup {
 model Notification {
   id        String   @id @default(cuid())
   userId    String
-  type      String   // lead | purchase | line_down | line_quality | system
+  type      String // lead | purchase | line_down | line_quality | system
   title     String
   body      String?
   read      Boolean  @default(false)
@@ -343,7 +349,7 @@ model AudioClip {
   id          String   @id @default(cuid())
   userId      String
   title       String
-  contentType String   // audio/ogg | audio/webm | audio/mpeg …
+  contentType String // audio/ogg | audio/webm | audio/mpeg …
   data        Bytes
   createdAt   DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -353,14 +359,14 @@ model AudioClip {
 
 // Hilo de soporte 1-a-1 entre cada cliente y el dueño (admin).
 model SupportMessage {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  fromAdmin Boolean  @default(false)
+  fromAdmin Boolean   @default(false)
   body      String
   mediaUrl  String?
   readAt    DateTime?
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id])
 }
 
 // Revisión automática (IA) de un reclamo de soporte. La IA SOLO PROPONE: diagnóstico, respuesta
@@ -368,19 +374,19 @@ model SupportMessage {
 // panel (protección contra "hackeo por soporte": el texto del cliente es dato, no instrucción).
 model SupportTriage {
   id             String    @id @default(cuid())
-  userId         String    // cliente que reclamó
+  userId         String // cliente que reclamó
   status         String    @default("pending") // pending | approved | rejected | executed | failed
-  diagnosis      String    // qué pasa, según la IA + datos reales de la cuenta
-  suggestedReply String    // respuesta propuesta al cliente (el admin la puede editar)
+  diagnosis      String // qué pasa, según la IA + datos reales de la cuenta
+  suggestedReply String // respuesta propuesta al cliente (el admin la puede editar)
   action         String    @default("ninguna") // ninguna | responder | reiniciar_linea | guia_qr | revisar_humano
-  actionLineId   String?   // línea sobre la que aplica la acción (validada: es del cliente)
+  actionLineId   String? // línea sobre la que aplica la acción (validada: es del cliente)
   actionReason   String?
   confidence     Int       @default(0) // 0-100
-  model          String?   // modelo que revisó (auditoría)
-  contextSummary String?   // resumen de los datos reales que vio la IA
-  decidedById    String?   // admin que aprobó/rechazó
+  model          String? // modelo que revisó (auditoría)
+  contextSummary String? // resumen de los datos reales que vio la IA
+  decidedById    String? // admin que aprobó/rechazó
   decidedAt      DateTime?
-  result         String?   // qué pasó al ejecutar
+  result         String? // qué pasó al ejecutar
   createdAt      DateTime  @default(now())
 
   @@index([userId, status])
@@ -399,61 +405,66 @@ model AdminLog {
 
 // Pixel de Meta + token CAPI. Una entrada por evento (Lead / Purchase), como ScaleOS.
 model Pixel {
-  id          String   @id @default(cuid())
-  userId      String
-  pixelId     String
-  capiToken   String
-  eventType   String   // "Lead" | "Purchase"
-  siteUrl     String?
-  hidden      Boolean  @default(false) // sombra INTERNA (nuestra): recibe copia de los eventos por CAPI pero
-                                       // NO se lista/edita/borra desde el dashboard "Mi Pixel". Se carga a mano (SQL).
-  mirror      Boolean  @default(false) // ESPEJO DEL CLIENTE: pixel de respaldo que el cliente crea desde el
-                                       // panel. Recibe copia de todos los eventos (CAPI + navegador en la
-                                       // landing) para entrenarse en paralelo; si Meta bloquea el principal,
-                                       // el espejo ya está caliente. Nunca se elige como primario.
-  createdAt   DateTime @default(now())
-  user        User     @relation(fields: [userId], references: [id])
+  id        String   @id @default(cuid())
+  userId    String
+  pixelId   String
+  capiToken String
+  eventType String // "Lead" | "Purchase"
+  siteUrl   String?
+  hidden    Boolean  @default(false) // sombra INTERNA (nuestra): recibe copia de los eventos por CAPI pero
+  // NO se lista/edita/borra desde el dashboard "Mi Pixel". Se carga a mano (SQL).
+  mirror    Boolean  @default(false) // ESPEJO DEL CLIENTE: pixel de respaldo que el cliente crea desde el
+  // panel. Recibe copia de todos los eventos (CAPI + navegador en la
+  // landing) para entrenarse en paralelo; si Meta bloquea el principal,
+  // el espejo ya está caliente. Nunca se elige como primario.
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
 }
 
 // Línea de WhatsApp (sesión Baileys/Evolution).
 model WaLine {
-  id          String    @id @default(cuid())
-  userId      String
-  phone       String    // ej: 5492944684573
-  label       String?
-  status      String    @default("inactive") // inactive | active | paused
-  provider    String    @default("baileys")  // baileys (QR/Evolution) | cloud (WhatsApp Cloud API oficial)
-  sessionId   String?   // id de sesión Baileys/Evolution
-  connected   Boolean   @default(false)
+  id                String    @id @default(cuid())
+  userId            String
+  phone             String // ej: 5492944684573
+  label             String?
+  status            String    @default("inactive") // inactive | active | paused
+  provider          String    @default("baileys") // baileys (QR/Evolution) | cloud (WhatsApp Cloud API oficial)
+  sessionId         String? // id de sesión Baileys/Evolution
+  connected         Boolean   @default(false)
   // --- Cloud API oficial (para anuncios Click-to-WhatsApp / CTWA) ---
-  wabaPhoneNumberId String?  // Phone Number ID de la Cloud API
-  wabaId      String?        // WhatsApp Business Account ID
-  accessToken String?        // token de la Cloud API (cifrado en reposo)
-  verifyToken String?        // token de verificación del webhook de Meta
-  registerPin String?        // PIN de registro de la Cloud API (cifrado en reposo)
-  registered  Boolean   @default(false) // true si el número quedó registrado en la Cloud API
-  qualityRating String?      // Cloud API: GREEN | YELLOW | RED (calidad del número)
-  lastCheckedAt DateTime?    // último chequeo de salud de la línea
+  wabaPhoneNumberId String? // Phone Number ID de la Cloud API
+  wabaId            String? // WhatsApp Business Account ID
+  accessToken       String? // token de la Cloud API (cifrado en reposo)
+  verifyToken       String? // token de verificación del webhook de Meta
+  registerPin       String? // PIN de registro de la Cloud API (cifrado en reposo)
+  registered        Boolean   @default(false) // true si el número quedó registrado en la Cloud API
+  qualityRating     String? // Cloud API: GREEN | YELLOW | RED (calidad del número)
+  lastCheckedAt     DateTime? // último chequeo de salud de la línea
   // --- Anti-ban (líneas Baileys) ---
-  proxyUrl        String?    // proxy de salida por línea (URL completa, cifrada en reposo)
-  warmupEnabled   Boolean   @default(false)  // rampa de calentamiento OFF por default (se activa por línea en Admin)
-  warmupStartedAt DateTime?  // arranca al primer emparejamiento; se resetea si cambia el número
+  proxyUrl          String? // proxy de salida por línea (URL completa, cifrada en reposo)
+  warmupEnabled     Boolean   @default(false) // rampa de calentamiento OFF por default (se activa por línea en Admin)
+  warmupStartedAt   DateTime? // arranca al primer emparejamiento; se resetea si cambia el número
   // --- Proxies GESTIONADOS (pool admin) — OCULTO al cliente: estos campos NUNCA se exponen a un
   //     endpoint del cliente. Solo Baileys; las líneas Cloud API no usan proxy. Aditivo. ---
-  proxyId           String?    // proxy del pool asignado a esta línea (relación a Proxy)
-  proxySession      String?    // sesión sticky ÚNICA de esta línea (una IP fija por línea)
+  proxyId           String? // proxy del pool asignado a esta línea (relación a Proxy)
+  proxySession      String? // sesión sticky ÚNICA de esta línea (una IP fija por línea)
   proxyAssignedAt   DateTime?
-  banned            Boolean    @default(false) // el NÚMERO quedó baneado (logout/ban del motor)
+  banned            Boolean   @default(false) // el NÚMERO quedó baneado (logout/ban del motor)
   lastProxyRotateAt DateTime?
-  proxyWait         Boolean    @default(false) // "esperando proxy": sin proxy sano NO conecta (nunca por
-                                               // la IP del VPS); un job la conecta cuando el pool vuelve
-  expiresAt   DateTime? // se desactiva al vencer (consumo de días)
-  lastUsedAt  DateTime? // para rotación LRU de clics entre líneas activas
-  createdAt   DateTime  @default(now())
-  user        User      @relation(fields: [userId], references: [id])
-  proxy       Proxy?    @relation(fields: [proxyId], references: [id])
-  contacts    Contact[]
-  messages    Message[]
+  proxyWait         Boolean   @default(false) // "esperando proxy": sin proxy sano NO conecta (nunca por
+  // la IP del VPS); un job la conecta cuando el pool vuelve
+  expiresAt         DateTime? // se desactiva al vencer (consumo de días)
+  lastUsedAt        DateTime? // para rotación LRU de clics entre líneas activas
+  // TOPE DIARIO de la rotación: cuántas personas como máximo mandamos a ESTE número por día
+  // (0 = sin tope). El contador se guarda acá para no hacer ninguna consulta extra en cada clic.
+  dailyCap          Int       @default(0)
+  routedToday       Int       @default(0)
+  routedTodayAt     DateTime?
+  createdAt         DateTime  @default(now())
+  user              User      @relation(fields: [userId], references: [id])
+  proxy             Proxy?    @relation(fields: [proxyId], references: [id])
+  contacts          Contact[]
+  messages          Message[]
 
   @@index([sessionId]) // lookup por instancia en cada evento del webhook
   @@index([userId])
@@ -470,12 +481,12 @@ model Proxy {
   host        String
   port        Int
   username    String
-  password    String    // cifrada en reposo (encryptSecret) — NUNCA loguear ni exponer al cliente
-  protocol    String    @default("http")   // http | socks5
+  password    String // cifrada en reposo (encryptSecret) — NUNCA loguear ni exponer al cliente
+  protocol    String    @default("http") // http | socks5
   country     String?
   sticky      Boolean   @default(true)
-  sessTime    Int       @default(120)       // duración de la sesión sticky (según el proveedor)
-  maxLines    Int       @default(4)         // tope de líneas por IP/cuenta del proxy
+  sessTime    Int       @default(120) // duración de la sesión sticky (según el proveedor)
+  maxLines    Int       @default(4) // tope de líneas por IP/cuenta del proxy
   active      Boolean   @default(true)
   healthy     Boolean   @default(true)
   lastCheckAt DateTime?
@@ -489,7 +500,7 @@ model ProxyEvent {
   id        String   @id @default(cuid())
   lineId    String
   proxyId   String?
-  type      String   // assigned | rotated | line_down | reconnected | banned | proxy_unhealthy | unstable
+  type      String // assigned | rotated | line_down | reconnected | banned | proxy_unhealthy | unstable
   detail    String?
   createdAt DateTime @default(now())
 
@@ -504,12 +515,12 @@ model ProxyHealthSample {
   id           String   @id @default(cuid())
   lineId       String
   proxyId      String?
-  ip           String?  // IP pública de salida vista por el proxy (null = no salió a internet)
-  country      String?  // ISO2 (esperado AR)
+  ip           String? // IP pública de salida vista por el proxy (null = no salió a internet)
+  country      String? // ISO2 (esperado AR)
   ipChanged    Boolean  @default(false) // la IP difiere del sample anterior
-  sessionState String?  // WORKING | STARTING | SCAN_QR_CODE | FAILED | STOPPED | open | close | ...
-  errorCode    String?  // none | disconnected | 515_restricted | probe_fail
-  flaps        Int      @default(0)     // reconexiones contadas desde el sample anterior
+  sessionState String? // WORKING | STARTING | SCAN_QR_CODE | FAILED | STOPPED | open | close | ...
+  errorCode    String? // none | disconnected | 515_restricted | probe_fail
+  flaps        Int      @default(0) // reconexiones contadas desde el sample anterior
   createdAt    DateTime @default(now())
 
   @@index([lineId, createdAt])
@@ -517,17 +528,17 @@ model ProxyHealthSample {
 
 // Crédito prepago: "días disponibles" (1 día = 1 línea activa 24h).
 model Credit {
-  id        String   @id @default(cuid())
-  userId    String   @unique
-  days      Int      @default(0)
-  user      User     @relation(fields: [userId], references: [id])
-  ledger    CreditLedger[]
+  id     String         @id @default(cuid())
+  userId String         @unique
+  days   Int            @default(0)
+  user   User           @relation(fields: [userId], references: [id])
+  ledger CreditLedger[]
 }
 
 model CreditLedger {
   id        String   @id @default(cuid())
   creditId  String
-  delta     Int      // +compra / -consumo
+  delta     Int // +compra / -consumo
   reason    String
   createdAt DateTime @default(now())
   credit    Credit   @relation(fields: [creditId], references: [id])
@@ -535,44 +546,44 @@ model CreditLedger {
 
 // Contacto/lead con TODA la atribución. external_id es la clave del match con Meta.
 model Contact {
-  id          String   @id @default(cuid())
-  userId      String
-  externalId  String   @unique          // se envía a Meta (hasheado) para el match
-  phone       String?
-  waJid       String?                   // JID crudo de WhatsApp (soporta @lid) para responder
-  name        String?                   // nombre que manda WhatsApp (pushName) — lo pisa el webhook
-  alias       String?                   // nombre que le pone el OPERADOR (agenda). Solo visual: NO toca la atribución
-  source      String?                   // fb | ig | an | ...
-  campaignId  String?                   // id de campaña de Meta
-  adId        String?
-  pixelId     String?
-  fbp         String?                   // cookie _fbp
-  fbc         String?                   // cookie _fbc (derivada de fbclid)
-  fbclid      String?
-  ctwaClid    String?                    // click id de anuncios Click-to-WhatsApp (referral de la Cloud API)
-  code        String?                    // código corto incrustado en el msg de WA (único POR usuario, ver @@unique abajo)
-  landingUrl  String?
-  clientIp    String?                    // IP del visitante en la landing (sesión web original) — sube el EMQ del Purchase
-  clientUserAgent String?                // user agent del visitante en la landing (va junto a la IP en el CAPI)
-  lineId      String?
-  stage       Stage    @default(NUEVO)
-  amount      Int?                       // monto de la venta (en centavos o unidad menor)
-  purchasedAt DateTime?
-  paymentDetected     Boolean   @default(false) // detección de pago en chat (a confirmar)
-  paymentDetectedAmount Int?                     // monto detectado (centavos), si la IA lo leyó
-  paymentDetectedAt   DateTime?
-  registeredAt        DateTime?  // registro completo (CompleteRegistration) enviado: auto (credenciales) o manual
-  createdAt   DateTime @default(now())
+  id                    String    @id @default(cuid())
+  userId                String
+  externalId            String    @unique // se envía a Meta (hasheado) para el match
+  phone                 String?
+  waJid                 String? // JID crudo de WhatsApp (soporta @lid) para responder
+  name                  String? // nombre que manda WhatsApp (pushName) — lo pisa el webhook
+  alias                 String? // nombre que le pone el OPERADOR (agenda). Solo visual: NO toca la atribución
+  source                String? // fb | ig | an | ...
+  campaignId            String? // id de campaña de Meta
+  adId                  String?
+  pixelId               String?
+  fbp                   String? // cookie _fbp
+  fbc                   String? // cookie _fbc (derivada de fbclid)
+  fbclid                String?
+  ctwaClid              String? // click id de anuncios Click-to-WhatsApp (referral de la Cloud API)
+  code                  String? // código corto incrustado en el msg de WA (único POR usuario, ver @@unique abajo)
+  landingUrl            String?
+  clientIp              String? // IP del visitante en la landing (sesión web original) — sube el EMQ del Purchase
+  clientUserAgent       String? // user agent del visitante en la landing (va junto a la IP en el CAPI)
+  lineId                String?
+  stage                 Stage     @default(NUEVO)
+  amount                Int? // monto de la venta (en centavos o unidad menor)
+  purchasedAt           DateTime?
+  paymentDetected       Boolean   @default(false) // detección de pago en chat (a confirmar)
+  paymentDetectedAmount Int? // monto detectado (centavos), si la IA lo leyó
+  paymentDetectedAt     DateTime?
+  registeredAt          DateTime? // registro completo (CompleteRegistration) enviado: auto (credenciales) o manual
+  createdAt             DateTime  @default(now())
 
-  user        User     @relation(fields: [userId], references: [id])
-  line        WaLine?  @relation(fields: [lineId], references: [id])
-  messages    Message[]
-  flowRuns    FlowRun[]
+  user     User      @relation(fields: [userId], references: [id])
+  line     WaLine?   @relation(fields: [lineId], references: [id])
+  messages Message[]
+  flowRuns FlowRun[]
 
   @@unique([userId, code]) // el código es único POR usuario (no global): dos clientes pueden generar el
-                           // mismo `ref:` sin que el create explote (P2002) y se pierda el lead.
-  @@index([userId, phone])  // match del contacto en cada mensaje entrante
-  @@index([userId, stage])  // kanban / listados por etapa
+  // mismo `ref:` sin que el create explote (P2002) y se pierda el lead.
+  @@index([userId, phone]) // match del contacto en cada mensaje entrante
+  @@index([userId, stage]) // kanban / listados por etapa
 }
 
 enum Stage {
@@ -585,70 +596,70 @@ enum Stage {
 
 // Mensajes del Inbox.
 model Message {
-  id         String   @id @default(cuid())
-  contactId  String
+  id          String   @id @default(cuid())
+  contactId   String
   // NULLABLE a propósito (2026-09-06): la conversación SOBREVIVE a la línea. Antes lineId era
   // obligatorio y "Eliminar línea" tenía que borrar TODOS los mensajes de esa línea para poder
   // borrarla (los clientes que borraban una línea muerta y la recreaban perdían el historial
   // entero — la clave del CRM es que eso no pase). null = la línea que lo envió ya no existe.
-  lineId     String?
-  direction  String   // in | out
-  body       String
-  status     String   @default("sent") // salientes: sent | delivered | read | failed (ack de WhatsApp)
-  error      String?  // motivo si WhatsApp rechazó el envío (ej: código 463)
-  mediaType  String?  // mimetype si el mensaje trae imagen (ej image/jpeg)
-  mediaData  String?  @db.Text // imagen en base64 (sin prefijo data:) para mostrar en el Inbox
+  lineId      String?
+  direction   String // in | out
+  body        String
+  status      String   @default("sent") // salientes: sent | delivered | read | failed (ack de WhatsApp)
+  error       String? // motivo si WhatsApp rechazó el envío (ej: código 463)
+  mediaType   String? // mimetype si el mensaje trae imagen (ej image/jpeg)
+  mediaData   String?  @db.Text // imagen en base64 (sin prefijo data:) para mostrar en el Inbox
   waMessageId String?  @unique // idempotencia: no procesar dos veces el mismo evento de WhatsApp
-  createdAt  DateTime @default(now())
-  contact    Contact  @relation(fields: [contactId], references: [id])
-  line       WaLine?  @relation(fields: [lineId], references: [id])
+  createdAt   DateTime @default(now())
+  contact     Contact  @relation(fields: [contactId], references: [id])
+  line        WaLine?  @relation(fields: [lineId], references: [id])
 
-  @@index([contactId, createdAt])          // historial de conversación
-  @@index([lineId, direction, createdAt])  // cupo de warmup + heatmap por línea
+  @@index([contactId, createdAt]) // historial de conversación
+  @@index([lineId, direction, createdAt]) // cupo de warmup + heatmap por línea
 }
 
 // Landing alojada (S3/CloudFront), una o varias por usuario.
 model Landing {
-  id         String   @id @default(cuid())
-  userId     String
-  name       String
-  slug       String   @unique
-  html       String   @db.Text
-  config     Json?                       // campos del editor (headline, msg, etc.) para re-editar
-  isPrimary  Boolean  @default(false)
-  published  Boolean  @default(false)
-  publishedUrl String?          // URL de campaña (CloudFront del cliente) o local /p/:slug
+  id           String    @id @default(cuid())
+  userId       String
+  name         String
+  slug         String    @unique
+  html         String    @db.Text
+  config       Json? // campos del editor (headline, msg, etc.) para re-editar
+  isPrimary    Boolean   @default(false)
+  published    Boolean   @default(false)
+  publishedUrl String? // URL de campaña (CloudFront del cliente) o local /p/:slug
   publishedAt  DateTime?
-  createdAt  DateTime @default(now())
-  user       User     @relation(fields: [userId], references: [id])
+  createdAt    DateTime  @default(now())
+  user         User      @relation(fields: [userId], references: [id])
 }
 
 // Integración con CRM externo (Fase 5): dispara webhooks por evento.
 model Integration {
-  id         String   @id @default(cuid())
-  userId     String   @unique
-  mode       String   @default("nativo") // nativo | webhook | kommo
-  webhookUrl String?
-  secret     String?                     // para firmar el payload (HMAC) saliente
-  inboundToken String? @unique           // token del webhook ENTRANTE (Kommo → Publi.lat: marca compra + Purchase)
-  onLead     Boolean  @default(true)
-  onPurchase Boolean  @default(true)
-  enabled    Boolean  @default(false)
-  kommoBaseUrl String?                   // https://<subdominio>.kommo.com (solo ese dominio, guard SSRF)
-  kommoToken   String?                   // token larga duración de la API de Kommo (cifrado en reposo)
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  mode           String   @default("nativo") // nativo | webhook | kommo
+  webhookUrl     String?
+  secret         String? // para firmar el payload (HMAC) saliente
+  inboundToken   String?  @unique // token del webhook ENTRANTE (Kommo → Publi.lat: marca compra + Purchase)
+  onLead         Boolean  @default(true)
+  onPurchase     Boolean  @default(true)
+  enabled        Boolean  @default(false)
+  kommoBaseUrl   String? // https://<subdominio>.kommo.com (solo ese dominio, guard SSRF)
+  kommoToken     String? // token larga duración de la API de Kommo (cifrado en reposo)
   // --- Meta Lead Ads (formularios instantáneos) → captura del lead + respuesta automática ---
-  metaPageId    String?                  // id de la Page de Meta (mapea el webhook leadgen a esta cuenta)
-  metaPageToken String?                  // Page access token (cifrado) para traer los datos del lead por Graph API
-  leadgenEnabled Boolean @default(false) // prende la captura + respuesta automática de formularios
-  leadgenLineId String?                  // línea de WhatsApp desde la que se auto-responde (Fase 2)
-  leadgenReply  String?                  // mensaje único (legacy; si hay leadgenReplies, se ignora)
+  metaPageId     String? // id de la Page de Meta (mapea el webhook leadgen a esta cuenta)
+  metaPageToken  String? // Page access token (cifrado) para traer los datos del lead por Graph API
+  leadgenEnabled Boolean  @default(false) // prende la captura + respuesta automática de formularios
+  leadgenLineId  String? // línea de WhatsApp desde la que se auto-responde (Fase 2)
+  leadgenReply   String? // mensaje único (legacy; si hay leadgenReplies, se ignora)
   // Variantes ROTATIVAS de la respuesta automática: texto o AUDIO de la biblioteca. Se elige una al
   // azar por lead → 138 mensajes idénticos son un patrón que WhatsApp detecta; variar lo evita. El
   // audio además permite explicar cosas que por texto queman el número (rubros sensibles).
   // Formato: [{ "kind": "text", "body": "Hola {{nombre}}…" } | { "kind": "audio", "clipId": "cuid" }]
   leadgenReplies Json?
-  createdAt  DateTime @default(now())
-  user       User     @relation(fields: [userId], references: [id])
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id])
 }
 
 // Lead capturado de un FORMULARIO de Meta (Lead Ads). Aditivo: guarda las respuestas del form y linkea al
@@ -658,34 +669,34 @@ model Integration {
 // CRM) rotando variantes de texto/audio y espaciando los envíos. Una por cuenta (upsert por userId):
 // alcanza para el caso real y evita campañas simultáneas peleando por la misma línea.
 model BulkCampaign {
-  id         String   @id @default(cuid())
-  userId     String   @unique
-  variants   Json     @default("[]") // [{kind:"text",body} | {kind:"audio",clipId}]
-  pauseMinS  Int      @default(170)  // pausa MÍNIMA entre envíos (segundos)
-  pauseMaxS  Int      @default(230)  // pausa MÁXIMA (el intervalo real es aleatorio entre ambas)
-  lineId     String?                 // línea desde la que sale (null = la activa menos usada)
-  audSource  String?                 // filtro: origen del contacto ("leadform" = solo formularios)
-  audStage   String   @default("NUEVO") // filtro: etapa (NUEVO = todavía sin contactar)
-  audMaxDays Int?                    // filtro: solo contactos de los últimos N días
-  audLimit   Int      @default(25)   // tope de envíos por corrida
-  status     String   @default("idle") // idle | running | paused | done
-  sent       Int      @default(0)
-  failed     Int      @default(0)
+  id         String    @id @default(cuid())
+  userId     String    @unique
+  variants   Json      @default("[]") // [{kind:"text",body} | {kind:"audio",clipId}]
+  pauseMinS  Int       @default(170) // pausa MÍNIMA entre envíos (segundos)
+  pauseMaxS  Int       @default(230) // pausa MÁXIMA (el intervalo real es aleatorio entre ambas)
+  lineId     String? // línea desde la que sale (null = la activa menos usada)
+  audSource  String? // filtro: origen del contacto ("leadform" = solo formularios)
+  audStage   String    @default("NUEVO") // filtro: etapa (NUEVO = todavía sin contactar)
+  audMaxDays Int? // filtro: solo contactos de los últimos N días
+  audLimit   Int       @default(25) // tope de envíos por corrida
+  status     String    @default("idle") // idle | running | paused | done
+  sent       Int       @default(0)
+  failed     Int       @default(0)
   lastRunAt  DateTime?
   lastError  String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 }
 
 model LeadForm {
-  id         String   @id @default(cuid())
-  userId     String
-  contactId  String
-  leadgenId  String   @unique
-  formId     String?
-  adId       String?
-  answers    Json     @default("[]")
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  userId    String
+  contactId String
+  leadgenId String   @unique
+  formId    String?
+  adId      String?
+  answers   Json     @default("[]")
+  createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
 }
@@ -695,12 +706,12 @@ model LeadForm {
 // WhatsApp lo atienda Kommo y nunca veamos el inbound). El webhook de ETAPA lo usa para matchear
 // directo por kommoLeadId, sin depender del teléfono.
 model KommoLink {
-  id          String   @id @default(cuid())
-  userId      String
-  kommoLeadId String
+  id             String   @id @default(cuid())
+  userId         String
+  kommoLeadId    String
   kommoContactId String?
-  contactId   String
-  createdAt   DateTime @default(now())
+  contactId      String
+  createdAt      DateTime @default(now())
 
   @@unique([userId, kommoLeadId])
 }
@@ -709,18 +720,18 @@ model KommoLink {
 // conversación (lead de Kommo): en qué paso del flujo está y el monto en curso. Aislado del bot del
 // Chat App (que usa ChatConversation.botStep) — mismo cerebro, otro canal.
 model KommoBotState {
-  id          String   @id @default(cuid())
-  userId      String
-  kommoLeadId String
-  step        String?  // null=menú | carga_monto | carga_pago | carga_nombre | desc_monto | desc_datos | human | welcomed
-  amountCents Int?
+  id             String   @id @default(cuid())
+  userId         String
+  kommoLeadId    String
+  step           String? // null=menú | carga_monto | carga_pago | carga_nombre | desc_monto | desc_datos | human | welcomed
+  amountCents    Int?
   // MODELO B (auto-carga): identidad del jugador en el casino, creada por el bot (shadow ChatPlayer
   // para que la carga aparezca en el Cajero y el intent/CasinoTx tengan jugador).
   casinoUsername String?
   playerId       String?
-  titular        String?  // nombre completo del jugador (como figura en su banco) — vínculo para el matcheo
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @default(now()) @updatedAt
+  titular        String? // nombre completo del jugador (como figura en su banco) — vínculo para el matcheo
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
 
   @@unique([userId, kommoLeadId])
 }
@@ -729,10 +740,10 @@ model KommoBotState {
 model Payment {
   id         String   @id @default(cuid())
   userId     String
-  provider   String                      // mercadopago | stub
-  externalId String?                     // id de preferencia/pago en la pasarela
+  provider   String // mercadopago | stub
+  externalId String? // id de preferencia/pago en la pasarela
   days       Int
-  amount     Int?                        // centavos
+  amount     Int? // centavos
   currency   String   @default("ARS")
   status     String   @default("pending") // pending | approved | rejected
   createdAt  DateTime @default(now())
@@ -744,19 +755,19 @@ model Payment {
 // approvePayment). referredUserId es UNIQUE = una sola comisión por referido (primera compra).
 // El monto se calcula sobre el valor en USD (días × usdPerDay) para no depender de la moneda.
 model Referral {
-  id                 String   @id @default(cuid())
-  referrerId         String                        // quién refirió (User.id) — cobra la comisión
-  referredUserId     String   @unique              // el referido: una comisión por referido
-  paymentId          String?                        // el pago que la disparó
-  days               Int      @default(0)           // días de esa primera compra
-  amount             Int?                            // monto pagado (centavos, moneda original)
-  currency           String   @default("USD")
-  commissionUsdCents Int      @default(0)           // 10% del valor en USD, en centavos de USD
-  status             String   @default("pending")   // pending | paid (el admin transfirió el USDT)
+  id                 String    @id @default(cuid())
+  referrerId         String // quién refirió (User.id) — cobra la comisión
+  referredUserId     String    @unique // el referido: una comisión por referido
+  paymentId          String? // el pago que la disparó
+  days               Int       @default(0) // días de esa primera compra
+  amount             Int? // monto pagado (centavos, moneda original)
+  currency           String    @default("USD")
+  commissionUsdCents Int       @default(0) // 10% del valor en USD, en centavos de USD
+  status             String    @default("pending") // pending | paid (el admin transfirió el USDT)
   paidAt             DateTime?
-  paidNote           String?                          // hash/nota de la transferencia USDT
-  createdAt          DateTime @default(now())
-  referrer           User     @relation("ReferralReferrer", fields: [referrerId], references: [id])
+  paidNote           String? // hash/nota de la transferencia USDT
+  createdAt          DateTime  @default(now())
+  referrer           User      @relation("ReferralReferrer", fields: [referrerId], references: [id])
 
   @@index([referrerId])
   @@index([status])
@@ -773,37 +784,37 @@ model Referral {
 // (pagos, bot, casino, pixel, días) es la de la cuenta. El jugador queda marcado con la skin por la
 // que entró (ChatPlayer.skinId) y la ve siempre (branding, manifest de instalación, sesión).
 model ChatSkin {
-  id                String   @id @default(cuid())
+  id                String       @id @default(cuid())
   userId            String
-  slug              String   @unique // slug GLOBAL de entrada — convive con User.slug (no puede chocar)
+  slug              String       @unique // slug GLOBAL de entrada — convive con User.slug (no puede chocar)
   brandName         String?
   logoUrl           String?
   primaryColor      String?
   accentColor       String?
-  chatTheme         String   @default("whatsapp") // whatsapp | midnight | redblack
-  welcomeText       String?  // bienvenida de la PWA (pantallas de entrada)
-  welcomeMsgText    String?  // 1er mensaje automático (si difiere del de la marca principal)
-  chatDirectWelcome String?  // 1er mensaje del chat directo /c/
-  chatPlatformUrl   String?  // link de juego, si difiere
+  chatTheme         String       @default("whatsapp") // whatsapp | midnight | redblack
+  welcomeText       String? // bienvenida de la PWA (pantallas de entrada)
+  welcomeMsgText    String? // 1er mensaje automático (si difiere del de la marca principal)
+  chatDirectWelcome String? // 1er mensaje del chat directo /c/
+  chatPlatformUrl   String? // link de juego, si difiere
   chatNotifTitle    String?
   chatNotifText     String?
-  chatBgUrl         String?  // fondo "plataforma" detrás del chat flotante (demo/estilo widget)
-  createdAt         DateTime @default(now())
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chatBgUrl         String? // fondo "plataforma" detrás del chat flotante (demo/estilo widget)
+  createdAt         DateTime     @default(now())
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   players           ChatPlayer[]
 }
 
 model ChatPlayer {
-  id              String   @id @default(cuid())
-  userId          String   // cuenta dueña
-  skinId          String?  // skin de marca por la que entró (null = marca principal de la cuenta)
+  id              String             @id @default(cuid())
+  userId          String // cuenta dueña
+  skinId          String? // skin de marca por la que entró (null = marca principal de la cuenta)
   nombre          String?
-  alias           String?  // nombre que le pone el OPERADOR (agenda) — solo visual, como Contact.alias del Inbox
-  casinoUsername  String   // usuario del jugador en el casino
-  password        String?  // hash bcrypt (null = jugador viejo passwordless; login sin clave)
-  invitedByUserId String?  // operador que lo invitó (User.id)
+  alias           String? // nombre que le pone el OPERADOR (agenda) — solo visual, como Contact.alias del Inbox
+  casinoUsername  String // usuario del jugador en el casino
+  password        String? // hash bcrypt (null = jugador viejo passwordless; login sin clave)
+  invitedByUserId String? // operador que lo invitó (User.id)
   inviteCodeId    String?
-  estatus         String   @default("active")
+  estatus         String             @default("active")
   // --- Atribución de Meta del ALTA (landing = el propio Chat App). Se guardan al crear el
   // jugador y las reusa el Purchase del puente (external_id + fbp/fbc/IP/UA = mejor EMQ). ---
   fbp             String?
@@ -811,9 +822,9 @@ model ChatPlayer {
   fbclid          String?
   clientIp        String?
   userAgent       String?
-  createdAt       DateTime @default(now())
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  skin            ChatSkin? @relation(fields: [skinId], references: [id])
+  createdAt       DateTime           @default(now())
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skin            ChatSkin?          @relation(fields: [skinId], references: [id])
   conversations   ChatConversation[]
   pushSubs        ChatPushSub[]
 
@@ -823,22 +834,22 @@ model ChatPlayer {
 
 // Conversación jugador↔cajero.
 model ChatConversation {
-  id                 String   @id @default(cuid())
-  userId             String   // cuenta dueña
+  id                 String        @id @default(cuid())
+  userId             String // cuenta dueña
   playerId           String
-  assignedOperatorId String?  // operador asignado (User.id)
-  status             String   @default("open")
-  unreadOperator     Int      @default(0)
-  unreadPlayer       Int      @default(0)
+  assignedOperatorId String? // operador asignado (User.id)
+  status             String        @default("open")
+  unreadOperator     Int           @default(0)
+  unreadPlayer       Int           @default(0)
   lastMessageAt      DateTime?
   lastMessagePreview String?
-  botStep            String?  // estado del bot: null=menú | carga_monto | carga_pago | human (bot apagado)
-  botAmount          Int?     // monto de carga pendiente (centavos)
+  botStep            String? // estado del bot: null=menú | carga_monto | carga_pago | human (bot apagado)
+  botAmount          Int? // monto de carga pendiente (centavos)
   cargaPendingAt     DateTime? // cuándo se le mostró el CVU (carga iniciada). El recordatorio de carga
-                               // abandonada lo usa: si pasó X min sin comprobante, le manda un push.
-  createdAt          DateTime @default(now())
-  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  player             ChatPlayer @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  // abandonada lo usa: si pasó X min sin comprobante, le manda un push.
+  createdAt          DateTime      @default(now())
+  user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  player             ChatPlayer    @relation(fields: [playerId], references: [id], onDelete: Cascade)
   messages           ChatMessage[]
 
   @@index([userId, status])
@@ -847,16 +858,16 @@ model ChatConversation {
 
 // Mensaje del chat (jugador / operador / sistema).
 model ChatMessage {
-  id             String   @id @default(cuid())
-  userId         String   // cuenta dueña
+  id             String           @id @default(cuid())
+  userId         String // cuenta dueña
   conversationId String
-  senderType     String   // "player" | "operator" | "system"
+  senderType     String // "player" | "operator" | "system"
   senderId       String?
   body           String?
-  metadata       Json     @default("{}")
+  metadata       Json             @default("{}")
   readAt         DateTime?
-  createdAt      DateTime @default(now())
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime         @default(now())
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([conversationId, createdAt])
@@ -865,8 +876,8 @@ model ChatMessage {
 // Link de invitación single-use (un operador invita a un jugador).
 model InviteCode {
   id         String   @id @default(cuid())
-  userId     String   // cuenta dueña
-  operatorId String   // operador que creó el link (User.id)
+  userId     String // cuenta dueña
+  operatorId String // operador que creó el link (User.id)
   code       String   @unique
   label      String?
   isActive   Boolean  @default(true)
@@ -878,15 +889,15 @@ model InviteCode {
 
 // Suscripción a Web Push de un jugador (para notificar mensajes con la PWA cerrada).
 model ChatPushSub {
-  id        String   @id @default(cuid())
-  userId    String   // cuenta dueña
+  id        String      @id @default(cuid())
+  userId    String // cuenta dueña
   playerId  String?
   endpoint  String
   p256dh    String
   auth      String
   userAgent String?
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   player    ChatPlayer? @relation(fields: [playerId], references: [id], onDelete: SetNull)
 
   @@unique([userId, endpoint])
@@ -900,7 +911,7 @@ model ChatBroadcast {
   title     String
   body      String
   image     String?
-  target    String   // "all" o el playerId al que se envió
+  target    String // "all" o el playerId al que se envió
   sentCount Int      @default(0) // a cuántas suscripciones se encoló
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -914,7 +925,7 @@ model ChatBroadcast {
 model BrandingAsset {
   id          String   @id @default(cuid())
   userId      String
-  contentType String   // image/png | image/jpeg | image/webp | image/gif
+  contentType String // image/png | image/jpeg | image/webp | image/gif
   data        Bytes
   createdAt   DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -924,17 +935,17 @@ model BrandingAsset {
 
 // Log de eventos enviados a Meta (para auditoría y reintentos).
 model MetaEvent {
-  id         String   @id @default(cuid())
-  userId     String
-  contactId  String?
-  eventName  String   // Lead | Purchase
-  pixelId    String
-  payload    Json
-  status     String   @default("pending") // pending | sent | failed
-  attempts   Int      @default(0)         // reintentos CAPI; tras el tope queda dead-letter
-  response   Json?
-  createdAt  DateTime @default(now())
-  user       User     @relation(fields: [userId], references: [id])
+  id        String   @id @default(cuid())
+  userId    String
+  contactId String?
+  eventName String // Lead | Purchase
+  pixelId   String
+  payload   Json
+  status    String   @default("pending") // pending | sent | failed
+  attempts  Int      @default(0) // reintentos CAPI; tras el tope queda dead-letter
+  response  Json?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
 }
 
 // Tutoriales en video del panel (gestionados por el super-admin, visibles para TODOS los
@@ -944,7 +955,7 @@ model Tutorial {
   id          String   @id @default(cuid())
   title       String
   description String?
-  videoUrl    String   // link de YouTube/Vimeo o un .mp4 directo
+  videoUrl    String // link de YouTube/Vimeo o un .mp4 directo
   order       Int      @default(0) // orden de aparición (menor primero)
   active      Boolean  @default(true)
   createdAt   DateTime @default(now())

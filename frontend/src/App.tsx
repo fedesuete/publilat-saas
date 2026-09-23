@@ -15,6 +15,7 @@ import LandingsPage from "./pages/LandingsPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import BillingPage from "./pages/BillingPage";
 import ReferralsPage from "./pages/ReferralsPage";
+import SubCuentasPage from "./pages/SubCuentasPage";
 import PixelPage from "./pages/PixelPage";
 import AgendaPage from "./pages/AgendaPage";
 import SetupPage from "./pages/SetupPage";
@@ -66,6 +67,7 @@ export default function App() {
             <Route path="/whatsapp" element={<WhatsappPage />} />
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/referidos" element={<ReferralsPage />} />
+            <Route path="/subcuentas" element={<SubCuentasPage />} />
             <Route path="/pixel" element={<PixelPage />} />
             <Route path="/links" element={<LinksPage />} />
             <Route path="/landings" element={<LandingsPage />} />

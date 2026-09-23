@@ -155,11 +155,40 @@ const NAV: Array<{ to: string; label: string; icon: LucideIcon | typeof WhatsApp
 
 // Secciones de uso puntual (no del día a día): van juntas en un desplegable para que el menú
 // principal quede corto. /links se quitó: no aportaba nada y confundía.
+// Aviso fijo mientras el usuario está dentro de una sub cuenta: sin esto es fácil creer que se está
+// en la cuenta propia y cargar números o gastar días en la cuenta equivocada.
+function SubCuentaAviso() {
+  const [info, setInfo] = useState<{ prestada: boolean; principal: { email: string; name: string | null } } | null>(null);
+  const [saliendo, setSaliendo] = useState(false);
+  useEffect(() => {
+    api.get<{ prestada: boolean; principal: { email: string; name: string | null } }>("/api/subaccounts")
+      .then(({ data }) => setInfo(data))
+      .catch(() => undefined);
+  }, []);
+  if (!info?.prestada) return null;
+  const volver = async () => {
+    setSaliendo(true);
+    try {
+      await api.post("/api/subaccounts/volver");
+      window.location.href = "/dashboard";
+    } catch { setSaliendo(false); }
+  };
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-200">
+      <span>Estás trabajando dentro de una sub cuenta. Lo que hagas acá es de esa cuenta.</span>
+      <button onClick={() => void volver()} disabled={saliendo} className="rounded bg-amber-500/20 px-2 py-1 font-medium hover:bg-amber-500/30 disabled:opacity-60">
+        {saliendo ? "Volviendo…" : `Volver a ${info.principal.name || info.principal.email}`}
+      </button>
+    </div>
+  );
+}
+
 const NAV_CLIENTES: Array<{ to: string; label: string; icon: LucideIcon }> = [
   { to: "/leads", label: "Leads", icon: Users },
   { to: "/kanban", label: "Kanban", icon: KanbanSquare },
   { to: "/agenda", label: "Agenda", icon: CalendarDays },
   { to: "/referidos", label: "Referidos", icon: Gift },
+  { to: "/subcuentas", label: "Sub cuentas", icon: Users },
 ];
 
 // Pasos del recorrido guiado de bienvenida (se dispara al crear la cuenta).
@@ -461,6 +490,7 @@ export default function AppLayout() {
           </div>
         </header>
         <main className="min-h-0 flex-1 overflow-auto">
+          <SubCuentaAviso />
           <Outlet />
         </main>
       </div>

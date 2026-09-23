@@ -15,6 +15,9 @@ function secret(): string {
 export interface JwtPayload {
   userId: string;
   tv?: number; // tokenVersion: para revocar sesiones (si no coincide con el de la DB -> inválido)
+  // Sesión PRESTADA: el padre entró a una sub-cuenta suya. Lo firma el server al entrar y es lo
+  // único que habilita "volver a mi cuenta" (una sub-cuenta logueada normal no lo tiene).
+  parentId?: string;
   // Token del jugador del Chat App (canal aislado). Distinto del token de operador: no
   // tiene tokenVersion y NO da acceso al panel (requireAuth lo rechaza: no hay User con
   // id = playerId). Lo valida requireChatClient.

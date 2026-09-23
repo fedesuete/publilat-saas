@@ -2,6 +2,7 @@
 // Crea instancias en Evolution, expone QR (socket + respuesta) y estado de conexión.
 import { Router } from "express";
 import { z } from "zod";
+import { usadoHoy } from "../lib/line-cap.js";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
 import { encryptSecret, decryptSecret, maskSecret } from "../lib/crypto.js";
@@ -37,6 +38,7 @@ function toPublicLine(l: {
   connected: boolean; expiresAt: Date | null; createdAt: Date; registered?: boolean; qualityRating?: string | null;
   wabaPhoneNumberId: string | null; wabaId: string | null; accessToken: string | null; verifyToken: string | null;
   warmupEnabled?: boolean;
+  dailyCap?: number; routedToday?: number; routedTodayAt?: Date | null;
 }) {
   // Máscara del token: hay que DESCIFRAR y luego mostrar los últimos 4 del token REAL
   // (antes se enmascaraba el base64 del ciphertext -> los "últimos 4" eran basura).
@@ -49,6 +51,10 @@ function toPublicLine(l: {
     }
   }
   return {
+    // Tope diario de la rotación: cuántas personas como máximo van a este número por día (0 = sin
+    // tope) y cuántas van hoy, para mostrarlo en el panel.
+    dailyCap: l.dailyCap ?? 0,
+    usedToday: usadoHoy({ dailyCap: l.dailyCap ?? 0, routedToday: l.routedToday ?? 0, routedTodayAt: l.routedTodayAt ?? null }),
     id: l.id,
     phone: l.phone,
     label: l.label,
@@ -633,6 +639,19 @@ waRouter.post("/lines/:id/warmup", async (req, res) => {
 
 // POST /api/wa/lines/:id/proxy — DESHABILITADO para el cliente. El sistema de proxies (anti-ban)
 // lo gestiona SOLO el equipo desde el panel maestro; el cliente no configura ni ve proxies.
+// POST /api/wa/lines/:id/cap — cuántas personas como máximo mandamos a ESTE número por día.
+// 0 = sin tope (comportamiento de siempre). Es el control manual de la rotación: sirve para que los
+// números nuevos reciban poco y los viejos más, sin apagar ninguno.
+const capSchema = z.object({ dailyCap: z.number().int().min(0).max(100000) });
+waRouter.post("/lines/:id/cap", async (req, res) => {
+  const parsed = capSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
+  const line = await getOwnedLine(req.userId!, req.params.id);
+  if (!line) return res.status(404).json({ error: "Línea no encontrada" });
+  const updated = await prisma.waLine.update({ where: { id: line.id }, data: { dailyCap: parsed.data.dailyCap } });
+  return res.json({ line: { id: updated.id, dailyCap: updated.dailyCap, usedToday: usadoHoy(updated) } });
+});
+
 waRouter.post("/lines/:id/proxy", async (_req, res) => {
   return res.status(403).json({ error: "Los proxies los gestiona el equipo de soporte." });
 });

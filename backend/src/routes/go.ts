@@ -10,6 +10,8 @@ import { prisma } from "../lib/prisma.js";
 import { fireIntegration } from "../lib/integrations.js";
 import { notifyMissingPixel } from "../lib/capi-guard.js";
 import { lineWeights, pickWeighted } from "../lib/line-weights.js";
+import { elegibles, sumarClic, tieneCupo } from "../lib/line-cap.js";
+import { notify } from "../lib/notifications.js";
 
 export const goRouter = Router();
 
@@ -69,6 +71,22 @@ function sendNoLine(res: Response) {
 // (rotación LRU: la menos usada primero). Elegible = conectada, status active y con
 // TIEMPO PAGADO vigente (expiresAt futuro). Sin línea paga activa no enviamos el clic a
 // un número del cliente (paywall): caemos a DEMO si está definido. 1 día = 24h activa.
+// Aviso "todos tus números llegaron al tope de hoy": una sola vez por día por cuenta (en memoria).
+const avisadoTope = new Map<string, string>();
+function avisarTopeAlcanzado(userId: string, dia: string): void {
+  if (avisadoTope.get(userId) === dia) return;
+  avisadoTope.set(userId, dia);
+  console.warn(`[rotacion] ${userId}: todas las líneas llegaron al tope diario; sigo repartiendo igual`);
+  void notify(
+    userId,
+    "system",
+    "Tus números llegaron al tope de hoy",
+    "Todos tus números de WhatsApp alcanzaron el máximo de personas por día que configuraste. " +
+      "Para no perder ningún cliente seguimos repartiendo igual, pero conviene subir el tope en " +
+      "Publi.lat → WhatsApp o sumar otro número.",
+  ).catch(() => undefined);
+}
+
 async function pickLine(userId: string, linePref?: string) {
   const now = new Date();
   const base = { userId, connected: true, status: "active", NOT: { phone: "" }, expiresAt: { gt: now } };
@@ -84,8 +102,10 @@ async function pickLine(userId: string, linePref?: string) {
       where: { ...base, OR: [{ label: { equals: pref, mode: "insensitive" } }, { id: pref }, ...(digits ? [{ phone: digits }] : [])] },
       orderBy: { lastUsedAt: { sort: "asc", nulls: "first" } },
     });
-    if (pinned?.phone) {
-      await prisma.waLine.update({ where: { id: pinned.id }, data: { lastUsedAt: now } });
+    // Si la línea fija ya llegó a su tope de hoy, cae a la rotación normal (igual que si estuviera
+    // caída): el tope es del número, no del link.
+    if (pinned?.phone && tieneCupo(pinned, now)) {
+      await prisma.waLine.update({ where: { id: pinned.id }, data: { lastUsedAt: now, ...sumarClic(pinned, now) } });
       return { phone: pinned.phone, lineId: pinned.id as string | undefined };
     }
   }
@@ -93,15 +113,19 @@ async function pickLine(userId: string, linePref?: string) {
   // Rotación con PESO por línea (env LINE_WEIGHTS): las líneas frágiles reciben menos clics sin
   // apagarse. Sin pesos = LRU normal (la menos usada primero). Traemos las elegibles y elegimos
   // con pickWeighted (antigüedad efectiva = espera * peso).
-  const candidates: Array<{ id: string; phone: string; lastUsedAt: Date | null }> = await prisma.waLine.findMany({
+  const candidates = await prisma.waLine.findMany({
     where: base,
-    select: { id: true, phone: true, lastUsedAt: true },
+    select: { id: true, phone: true, lastUsedAt: true, dailyCap: true, routedToday: true, routedTodayAt: true },
   });
-  const eligible = pickWeighted(candidates, lineWeights(), now.getTime());
+  // TOPE DIARIO por línea: las que ya llegaron a su máximo de hoy salen del reparto. Si TODAS
+  // llegaron, se reparte igual (un clic sin línea es un lead pago perdido) y se avisa al cliente.
+  const { pool, todasAlTope } = elegibles(candidates, now);
+  if (todasAlTope) avisarTopeAlcanzado(userId, now.toISOString().slice(0, 10));
+  const eligible = pickWeighted(pool, lineWeights(), now.getTime());
 
   if (eligible?.phone) {
     // Marcamos uso para que el próximo clic vaya a otra línea (round-robin natural).
-    await prisma.waLine.update({ where: { id: eligible.id }, data: { lastUsedAt: now } });
+    await prisma.waLine.update({ where: { id: eligible.id }, data: { lastUsedAt: now, ...sumarClic(eligible, now) } });
     return { phone: eligible.phone, lineId: eligible.id as string | undefined };
   }
 

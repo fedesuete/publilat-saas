@@ -250,7 +250,7 @@ adminRouter.get("/clients/:id", async (req, res) => {
   const id = req.params.id;
   const user = await prisma.user.findUnique({
     where: { id },
-    select: { id: true, email: true, name: true, phone: true, slug: true, role: true, suspended: true, isDemo: true, demoExpiresAt: true, source: true, lastLoginAt: true, createdAt: true, maxLines: true, maxLandings: true },
+    select: { id: true, email: true, name: true, phone: true, slug: true, role: true, suspended: true, isDemo: true, demoExpiresAt: true, source: true, lastLoginAt: true, createdAt: true, maxLines: true, maxLandings: true, maxSubAccounts: true },
   });
   if (!user) return res.status(404).json({ error: "Cliente no encontrado" });
 
@@ -376,17 +376,18 @@ adminRouter.post("/clients/:id/impersonate", async (req, res) => {
 });
 
 // Editar límites del plan (líneas / landings) por cliente.
-const limitsSchema = z.object({ maxLines: z.number().int().min(0).max(100).optional(), maxLandings: z.number().int().min(0).max(1000).optional() });
+const limitsSchema = z.object({ maxLines: z.number().int().min(0).max(100).optional(), maxLandings: z.number().int().min(0).max(1000).optional(), maxSubAccounts: z.number().int().min(0).max(50).optional() });
 adminRouter.post("/clients/:id/limits", async (req, res) => {
   const parsed = limitsSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
   const userId = req.params.id;
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
   if (!user) return res.status(404).json({ error: "Cliente no encontrado" });
-  const data: { maxLines?: number; maxLandings?: number } = {};
+  const data: { maxLines?: number; maxLandings?: number; maxSubAccounts?: number } = {};
   if (parsed.data.maxLines !== undefined) data.maxLines = parsed.data.maxLines;
   if (parsed.data.maxLandings !== undefined) data.maxLandings = parsed.data.maxLandings;
-  const updated = await prisma.user.update({ where: { id: userId }, data, select: { maxLines: true, maxLandings: true } });
+  if (parsed.data.maxSubAccounts !== undefined) data.maxSubAccounts = parsed.data.maxSubAccounts;
+  const updated = await prisma.user.update({ where: { id: userId }, data, select: { maxLines: true, maxLandings: true, maxSubAccounts: true } });
   await adminLog(req.userId!, "limits", userId, data);
   return res.json({ ok: true, ...updated });
 });
