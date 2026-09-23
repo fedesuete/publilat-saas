@@ -599,6 +599,16 @@ export default function WhatsappPage() {
 
   const remove = async (id: string) => {
     setError(null);
+    // Borrar y crear de nuevo una línea caída es lo que más daño hace (WhatsApp la ve como un
+    // dispositivo nuevo: QR + sincronización + otra IP). Se lo decimos antes de que lo haga.
+    const l = lines.find((x) => x.id === id);
+    if (l && l.provider !== "cloud" && !l.connected) {
+      const ok = window.confirm(
+        "Borrar la línea NO arregla la conexión: WhatsApp la trata como un dispositivo nuevo y el problema suele empeorar.\n\n" +
+          'Probá primero "Conectar / Ver QR" en esta misma línea.\n\n¿Borrarla igual?',
+      );
+      if (!ok) return;
+    }
     try {
       await api.delete(`/api/wa/lines/${id}`);
       setLines((prev) => prev.filter((l) => l.id !== id));

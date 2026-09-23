@@ -21,6 +21,8 @@ export interface WhatsAppEngine {
   restartInstance(instanceName: string): Promise<boolean>;
   logoutInstance(instanceName: string): Promise<void>;
   deleteInstance(instanceName: string): Promise<void>;
+  // Detener la sesión SIN desvincular (freno de tormenta). Opcional: solo WAHA lo implementa.
+  stopInstance?(instanceName: string): Promise<void>;
   setProxy(instanceName: string, proxy: ProxyConfig | null): Promise<void>;
 }
 
@@ -53,6 +55,7 @@ const wahaEngine: WhatsAppEngine = {
   restartInstance: waha.restartInstance,
   logoutInstance: waha.logoutInstance,
   deleteInstance: waha.deleteInstance,
+  stopInstance: waha.stopInstance,
   setProxy: waha.setProxy,
 };
 

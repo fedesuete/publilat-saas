@@ -3,13 +3,14 @@
 //  - el job checkLineHealth (caída detectada por el chequeo periódico),
 //  - el webhook connection.update (caída reportada al instante por el motor).
 // Sin este helper compartido, el email solo salía por el job y se perdían muchas caídas.
+import { alertAdminProxy } from "./proxy-pool.js";
 import { prisma } from "./prisma.js";
 import { notify } from "./notifications.js";
 import { sendMail, sendAdminMail } from "./mailer.js";
 import { getEngine } from "./wa-engine.js";
 import { emitToUser } from "./io.js";
-import { safeAutoRestart } from "./session-guard.js";
-import { recordLineFlap } from "./line-weights.js";
+import { safeAutoRestart, esTormenta, markStormStopped, stormStopped } from "./session-guard.js";
+import { recordLineFlap, recentFlaps } from "./line-weights.js";
 
 // Diagnóstico automático de POR QUÉ se cayó una línea: consulta el estado de la sesión (WAHA, con su
 // `me.reachoutTimelock`) + la DB (duplicados / baneo) y devuelve el motivo + la acción concreta. Así
@@ -161,10 +162,51 @@ async function stillDown(lineId: string): Promise<{ inst: string; banned: boolea
   return { inst, banned: fresh.banned, paused: fresh.status === "paused" };
 }
 
+// Detiene una línea en tormenta de caídas y deja claro al cliente qué hacer (y qué NO: borrarla y
+// crearla de nuevo, que es lo que hacen y empeora todo). Ningún automatismo la vuelve a levantar
+// hasta que el usuario toque Conectar (o pasen 6 h).
+export async function stormStop(line: { id: string; userId: string; label: string | null; phone: string }, caidas: number): Promise<void> {
+  const fresh = await prisma.waLine
+    .findUnique({ where: { id: line.id }, select: { sessionId: true, status: true } })
+    .catch(() => null);
+  if (!fresh || fresh.status === "paused") return;
+  const inst = fresh.sessionId ?? `line_${line.id}`;
+  if (stormStopped(inst)) return; // ya la frenamos
+  markStormStopped(inst);
+  const name = line.label || line.phone || "tu línea";
+  console.warn(`[line-storm] ${line.id} ("${name}") user=${line.userId}: ${caidas} caídas en 1 h → DETENIDA`);
+  await getEngine().stopInstance?.(inst).catch(() => undefined);
+  await prisma.waLine.update({ where: { id: line.id }, data: { connected: false } }).catch(() => undefined);
+  emitToUser(line.userId, "wa:status", { lineId: line.id, state: "disconnected", connected: false, recovering: false });
+
+  const body =
+    `Tu WhatsApp "${name}" se desconectó ${caidas} veces en la última hora. La detuvimos para proteger el número: ` +
+    "WhatsApp restringe a los que se reconectan sin parar.\n\n" +
+    'Para volver a vincularla: Publi.lat → WhatsApp → "Conectar / Ver QR".\n' +
+    "NO borres la línea ni la crees de nuevo: WhatsApp la trata como un dispositivo nuevo y el problema empeora.";
+  await notify(line.userId, "line_down", "Línea detenida por caídas repetidas", body);
+  const owner = await prisma.user.findUnique({ where: { id: line.userId }, select: { email: true } });
+  const panel = (process.env.PANEL_BASE_URL ?? "").split(",")[0] || "https://app.publi.lat";
+  if (owner?.email) void sendMail(owner.email, `⛔ Tu línea de WhatsApp "${name}" fue detenida por caídas repetidas`, `${body}\n\nPanel: ${panel}/whatsapp`);
+  await alertAdminProxy(
+    "⛔ Línea detenida por tormenta de caídas",
+    `"${name}" de ${owner?.email ?? line.userId} (${line.phone}): ${caidas} caídas en 1 h. Quedó detenida; el cliente tiene que tocar Conectar.`,
+    "line_storm",
+    { lineId: line.id },
+  ).catch(() => undefined);
+}
+
 export function scheduleLineDownAlert(line: { id: string; userId: string; label: string | null; phone: string }): void {
   // La rotación de clics manda menos tráfico a las líneas que se están cayendo (ver line-weights.ts):
   // acá es donde nos enteramos de cada caída, así que la registramos.
   recordLineFlap(line.id);
+  // TORMENTA: si ya se cayó demasiadas veces en la última hora, reintentar no la arregla (69 caídas
+  // en 20 min el 23/09 hasta que el cliente la borró). Se detiene y se le avisa al cliente qué hacer.
+  const caidas = recentFlaps(line.id);
+  if (esTormenta(caidas)) {
+    void stormStop(line, caidas).catch((e) => console.error("[line-storm] error", e instanceof Error ? e.message : String(e)));
+    return;
+  }
   const t = setTimeout(() => {
     void (async () => {
       // 1) ¿ya volvió sola? (flapping típico)

@@ -130,3 +130,16 @@ se resuelve en la app (`lib/cloudflare-ip.ts`), a prueba de `CF-Connecting-IP` f
 - Verificar después de prender: `GET /api/admin/whoami` (logueado como admin) tiene que devolver TU IP en
   `ip` y un `cfRay` no nulo. Si `ip` es una 104.x/172.6x/162.15x = está viendo el borde: avisar.
 - Volver atrás = nube gris de nuevo (DNS-only). Nada del lado de la app cambia.
+
+## Tormenta de caidas (linea detenida) y avisos por WhatsApp
+
+Desde 2026-09-23, una linea que se cae **10 veces en 1 hora** (`LINE_STORM_FLAPS`) se DETIENE (WAHA `stop`,
+credenciales intactas) y ningun automatismo la levanta: el cliente recibe campanita + mail con la
+instruccion "toca Conectar / Ver QR, NO borres la linea", y el dueno recibe WhatsApp. Se levanta el freno
+cuando el usuario toca Conectar (o sola a las 6 h). Motivo: el 78% de los cierres de 48 h venian de 3
+lineas que reintentaban sin limite hasta que el cliente las borraba y recreaba (QR + sync por proxy).
+
+Los avisos de admin (`alertAdminProxy`: saldo IPRoyal bajo, proxy caido, linea esperando proxy, tormenta)
+salen tambien por **WhatsApp** al celular del dueno (`ADMIN_ALERT_WA_TO`) desde la linea de
+`ADMIN_ALERT_WA_FROM_EMAIL` (o cualquier linea paga de un ADMIN que no sea el destino), 1 por tipo cada 6 h.
+Umbral de saldo IPRoyal: 3 GB (`IPROYAL_LOW_GB`). El fix definitivo del saldo es el AUTO TOP-UP en IPRoyal.

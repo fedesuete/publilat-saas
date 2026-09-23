@@ -266,6 +266,12 @@ export async function logoutInstance(instanceName: string): Promise<void> {
   await client().post(`/api/sessions/${instanceName}/logout`).catch(() => undefined);
 }
 
+// Detiene la sesión (queda STOPPED, credenciales intactas): Baileys deja de reintentar. Un start la
+// vuelve a levantar sin QR. Lo usa el freno de tormenta.
+export async function stopInstance(instanceName: string): Promise<void> {
+  await client().post(`/api/sessions/${instanceName}/stop`).catch(() => undefined);
+}
+
 export async function deleteInstance(instanceName: string): Promise<void> {
   await client().delete(`/api/sessions/${instanceName}`).catch(() => undefined);
 }

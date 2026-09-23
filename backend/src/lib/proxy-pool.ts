@@ -8,6 +8,7 @@ import crypto from "node:crypto";
 import http from "node:http";
 import tls from "node:tls";
 import type { Proxy } from "@prisma/client";
+import { sendAdminWhatsApp } from "./admin-whatsapp.js";
 import { prisma } from "./prisma.js";
 import { decryptSecret } from "./crypto.js";
 import { parseProxyUrl, type ProxyConfig } from "./evolution.js";
@@ -122,6 +123,9 @@ export async function alertAdminProxy(
     void notify(a.id, "system", title, body).catch(() => undefined);
     emitToUser(a.id, "admin:proxy", { kind, ...payload });
   }
+  // Y al celular del dueño (freno: 1 por tipo cada 6 h). Los avisos por mail/campanita se ignoraron
+  // 5 veces seguidas el 21-22/09 y el saldo de IPRoyal llegó a cero.
+  void sendAdminWhatsApp(kind, `${title}\n${body}`);
 }
 
 // ¿Auto-asignar proxy a las líneas NUEVAS? (Fase 3). Flag env, apagado por default: con el flag OFF

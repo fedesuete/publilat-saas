@@ -9,8 +9,9 @@ import { sendMail } from "./mailer.js";
 const API_URL = (process.env.IPROYAL_API_URL ?? "https://resi-api.iproyal.com/v1").replace(/\/$/, "");
 const REPORT_EMAIL = process.env.PROXY_REPORT_EMAIL ?? "federicobogado1997@gmail.com";
 // Umbral: por debajo de estos GB se dispara el aviso "cargá IPRoyal". Configurable por env.
-// 1 GB alcanza de sobra: WhatsApp por proxy consume muy poco, así que avisamos recién cuando está por agotarse.
-export const IPROYAL_LOW_GB = Number(process.env.IPROYAL_LOW_GB ?? "1");
+// 3 GB: el 22/09 se consumió casi 1 GB en un día (reconexiones + sondeos); con 1 GB el aviso llegaba
+// tarde. Con 3 GB hay varios días de margen para cargar.
+export const IPROYAL_LOW_GB = Number(process.env.IPROYAL_LOW_GB ?? "3");
 
 function token(): string {
   return (process.env.IPROYAL_API_TOKEN ?? "").trim();
@@ -55,7 +56,7 @@ export async function fetchIproyalBalance(): Promise<IproyalBalance | null> {
 // el server y sigue bajo, vuelve a avisar una vez — aceptable y hasta útil.)
 let lastAlertAt = 0;
 let wasLow = false;
-const REALERT_MS = 12 * 3600_000;
+const REALERT_MS = 6 * 3600_000;
 
 // Chequeo periódico: lee el saldo y avisa si está por debajo del umbral. No-op sin token.
 export async function checkIproyalBalance(): Promise<void> {
