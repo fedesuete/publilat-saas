@@ -22,6 +22,11 @@ export function takeMonitorFlaps(lineId: string): number {
   monitorFlaps.set(lineId, 0);
   return n;
 }
+// Mira los flaps pendientes SIN resetear: el monitor decide si le toca samplear a la línea (si hubo
+// caídas desde el último sample, mide YA; si no, respeta su cadencia) sin perder el conteo.
+export function peekMonitorFlaps(lineId: string): number {
+  return monitorFlaps.get(lineId) ?? 0;
+}
 
 function enabled(): boolean {
   return (process.env.PROXY_AUTOROTATE ?? "on").trim().toLowerCase() !== "off";

@@ -94,6 +94,9 @@ export async function releaseProxiesFromDeadLines(): Promise<number> {
       OR: [
         { expiresAt: { lt: now } },
         { expiresAt: null, createdAt: { lt: new Date(now.getTime() - 24 * 60 * 60 * 1000) } },
+        // Pagas pero FUERA de servicio (2026-09-23): 2 líneas status!=active con día futuro retenían
+        // cupo y se sondeaban cada 5 min (probe_fail) quemando el plan. Desconectadas = liberar igual.
+        { status: { not: "active" } },
       ],
     },
     select: { id: true },
@@ -751,6 +754,46 @@ export async function recoverWaitingProxyLines(): Promise<void> {
   }
 }
 
+// RE-ENGANCHE de líneas EN SERVICIO sin proxy (2026-09-23): cuando el proxy IPRoyal se quedó sin
+// saldo, proxy-recover pasó las líneas a waiting (proxyId=null), reconectaron por la IP PELADA del VPS
+// y al verlas WORKING se limpió el flag SIN reasignar → 12 líneas pagas en manada en una sola IP
+// (riesgo de baneo masivo). Acá se les DEJA el proxy ASIGNADO EN LA DB (cupo tomado, config lista) SIN
+// tocar la sesión viva: se aplica solo en su próxima reconexión, o con un reinicio controlado del
+// admin. Avisa por campanita para que no pase en silencio. Corre cada 1h (job "proxy-reattach").
+export async function reattachProxylessLines(): Promise<number> {
+  const lines = await prisma.waLine.findMany({
+    where: {
+      status: "active",
+      provider: { not: "cloud" },
+      banned: false,
+      proxyWait: false,
+      proxyId: null,
+      connected: true,
+      expiresAt: { gt: new Date() },
+    },
+    select: { id: true, label: true, phone: true },
+  });
+  let ok = 0;
+  const nombres: string[] = [];
+  for (const l of lines) {
+    const a = await assignProxyPreferred(l.id).catch(() => ({ ok: false as const, proxyId: undefined as string | undefined }));
+    if (!a.ok) continue; // pool sin cupo sano: se reintenta en la próxima pasada
+    ok++;
+    nombres.push(l.label ?? l.phone ?? l.id.slice(0, 8));
+    await logProxyEvent(l.id, ("proxyId" in a ? a.proxyId : undefined) ?? null, "reconnected", "línea en servicio SIN proxy → proxy re-asignado en DB (se aplica en la próxima reconexión)").catch(() => undefined);
+  }
+  if (ok) {
+    console.log(`[proxy-reattach] ${ok} línea(s) en servicio sin proxy → proxy dejado asignado`);
+    await alertAdminProxy(
+      "🧷 Líneas sin proxy re-enganchadas",
+      `${ok} línea(s) en servicio estaban saliendo por la IP pelada del VPS (${nombres.slice(0, 6).join(", ")}${ok > 6 ? "…" : ""}). Se les dejó el proxy asignado: se aplica en su próxima reconexión, o reinicialas desde Admin → Líneas para protegerlas ya.`,
+      "reattach",
+      { count: ok },
+    ).catch(() => undefined);
+  }
+  return ok;
+}
+
 // Limpieza de sesiones WAHA HUÉRFANAS: las que NO corresponden a NINGUNA WaLine (por sessionId o
 // line_<id>). NUNCA toca la sesión de una línea que EXISTE, aunque esté vencida o momentáneamente
 // no-WORKING. [Corrección tras diagnóstico del socio, 2026-08-03] Antes borraba también las de líneas
@@ -812,6 +855,7 @@ export async function initQueues(): Promise<void> {
         if (job.name === "proxy-recover") return recoverProxyLine(job.data.lineId as string);
         if (job.name === "proxy-watch") return watchProxyRegistration(job.data.lineId as string, (job.data.attempt as number) ?? 1);
         if (job.name === "proxy-waiting") return recoverWaitingProxyLines();
+        if (job.name === "proxy-reattach") return reattachProxylessLines();
         if (job.name === "proxy-monitor") { const { sampleProxyHealth } = await import("./proxy-monitor.js"); return sampleProxyHealth(); }
         if (job.name === "proxy-report-daily") { const { sendProxyHealthReport } = await import("./proxy-report.js"); await sendProxyHealthReport(24, "resumen diario 08:00 ART"); return; }
         if (job.name === "proxy-report-3h") return; // APAGADO a pedido del dueño (2026-09-01): solo queda el resumen diario de las 08:00
@@ -847,6 +891,8 @@ export async function initQueues(): Promise<void> {
     await queue.add("proxy-health", {}, { repeat: { every: 360_000 }, jobId: "proxy-health-repeat", removeOnComplete: true, removeOnFail: 50 });
     await queue.add("proxy-waiting", {}, { repeat: { every: 120_000 }, jobId: "proxy-waiting-repeat", removeOnComplete: true, removeOnFail: 50 });
     await queue.add("proxy-monitor", {}, { repeat: { every: 300_000 }, jobId: "proxy-monitor-repeat", removeOnComplete: true, removeOnFail: 50 });
+    // Líneas en servicio sin proxy → dejarles proxy asignado + avisar (no puede pasar en silencio). Cada 1h.
+    await queue.add("proxy-reattach", {}, { repeat: { every: 3_600_000 }, jobId: "proxy-reattach-repeat", removeOnComplete: true, removeOnFail: 20 });
     // Saldo IPRoyal: chequeo cada 1h → avisa (email + campanita) si quedan pocos GB. No-op sin IPROYAL_API_TOKEN.
     await queue.add("iproyal-balance", {}, { repeat: { every: 3_600_000 }, jobId: "iproyal-balance-repeat", removeOnComplete: true, removeOnFail: 20 });
     // Recordatorio de carga abandonada (Chat App): cada 5 min avisa a los jugadores que empezaron una carga y no la terminaron.

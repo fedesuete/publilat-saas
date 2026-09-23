@@ -46,8 +46,9 @@ describe("releaseProxiesFromDeadLines", () => {
     expect(where.connected).toBe(false);
     expect(where.proxyId).toEqual({ not: null });
     expect(where.provider).toEqual({ not: "cloud" });
-    // Vencida, o creada hace rato y nunca activada (expiresAt null).
-    expect(where.OR).toHaveLength(2);
+    // Vencida, creada hace rato y nunca activada (expiresAt null), o paga pero fuera de servicio.
+    expect(where.OR).toHaveLength(3);
+    expect(where.OR[2].status).toEqual({ not: "active" });
     expect(where.OR[0].expiresAt.lt).toBeInstanceOf(Date);
     expect(where.OR[1].expiresAt).toBeNull();
     expect(where.OR[1].createdAt.lt).toBeInstanceOf(Date);

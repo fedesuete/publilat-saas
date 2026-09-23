@@ -1,21 +1,29 @@
-// Monitor de estabilidad IPRoyal (Fase 4). Cada 5 min, por cada línea de PRUEBA (proxy IPRoyal): sondea
-// la IP de salida por su proxy + estado de la sesión + errores + flaps desde el sample anterior, y guarda
-// un ProxyHealthSample. Con eso se mide en 24h cuántas veces cambia/cae la IP por línea. Aislado (solo
-// mira líneas IPRoyal) y best-effort: nunca frena nada ni toca otras líneas.
+// Monitor de estabilidad IPRoyal (Fase 4). El job corre cada 5 min, pero cada SONDEO POR EL PROXY
+// gasta tráfico del plan de IPRoyal (~300 KB con reintentos) — y eso, a 288 sondeos/día por línea,
+// fue lo que AGOTÓ la cuenta el 2026-09-23 (2.075 sondeos/24h, la mayoría contra sesiones muertas,
+// ≈0,6 GB/día; el WhatsApp real consume ~0,08 GB/semana). Regla nueva:
+//   · Sólo líneas EN SERVICIO (status active + día pagado + proxy IPRoyal).
+//   · El estado de la sesión sale GRATIS de la API local de WAHA (sin pasar por el proxy).
+//   · El probe de IP por el proxy: a lo sumo 1 vez/hora por línea, o ANTES si hubo flaps (ahí es
+//     cuando importa medir). Sesión muerta = NUNCA se sondea por proxy.
+// Aislado y best-effort: nunca frena nada ni toca otras líneas.
 import { prisma } from "./prisma.js";
 import { getEngine } from "./wa-engine.js";
 import { probeLineExitIp, IPROYAL_PROVIDER } from "./proxy-pool.js";
-import { takeMonitorFlaps } from "./proxy-flap.js";
+import { takeMonitorFlaps, peekMonitorFlaps } from "./proxy-flap.js";
 import { lineRawStatus, lineRestrictedUntil } from "./line-alert.js";
 
+// Cadencia máxima de samples (y de probes por proxy) por línea. 55 min ≈ 1/h con margen del job de 5 min.
+const SAMPLE_EVERY_MS = Number(process.env.PROXY_MONITOR_SAMPLE_MIN ?? "55") * 60_000;
+
 export async function sampleProxyHealth(): Promise<void> {
-  // Solo las líneas de prueba: proxy IPRoyal, no cloud. (Si no hay ninguna, no hace nada.)
+  const now = Date.now();
   const lines = await prisma.waLine
     .findMany({
-      // Sólo líneas EN SERVICIO (día pagado vigente). Antes se sondeaban todas las que tuvieran proxy
-      // asignado, incluidas las muertas: 16 líneas sin días generaban ~7.300 sondeos por día contra
-      // IPRoyal, gastando datos del plan para medir la salud de sesiones que no existen (2026-09-19).
+      // `status: "active"` (2026-09-23): había líneas con día pagado pero FUERA de servicio reteniendo
+      // el proxy y sondeándose cada 5 min con probe_fail — puro gasto.
       where: {
+        status: "active",
         provider: { not: "cloud" },
         proxy: { is: { provider: IPROYAL_PROVIDER } },
         expiresAt: { gt: new Date() },
@@ -27,27 +35,49 @@ export async function sampleProxyHealth(): Promise<void> {
 
   for (const line of lines) {
     try {
+      const last = await prisma.proxyHealthSample.findFirst({
+        where: { lineId: line.id },
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true },
+      });
+      const due = !last || now - last.createdAt.getTime() >= SAMPLE_EVERY_MS;
+      const flapping = peekMonitorFlaps(line.id) > 0; // hubo caídas desde el último sample → medir YA
+      if (!due && !flapping) continue; // nada que hacer: los flaps se acumulan hasta el próximo sample
+
       const inst = line.sessionId ?? `line_${line.id}`;
-      const [probe, rawStatus, connState, restrictedUntil, prev] = await Promise.all([
-        probeLineExitIp(line.id),
+      // Estado de la sesión: GRATIS (WAHA local, no pasa por el proxy).
+      const [rawStatus, connState, restrictedUntil] = await Promise.all([
         lineRawStatus(inst).catch(() => null),
         getEngine().connectionState(inst).catch(() => "unknown"),
         lineRestrictedUntil(inst).catch(() => null),
-        prisma.proxyHealthSample.findFirst({ where: { lineId: line.id }, orderBy: { createdAt: "desc" }, select: { ip: true } }),
       ]);
+      const alive = rawStatus === "WORKING" || connState === "open";
+
+      // Probe de la IP de salida: va POR EL PROXY (gasta plan) → sólo con la sesión viva.
+      const probe: { ok: boolean; ip?: string; country?: string } = alive
+        ? await probeLineExitIp(line.id)
+        : { ok: false };
       const ip = probe.ok ? probe.ip ?? null : null;
-      const ipChanged = Boolean(ip && prev?.ip && ip !== prev.ip);
+      // "Cambió la IP" se compara contra el último sample QUE TUVO IP (los intermedios sin probe no cuentan).
+      const prevWithIp = ip
+        ? await prisma.proxyHealthSample.findFirst({
+            where: { lineId: line.id, ip: { not: null } },
+            orderBy: { createdAt: "desc" },
+            select: { ip: true },
+          })
+        : null;
+      const ipChanged = Boolean(ip && prevWithIp?.ip && ip !== prevWithIp.ip);
       const sessionState = rawStatus ?? connState ?? "unknown";
       const errorCode = restrictedUntil
         ? "515_restricted"
-        : !probe.ok
-          ? "probe_fail"
-          : connState !== "open" && rawStatus !== "WORKING"
-            ? "disconnected"
+        : !alive
+          ? "disconnected"
+          : !probe.ok
+            ? "probe_fail"
             : "none";
       const flaps = takeMonitorFlaps(line.id);
       await prisma.proxyHealthSample.create({
-        data: { lineId: line.id, proxyId: line.proxyId, ip, country: probe.country ?? null, ipChanged, sessionState, errorCode, flaps },
+        data: { lineId: line.id, proxyId: line.proxyId, ip, country: probe.ok ? probe.country ?? null : null, ipChanged, sessionState, errorCode, flaps },
       });
     } catch (e) {
       console.warn("[proxy-monitor] sample falló", line.id, e instanceof Error ? e.message : String(e));
