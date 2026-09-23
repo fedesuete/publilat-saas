@@ -8,7 +8,7 @@ export const flowsRouter = Router();
 // Pasos recursivos: un menú tiene opciones y cada opción su propia rama de pasos.
 type StepInput = {
   id: string;
-  type: "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage" | "audio" | "image";
+  type: "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage" | "audio" | "image" | "silence";
   text?: string;
   alts?: string[];    // message: variantes que rotan al azar
   minutes?: number;
@@ -24,7 +24,7 @@ type StepInput = {
 const stepSchema: z.ZodType<StepInput> = z.lazy(() =>
   z.object({
     id: z.string().min(1),
-    type: z.enum(["message", "delay", "wait_reply", "menu", "link", "set_stage", "audio", "image"]),
+    type: z.enum(["message", "delay", "wait_reply", "menu", "link", "set_stage", "audio", "image", "silence"]),
     text: z.string().max(2000).optional(),
     alts: z.array(z.string().max(2000)).max(9).optional(),    // variantes rotativas del mensaje
     minutes: z.number().min(0).max(10080).optional(),

@@ -5,7 +5,7 @@ import { useMemo } from "react";
 import { ReactFlow, Background, Controls, type Node, type Edge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-type StepType = "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage" | "audio" | "image";
+type StepType = "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage" | "audio" | "image" | "silence";
 interface Option { id: string; label: string; keywords?: string[]; steps: Step[] }
 interface Step { id: string; type: StepType; text?: string; alts?: string[]; minutes?: number; minutesTo?: number; options?: Option[]; url?: string; urlLabel?: string; stage?: string; clipIds?: string[]; assetId?: string }
 interface LinkStat { stepId: string; sent: number; clicked: number }
@@ -23,6 +23,7 @@ const META: Record<StepType, { emoji: string; title: string; border: string; chi
   wait_reply: { emoji: "↩️", title: "Esperar respuesta", border: "border-sky-500/50", chip: "bg-sky-500/15 text-sky-300" },
   menu: { emoji: "🔀", title: "Menú", border: "border-violet-500/50", chip: "bg-violet-500/15 text-violet-300" },
   set_stage: { emoji: "📋", title: "Mover etapa", border: "border-rose-500/50", chip: "bg-rose-500/15 text-rose-300" },
+  silence: { emoji: "🔔", title: "Recontacto si no responde", border: "border-orange-500/50", chip: "bg-orange-500/15 text-orange-300" },
 };
 
 function preview(s: Step): string {
@@ -34,6 +35,7 @@ function preview(s: Step): string {
   if (s.type === "wait_reply") return s.minutes != null ? `Espera respuesta (o sigue a los ${s.minutesTo && s.minutesTo !== s.minutes ? `${s.minutes}-${s.minutesTo}` : s.minutes} min)` : "Espera a que el cliente responda";
   if (s.type === "menu") return s.text?.slice(0, 80) || "Elegí una opción:";
   if (s.type === "set_stage") return `→ ${s.stage ?? "?"}`;
+  if (s.type === "silence") { const h = (m?: number) => Math.round(((m ?? 1200) / 60) * 10) / 10; return `Si no responde en ${h(s.minutes)}${s.minutesTo != null && s.minutesTo !== s.minutes ? `–${h(s.minutesTo)}` : ""} h → sigue; si responde, termina`; }
   return "";
 }
 

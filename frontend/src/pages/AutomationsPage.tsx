@@ -4,7 +4,7 @@ import { api, apiError } from "../lib/api";
 import { Button, Input, Card, ErrorMsg } from "../components/ui";
 import FlowCanvas from "../components/FlowCanvas";
 
-type StepType = "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage" | "audio" | "image";
+type StepType = "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage" | "audio" | "image" | "silence";
 interface Option { id: string; label: string; keywords?: string[]; steps: Step[] }
 interface Step { id: string; type: StepType; text?: string; alts?: string[]; minutes?: number; minutesTo?: number; options?: Option[]; url?: string; urlLabel?: string; stage?: string; clipIds?: string[]; assetId?: string }
 interface FlowImage { id: string; contentType: string; createdAt: string }
@@ -21,12 +21,14 @@ const newStep = (type: StepType): Step =>
   : type === "set_stage" ? { id: uid(), type, stage: "INTERESADO" }
   : type === "audio" ? { id: uid(), type, clipIds: [] }
   : type === "image" ? { id: uid(), type, assetId: "", text: "" }
+  : type === "silence" ? { id: uid(), type, minutes: 1200, minutesTo: 1260 }
   : { id: uid(), type };
 
 const STEP_META: Record<StepType, { icon: typeof MessageSquare; label: string; color: string }> = {
   message: { icon: MessageSquare, label: "Enviar mensaje", color: "text-wa-green" },
   audio: { icon: Mic, label: "Enviar audio", color: "text-fuchsia-300" },
   image: { icon: ImageIcon, label: "Enviar imagen", color: "text-pink-300" },
+  silence: { icon: Reply, label: "Recontacto si no responde", color: "text-orange-300" },
   delay: { icon: Clock, label: "Esperar", color: "text-amber-300" },
   wait_reply: { icon: Reply, label: "Esperar respuesta", color: "text-sky-300" },
   menu: { icon: ListTree, label: "Menú con opciones (ramifica)", color: "text-violet-300" },
@@ -195,6 +197,24 @@ function AudioEditor({ step, onChange }: { step: Step; onChange: (p: Partial<Ste
   );
 }
 
+// Paso "recontacto si no responde": espera N horas de SILENCIO. Si el cliente no escribe, sigue (el
+// paso siguiente suele ser el mensaje de recontacto). Si escribe, el flujo termina: lo atiende una persona.
+function SilenceEditor({ step, onChange }: { step: Step; onChange: (p: Partial<Step>) => void }) {
+  const h = (m?: number, d = 20) => Math.round(((m ?? d * 60) / 60) * 10) / 10;
+  return (
+    <div className="space-y-1">
+      <div className="flex flex-wrap items-center gap-2 text-sm text-slate-300">
+        Si no responde en
+        <Input type="number" min={1} step={0.5} value={String(h(step.minutes))} onChange={(e) => onChange({ minutes: Math.round(Number(e.target.value) * 60) })} className="w-20" />
+        a
+        <Input type="number" min={1} step={0.5} value={String(h(step.minutesTo ?? step.minutes, 21))} onChange={(e) => onChange({ minutesTo: Math.round(Number(e.target.value) * 60) })} className="w-20" />
+        horas, seguir con el paso siguiente.
+      </div>
+      <p className="text-[11px] text-slate-500">Si el cliente responde antes, el flujo termina acá (ya lo está atendiendo una persona).</p>
+    </div>
+  );
+}
+
 // Paso "esperar respuesta": puede esperar para siempre, o VENCER a los X minutos y seguir igual
 // (para no perder al que hizo clic, vio el mensaje y no contestó).
 function WaitReplyEditor({ step, onChange }: { step: Step; onChange: (p: Partial<Step>) => void }) {
@@ -280,6 +300,7 @@ function StepsEditor({ steps, onChange, depth = 0, linkStats }: { steps: Step[];
               </div>
             )}
             {s.type === "wait_reply" && <WaitReplyEditor step={s} onChange={(p) => set(i, p)} />}
+            {s.type === "silence" && <SilenceEditor step={s} onChange={(p) => set(i, p)} />}
             {s.type === "link" && (
               <div className="space-y-2">
                 <textarea value={s.text ?? ""} onChange={(e) => set(i, { text: e.target.value })} placeholder="Mensaje que acompaña al link (ej: Registrate acá 👇)"
@@ -339,6 +360,7 @@ function StepsEditor({ steps, onChange, depth = 0, linkStats }: { steps: Step[];
         <Button variant="secondary" onClick={() => add("link")}><Link2 className="h-4 w-4" /> Botón con link</Button>
         <Button variant="secondary" onClick={() => add("delay")}><Clock className="h-4 w-4" /> Espera</Button>
         <Button variant="secondary" onClick={() => add("wait_reply")}><Reply className="h-4 w-4" /> Esperar respuesta</Button>
+        <Button variant="secondary" onClick={() => add("silence")}><Reply className="h-4 w-4" /> Recontacto si no responde</Button>
         <Button variant="secondary" onClick={() => add("set_stage")}><KanbanSquare className="h-4 w-4" /> Mover etapa</Button>
         {depth < 3 && <Button variant="secondary" onClick={() => add("menu")}><ListTree className="h-4 w-4" /> Menú</Button>}
       </div>
@@ -491,6 +513,7 @@ export default function AutomationsPage() {
                         </div>
                       )}
                       {step.type === "wait_reply" && <WaitReplyEditor step={step} onChange={upd} />}
+                      {step.type === "silence" && <SilenceEditor step={step} onChange={upd} />}
                       {step.type === "set_stage" && (
                         <select value={step.stage ?? "INTERESADO"} onChange={(e) => upd({ stage: e.target.value })}
                           className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green">

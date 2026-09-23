@@ -70,7 +70,7 @@ export interface FlowOption {
 
 export interface FlowStep {
   id: string;
-  type: "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage" | "audio" | "image";
+  type: "message" | "delay" | "wait_reply" | "menu" | "link" | "set_stage" | "audio" | "image" | "silence";
   text?: string;          // message, menu (encabezado), link (mensaje que acompaña) e image (pie de foto)
   alts?: string[];        // message e image: VARIANTES extra — se manda UNA al azar entre text y alts
                           // (mensajes idénticos en masa = patrón que WhatsApp detecta como bot)
@@ -88,6 +88,30 @@ export interface FlowStep {
 // [minutes, minutesTo] y con segundos sueltos: dos personas nunca reciben la respuesta al mismo
 // tiempo exacto, que es lo que delata a un bot (pedido del dueño 2026-09-22: "esperamos 3-4 min
 // variado así no parece un bot"). Sin minutesTo se comporta como siempre (espera fija).
+// REINTENTO cuando un envío falla (23/09: la línea del dueño estuvo caída por el proxy sin saldo; la
+// bienvenida salió en un momento en que reconectó y 10 min después audio/imagen/texto fallaron y el
+// motor AVANZÓ IGUAL → 3 personas quedaron solo con el "hola"). Ahora el paso se queda donde está
+// y se vuelve a intentar cada 5 min, hasta 12 veces (1 h). Después se da por perdido y sigue.
+export const FLOW_RETRY_SEC = Number(process.env.FLOW_RETRY_SEC ?? "300");
+export const FLOW_RETRY_MAX = Number(process.env.FLOW_RETRY_MAX ?? "12");
+const reintentos = new Map<string, number>(); // runId → intentos fallidos del paso actual (en memoria)
+export function olvidarReintentos(runId: string): void {
+  reintentos.delete(runId);
+}
+// Devuelve true si programó un reintento (el caller NO avanza); false si ya se agotaron (avanza).
+export function reintentarPaso(runId: string, que: string): boolean {
+  const n = (reintentos.get(runId) ?? 0) + 1;
+  if (n > FLOW_RETRY_MAX) {
+    reintentos.delete(runId);
+    console.error(`[flow] ${que} no salió tras ${FLOW_RETRY_MAX} intentos (run ${runId}): sigo con el próximo paso`);
+    return false;
+  }
+  reintentos.set(runId, n);
+  console.warn(`[flow] ${que} no salió (run ${runId}, intento ${n}/${FLOW_RETRY_MAX}): reintento en ${FLOW_RETRY_SEC}s`);
+  scheduleFlowResume(runId, FLOW_RETRY_SEC);
+  return true;
+}
+
 export function delaySeconds(step: { minutes?: number; minutesTo?: number }, random: () => number = Math.random): number {
   const desde = Math.max(0, step.minutes ?? 1);
   const hasta = step.minutesTo != null ? Math.max(desde, step.minutesTo) : desde;
@@ -181,6 +205,7 @@ export async function resumeFlowRun(runId: string): Promise<void> {
   for (let guard = 0; guard < 60; guard++) {
     const pos = resolveCursor(root, cursor);
     if (!pos || pos.index >= pos.list.length) {
+      olvidarReintentos(run.id);
       await prisma.flowRun.update({ where: { id: run.id }, data: { status: "done", cursor } });
       return;
     }
@@ -189,7 +214,11 @@ export async function resumeFlowRun(runId: string): Promise<void> {
     if (step.type === "message") {
       // Rotación: una variante al azar entre el texto principal y las alternativas.
       const pool = [step.text, ...(step.alts ?? [])].filter((t): t is string => Boolean(t && t.trim()));
-      if (pool.length) await sendToContact(userId, run.contactId, pool[Math.floor(Math.random() * pool.length)]);
+      if (pool.length) {
+        const ok = await sendToContact(userId, run.contactId, pool[Math.floor(Math.random() * pool.length)]).catch(() => false);
+        if (!ok && reintentarPaso(run.id, "mensaje")) return;
+      }
+      olvidarReintentos(run.id);
       cursor = cursorWith(cursor, pos.index + 1);
       await prisma.flowRun.update({ where: { id: run.id }, data: { cursor, status: "running" } });
     } else if (step.type === "audio") {
@@ -197,9 +226,13 @@ export async function resumeFlowRun(runId: string): Promise<void> {
       const clips = (step.clipIds ?? []).filter(Boolean);
       if (clips.length) {
         const clipId = clips[Math.floor(Math.random() * clips.length)];
-        await sendLeadVariant(userId, run.contactId, { kind: "audio", clipId }).catch((e) =>
-          console.error("[flow] audio no enviado:", e instanceof Error ? e.message : String(e)));
+        const ok = await sendLeadVariant(userId, run.contactId, { kind: "audio", clipId }).catch((e) => {
+          console.error("[flow] audio no enviado:", e instanceof Error ? e.message : String(e));
+          return false;
+        });
+        if (!ok && reintentarPaso(run.id, "audio")) return;
       }
+      olvidarReintentos(run.id);
       cursor = cursorWith(cursor, pos.index + 1);
       await prisma.flowRun.update({ where: { id: run.id }, data: { cursor, status: "running" } });
     } else if (step.type === "image") {
@@ -208,9 +241,13 @@ export async function resumeFlowRun(runId: string): Promise<void> {
       if (step.assetId) {
         const pool = [step.text, ...(step.alts ?? [])].filter((t): t is string => Boolean(t && t.trim()));
         const caption = pool.length ? pool[Math.floor(Math.random() * pool.length)] : undefined;
-        await sendImageToContact(userId, run.contactId, step.assetId, caption).catch((e) =>
-          console.error("[flow] imagen no enviada:", e instanceof Error ? e.message : String(e)));
+        const ok = await sendImageToContact(userId, run.contactId, step.assetId, caption).catch((e) => {
+          console.error("[flow] imagen no enviada:", e instanceof Error ? e.message : String(e));
+          return false;
+        });
+        if (!ok && reintentarPaso(run.id, "imagen")) return;
       }
+      olvidarReintentos(run.id);
       cursor = cursorWith(cursor, pos.index + 1);
       await prisma.flowRun.update({ where: { id: run.id }, data: { cursor, status: "running" } });
     } else if (step.type === "link") {
@@ -248,6 +285,14 @@ export async function resumeFlowRun(runId: string): Promise<void> {
       // (pedido del dueño 2026-09-22: "si no responde en 10 u 11 min le mandamos la secuencia
       // también"). Sin `minutes` espera para siempre, como antes.
       if (step.minutes != null) scheduleFlowResume(run.id, delaySeconds(step), cursor);
+      return;
+    } else if (step.type === "silence") {
+      // RECONTACTO: espera N horas de SILENCIO. Si el contacto no escribe en ese lapso, sigue (el paso
+      // siguiente suele ser el mensaje de recontacto). Si escribe, el flujo TERMINA: ya lo atiende una
+      // persona y mandarle un "¿pudiste ver…?" encima sería de bot (ver onInboundFlow).
+      cursor = cursorWith(cursor, pos.index + 1);
+      await prisma.flowRun.update({ where: { id: run.id }, data: { cursor, status: "waiting" } });
+      scheduleFlowResume(run.id, delaySeconds({ minutes: step.minutes ?? 1200, minutesTo: step.minutesTo }), cursor);
       return;
     } else if (step.type === "menu") {
       await sendToContact(userId, run.contactId, renderMenu(step));
@@ -310,8 +355,17 @@ export async function onInboundFlow(userId: string, contactId: string, text: str
     }
 
     // 2) ¿Esperando una respuesta libre (wait_reply)?
-    const waiting = await prisma.flowRun.findFirst({ where: { contactId, status: "waiting" }, orderBy: { updatedAt: "desc" } });
+    const waiting = await prisma.flowRun.findFirst({ where: { contactId, status: "waiting" }, orderBy: { updatedAt: "desc" }, include: { flow: true } });
     if (waiting) {
+      // ¿La espera era un "silence" (recontacto)? Contestó → no hace falta recontactar: fin del flujo.
+      const pos = resolveCursor(stepsOf(waiting.flow.steps), waiting.cursor);
+      const previo = pos && pos.index > 0 ? pos.list[pos.index - 1] : null;
+      if (previo?.type === "silence") {
+        await prisma.flowRun.update({ where: { id: waiting.id }, data: { status: "done" } });
+        olvidarReintentos(waiting.id);
+        console.log(`[flow] contacto ${contactId} respondió durante el silencio: sin recontacto, flujo terminado`);
+        return;
+      }
       await prisma.flowRun.update({ where: { id: waiting.id }, data: { status: "running" } });
       await resumeFlowRun(waiting.id);
       return;
