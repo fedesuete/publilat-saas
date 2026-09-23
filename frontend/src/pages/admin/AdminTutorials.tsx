@@ -38,7 +38,11 @@ export default function AdminTutorials() {
       });
       setVideoUrl(data.videoUrl);
       if (!title.trim()) setTitle(file.name.replace(/\.[^.]+$/, ""));
-    } catch (err) { setError(apiError(err)); }
+    } catch (err) {
+      // 413 sin cuerpo = lo cortó Cloudflare (plan gratis: 100 MB por pedido), no nuestro backend.
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      setError(status === 413 ? `El video pesa ${(file.size / 1048576).toFixed(0)} MB y el máximo por subida es 100 MB. Comprimilo (HandBrake, 1080p) y volvé a intentar.` : apiError(err));
+    }
     finally { setUploading(false); e.target.value = ""; }
   };
 

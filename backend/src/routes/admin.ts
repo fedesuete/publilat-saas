@@ -20,6 +20,13 @@ import { consumeChatDayAndActivate } from "../lib/access.js";
 
 export const adminRouter = Router();
 
+
+// Qué IP ve el servidor para este pedido. Sirve para verificar que detrás de Cloudflare llega la IP
+// REAL del visitante (y no la del borde) y que una CF-Connecting-IP falsificada se ignora.
+adminRouter.get("/whoami", (req, res) => {
+  const h = (n: string) => { const v = req.headers[n]; return typeof v === "string" ? v : null; };
+  res.json({ ip: req.ip, xForwardedFor: h("x-forwarded-for"), cfConnectingIp: h("cf-connecting-ip"), cfRay: h("cf-ray"), socket: req.socket.remoteAddress ?? null });
+});
 // ---- helpers ----
 // Genera una contraseña legible (sin caracteres ambiguos 0/O/1/l/I) para pasarle al cliente.
 function genPassword(len = 10): string {

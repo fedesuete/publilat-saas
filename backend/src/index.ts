@@ -40,6 +40,7 @@ import { botRelayRouter } from "./routes/bot-relay.js"; // puente cajero de soci
 import { tutorialsRouter, tutorialsAdminRouter, tutorialVideoRouter } from "./routes/tutorials.js";
 import { requireAdmin } from "./middleware/requireAdmin.js";
 import { requireAuth } from "./middleware/requireAuth.js";
+import { cloudflareRealIp, trustProxyDetrasDeCloudflare } from "./lib/cloudflare-ip.js";
 import { verifyToken } from "./lib/auth.js";
 import { setIo } from "./lib/io.js";
 import { initQueues, closeQueues } from "./lib/queue.js";
@@ -76,7 +77,10 @@ const chatHttpCors = cors({
 });
 
 const app = express();
-app.set("trust proxy", 1); // detrás de proxy/CDN: req.ip real + rate-limit correcto
+// Detrás de Traefik y (opcional) Cloudflare: req.ip = visitante real, a prueba de cabeceras falsas.
+// Sin esto, con la nube naranja TODOS compartirían la IP del borde (rate limits y pixel rotos).
+app.set("trust proxy", trustProxyDetrasDeCloudflare);
+app.use(cloudflareRealIp);
 app.use(
   helmet({
     contentSecurityPolicy: false, // las landings traen el pixel inline; el panel es SPA aparte

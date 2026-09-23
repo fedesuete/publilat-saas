@@ -108,3 +108,25 @@ Antes de tocar la DB: `pg_dump` primero. Migraciones: `prisma migrate deploy` (n
 - **SSH:** fail2ban contra fuerza bruta.
 - **Firewall:** mantener el de red de Hostinger **apagado** (Docker ya expone solo lo necesario), o
   si se quiere uno, configurarlo permitiendo EXPLÍCITO 22/80/443 + puertos de todas las apps.
+
+## Cloudflare (nube naranja) en app.publi.lat y chat.publi.lat
+
+Desde 2026-09-23 la app soporta ir detrás del proxy de Cloudflare (arregla los `ERR_CONNECTION_TIMED_OUT`
+de jugadores en ISPs con mala ruta al VPS). **No hace falta tocar el Traefik de EasyPanel**: la IP real
+se resuelve en la app (`lib/cloudflare-ip.ts`), a prueba de `CF-Connecting-IP` falsas.
+
+- Los DOS registros van en naranja: `chat` (la PWA) **y** `app` (la PWA llama a la API en app.publi.lat;
+  si solo va `chat`, la API sigue pegándole al VPS pelado y los timeouts siguen).
+- SSL/TLS: **Full (strict)**. Traefik renueva por desafío HTTP → funciona detrás de Cloudflare.
+  **NO prender "Always Use HTTPS"** en Cloudflare (Traefik ya redirige; el redirect de Cloudflare
+  puede pisar la renovación del certificado).
+- Speed → apagar **Rocket Loader** (rompe los módulos de Vite). Scrape Shield → apagar
+  **Email Address Obfuscation**. Bot Fight Mode: dejar APAGADO.
+- WAF → regla "Skip" (todas las protecciones) para los callbacks que llaman máquinas:
+  `/api/billing/webhook*`, `/api/webhooks/leadgen*`, `/api/wa/cloud/webhook*`, `/api/chat/pay/webhook`,
+  `/api/integrations/kommo*`, `/api/bot-relay*`, `/go*`.
+- Límite: el plan gratis corta subidas de más de **100 MB** (413) → videos de tutoriales grandes hay
+  que comprimirlos. Los que ya están suben igual (los sirve el backend).
+- Verificar después de prender: `GET /api/admin/whoami` (logueado como admin) tiene que devolver TU IP en
+  `ip` y un `cfRay` no nulo. Si `ip` es una 104.x/172.6x/162.15x = está viendo el borde: avisar.
+- Volver atrás = nube gris de nuevo (DNS-only). Nada del lado de la app cambia.
