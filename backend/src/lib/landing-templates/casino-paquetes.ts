@@ -29,8 +29,13 @@ export const casinoPaquetes: TplDef = {
     { key: "msg", label: "Mensaje de WhatsApp", type: "textarea", max: 160, default: "Hola! Quiero comprar créditos" },
     { key: "tgText", label: "Texto del botón de Telegram", type: "text", max: 30, default: "Comprar por Telegram" },
     { key: "telegram", label: "Link de Telegram (vacío = sin botón)", type: "text", max: 120, default: "" },
-    { key: "accent", label: "Color principal", type: "color", max: 7, default: "#22c55e" },
+    { key: "accent", label: "Color del botón principal", type: "color", max: 7, default: "#22c55e" },
     { key: "oro", label: "Color del destacado", type: "color", max: 7, default: "#facc15" },
+    { key: "fondoAlto", label: "Fondo (arriba)", type: "color", max: 7, default: "#16241c" },
+    { key: "fondo", label: "Fondo (abajo)", type: "color", max: 7, default: "#070d0b" },
+    { key: "tarjeta", label: "Color de las tarjetas", type: "color", max: 7, default: "#101d17" },
+    { key: "borde", label: "Color de los bordes", type: "color", max: 7, default: "#1f3529" },
+    { key: "texto2", label: "Color del texto secundario", type: "color", max: 7, default: "#9fb5a8" },
   ],
   render(ctx) {
     const v = ctx.values;
@@ -62,25 +67,25 @@ export const casinoPaquetes: TplDef = {
 ${pixelHead(ctx.pixelId)}
 <style>
 *{box-sizing:border-box}
-body{margin:0;font-family:system-ui,'Segoe UI',Roboto,Arial,sans-serif;background:radial-gradient(circle at 50% -10%,#16241c,#0b1310 58%,#070d0b);color:#e9edef;min-height:100vh;display:flex;flex-direction:column}
+body{margin:0;font-family:system-ui,'Segoe UI',Roboto,Arial,sans-serif;background:linear-gradient(175deg,${v.fondoAlto},${v.fondo});color:#f4f1fa;min-height:100vh;display:flex;flex-direction:column}
 .wrap{flex:1;display:flex;align-items:center;justify-content:center;padding:26px 16px}
 .card{width:100%;max-width:430px;text-align:center}
-.brand{font-size:14px;font-weight:800;letter-spacing:3px;text-transform:uppercase;color:${v.oro};margin-bottom:14px}
-h1{font-size:clamp(25px,6.4vw,33px);line-height:1.18;margin:0 0 8px;font-weight:900}
-.sub{margin:0 0 22px;color:#9fb5a8;font-size:14.5px;line-height:1.5}
+.brand{font-size:13px;font-weight:800;letter-spacing:4px;text-transform:uppercase;color:${v.oro};margin-bottom:16px}
+h1{font-size:clamp(36px,11vw,50px);line-height:1.02;margin:0 0 10px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase}
+.sub{margin:0 0 24px;color:${v.texto2};font-size:15px;line-height:1.5;letter-spacing:.3px}
 .packs{display:grid;gap:10px;margin-bottom:24px}
-.pack{position:relative;display:flex;align-items:baseline;justify-content:space-between;gap:12px;background:#101d17;border:1px solid #1f3529;border-radius:14px;padding:14px 16px;text-align:left}
-.pack .precio{font-size:21px;font-weight:900;line-height:1.1;white-space:nowrap}
-.pack .extra{font-size:13px;color:#9fb5a8;text-align:right}
-.pack.dest{border-color:${v.oro};background:linear-gradient(180deg,#1a2a1e,#101d17);box-shadow:0 12px 34px -16px ${v.oro}88}
+.pack{position:relative;display:flex;align-items:baseline;justify-content:space-between;gap:12px;background:${v.tarjeta};border:1px solid ${v.borde};border-radius:14px;padding:15px 16px;text-align:left}
+.pack .precio{font-size:22px;font-weight:900;line-height:1.1;white-space:nowrap;letter-spacing:.3px}
+.pack .extra{font-size:13px;color:${v.texto2};text-align:right}
+.pack.dest{border-color:${v.oro};background:${v.tarjeta};box-shadow:0 12px 34px -16px ${v.oro}aa,inset 0 0 0 1px ${v.oro}33}
 .pack.dest .precio{color:${v.oro}}
 .tag{position:absolute;top:-9px;right:13px;background:${v.oro};color:#1a1407;font-size:10.5px;font-weight:900;letter-spacing:.6px;padding:3px 9px;border-radius:999px}
-.btn{display:flex;align-items:center;justify-content:center;gap:9px;text-decoration:none;border-radius:999px;padding:16px;font-size:17px;font-weight:900;margin-bottom:11px}
+.btn{display:flex;align-items:center;justify-content:center;gap:9px;text-decoration:none;border-radius:999px;padding:18px;font-size:18px;font-weight:900;letter-spacing:1px;text-transform:uppercase;margin-bottom:11px}
 .btn:active{transform:scale(.99)}
-.wa{background:${v.accent};color:#062015;box-shadow:0 14px 38px -14px ${v.accent}aa}
+.wa{background:${v.accent};color:#1a1030;box-shadow:0 14px 38px -14px ${v.accent}aa}
 .tg{background:#229ED9;color:#fff;box-shadow:0 14px 38px -14px #229ED9aa}
 .trust{display:flex;gap:7px;justify-content:center;flex-wrap:wrap;margin-top:18px}
-.trust span{background:#101d17;border:1px solid #1e3229;border-radius:9px;padding:8px 11px;font-size:12.5px;color:#bcd6c9}
+.trust span{background:${v.tarjeta};border:1px solid ${v.borde};border-radius:9px;padding:8px 11px;font-size:12.5px;color:${v.texto2}}
 </style>
 </head>
 <body>
