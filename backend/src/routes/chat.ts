@@ -5,6 +5,7 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { z } from "zod";
 import crypto from "node:crypto";
 import { Prisma } from "@prisma/client";
+import { chatReadiness } from "../lib/chat-readiness.js";
 import { prisma } from "../lib/prisma.js";
 import { signChatClientToken, requireChatClient, CHAT_CLIENT_COOKIE, extractChatClientToken } from "../middleware/requireChatClient.js";
 import { hashPassword, verifyPassword, verifyToken } from "../lib/auth.js";
@@ -119,6 +120,14 @@ async function requireActiveLine(req: Request, res: Response, next: NextFunction
 }
 
 // GET /api/chat/status — el panel consulta si puede operar (línea WhatsApp activa O día de Chat App).
+// GET /api/chat/revision — la MISMA revisión que ve el equipo, ahora para el cliente: qué le
+// falta, qué combinaciones no funcionan juntas y cuál de los dos links usar en la publicidad.
+// Sin esto el cliente se entera por un reclamo dos días después (ver lib/chat-readiness.ts).
+chatRouter.get("/revision", async (req, res) => {
+  const estado = await chatReadiness(req.userId!);
+  if (!estado) return res.status(404).json({ error: "Cuenta no encontrada" });
+  return res.json(estado);
+});
 chatRouter.get("/status", async (req, res) => {
   res.json({ activeLine: await canOperateChat(req.userId!) });
 });

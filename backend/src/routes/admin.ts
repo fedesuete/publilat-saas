@@ -5,6 +5,7 @@ import { Router } from "express";
 import { z } from "zod";
 import crypto from "node:crypto";
 import { Prisma } from "@prisma/client";
+import { chatReadiness } from "../lib/chat-readiness.js";
 import { prisma } from "../lib/prisma.js";
 import { emitToUser } from "../lib/io.js";
 import { retryFailedCapi, enqueueProxyRecover } from "../lib/queue.js";
@@ -1005,42 +1006,6 @@ async function applyChatConfig(userId: string, cfg: ChatConfig): Promise<string[
   }
   if (Object.keys(data).length > 0) await prisma.user.update({ where: { id: userId }, data });
   return applied;
-}
-
-// Qué le falta a la cuenta para que el bot de carga/descarga funcione de verdad. Es la lista que hoy
-// hay que ir a chequear a mano en 4 pantallas distintas.
-async function chatReadiness(userId: string) {
-  const [u, credit, lines, pixel] = await Promise.all([
-    prisma.user.findUnique({
-      where: { id: userId },
-      select: { slug: true, brandName: true, botEnabled: true, botPaymentInfo: true, chatPayCbu: true, chatPayAlias: true,
-        chatPlatformUrl: true, chatDayEnabled: true, chatDayExpiresAt: true, casinoApiKey: true, casinoAutoCredit: true },
-    }),
-    prisma.credit.findUnique({ where: { userId }, select: { days: true } }),
-    prisma.waLine.count({ where: { userId, status: "active", expiresAt: { gt: new Date() } } }),
-    prisma.pixel.findFirst({ where: { userId }, select: { id: true } }),
-  ]);
-  if (!u) return null;
-  const chatDayActivo = Boolean(u.chatDayExpiresAt && u.chatDayExpiresAt > new Date());
-  const items = [
-    { key: "dias", ok: (credit?.days ?? 0) > 0 || chatDayActivo || lines > 0, detalle: `${credit?.days ?? 0} día(s) de saldo` },
-    { key: "canal_activo", ok: chatDayActivo || lines > 0, detalle: chatDayActivo ? "día de Chat App vigente" : lines > 0 ? `${lines} línea(s) de WhatsApp activa(s)` : "sin día ni línea: el chat está apagado" },
-    { key: "marca", ok: Boolean(u.brandName), detalle: u.brandName ?? "sin nombre de marca" },
-    { key: "bot", ok: u.botEnabled, detalle: u.botEnabled ? "bot prendido" : "bot apagado" },
-    { key: "datos_de_pago", ok: Boolean(u.chatPayCbu || u.chatPayAlias || u.botPaymentInfo || u.casinoApiKey), detalle: u.casinoApiKey ? "CVU de la recaudadora (casino)" : (u.chatPayCbu || u.chatPayAlias) ? "CBU/alias propios" : "sin datos de pago" },
-    { key: "plataforma_de_juego", ok: Boolean(u.chatPlatformUrl), detalle: u.chatPlatformUrl ?? "sin link de plataforma" },
-    { key: "pixel", ok: Boolean(pixel), detalle: pixel ? "pixel cargado" : "sin pixel: no se miden los eventos de Meta" },
-  ];
-  const chatBase = (process.env.CHAT_PWA_URL ?? "https://chat.publi.lat").replace(/\/$/, "");
-  return {
-    listo: items.every((i) => i.ok),
-    items,
-    casino: {
-      keyPropia: Boolean(u.casinoApiKey),
-      autoCredit: u.casinoAutoCredit, // null = manda el interruptor global del server
-    },
-    links: { registro: `${chatBase}/r/${u.slug}`, chatDirecto: `${chatBase}/c/${u.slug}` },
-  };
 }
 
 // Alta COMPLETA en un solo request: crea la cuenta y la deja configurada y lista para operar.

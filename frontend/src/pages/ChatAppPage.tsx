@@ -142,6 +142,46 @@ function playChatPing(): void {
   } catch { playTone(); }
 }
 
+// Revisión de la cuenta: lo MISMO que ve el equipo. Muestra las combinaciones que se ven bien campo
+// por campo pero no funcionan juntas (link de plataforma cargado + bot apagado = el jugador nunca ve
+// el botón), y cuál de los dos links usar en la publicidad. Nació de dos reclamos del 25/09.
+function RevisionChatApp() {
+  const [d, setD] = useState<{
+    listo: boolean;
+    avisos: Array<{ nivel: "error" | "aviso"; titulo: string; texto: string }>;
+    links: { registro: { url: string; titulo: string; texto: string }; chatDirecto: { url: string; titulo: string; texto: string } };
+  } | null>(null);
+  const [abierto, setAbierto] = useState(false);
+  useEffect(() => { api.get("/api/chat/revision").then(({ data }) => setD(data)).catch(() => undefined); }, []);
+  if (!d) return null;
+  const copiar = (url: string) => { void navigator.clipboard?.writeText(url); };
+  return (
+    <div className="mb-4 space-y-2">
+      {d.avisos.map((a, i) => (
+        <div key={i} className={`rounded-xl border p-3 text-sm ${a.nivel === "error" ? "border-rose-500/40 bg-rose-500/10" : "border-amber-500/40 bg-amber-500/10"}`}>
+          <div className={`font-semibold ${a.nivel === "error" ? "text-rose-200" : "text-amber-200"}`}>{a.titulo}</div>
+          <div className="mt-1 leading-snug text-slate-300">{a.texto}</div>
+        </div>
+      ))}
+      <button onClick={() => setAbierto((v) => !v)} className="text-xs font-medium text-slate-400 underline">
+        {abierto ? "Ocultar" : "¿Qué link uso en mi publicidad?"}
+      </button>
+      {abierto && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {[d.links.registro, d.links.chatDirecto].map((l, i) => (
+            <div key={i} className={`rounded-xl border p-3 ${i === 0 ? "border-wa-green/40 bg-wa-green/5" : "border-slate-700 bg-slate-900/50"}`}>
+              <div className="text-xs font-bold uppercase tracking-wide text-slate-400">{l.titulo}</div>
+              <div className="mt-1 break-all font-mono text-[11.5px] text-slate-200">{l.url}</div>
+              <p className="mt-1.5 text-[12px] leading-snug text-slate-400">{l.texto}</p>
+              <button onClick={() => copiar(l.url)} className="mt-2 rounded-md bg-slate-800 px-2 py-1 text-[11px] font-medium text-slate-200">Copiar</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ChatAppPage() {
   const [tab, setTab] = useState<"chats" | "invites" | "brand" | "avisos" | "bot" | "cajero">("chats");
   const [convs, setConvs] = useState<Conv[]>([]);
@@ -288,6 +328,7 @@ export default function ChatAppPage() {
           </div>
           <Button variant="ghost" onClick={startTour} className="shrink-0"><GraduationCap className="h-4 w-4" /> Guía</Button>
         </div>
+        <div className="mt-3"><RevisionChatApp /></div>
         <div className="mt-3 flex gap-1 overflow-x-auto rounded-md bg-slate-900 p-1 text-sm sm:inline-flex sm:overflow-visible">
           <button id="ca-tab-chats" onClick={() => setTab("chats")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "chats" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Conversaciones</button>
           <button id="ca-tab-invites" onClick={() => setTab("invites")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "invites" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Accesos</button>
