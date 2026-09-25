@@ -219,11 +219,19 @@ export default function AppLayout() {
   );
   // Días de crédito (pie del menú): al abrir y cada 60s. Best-effort: si falla, muestra "—".
   const [days, setDays] = useState<number | null>(null);
+  const [ritmo, setRitmo] = useState<{ jornadas: number; lineas: number } | null>(null);
   useEffect(() => {
     let vivo = true;
     const traer = () =>
-      api.get<{ days: number }>("/api/billing/credit")
-        .then(({ data }) => { if (vivo) setDays(data.days); })
+      api.get<{ days: number; jornadas?: number; lineasActivas?: number; avisoRitmo?: string | null }>("/api/billing/credit")
+        .then(({ data }) => {
+          if (!vivo) return;
+          setDays(data.days);
+          // Con más de un número prendido, "días" y "jornadas" NO son lo mismo: se aclara abajo.
+          setRitmo(data.avisoRitmo && data.jornadas != null && data.lineasActivas != null
+            ? { jornadas: data.jornadas, lineas: data.lineasActivas }
+            : null);
+        })
         .catch(() => undefined);
     void traer();
     const t = setInterval(traer, 60_000);
@@ -437,6 +445,12 @@ export default function AppLayout() {
                 style={{ width: `${Math.min(100, Math.max(days ? 4 : 0, ((days ?? 0) / 30) * 100))}%` }}
               />
             </div>
+            {ritmo && (
+              <p className={`mt-2 text-[11px] leading-snug ${ritmo.jornadas <= 3 ? "text-rose-300" : "text-amber-300/90"}`}>
+                Con {ritmo.lineas} números prendidos se gastan {ritmo.lineas} días por jornada:
+                te alcanzan para <b>{ritmo.jornadas} {ritmo.jornadas === 1 ? "jornada" : "jornadas"}</b>.
+              </p>
+            )}
             <NavLink
               to="/billing"
               onClick={() => setMenuOpen(false)}

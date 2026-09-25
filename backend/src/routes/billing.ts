@@ -2,6 +2,7 @@
 // (cripto vía NOWPayments). Cada proveedor está gateado por .env; sin claves -> stub.
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
+import { jornadasRestantes, textoRitmo } from "../lib/credit-rate.js";
 import { prisma } from "../lib/prisma.js";
 import {
   type Provider,
@@ -38,8 +39,13 @@ billingRouter.get("/credit", async (req, res) => {
     orderBy: { expiresAt: "desc" },
     select: { id: true, label: true, phone: true, expiresAt: true },
   });
+  // Cada número prendido consume SU propio día: con 3 números, 26 días son 9 jornadas. El cliente
+  // leía "días" como "jornadas" y sentía que el saldo se evaporaba (ver lib/credit-rate.ts).
   return res.json({
     days: credit.days,
+    jornadas: jornadasRestantes(credit.days, activeLines.length),
+    lineasActivas: activeLines.length,
+    avisoRitmo: textoRitmo(credit.days, activeLines.length),
     ledger,
     activeLines,
     methods: { mercadopago: mpEnabled(), stripe: stripeEnabled(), usdt: usdtEnabled(), pagopar: pagoparEnabled() },

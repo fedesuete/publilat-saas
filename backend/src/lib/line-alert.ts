@@ -11,6 +11,7 @@ import { getEngine } from "./wa-engine.js";
 import { emitToUser } from "./io.js";
 import { safeAutoRestart, esTormenta, markStormStopped, stormStopped } from "./session-guard.js";
 import { recordLineFlap, recentFlaps } from "./line-weights.js";
+import { textoRitmo } from "./credit-rate.js";
 
 // Diagnóstico automático de POR QUÉ se cayó una línea: consulta el estado de la sesión (WAHA, con su
 // `me.reachoutTimelock`) + la DB (duplicados / baneo) y devuelve el motivo + la acción concreta. Así
@@ -249,7 +250,17 @@ export async function alertLowBalance(
 ): Promise<void> {
   const name = line.label || line.phone || "tu WhatsApp";
   const h = Math.max(1, Math.round(hoursLeft));
-  const body = `Se te está por terminar el saldo: tu WhatsApp "${name}" se va a apagar en ~${h} h y tu operación se va a frenar (tu web deja de mandar a WhatsApp). Recargá días para que siga activo sin cortes.`;
+  // Si tiene varios números prendidos, el saldo le rinde la mitad (o menos) de lo que cree: se lo
+  // decimos acá, que es cuando más le importa.
+  const [saldo, activas] = await Promise.all([
+    prisma.credit.findUnique({ where: { userId: line.userId }, select: { days: true } }).catch(() => null),
+    prisma.waLine.count({ where: { userId: line.userId, expiresAt: { gt: new Date() } } }).catch(() => 0),
+  ]);
+  const ritmo = textoRitmo(saldo?.days ?? 0, activas);
+  const body =
+    `Se te está por terminar el saldo: tu WhatsApp "${name}" se va a apagar en ~${h} h y tu operación se va a frenar ` +
+    `(tu web deja de mandar a WhatsApp). Recargá días para que siga activo sin cortes.` +
+    (ritmo ? `\n\n${ritmo}` : "");
   await notify(line.userId, "system", "⏳ Tu saldo está por agotarse", body);
   const owner = await prisma.user.findUnique({ where: { id: line.userId }, select: { email: true } });
   const panel = (process.env.PANEL_BASE_URL ?? "").split(",")[0] || "https://app.publi.lat";
