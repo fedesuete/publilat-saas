@@ -5,6 +5,8 @@
 import axios from "axios";
 import { alertAdminProxy } from "./proxy-pool.js";
 import { sendMail } from "./mailer.js";
+import { prisma } from "./prisma.js";
+import { BURN_ALERT_GB_DIA, culpables, horasRestantes, ritmoGbDia, textoAviso, type Lectura } from "./iproyal-burn.js";
 
 const API_URL = (process.env.IPROYAL_API_URL ?? "https://resi-api.iproyal.com/v1").replace(/\/$/, "");
 const REPORT_EMAIL = process.env.PROXY_REPORT_EMAIL ?? "federicobogado1997@gmail.com";
@@ -58,11 +60,43 @@ let lastAlertAt = 0;
 let wasLow = false;
 const REALERT_MS = 6 * 3600_000;
 
+// Lectura anterior del saldo, para calcular el RITMO (GB/día). En memoria: tras un deploy tarda una
+// corrida en tener referencia. El aviso de ritmo alto va aparte del de saldo bajo y con su propio freno.
+let lecturaPrevia: Lectura | null = null;
+let ultimoAvisoRitmo = 0;
+
+// Avisa cuando el proxy consume MUCHO más de lo normal, señalando las líneas que se están cayendo.
+// Sin esto el gasto solo se nota cuando el saldo ya se agotó (pasó 23 y 24 de septiembre).
+async function avisarRitmo(gbAhora: number): Promise<void> {
+  const ahora: Lectura = { gb: gbAhora, at: Date.now() };
+  const gbDia = ritmoGbDia(lecturaPrevia, ahora);
+  lecturaPrevia = ahora;
+  if (gbDia == null || gbDia < BURN_ALERT_GB_DIA) return;
+  if (Date.now() - ultimoAvisoRitmo < REALERT_MS) return;
+  ultimoAvisoRitmo = Date.now();
+
+  // Las líneas con proxy que más se cayeron en la última hora: son las que gastan.
+  const conProxy = await prisma.waLine
+    .findMany({ where: { proxyId: { not: null } }, select: { id: true, phone: true, label: true, user: { select: { email: true } } } })
+    .catch(() => []);
+  const culpas = culpables(conProxy.map((l) => l.id)).map((c) => {
+    const l = conProxy.find((x) => x.id === c.lineId)!;
+    return { nombre: `${l.user.email.split("@")[0]} …${l.phone.slice(-4)}`, caidas: c.caidas };
+  });
+
+  const cuerpo = textoAviso(gbAhora, gbDia, culpas);
+  console.warn(`[iproyal-burn] ritmo ${gbDia.toFixed(2)} GB/día con ${gbAhora.toFixed(2)} GB restantes`);
+  await alertAdminProxy("🔥 El proxy está gastando de más", cuerpo, "iproyal_burn", { gbDia, availableGb: gbAhora }).catch(() => undefined);
+  await sendMail(REPORT_EMAIL, `🔥 IPRoyal: ${gbDia.toFixed(2)} GB/día`, cuerpo).catch(() => undefined);
+}
+
 // Chequeo periódico: lee el saldo y avisa si está por debajo del umbral. No-op sin token.
 export async function checkIproyalBalance(): Promise<void> {
   if (!iproyalBalanceEnabled()) return;
   const bal = await fetchIproyalBalance();
   if (!bal) return;
+  // Ritmo de consumo (independiente del saldo): avisa apenas el gasto se dispara, no cuando ya se agotó.
+  await avisarRitmo(bal.availableGb).catch(() => undefined);
   const low = bal.availableGb < IPROYAL_LOW_GB;
   if (!low) {
     wasLow = false;
@@ -76,7 +110,12 @@ export async function checkIproyalBalance(): Promise<void> {
 
   const gb = bal.availableGb.toFixed(2);
   const title = "⚠️ Saldo IPRoyal bajo";
-  const body = `Quedan ${gb} GB de tráfico en IPRoyal (umbral ${IPROYAL_LOW_GB} GB). Cargá antes de que se agote y se caigan las líneas.`;
+    const gbDiaAhora = lecturaPrevia ? ritmoGbDia({ gb: lecturaPrevia.gb, at: lecturaPrevia.at - 3600_000 }, lecturaPrevia) : null;
+  const horas = horasRestantes(bal.availableGb, gbDiaAhora);
+  const body =
+    `Quedan ${gb} GB de tráfico en IPRoyal (umbral ${IPROYAL_LOW_GB} GB).` +
+    (horas ? ` A este ritmo se agota en ~${Math.round(horas)} h.` : "") +
+    " Cargá antes de que se agote y se caigan las líneas.";
   await alertAdminProxy(title, body, "iproyal_low", { availableGb: bal.availableGb, threshold: IPROYAL_LOW_GB }).catch(() => undefined);
   await sendMail(
     REPORT_EMAIL,
