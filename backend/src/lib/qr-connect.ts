@@ -15,6 +15,7 @@
 import { getEngine } from "./wa-engine.js";
 import { applyLineProxy } from "./proxy-pool.js";
 import { markUserConnecting } from "./session-guard.js";
+import { prisma } from "./prisma.js";
 
 type Raw = "WORKING" | "SCAN_QR_CODE" | "STARTING" | "FAILED" | "STOPPED" | "NO_EXISTE" | "DESCONOCIDO";
 export interface ResultadoConexion {
@@ -75,6 +76,52 @@ async function esperar(inst: string, buscados: Raw[], maxMs: number, ignorarFail
 }
 
 // `marcarUsuario: false` = lo llama un job automático (no bloquea a los demás automáticos).
+/**
+ * El QR NO puede depender del proxy. Si la sesión arrastra un proxy que la línea ya no tiene, o el
+ * pool entero está caído, WAHA se queda en STARTING para siempre: el cliente aprieta "Conectar", no
+ * pasa nada, lo repite, y termina BORRANDO la línea — perdiendo el día que pagó. Visto en prod el
+ * 2026-09-25 (línea de Frijolito apuntando a un IPRoyal sin saldo).
+ *
+ * Solo actúa si hay DESAJUSTE real: mirar la config no reinicia nada, y sacar el proxy sí (setProxy
+ * reinicia), así que no se toca una sesión cuyo proxy sirve. Devuelve true si tocó algo.
+ */
+async function alinearProxy(inst: string, lineId: string): Promise<boolean> {
+  try {
+    const r = await fetch(`${base()}/api/sessions/${encodeURIComponent(inst)}`, { headers: headers() });
+    if (!r.ok) return false;
+    const s = (await r.json()) as { config?: { proxy?: unknown } };
+    if (!s.config?.proxy) return false; // no arrastra nada: listo
+    const line = await prisma.waLine.findUnique({ where: { id: lineId }, select: { proxyId: true } });
+    if (line?.proxyId) {
+      // La línea SÍ tiene proxy asignado: solo lo sacamos si el pool está caído (si no, el QR nunca llega).
+      const { hayProxySano } = await import("./proxy-emergencia.js");
+      if (await hayProxySano()) return false;
+    }
+    console.warn(`[qr-connect] ${inst}: la sesión arrastra un proxy que ya no aplica → lo saco para que aparezca el QR`);
+    await getEngine().setProxy(inst, null);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Aplica el proxy de la línea SOLO si el pool sirve. Con el pool caído, arrancar con proxy es
+// garantizar que no aparezca el QR; preferimos que el cliente pueda vincular por la IP del servidor.
+async function aplicarProxySiSirve(inst: string, lineId: string): Promise<void> {
+  try {
+    const line = await prisma.waLine.findUnique({ where: { id: lineId }, select: { proxyId: true } });
+    if (!line?.proxyId) return;
+    const { hayProxySano } = await import("./proxy-emergencia.js");
+    if (!(await hayProxySano())) {
+      console.warn(`[qr-connect] ${inst}: pool de proxies caído → arranco sin proxy para poder dar el QR`);
+      return;
+    }
+    await applyLineProxy(inst, lineId);
+  } catch {
+    /* best-effort: si falla, arranca sin proxy */
+  }
+}
+
 export async function conectarSesion(
   inst: string,
   lineId: string,
@@ -86,18 +133,25 @@ export async function conectarSesion(
   let st = await estadoCrudo(inst);
 
   if (st === "WORKING") return { qr: null, status: "connected" };
+  // No está conectada: si quedó colgada por un proxy que ya no aplica, sacárselo (si no, el QR no llega).
+  if (await alinearProxy(inst, lineId)) st = await estadoCrudo(inst);
+
   if (st === "NO_EXISTE") {
     await getEngine().createInstance(inst).catch(() => undefined); // crea + arranca (con webhook)
-    await applyLineProxy(inst, lineId).catch(() => undefined);
+    await aplicarProxySiSirve(inst, lineId);
     st = await esperar(inst, objetivo, maxWait);
   } else if (st === "FAILED" || st === "STOPPED" || st === "DESCONOCIDO") {
     // FAILED = credenciales muertas: sin logout, /start vuelve a FAILED una y otra vez.
     if (st === "FAILED") await orden(inst, "logout");
-    await applyLineProxy(inst, lineId).catch(() => undefined); // solo acá (antes de arrancar)
+    await aplicarProxySiSirve(inst, lineId); // solo acá (antes de arrancar)
     await orden(inst, "start");
     st = await esperar(inst, objetivo, maxWait);
   } else if (st === "STARTING") {
     st = await esperar(inst, objetivo, maxWait); // paciencia, NO reinicio
+    // Si tras la espera SIGUE arrancando, casi siempre es el proxy: último intento sin él.
+    if (st === "STARTING" && (await alinearProxy(inst, lineId))) {
+      st = await esperar(inst, objetivo, maxWait);
+    }
   }
   // SCAN_QR_CODE cae acá directo.
 
