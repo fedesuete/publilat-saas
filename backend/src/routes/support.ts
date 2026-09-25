@@ -42,6 +42,10 @@ supportRouter.post("/", async (req, res) => {
       data: {
         userId,
         fromAdmin: true,
+        // Marca DURA de "esto lo mandó el robot". Antes se distinguía por el emoji del texto, y un
+        // acuse hacía parecer atendido un ticket que nadie había contestado (25/09: una clienta
+        // esperó 35 h y preguntó dos veces, invisible en el tablero).
+        auto: true,
         readAt: new Date(),
         body:
           "🤖 Mensaje automático: recibimos su mensaje y ya lo derivamos al área correspondiente. " +

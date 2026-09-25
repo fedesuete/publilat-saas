@@ -362,6 +362,9 @@ model SupportMessage {
   id        String    @id @default(cuid())
   userId    String
   fromAdmin Boolean   @default(false)
+  // true = lo mandó el ROBOT (acuse automático). Un acuse NO cuenta como respuesta: sin esta marca,
+  // el ticket parecía atendido y el cliente quedaba esperando sin que nadie lo viera (25/09).
+  auto      Boolean   @default(false)
   body      String
   mediaUrl  String?
   readAt    DateTime?
