@@ -60,12 +60,12 @@ describe("config del CRUD acepta modo plantilla", () => {
 describe("invariantes de TODAS las plantillas", () => {
   const ctx: TplCtx = { pixelId: "777", userSlug: "matias", goBase: "https://app.publi.lat", line: "555", values: {} };
 
-  it("hay 4 y los ids son únicos", () => {
-    expect(TEMPLATES.length).toBe(4);
-    expect(new Set(TEMPLATES.map((t) => t.id)).size).toBe(4);
+  it("los ids son únicos (el registro no puede tener dos plantillas iguales)", () => {
+    expect(TEMPLATES.length).toBeGreaterThanOrEqual(5);
+    expect(new Set(TEMPLATES.map((t) => t.id)).size).toBe(TEMPLATES.length);
   });
 
-  for (const name of ["casino-simple", "casino-bono", "casino-urgencia", "casino-vip"]) {
+  for (const name of ["casino-simple", "casino-bono", "casino-urgencia", "casino-vip", "casino-paquetes"]) {
     it(`${name} existe en el registro`, () => expect(getTemplate(name)).toBeDefined());
   }
 

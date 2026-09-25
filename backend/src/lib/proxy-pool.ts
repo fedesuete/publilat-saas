@@ -144,9 +144,14 @@ export interface AssignOpts { excludeProxyId?: string; provider?: string; exclud
 // genera su sesión sticky única. Filtros opcionales: excluir un proxy, exigir/excluir un proveedor
 // (para la jerarquía de fallback: mismo proveedor → contingencia). Si no hay cupo, avisa y da pool_full.
 export async function assignProxy(lineId: string, opts: AssignOpts = {}): Promise<{ ok: boolean; proxyId?: string; reason?: string }> {
-  const line = await prisma.waLine.findUnique({ where: { id: lineId }, select: { id: true, provider: true, label: true } });
+  const line = await prisma.waLine.findUnique({ where: { id: lineId }, select: { id: true, provider: true, label: true, proxyBlockedUntil: true } });
   if (!line) return { ok: false, reason: "line_not_found" };
   if (line.provider === "cloud") return { ok: false, reason: "cloud_no_proxy" };
+  // TOPE DE CONSUMO: esta línea se comió el plan y está castigada sin proxy por un rato. Sigue
+  // trabajando por la IP del servidor; vuelve a pedir proxy sola cuando venza el bloqueo.
+  if (line.proxyBlockedUntil && line.proxyBlockedUntil > new Date()) {
+    return { ok: false, reason: "bloqueada_por_presupuesto" };
+  }
 
   const proxies = await prisma.proxy.findMany({
     where: {

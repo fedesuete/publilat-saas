@@ -7,8 +7,9 @@ import { casinoBono } from "./casino-bono.js";
 import { casinoUrgencia } from "./casino-urgencia.js";
 import { casinoVip } from "./casino-vip.js";
 import { casinoSimple } from "./casino-simple.js";
+import { casinoPaquetes } from "./casino-paquetes.js";
 
-export const TEMPLATES: TplDef[] = [casinoBono, casinoUrgencia, casinoVip, casinoSimple];
+export const TEMPLATES: TplDef[] = [casinoBono, casinoUrgencia, casinoVip, casinoSimple, casinoPaquetes];
 
 export const getTemplate = (id: string): TplDef | undefined => TEMPLATES.find((t) => t.id === id);
 

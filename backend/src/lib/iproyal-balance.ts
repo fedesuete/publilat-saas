@@ -8,6 +8,7 @@ import { sendMail } from "./mailer.js";
 import { prisma } from "./prisma.js";
 import { BURN_ALERT_GB_DIA, culpables, horasRestantes, ritmoGbDia, textoAviso, type Lectura } from "./iproyal-burn.js";
 import { EMERGENCIA_GB, fallbackDirectoActivo, modoEmergencia, textoEmergencia } from "./proxy-emergencia.js";
+import { aplicarTope, BLOQUEO_HORAS, textoTope } from "./proxy-presupuesto.js";
 
 const API_URL = (process.env.IPROYAL_API_URL ?? "https://resi-api.iproyal.com/v1").replace(/\/$/, "");
 const REPORT_EMAIL = process.env.PROXY_REPORT_EMAIL ?? "federicobogado1997@gmail.com";
@@ -72,6 +73,19 @@ async function avisarRitmo(gbAhora: number): Promise<void> {
   const ahora: Lectura = { gb: gbAhora, at: Date.now() };
   const gbDia = ritmoGbDia(lecturaPrevia, ahora);
   lecturaPrevia = ahora;
+
+  // TOPE DURO: si el gasto se pasó del presupuesto, le sacamos el proxy a la línea que más gasta.
+  // Sigue trabajando por la IP del servidor: no se corta el servicio, solo deja de consumir plan.
+  // Esto es lo que hace que el plan no se pueda vaciar solo (pedido del dueño, 25/09).
+  const cortada = await aplicarTope(gbDia).catch(() => null);
+  if (cortada && gbDia != null) {
+    const cuerpo = textoTope(cortada.nombre, gbDia, BLOQUEO_HORAS);
+    await alertAdminProxy("✂️ Le saqué el proxy a una línea para no gastar de más", cuerpo, "proxy_tope", {
+      lineId: cortada.lineId, gbDia,
+    }).catch(() => undefined);
+    await sendMail(REPORT_EMAIL, `✂️ Tope de proxy: ${cortada.nombre} quedó sin proxy`, cuerpo).catch(() => undefined);
+  }
+
   if (gbDia == null || gbDia < BURN_ALERT_GB_DIA) return;
   if (Date.now() - ultimoAvisoRitmo < REALERT_MS) return;
   ultimoAvisoRitmo = Date.now();
