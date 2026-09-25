@@ -9,6 +9,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { Server as SocketServer } from "socket.io";
 import { goRouter } from "./routes/go.js";
+import { triageLinkRouter } from "./routes/triage-link.js";
 import { subAccountsRouter } from "./routes/subaccounts.js";
 import { landingRouter } from "./routes/landing.js";
 import { authRouter } from "./routes/auth.js";
@@ -185,6 +186,9 @@ app.use("/api/leads", apiLimiter, requireAuth, leadsRouter);
 app.use("/api/bulk", apiLimiter, requireAuth, bulkRouter); // envíos masivos (gate por email, ver routes/bulk.ts)
 app.use("/api/wa", apiLimiter, requireAuth, waRouter);
 app.use("/api/subaccounts", apiLimiter, requireAuth, subAccountsRouter); // sub-cuentas del cliente
+// Decidir una revisión de soporte desde el MAIL. Sin login a propósito: el permiso lo da la firma
+// del link (HMAC + vencimiento), y la acción está acotada a la lista cerrada del triage.
+app.use("/t", apiLimiter, express.urlencoded({ extended: false, limit: "64kb" }), triageLinkRouter);
 app.use("/api/inbox", apiLimiter, requireAuth, inboxRouter);
 app.use("/api/nuevo-chat", apiLimiter, requireAuth, nuevoChatRouter); // iniciar conversación desde cero
 app.use("/api/chats", apiLimiter, requireAuth, chatsRouter);          // borrar conversaciones/mensajes

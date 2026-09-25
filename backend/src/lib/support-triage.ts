@@ -19,6 +19,7 @@ import { prisma } from "./prisma.js";
 import { emitToUser } from "./io.js";
 import { notify } from "./notifications.js";
 import { sendAdminMail } from "./mailer.js";
+import { firmarDecision } from "./triage-link.js";
 import { getEngine } from "./wa-engine.js";
 import { markUserConnecting } from "./session-guard.js";
 import { lineRawStatus, lineRestrictedUntil } from "./line-alert.js";
@@ -218,6 +219,13 @@ export async function runSupportTriage(userId: string): Promise<void> {
     await notify(a.id, "system", titulo, resumen).catch(() => undefined);
     emitToUser(a.id, "support:triage", { userId, triage });
   }
+  // Link firmado para decidir DESDE EL MAIL, sin entrar al panel. Va a nombre del primer ADMIN,
+  // que es quien recibe el correo. Sin JWT_SECRET no se firma y queda el link al panel de siempre.
+  let enlace: string | null = null;
+  try {
+    if (admins[0]) enlace = `${PANEL}/t/${firmarDecision(triage.id, admins[0].id)}`;
+  } catch { /* sin firma: queda el link al panel */ }
+
   void sendAdminMail(
     `🤖 Revisión de soporte (IA) — ${ctx.email}`,
     [
@@ -231,7 +239,10 @@ export async function runSupportTriage(userId: string): Promise<void> {
       `RESPUESTA SUGERIDA AL CLIENTE:`,
       salida.respuesta_sugerida,
       ``,
-      `Nada se ejecuta hasta que lo apruebes: ${PANEL}/admin/soporte`,
+      `DECIDILO ACÁ (se abre, lo leés y resolvés con un botón):`,
+      enlace ?? `${PANEL}/admin/soporte`,
+      ``,
+      `Nada se ejecuta hasta que lo apruebes. También está en ${PANEL}/admin/soporte`,
       `(modelo: ${modelo})`,
     ].join("\n"),
   ).catch(() => undefined);
