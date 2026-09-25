@@ -237,10 +237,24 @@ export async function setLineWaitingProxy(lineId: string, reason: string): Promi
   await prisma.waLine.update({ where: { id: lineId }, data: { proxyWait: true, proxyId: null, proxySession: null } }).catch(() => undefined);
   await logProxyEvent(lineId, null, "proxy_unhealthy", `waiting_proxy: ${reason}`);
   const line = await prisma.waLine.findUnique({ where: { id: lineId }, select: { label: true, phone: true } });
+  // EMERGENCIA (2026-09-25): si el problema es del PROVEEDOR (sin saldo o ningún proxy sano), la línea
+  // NO se queda muerta: sigue trabajando por la IP del servidor y vuelve a su IP propia cuando el pool
+  // se recupere. Un número muerto no recibe ni un mensaje y el cliente igual paga el día.
+  // Import dinámico: proxy-emergencia usa logProxyEvent de este módulo (ciclo de imports).
+  let directo = false;
+  try {
+    const em = await import("./proxy-emergencia.js");
+    if (!(await em.hayProxySano())) directo = await em.pasarLineaADirecto(lineId, reason);
+  } catch (e) {
+    console.warn("[proxy-emergencia] no pude aplicar el fallback:", e instanceof Error ? e.message : String(e));
+  }
+  const nombre = line?.label ?? line?.phone ?? lineId;
   await alertAdminProxy(
-    "Línea esperando proxy",
-    `La línea "${line?.label ?? line?.phone ?? lineId}" no tiene proxy sano; NO se conectó por la IP del VPS. Se reconecta sola cuando el pool se recupere.`,
-    "waiting_proxy",
+    directo ? "Línea sin proxy (sigue trabajando)" : "Línea esperando proxy",
+    directo
+      ? `La línea "${nombre}" se quedó sin proxy sano y sigue trabajando por la IP del servidor, para no cortarle el WhatsApp al cliente. Vuelve a su IP propia en cuanto el pool se recupere.`
+      : `La línea "${nombre}" no tiene proxy sano; NO se conectó por la IP del VPS. Se reconecta sola cuando el pool se recupere.`,
+    directo ? "waiting_proxy_directo" : "waiting_proxy",
     { lineId },
   );
 }

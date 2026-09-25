@@ -7,6 +7,7 @@ import { alertAdminProxy } from "./proxy-pool.js";
 import { sendMail } from "./mailer.js";
 import { prisma } from "./prisma.js";
 import { BURN_ALERT_GB_DIA, culpables, horasRestantes, ritmoGbDia, textoAviso, type Lectura } from "./iproyal-burn.js";
+import { EMERGENCIA_GB, fallbackDirectoActivo, modoEmergencia, textoEmergencia } from "./proxy-emergencia.js";
 
 const API_URL = (process.env.IPROYAL_API_URL ?? "https://resi-api.iproyal.com/v1").replace(/\/$/, "");
 const REPORT_EMAIL = process.env.PROXY_REPORT_EMAIL ?? "federicobogado1997@gmail.com";
@@ -97,6 +98,16 @@ export async function checkIproyalBalance(): Promise<void> {
   if (!bal) return;
   // Ritmo de consumo (independiente del saldo): avisa apenas el gasto se dispara, no cuando ya se agotó.
   await avisarRitmo(bal.availableGb).catch(() => undefined);
+  // SALDO AGOTADO: antes de que las líneas empiecen a caerse de a una, las pasamos a la IP del
+  // servidor. Siguen trabajando y vuelven solas a su proxy cuando haya saldo de nuevo.
+  if (bal.availableGb < EMERGENCIA_GB && fallbackDirectoActivo()) {
+    const movidas = await modoEmergencia(`saldo agotado (${bal.availableGb.toFixed(3)} GB)`).catch(() => 0);
+    if (movidas > 0) {
+      const cuerpo = textoEmergencia(movidas, "el saldo de IPRoyal se agotó");
+      await alertAdminProxy("🚨 Sin saldo: líneas trabajando sin proxy", cuerpo, "proxy_emergencia", { movidas }).catch(() => undefined);
+      await sendMail(REPORT_EMAIL, `🚨 IPRoyal sin saldo — ${movidas} líneas sin proxy`, cuerpo).catch(() => undefined);
+    }
+  }
   const low = bal.availableGb < IPROYAL_LOW_GB;
   if (!low) {
     wasLow = false;
