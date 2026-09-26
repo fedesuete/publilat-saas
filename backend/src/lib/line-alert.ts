@@ -12,6 +12,7 @@ import { emitToUser } from "./io.js";
 import { safeAutoRestart, esTormenta, markStormStopped, stormStopped } from "./session-guard.js";
 import { recordLineFlap, recentFlaps } from "./line-weights.js";
 import { textoRitmo } from "./credit-rate.js";
+import { registrarCaida, reclamaAlarma, textoManada } from "./caida-en-manada.js";
 
 // Diagnóstico automático de POR QUÉ se cayó una línea: consulta el estado de la sesión (WAHA, con su
 // `me.reachoutTimelock`) + la DB (duplicados / baneo) y devuelve el motivo + la acción concreta. Así
@@ -201,6 +202,19 @@ export function scheduleLineDownAlert(line: { id: string; userId: string; label:
   // La rotación de clics manda menos tráfico a las líneas que se están cayendo (ver line-weights.ts):
   // acá es donde nos enteramos de cada caída, así que la registramos.
   recordLineFlap(line.id);
+  // CAÍDA EN MANADA: ahora todas las líneas salen por la IP del servidor. Si varias de CLIENTES
+  // distintos se caen juntas, el problema no es de una línea sino de algo compartido (la IP, el
+  // servidor, WhatsApp) y hay que enterarse en el momento, no por un reclamo del cliente.
+  registrarCaida(line.id, line.userId);
+  const manada = reclamaAlarma();
+  if (manada) {
+    const cuerpo = textoManada(manada.clientes, manada.lineas, Number(process.env.MANADA_VENTANA_MIN ?? "10"));
+    console.error(`[manada] ${manada.lineas} líneas de ${manada.clientes} clientes caídas juntas`);
+    void import("./proxy-pool.js")
+      .then((m) => m.alertAdminProxy("🚨 Se cayeron varias líneas juntas", cuerpo, "caida_manada", manada))
+      .catch(() => undefined);
+    void sendAdminMail(`🚨 ${manada.lineas} líneas de ${manada.clientes} clientes caídas juntas`, cuerpo);
+  }
   // TORMENTA: si ya se cayó demasiadas veces en la última hora, reintentar no la arregla (69 caídas
   // en 20 min el 23/09 hasta que el cliente la borró). Se detiene y se le avisa al cliente qué hacer.
   const caidas = recentFlaps(line.id);
