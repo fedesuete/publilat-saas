@@ -106,8 +106,15 @@ async function avisarRitmo(gbAhora: number): Promise<void> {
 }
 
 // Chequeo periódico: lee el saldo y avisa si está por debajo del umbral. No-op sin token.
+// ¿Hay alguien usando el proxy? Si no hay NINGUNA línea con proxy asignado, el saldo no le importa a
+// nadie y avisar es spam: el 25/09 salieron avisos cada hora con cero líneas usándolo.
+async function lineasUsandoProxy(): Promise<number> {
+  return prisma.waLine.count({ where: { proxyId: { not: null } } }).catch(() => 0);
+}
+
 export async function checkIproyalBalance(): Promise<void> {
   if (!iproyalBalanceEnabled()) return;
+  if ((await lineasUsandoProxy()) === 0) return; // nadie usa el proxy: no hay nada que avisar
   const bal = await fetchIproyalBalance();
   if (!bal) return;
   // Ritmo de consumo (independiente del saldo): avisa apenas el gasto se dispara, no cuando ya se agotó.
