@@ -11,6 +11,23 @@ import { prisma } from "./prisma.js";
 
 // A partir de acá el silencio ya es un problema (el acuse promete respuesta "a la brevedad").
 export const HORAS_SIN_RESPONDER = Number(process.env.SOPORTE_ALERTA_HORAS ?? "4");
+// Cada cuánto se puede repetir el aviso POR CLIENTE. Sin esto, el job (cada 30 min) avisaba cada
+// media hora por el mismo ticket: el aviso se vuelve ruido y se deja de mirar, que es justo lo que
+// queríamos evitar.
+const REAVISO_MS = Number(process.env.SOPORTE_REAVISO_HORAS ?? "6") * 3600_000;
+const yaAvisado = new Map<string, number>();
+
+/** Filtra los tickets por los que ya avisamos hace poco. Marca los que quedan. */
+export function paraAvisar(tickets: TicketColgado[], now: number = Date.now()): TicketColgado[] {
+  const nuevos = tickets.filter((t) => now - (yaAvisado.get(t.userId) ?? 0) >= REAVISO_MS);
+  for (const t of nuevos) yaAvisado.set(t.userId, now);
+  return nuevos;
+}
+
+/** Para los tests. */
+export function reiniciarAvisos(): void {
+  yaAvisado.clear();
+}
 
 export interface TicketColgado {
   userId: string;

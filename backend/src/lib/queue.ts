@@ -866,8 +866,10 @@ export async function initQueues(): Promise<void> {
         if (job.name === "support-triage") { const { runSupportTriage } = await import("./support-triage.js"); return runSupportTriage(job.data.userId as string); }
         // Un acuse del robot NO es una respuesta: si el cliente sigue esperando, hay que avisar.
         if (job.name === "soporte-sin-responder") {
-          const { ticketsSinResponder, textoTicketsColgados } = await import("./soporte-sin-responder.js");
-          const tickets = await ticketsSinResponder();
+          const { ticketsSinResponder, textoTicketsColgados, paraAvisar } = await import("./soporte-sin-responder.js");
+          // paraAvisar deja pasar solo los que no avisamos hace poco: el job corre cada 30 min y sin
+          // esto mandaba el mismo aviso cada media hora hasta que se responda (ruido, y se deja de mirar).
+          const tickets = paraAvisar(await ticketsSinResponder());
           if (!tickets.length) return;
           const cuerpo = textoTicketsColgados(tickets);
           const { alertAdminProxy } = await import("./proxy-pool.js");

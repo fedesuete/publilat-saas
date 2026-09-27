@@ -85,3 +85,24 @@ describe("texto del aviso", () => {
     expect(textoTicketsColgados(muchos)).toContain("y 2 más");
   });
 });
+
+describe("freno del aviso (el job corre cada 30 min)", () => {
+  it("no repite el aviso del mismo cliente antes de las 6 h", async () => {
+    const { paraAvisar, reiniciarAvisos } = await import("./soporte-sin-responder.js");
+    reiniciarAvisos();
+    const t = [{ userId: "u1", email: "a@x.com", horas: 5, ultimoDelCliente: "x" }];
+    expect(paraAvisar(t)).toHaveLength(1);
+    expect(paraAvisar(t)).toHaveLength(0); // media hora después: ya avisamos
+  });
+
+  it("un cliente NUEVO pasa aunque hayamos avisado por otro", async () => {
+    const { paraAvisar, reiniciarAvisos } = await import("./soporte-sin-responder.js");
+    reiniciarAvisos();
+    paraAvisar([{ userId: "u1", email: "a@x.com", horas: 5, ultimoDelCliente: "x" }]);
+    const r = paraAvisar([
+      { userId: "u1", email: "a@x.com", horas: 5, ultimoDelCliente: "x" },
+      { userId: "u2", email: "b@x.com", horas: 9, ultimoDelCliente: "y" },
+    ]);
+    expect(r.map((t) => t.userId)).toEqual(["u2"]);
+  });
+});
