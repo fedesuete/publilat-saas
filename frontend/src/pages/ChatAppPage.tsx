@@ -191,6 +191,7 @@ export default function ChatAppPage() {
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [activeLine, setActiveLine] = useState(true); // ¿se puede operar el Chat App (línea WA O día propio)?
+  const [cuenta, setCuenta] = useState<{ slug: string; marca: string | null } | null>(null); // cuál cuenta se está operando
   const [day, setDay] = useState<{ enabled: boolean; active: boolean; expiresAt: string | null; availableDays: number; waActive: boolean } | null>(null);
   const [dayBusy, setDayBusy] = useState(false);
   const loadDay = () => api.get("/api/chat/day").then(({ data }) => setDay(data)).catch(() => undefined);
@@ -254,6 +255,12 @@ export default function ChatAppPage() {
     void loadConvs();
     // Estado de línea: si no hay línea WA activa NI día de Chat App, queda en solo-lectura.
     api.get<{ activeLine: boolean }>("/api/chat/status").then(({ data }) => setActiveLine(data.activeLine)).catch(() => undefined);
+    // Qué cuenta se está operando. Sin esto, un operador con dos cuentas entra a la equivocada, ve
+    // la bandeja vacía y cree que el Chat App está roto (pasó 2026-09-29: las conversaciones
+    // estaban intactas en la otra cuenta).
+    api.get<{ accountSlug: string; branding: { brandName?: string | null } }>("/api/chat/branding")
+      .then(({ data }) => setCuenta({ slug: data.accountSlug, marca: data.branding?.brandName ?? null }))
+      .catch(() => undefined);
     void loadDay();
   }, []);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
@@ -375,7 +382,12 @@ export default function ChatAppPage() {
         <div className="flex h-[calc(100vh-13rem)] gap-4">
           {/* Lista: full en el celu; se oculta al abrir un chat. Al costado en desktop. */}
           <div className={`w-full shrink-0 flex-col overflow-hidden rounded-lg border border-slate-800 lg:flex lg:w-80 ${selected ? "hidden lg:flex" : "flex"}`}>
-            <div className="border-b border-slate-800 px-4 py-3 text-xs text-slate-500">{convs.length} conversaciones</div>
+            {/* La CUENTA, siempre a la vista: quien tiene más de una entraba a la equivocada, veía
+                la bandeja vacía y creía que se le habían borrado los chats. */}
+            <div className="border-b border-slate-800 px-4 py-3 text-xs text-slate-500">
+              {convs.length} conversaciones
+              {cuenta && <span className="text-slate-600"> · {cuenta.marca || cuenta.slug}</span>}
+            </div>
             {pushState !== "granted" && pushState !== "unsupported" && (
               <button type="button" onClick={() => void enableOpush()}
                 className="flex w-full items-center gap-2 border-b border-emerald-800/40 bg-emerald-900/20 px-4 py-2.5 text-left text-xs text-emerald-300 transition hover:bg-emerald-900/30">
@@ -384,7 +396,13 @@ export default function ChatAppPage() {
               </button>
             )}
             <div className="flex-1 overflow-y-auto">
-              {convs.length === 0 ? <p className="p-4 text-sm text-slate-500">Todavía no hay clientes. Creá un acceso en la pestaña "Accesos".</p> :
+              {convs.length === 0 ? (
+                <div className="p-4 text-sm text-slate-500">
+                  <p>Todavía no hay clientes{cuenta && <> en <b className="text-slate-400">{cuenta.marca || cuenta.slug}</b></>}. Creá un acceso en la pestaña "Accesos".</p>
+                  {/* Con dos cuentas, "no me aparecen las conversaciones" casi siempre es esto. */}
+                  <p className="mt-2 text-xs text-slate-600">Si esperabas ver chats acá, fijate que sea la cuenta correcta: cada cuenta tiene su propio Chat App y no comparten conversaciones.</p>
+                </div>
+              ) :
                 convs.map((c) => (
                   <button key={c.id} onClick={() => void openConv(c.id)}
                     className={`flex w-full items-start gap-3 border-b border-slate-800/60 px-4 py-3 text-left transition ${selected === c.id ? "bg-slate-800" : "hover:bg-slate-800/50"}`}>
