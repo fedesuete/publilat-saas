@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Black Win — Bono 50%</title>
+<meta name="description" content="Bono del 50% en tu primera carga. Entrá al chat y te atendemos al toque." />
+<link rel="dns-prefetch" href="https://chat.publi.lat" />
+<link rel="preconnect" href="https://chat.publi.lat" />
+<style>
+  /* Paleta sacada del logo de Black Win: violeta profundo + oro. */
+  :root{
+    --bg:#120a24; --bg2:#1c0f38; --card:#241344; --line:#3b2168;
+    --vio:#7b2fd0; --vio2:#a866ff;
+    --oro:#ffd76a; --oro2:#e0a92c;
+    --ink:#f6f0ff; --mut:#b9a7dd;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg);color:var(--ink);
+    font:400 16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;overflow-x:hidden;
+  }
+  /* Resplandor de fondo: da profundidad sin una sola imagen externa. */
+  .glow{position:fixed;inset:0;z-index:0;pointer-events:none;
+    background:
+      radial-gradient(60% 40% at 50% 0%, rgba(168,102,255,.30), transparent 70%),
+      radial-gradient(50% 35% at 50% 100%, rgba(255,215,106,.12), transparent 70%);
+  }
+  .wrap{position:relative;z-index:1;max-width:430px;margin:0 auto;padding:26px 20px 34px;text-align:center}
+
+  /* Marca: dibujada con CSS a propósito. La landing vive en un dominio descartable y no debe
+     pedirle NADA a publi.lat (si Meta quema el dominio, no arrastra la marca ni el resto). */
+  .brand{display:flex;align-items:center;justify-content:center;gap:11px;margin-bottom:20px}
+  .logo{
+    width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-size:25px;
+    background:radial-gradient(circle at 35% 30%, #3d1f6e, #1a0d33);
+    border:2px solid var(--oro);box-shadow:0 0 18px rgba(255,215,106,.35)
+  }
+  .nm{font-weight:900;font-size:21px;letter-spacing:.06em;
+    background:linear-gradient(180deg,#fff6dc,var(--oro2));-webkit-background-clip:text;background-clip:text;color:transparent}
+
+  .ribbon{display:inline-block;background:rgba(255,215,106,.12);border:1px solid rgba(255,215,106,.4);
+    color:var(--oro);font-weight:800;font-size:12.5px;letter-spacing:.09em;padding:7px 15px;border-radius:999px}
+
+  .hero{margin-top:18px;background:linear-gradient(180deg,var(--card),var(--bg2));
+    border:1px solid var(--line);border-radius:22px;padding:26px 20px 24px;
+    box-shadow:0 18px 44px rgba(0,0,0,.45)}
+  .lbl{color:var(--mut);font-size:13px;font-weight:700;letter-spacing:.22em}
+  .big{font-size:76px;line-height:1;font-weight:900;margin:2px 0 4px;
+    background:linear-gradient(180deg,#fff8e2 10%,var(--oro) 55%,var(--oro2));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    filter:drop-shadow(0 4px 14px rgba(255,215,106,.32))}
+  .sub{font-weight:800;font-size:15px;letter-spacing:.13em;color:#efe3ff}
+  .desc{margin-top:13px;color:var(--mut);font-size:14.5px;line-height:1.5}
+
+  .cta{display:block;margin-top:20px;text-decoration:none;color:#210e02;
+    background:linear-gradient(180deg,#ffe294,var(--oro2));
+    font-weight:900;font-size:19px;letter-spacing:.02em;padding:18px 20px;border-radius:16px;
+    box-shadow:0 12px 28px rgba(224,169,44,.38);
+    animation:pulse 2.1s ease-in-out infinite}
+  .cta:active{transform:scale(.985)}
+  @keyframes pulse{0%,100%{box-shadow:0 12px 28px rgba(224,169,44,.38)}50%{box-shadow:0 12px 40px rgba(224,169,44,.62)}}
+  @media (prefers-reduced-motion:reduce){.cta{animation:none}}
+  .under{margin-top:9px;font-size:12.5px;color:var(--mut)}
+
+  .trust{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:22px}
+  .trust span{background:rgba(255,255,255,.05);border:1px solid var(--line);color:#d9ccf2;
+    font-size:12.5px;font-weight:600;padding:8px 12px;border-radius:999px}
+
+  .steps{margin-top:24px;text-align:left}
+  .steps h2{font-size:14px;letter-spacing:.14em;color:var(--mut);font-weight:800;text-align:center;margin-bottom:12px}
+  .step{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;margin-bottom:8px;
+    background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:14px}
+  .step b{display:grid;place-items:center;flex:none;width:26px;height:26px;border-radius:50%;
+    background:var(--vio);color:#fff;font-size:13px;font-weight:900}
+  .step p{font-size:14px;color:#e6dcfa;line-height:1.4}
+
+  .foot{margin-top:26px;color:#7e6ba6;font-size:11.5px;line-height:1.55}
+
+  /* Prueba social (contenido del cliente). */
+  .toast{position:fixed;left:50%;bottom:18px;transform:translate(-50%,120%);z-index:40;
+    display:flex;align-items:center;gap:9px;max-width:330px;
+    background:rgba(26,14,50,.96);border:1px solid var(--line);border-radius:999px;
+    padding:10px 15px;font-size:13px;color:#e9dfff;box-shadow:0 10px 26px rgba(0,0,0,.5);
+    transition:transform .45s cubic-bezier(.2,.8,.2,1)}
+  .toast.on{transform:translate(-50%,0)}
+  .toast .dot{width:8px;height:8px;border-radius:50%;background:#37d67a;flex:none;box-shadow:0 0 8px #37d67a}
+</style>
+</head>
+<body>
+<div class="glow"></div>
+
+<div class="wrap">
+  <div class="brand"><div class="logo">🎰</div><div class="nm">BLACK WIN</div></div>
+
+  <span class="ribbon">🔥 BONO DE BIENVENIDA</span>
+
+  <div class="hero">
+    <div class="lbl">BONO</div>
+    <div class="big">50%</div>
+    <div class="sub">EN TU PRIMERA CARGA</div>
+    <p class="desc">Entrá al chat, te armamos la cuenta al toque y reclamás tu bono. Atención las 24 horas.</p>
+  </div>
+
+  <!-- Link REAL: si el JS no corre (webview raro, conexión cortada), el botón igual entra al chat.
+       El JS solo le agrega los datos del clic de Meta. -->
+  <a class="cta" id="cta" href="https://chat.publi.lat/c/leadsale30">💬 ENTRAR Y RECLAMAR</a>
+  <div class="under">Sin descargas · Sin tarjeta · Te atiende una persona</div>
+
+  <div class="trust">
+    <span>⚡ Carga al instante</span><span>💸 Retiros rápidos</span><span>🕐 24 horas</span>
+  </div>
+
+  <div class="steps">
+    <h2>CÓMO EMPEZAR</h2>
+    <div class="step"><b>1</b><p>Tocá el botón y entrás directo al chat.</p></div>
+    <div class="step"><b>2</b><p>Decinos tu nombre y te creamos la cuenta en el momento.</p></div>
+    <div class="step"><b>3</b><p>Cargás, se te suma el bono del 50% y jugás.</p></div>
+  </div>
+
+  <p class="foot">Jugá con responsabilidad · Solo para mayores de 18 años.<br />El juego compulsivo es perjudicial para la salud.</p>
+</div>
+
+<div class="toast" id="toast">
+  <span class="dot"></span>
+  <span><b id="tName">Martín</b> acaba de cobrar <b id="tAmt">$120.000</b></span>
+</div>
+
+<script>
+/* El CTA reenvía fbclid + _fbp + _fbc al chat POR LA URL: son cookies de ESTE dominio y no cruzan
+   a chat.publi.lat. Sin esto el registro llega sin atribución y el Purchase de la carga no matchea
+   con el anuncio. (El pixel lo inyecta el publicador con el que tenga la cuenta en ese momento.) */
+(function () {
+  function cookie(n) {
+    var m = document.cookie.match('(^|; )' + n + '=([^;]+)');
+    return m ? decodeURIComponent(m[2]) : '';
+  }
+  var cta = document.getElementById('cta');
+  var base = cta.getAttribute('href');
+
+  function conAtribucion() {
+    var p = new URLSearchParams();
+    var here = new URLSearchParams(location.search);
+    var fbclid = here.get('fbclid'); if (fbclid) p.set('fbclid', fbclid);
+    var fbc = cookie('_fbc'); if (fbc) p.set('fbc', fbc);
+    var fbp = cookie('_fbp'); if (fbp) p.set('fbp', fbp);
+    ['campaign', 'ad', 'src'].forEach(function (k) { var v = here.get(k); if (v) p.set(k, v); });
+    var qs = p.toString();
+    return base + (qs ? '?' + qs : '');
+  }
+
+  /* El _fbp lo escribe el pixel recién al cargar, así que el href se refresca antes de cada tap
+     (y de paso queda listo para "abrir en pestaña nueva"). */
+  function refrescar() { cta.setAttribute('href', conAtribucion()); }
+  refrescar();
+  setTimeout(refrescar, 1200);
+  cta.addEventListener('mousedown', refrescar);
+  cta.addEventListener('touchstart', refrescar, { passive: true });
+  cta.addEventListener('click', refrescar);
+
+  /* Prueba social (contenido del cliente). */
+  var nombres = ['Martín, de CABA', 'Sofía, de Córdoba', 'Lucas, de Rosario', 'Ayelén, de Mendoza', 'Diego, de La Plata', 'Cami, de Salta'];
+  var montos = ['$124.500', '$86.000', '$210.000', '$54.300', '$97.800', '$153.200'];
+  var i = 0, t = document.getElementById('toast');
+  function ciclo() {
+    document.getElementById('tName').textContent = nombres[i % nombres.length];
+    document.getElementById('tAmt').textContent = montos[i % montos.length];
+    i++;
+    t.classList.add('on');
+    setTimeout(function () { t.classList.remove('on'); }, 4200);
+  }
+  setTimeout(ciclo, 2600);
+  setInterval(ciclo, 9000);
+})();
+</script>
+</body>
+</html>
