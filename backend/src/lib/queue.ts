@@ -761,6 +761,10 @@ export async function recoverWaitingProxyLines(): Promise<void> {
 // tocar la sesión viva: se aplica solo en su próxima reconexión, o con un reinicio controlado del
 // admin. Avisa por campanita para que no pase en silencio. Corre cada 1h (job "proxy-reattach").
 export async function reattachProxylessLines(): Promise<number> {
+  // Sin pool no hay nada que re-enganchar: recorrer 14 líneas cada hora para fallar 14 veces solo
+  // genera ruido (y hasta el 28/09, 458 avisos en 12 h).
+  const hayPool = await prisma.proxy.count({ where: { active: true, healthy: true } }).catch(() => 0);
+  if (hayPool === 0) return 0; // sin pool configurado: el sistema corre por la IP del servidor
   const lines = await prisma.waLine.findMany({
     where: {
       status: "active",

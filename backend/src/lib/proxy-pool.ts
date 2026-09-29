@@ -167,6 +167,10 @@ export async function assignProxy(lineId: string, opts: AssignOpts = {}): Promis
   const withCap = proxies
     .filter((p) => p._count.lines < p.maxLines)
     .sort((a, b) => a._count.lines - b._count.lines);
+  // SIN POOL no es lo mismo que POOL LLENO. Si no hay NINGÚN proxy activo y sano, el sistema está
+  // corriendo a propósito por la IP del servidor: no hay nada que avisar ni nada que sumar al pool.
+  // (28/09: salieron 458 avisos de "pool lleno" en 12 h por un pool que no existe.)
+  if (proxies.length === 0) return { ok: false, reason: "sin_pool" };
   if (withCap.length === 0) {
     await alertAdminProxy(
       "Pool de proxies lleno",
@@ -258,7 +262,7 @@ export async function setLineWaitingProxy(lineId: string, reason: string): Promi
     directo ? "Línea sin proxy (sigue trabajando)" : "Línea esperando proxy",
     directo
       ? `La línea "${nombre}" se quedó sin proxy sano y sigue trabajando por la IP del servidor, para no cortarle el WhatsApp al cliente. Vuelve a su IP propia en cuanto el pool se recupere.`
-      : `La línea "${nombre}" no tiene proxy sano; NO se conectó por la IP del VPS. Se reconecta sola cuando el pool se recupere.`,
+      : `La línea "${nombre}" quedó esperando un proxy. Si no hay pool configurado, esto es normal: trabaja por la IP del servidor.`,
     directo ? "waiting_proxy_directo" : "waiting_proxy",
     { lineId },
   );
