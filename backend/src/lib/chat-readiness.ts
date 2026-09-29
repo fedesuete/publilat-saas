@@ -83,17 +83,21 @@ export async function chatReadiness(userId: string) {
     items,
     avisos,
     casino: { keyPropia: Boolean(u.casinoApiKey), autoCredit: u.casinoAutoCredit },
-    // Cuál de los dos links usar NO es un detalle: define si la publicidad se puede medir o no.
+    // Cuál de los dos links usar NO es un detalle: cambia qué ve Meta y qué recibe el jugador.
+    // (Corregido 2026-09-29: acá decía que el chat directo era ciego para Meta. Ya no lo es —
+    // /api/chat/direct dispara PageView y CompleteRegistration por Pixel y CAPI con
+    // external_id = usuario, así que el Purchase de la carga matchea igual. El texto viejo
+    // desaconsejaba un link que sí sirve para anunciar.)
     links: {
       registro: {
         url: `${chatBase}/r/${u.slug}`,
         titulo: "Para tu publicidad",
-        texto: "El jugador se registra y Meta recibe el registro y la compra. Es el que hace que la publicidad aprenda.",
+        texto: "El jugador elige su usuario y ve su clave en pantalla. Es el que más le cuenta a Meta: visita, Lead, registro y compra.",
       },
       chatDirecto: {
         url: `${chatBase}/c/${u.slug}`,
-        titulo: "Para atención",
-        texto: "Entra directo al chat, sin registrarse. Sirve para responder consultas, pero Meta NO ve nada: no lo uses en anuncios.",
+        titulo: "Para atención y anuncios de chat",
+        texto: "Entra derecho al chat: no elige usuario ni clave, se las armamos nosotros y el nombre se lo pide el cajero adentro. Meta SÍ lo mide (visita y registro), así que también sirve en anuncios; lo que no manda es el evento de Lead.",
       },
     },
   };
