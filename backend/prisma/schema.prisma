@@ -147,6 +147,11 @@ model User {
   waAutoFollowup           String? // texto de los mensajes siguientes (ej. "Ya te pasamos el contacto 👇")
   waAutoBtnLabel           String? // etiqueta del botón (ej. "Hablar con Meli", ≤20 chars)
   waAutoBtnUrl             String? // URL del botón (wa.me, Chat App, o el link que sea)
+  // --- Relay de soporte: las consultas de WhatsApp se reenvían a un GRUPO del equipo ---
+  // Aditivo y apagado por defecto: sin supportGroupId no corre nada. Ver lib/soporte-relay.ts.
+  supportGroupId           String? // JID del grupo de WhatsApp (…@g.us) donde cae todo
+  supportRelayEnabled      Boolean   @default(false)
+  supportAckText           String? // acuse al cliente (null = el texto por defecto)
   createdAt                DateTime  @default(now())
 
   lines             WaLine[]
@@ -968,4 +973,35 @@ model Tutorial {
   updatedAt   DateTime @updatedAt
 
   @@index([active, order])
+}
+
+// ============================ RELAY DE SOPORTE POR GRUPO ============================
+// Las consultas que llegan por WhatsApp a la cuenta de soporte se reenvían a UN grupo propio,
+// para que el equipo las vea todas en un solo lugar y no se pase ninguna. Es un módulo ADITIVO:
+// no toca el webhook, el Inbox ni la atribución — lee los mensajes que el webhook ya guardó.
+
+// Un hilo de soporte por contacto: le da un código corto y estable (para nombrarlo en el grupo)
+// y recuerda cuándo se le mandó el último acuse, para no contestarle un robot en cada mensaje.
+model SupportThread {
+  id        String    @id @default(cuid())
+  userId    String
+  contactId String    @unique
+  code      String    @unique // código corto que identifica al cliente en el grupo (ej. K7M)
+  lastAckAt DateTime? // último "estamos procesando tu consulta" enviado
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// Un mensaje entrante YA reenviado al grupo. messageId es único: es el candado de idempotencia
+// (si el job corre dos veces, el segundo choca y no reenvía nada por duplicado).
+model SupportRelayMsg {
+  id         String   @id @default(cuid())
+  messageId  String   @unique // Message entrante que se reenvió
+  threadId   String
+  groupMsgId String? // id del mensaje que dejamos en el grupo (para responderlo citándolo)
+  createdAt  DateTime @default(now())
+
+  @@index([threadId])
+  @@index([groupMsgId])
 }

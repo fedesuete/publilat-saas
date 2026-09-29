@@ -885,6 +885,14 @@ export async function initQueues(): Promise<void> {
         // Una venta a medio hacer es plata que se está por perder EN SILENCIO: el cliente arrancó el
         // checkout, algo se le cayó y nadie se enteraba hasta que se quejaba por WhatsApp (22 así en
         // 30 días). De paso esto RESCATA los pagos que entraron y cuyo aviso nunca nos llegó.
+        // Relay de soporte: las consultas de WhatsApp van a UN grupo del equipo. Lee los mensajes
+        // que el webhook YA guardó (no se engancha a él: §9.6, no se toca el camino de WhatsApp).
+        if (job.name === "soporte-relay") {
+          const { relayConsultas } = await import("./soporte-relay.js");
+          const n = await relayConsultas();
+          if (n) console.log(`[soporte] ${n} consulta(s) al grupo`);
+          return;
+        }
         if (job.name === "pagos-colgados") {
           const { pagosColgados, textoPagosColgados, paraAvisarPago } = await import("./pago-pendiente.js");
           const pagos = paraAvisarPago(await pagosColgados());
@@ -929,6 +937,8 @@ export async function initQueues(): Promise<void> {
     await queue.add("iproyal-balance", {}, { repeat: { every: 3_600_000 }, jobId: "iproyal-balance-repeat", removeOnComplete: true, removeOnFail: 20 });
     await queue.add("soporte-sin-responder", {}, { repeat: { every: 1_800_000 }, jobId: "soporte-colgado-repeat", removeOnComplete: true, removeOnFail: 20 });
     await queue.add("pagos-colgados", {}, { repeat: { every: 900_000 }, jobId: "pagos-colgados-repeat", removeOnComplete: true, removeOnFail: 20 });
+    // Cada 15 s: una consulta de soporte no puede quedar esperando minutos para llegar al grupo.
+    await queue.add("soporte-relay", {}, { repeat: { every: 15_000 }, jobId: "soporte-relay-repeat", removeOnComplete: true, removeOnFail: 20 });
     // Recordatorio de carga abandonada (Chat App): cada 5 min avisa a los jugadores que empezaron una carga y no la terminaron.
     await queue.add("carga-reminder", {}, { repeat: { every: 300_000 }, jobId: "carga-reminder-repeat", removeOnComplete: true, removeOnFail: 50 });
     // Reporte diario de proxies IPRoyal a las 08:00 ART (no-op si no hay líneas de prueba ni SMTP).
