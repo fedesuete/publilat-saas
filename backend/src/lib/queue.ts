@@ -882,6 +882,20 @@ export async function initQueues(): Promise<void> {
           await sendAdminMail(`📬 ${tickets.length} cliente(s) esperando en soporte`, cuerpo).catch(() => undefined);
           return;
         }
+        // Una venta a medio hacer es plata que se está por perder EN SILENCIO: el cliente arrancó el
+        // checkout, algo se le cayó y nadie se enteraba hasta que se quejaba por WhatsApp (22 así en
+        // 30 días). De paso esto RESCATA los pagos que entraron y cuyo aviso nunca nos llegó.
+        if (job.name === "pagos-colgados") {
+          const { pagosColgados, textoPagosColgados, paraAvisarPago } = await import("./pago-pendiente.js");
+          const pagos = paraAvisarPago(await pagosColgados());
+          if (!pagos.length) return;
+          const cuerpo = textoPagosColgados(pagos);
+          const { alertAdminProxy } = await import("./proxy-pool.js");
+          const { sendAdminMail } = await import("./mailer.js");
+          await alertAdminProxy("💸 Ventas a medio hacer", cuerpo, "pagos_colgados", { cuantos: pagos.length }).catch(() => undefined);
+          await sendAdminMail(`💸 ${pagos.length} cliente(s) empezaron a pagar y no terminaron`, cuerpo).catch(() => undefined);
+          return;
+        }
         if (job.name === "flow-resume") {
           const m = await import("./flow-engine.js");
           const runId = job.data.runId as string;
@@ -914,6 +928,7 @@ export async function initQueues(): Promise<void> {
     // Saldo IPRoyal: chequeo cada 1h → avisa (email + campanita) si quedan pocos GB. No-op sin IPROYAL_API_TOKEN.
     await queue.add("iproyal-balance", {}, { repeat: { every: 3_600_000 }, jobId: "iproyal-balance-repeat", removeOnComplete: true, removeOnFail: 20 });
     await queue.add("soporte-sin-responder", {}, { repeat: { every: 1_800_000 }, jobId: "soporte-colgado-repeat", removeOnComplete: true, removeOnFail: 20 });
+    await queue.add("pagos-colgados", {}, { repeat: { every: 900_000 }, jobId: "pagos-colgados-repeat", removeOnComplete: true, removeOnFail: 20 });
     // Recordatorio de carga abandonada (Chat App): cada 5 min avisa a los jugadores que empezaron una carga y no la terminaron.
     await queue.add("carga-reminder", {}, { repeat: { every: 300_000 }, jobId: "carga-reminder-repeat", removeOnComplete: true, removeOnFail: 50 });
     // Reporte diario de proxies IPRoyal a las 08:00 ART (no-op si no hay líneas de prueba ni SMTP).

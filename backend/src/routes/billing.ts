@@ -16,6 +16,8 @@ import {
 // Acreditación (días + ledger + Purchase al pixel de marketing + CRM + referidos + aviso) vive en
 // lib/billing-approve.ts para poder testearla sin Express.
 import { ensureCredit, approvePayment } from "../lib/billing-approve.js";
+// Ventas a medio hacer: recuperar el link del checkout y contar qué pasó de verdad.
+import { pagoPendiente } from "../lib/pago-pendiente.js";
 
 export const billingRouter = Router();
 // Webhooks públicos (los monta index.ts sin requireAuth).
@@ -50,6 +52,16 @@ billingRouter.get("/credit", async (req, res) => {
     activeLines,
     methods: { mercadopago: mpEnabled(), stripe: stripeEnabled(), usdt: usdtEnabled(), pagopar: pagoparEnabled() },
   });
+});
+
+// GET /api/billing/pendiente — el pago que el cliente empezó y no terminó (si hay).
+// Sin esto, el que se quedaba a mitad del checkout volvía al panel a una pantalla muda: el link de
+// Pagopar seguía sirviendo 48 h pero él no tenía cómo volver a abrirlo, así que empezaba de cero una
+// y otra vez (o se iba). De paso, si pagó y el aviso de Pagopar nunca llegó, acá se le acreditan
+// los días (ver lib/pago-pendiente.ts).
+billingRouter.get("/pendiente", async (req, res) => {
+  const pendiente = await pagoPendiente(req.userId!);
+  return res.json({ pendiente });
 });
 
 // GET /api/billing/quote?days=N — precio por proveedor para esa cantidad de días.

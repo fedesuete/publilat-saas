@@ -111,6 +111,19 @@ const PLANS: Plan[] = [
 ];
 const planByKey = (k: PlanKey) => PLANS.find((p) => p.key === k)!;
 
+// Pago que el cliente arrancó y no cerró (GET /api/billing/pendiente).
+type PagoPendiente = {
+  paymentId: string;
+  provider: string;
+  days: number;
+  amount: number;
+  currency: string;
+  minutos: number;
+  estado: "abierto" | "acreditado" | "no_completado";
+  url?: string;
+  usdt?: { address: string; amountUsdt: number };
+};
+
 export default function BillingPage() {
   const [days, setDays] = useState(0);
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
@@ -155,6 +168,11 @@ export default function BillingPage() {
   // y avisamos apenas suben los días. Ver [[fixes-pendientes]] ítem 9.
   const [payWatch, setPayWatch] = useState(false);
   const [payDone, setPayDone] = useState<string | null>(null);
+
+  // Pago empezado y no terminado. El link de Pagopar sirve 48 h, pero si el cliente cerraba la
+  // pestaña lo perdía y tenía que armar el pedido de cero (hubo quien lo hizo 6 y 7 veces seguidas).
+  // Acá se lo devolvemos, y si el pedido se canceló se lo decimos en vez de dejarlo adivinando.
+  const [pendiente, setPendiente] = useState<PagoPendiente | null>(null);
   const pollRef = useRef<number | null>(null);
   useEffect(() => () => { if (pollRef.current) window.clearInterval(pollRef.current); }, []);
 
@@ -220,6 +238,12 @@ export default function BillingPage() {
           window.history.replaceState({}, "", window.location.pathname); // que un F5 no re-dispare
           watchPayment(data.days);
         }
+        // ¿Dejó un pago a medias? El backend le pregunta a la pasarela qué pasó de verdad (y si pagó
+        // y el aviso nunca llegó, le acredita los días ahí mismo).
+        void api
+          .get<{ pendiente: PagoPendiente | null }>("/api/billing/pendiente")
+          .then((r) => setPendiente(r.data.pendiente))
+          .catch(() => undefined);
       } catch (err) {
         setError(apiError(err));
       } finally {
@@ -360,6 +384,66 @@ export default function BillingPage() {
       {payDone && (
         <div className="mb-4 rounded-md border border-emerald-800 bg-emerald-900/40 px-3 py-2 text-sm font-semibold text-emerald-200">
           {payDone}
+        </div>
+      )}
+
+      {/* ====== Pago a medio terminar: le devolvemos el link en vez de dejarlo empezar de cero. ====== */}
+      {pendiente && pendiente.estado === "abierto" && (pendiente.url || pendiente.usdt) && (
+        <div className="mb-4 rounded-md border border-sky-800 bg-sky-900/30 px-3 py-3 text-sm text-sky-100">
+          <div className="font-semibold">Tenés un pago empezado sin terminar</div>
+          <p className="mt-1 text-sky-200/90">
+            {pendiente.days} días por {pendiente.amount.toLocaleString("es-AR")} {pendiente.currency}.
+            {pendiente.url
+              ? " Tu link de pago sigue sirviendo: no hace falta que armes el pedido de nuevo."
+              : " Te falta pegar el comprobante (TXID) del envío de USDT."}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {pendiente.url && (
+              <a
+                href={pendiente.url}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-md bg-wa-green px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90"
+                onClick={() => watchPayment(days)}
+              >
+                Seguir con mi pago
+              </a>
+            )}
+            {pendiente.usdt && (
+              <Button
+                type="button"
+                onClick={() => {
+                  setUsdtPay({ address: pendiente.usdt!.address, amountUsdt: pendiente.usdt!.amountUsdt, paymentId: pendiente.paymentId });
+                  setPendiente(null);
+                }}
+              >
+                Pegar mi comprobante
+              </Button>
+            )}
+            <Button type="button" variant="secondary" onClick={() => setPendiente(null)}>
+              Empezar de nuevo
+            </Button>
+          </div>
+        </div>
+      )}
+      {pendiente && pendiente.estado === "no_completado" && (
+        <div className="mb-4 rounded-md border border-amber-800 bg-amber-900/30 px-3 py-3 text-sm text-amber-100">
+          <div className="font-semibold">Tu último pago no se completó</div>
+          <p className="mt-1 text-amber-200/90">
+            El pedido de {pendiente.days} días quedó cancelado en la pasarela, así que no se te cobró nada.
+            Suele ser la tarjeta (rechazo del banco o límite para compras en el exterior): probá con otra,
+            con billetera/QR, o pagá en USDT. Si te sigue pasando, escribinos por Soporte y lo vemos.
+          </p>
+          <div className="mt-2">
+            <Button type="button" variant="secondary" onClick={() => setPendiente(null)}>
+              Entendido
+            </Button>
+          </div>
+        </div>
+      )}
+      {pendiente && pendiente.estado === "acreditado" && (
+        <div className="mb-4 rounded-md border border-emerald-800 bg-emerald-900/40 px-3 py-2 text-sm font-semibold text-emerald-200">
+          ✅ Tu pago estaba confirmado y te acreditamos los {pendiente.days} día(s). Recargá la página para verlos.
         </div>
       )}
 
