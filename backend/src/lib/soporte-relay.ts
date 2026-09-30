@@ -31,6 +31,10 @@ import { downloadWahaMedia } from "./waha.js";
 const ACK_MS = Number(process.env.SOPORTE_ACK_HORAS ?? "6") * 3600_000;
 /** En un GRUPO de cliente hay más gente y más tráfico: el acuse se repite más seguido, pero no siempre. */
 const ACK_GRUPO_MS = Number(process.env.SOPORTE_ACK_GRUPO_MIN ?? "10") * 60_000;
+/** Acuses automáticos al cliente: APAGADOS (decisión del dueño 2026-09-30). En los grupos el "Recibido,
+ *  estamos procesando" salía a cada rato y los clientes lo notaban ("¿se puede poner para que diga una vez
+ *  cada cierto tiempo?"). El relay solo reenvía a SOPORTE; responde el equipo. SOPORTE_ACK=on lo reactiva. */
+const ACK_ACTIVO = (process.env.SOPORTE_ACK ?? "off").toLowerCase() === "on";
 /** Hasta qué antigüedad se reenvía (1 a 1). Evita volcar el historial al grupo al prender el relay. */
 const VENTANA_MIN = Number(process.env.SOPORTE_RELAY_VENTANA_MIN ?? "30");
 /** Tope por corrida: si entra una avalancha, se reparte entre vueltas en vez de inundar el grupo. */
@@ -278,7 +282,7 @@ export async function relayConsultas(): Promise<number> {
 
       // Acuse al cliente: UNA vez cada ACK_MS. Sin esto le contesta un robot en cada mensaje.
       const ahora = Date.now();
-      if (!hilo.lastAckAt || ahora - hilo.lastAckAt.getTime() >= ACK_MS) {
+      if (ACK_ACTIVO && (!hilo.lastAckAt || ahora - hilo.lastAckAt.getTime() >= ACK_MS)) {
         const ok = await sendToContact(cuenta.id, m.contact.id, cuenta.supportAckText?.trim() || ACK_POR_DEFECTO).catch(() => false);
         if (ok) await prisma.supportThread.update({ where: { id: hilo.id }, data: { lastAckAt: new Date(ahora) } });
       }
@@ -470,7 +474,7 @@ export async function onEventoDeGrupo(session: string, p: Record<string, any>): 
 
   // Acuse en el grupo del cliente: una vez cada ACK_GRUPO_MS. Texto según lo que mandó.
   const ahora = Date.now();
-  if (!hilo.lastAckAt || ahora - hilo.lastAckAt.getTime() >= ACK_GRUPO_MS) {
+  if (ACK_ACTIVO && (!hilo.lastAckAt || ahora - hilo.lastAckAt.getTime() >= ACK_GRUPO_MS)) {
     const ok = await enviarTexto(session, chat, esImagen ? ACK_CARGA : ACK_CONSULTA, idMsg).then(() => true).catch(() => false);
     if (ok) await prisma.supportThread.update({ where: { id: hilo.id }, data: { lastAckAt: new Date(ahora) } });
   }
