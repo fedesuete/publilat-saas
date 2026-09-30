@@ -893,6 +893,12 @@ export async function initQueues(): Promise<void> {
           if (n) console.log(`[soporte] ${n} consulta(s) al grupo`);
           return;
         }
+        // El segundo webhook vive en la config de la sesión de WAHA y nuestro código la reescribe al
+        // recrear la sesión: si falta, se repone (solo entonces, porque reponerlo reinicia esa sesión).
+        if (job.name === "soporte-webhook") {
+          const { asegurarWebhookSoporte } = await import("./soporte-relay.js");
+          return asegurarWebhookSoporte();
+        }
         if (job.name === "pagos-colgados") {
           const { pagosColgados, textoPagosColgados, paraAvisarPago } = await import("./pago-pendiente.js");
           const pagos = paraAvisarPago(await pagosColgados());
@@ -939,6 +945,7 @@ export async function initQueues(): Promise<void> {
     await queue.add("pagos-colgados", {}, { repeat: { every: 900_000 }, jobId: "pagos-colgados-repeat", removeOnComplete: true, removeOnFail: 20 });
     // Cada 15 s: una consulta de soporte no puede quedar esperando minutos para llegar al grupo.
     await queue.add("soporte-relay", {}, { repeat: { every: 15_000 }, jobId: "soporte-relay-repeat", removeOnComplete: true, removeOnFail: 20 });
+    await queue.add("soporte-webhook", {}, { repeat: { every: 600_000 }, jobId: "soporte-webhook-repeat", removeOnComplete: true, removeOnFail: 20 });
     // Recordatorio de carga abandonada (Chat App): cada 5 min avisa a los jugadores que empezaron una carga y no la terminaron.
     await queue.add("carga-reminder", {}, { repeat: { every: 300_000 }, jobId: "carga-reminder-repeat", removeOnComplete: true, removeOnFail: 50 });
     // Reporte diario de proxies IPRoyal a las 08:00 ART (no-op si no hay líneas de prueba ni SMTP).

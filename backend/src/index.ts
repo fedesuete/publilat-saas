@@ -39,6 +39,7 @@ import { flowsRouter } from "./routes/flows.js";
 import { trackRouter } from "./routes/track.js";
 import { chatRouter, chatPublicRouter } from "./routes/chat.js";
 import { botRelayRouter } from "./routes/bot-relay.js"; // puente cajero de socio (token propio)
+import { soporteWaRouter } from "./routes/soporte-wa.js"; // 2do webhook de WAHA: grupos del número de soporte
 import { tutorialsRouter, tutorialsAdminRouter, tutorialVideoRouter } from "./routes/tutorials.js";
 import { requireAdmin } from "./middleware/requireAdmin.js";
 import { requireAuth } from "./middleware/requireAuth.js";
@@ -157,6 +158,7 @@ app.use("/api/wa/webhook", webhookRouter);
 app.use("/api/integrations/inbound", webhookLimiter, inboundIntegrationsRouter); // CRM externo (Kommo) → Purchase
 app.use("/api/webhooks/leadgen", webhookLimiter, leadgenRouter); // Meta Lead Ads (formularios) → captura del lead
 app.use("/api/bot-relay", webhookLimiter, botRelayRouter); // puente cajero de socio (x-bot-token propio; off sin env)
+app.use("/api/soporte/wa", webhookLimiter, soporteWaRouter); // relay de soporte por grupo (mismo token que el webhook; off sin cuenta configurada)
 app.use("/api/billing/webhook/usdt", webhookLimiter, usdtWebhookRouter); // NOWPayments (USDT)
 app.use("/api/billing/webhook/pagopar", webhookLimiter, pagoparWebhookRouter); // Pagopar (Paraguay)
 app.use("/api/billing/webhook", webhookLimiter, billingWebhookRouter); // MercadoPago (debe ir último)

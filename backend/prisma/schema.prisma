@@ -152,6 +152,7 @@ model User {
   supportGroupId           String? // JID del grupo de WhatsApp (…@g.us) donde cae todo
   supportRelayEnabled      Boolean   @default(false)
   supportAckText           String? // acuse al cliente (null = el texto por defecto)
+  supportIgnoreGroups      Json? // JIDs de grupos INTERNOS que no se relayean (el de soporte se excluye solo)
   createdAt                DateTime  @default(now())
 
   lines             WaLine[]
@@ -985,7 +986,9 @@ model Tutorial {
 model SupportThread {
   id        String    @id @default(cuid())
   userId    String
-  contactId String    @unique
+  contactId String?   @unique // hilo 1 a 1 (chat directo con el número de soporte)
+  groupJid  String?   @unique // hilo de un GRUPO de cliente (…@g.us): ahí viven los comprobantes
+  groupName String? // nombre del grupo al momento de crearlo (para leerlo en el grupo de soporte)
   code      String    @unique // código corto que identifica al cliente en el grupo (ej. K7M)
   lastAckAt DateTime? // último "estamos procesando tu consulta" enviado
   createdAt DateTime  @default(now())
