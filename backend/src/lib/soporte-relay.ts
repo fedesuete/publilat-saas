@@ -152,7 +152,13 @@ export function parseComando(texto: string | null | undefined): string | null {
 /** Cola del id de WhatsApp: "true_123@g.us_ABC" → "ABC". Los ids llegan en las dos formas. */
 export function idCola(id: string | null | undefined): string {
   const s = String(id ?? "");
-  return s.includes("_") ? s.split("_").pop()! : s;
+  // Formato serializado: "<fromMe>_<chat>_<idMensaje>" y, en GRUPOS, "…_<idMensaje>_<remitente>".
+  // Tomar el ÚLTIMO pedazo (versión anterior) devolvía el REMITENTE en los grupos: la clave de
+  // idempotencia quedaba por persona y solo el 1er mensaje de cada una llegaba a SOPORTE — las
+  // imágenes y el TXID que mandaban después se descartaban en silencio (Ganaencasavip, 2026-09-30).
+  const partes = s.split("_");
+  if (partes.length >= 3 && (partes[0] === "true" || partes[0] === "false")) return partes[2];
+  return s;
 }
 
 /** Id del mensaje CITADO en un payload de WAHA/NOWEB, mirando en los lugares donde puede venir. */
@@ -398,7 +404,7 @@ export async function onEventoDeGrupo(session: string, p: Record<string, any>): 
     const orden = parseComando(texto);
     if (!orden) return; // charla interna del equipo: no se guarda ni se mira
     const citado = idCitado(p);
-    const relay = citado ? await prisma.supportRelayMsg.findFirst({ where: { groupMsgId: { endsWith: citado } }, select: { threadId: true } }) : null;
+    const relay = citado ? await prisma.supportRelayMsg.findFirst({ where: { groupMsgId: { contains: citado } }, select: { threadId: true } }) : null;
     const hilo = relay ? await prisma.supportThread.findUnique({ where: { id: relay.threadId }, select: { groupJid: true, contactId: true, code: true } }) : null;
     if (!hilo) {
       // Sin cita (o citaron otra cosa): antes que mandarle a cualquiera, se pide en el grupo.

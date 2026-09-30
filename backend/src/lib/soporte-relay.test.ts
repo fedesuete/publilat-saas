@@ -45,6 +45,14 @@ describe("idCola", () => {
     expect(idCola("3EB0ABC")).toBe("3EB0ABC");
     expect(idCola(null)).toBe("");
   });
+  it("en GRUPOS el id trae el remitente al final: hay que quedarse con el id del MENSAJE", () => {
+    // Bug real: se tomaba el remitente → solo el 1er mensaje de cada persona llegaba a SOPORTE.
+    const a = idCola("false_120363247456850811@g.us_3EB0AAA_215229971587327@lid");
+    const b = idCola("false_120363247456850811@g.us_3EB0BBB_215229971587327@lid");
+    expect(a).toBe("3EB0AAA");
+    expect(b).toBe("3EB0BBB");
+    expect(a).not.toBe(b); // dos mensajes de la misma persona = dos claves distintas
+  });
 });
 
 describe("idCitado (a quién le contestan)", () => {
