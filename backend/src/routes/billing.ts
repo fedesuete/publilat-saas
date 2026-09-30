@@ -278,6 +278,51 @@ export async function stripeWebhookHandler(req: Request, res: Response): Promise
   }
 }
 
+// --- Pagopar compartido con otros sitios del dueño ---
+// La cuenta de Pagopar es una sola: el aviso de pago y la vuelta del comprador están configurados hacia Publi.lat.
+// PAGOPAR_REENVIO_URL (ej. https://smartrun.lat) es el sitio al que pertenecen los pedidos que Publi.lat no conoce:
+// su aviso se le reenvía y su comprador vuelve ahí. Vacía = como antes (se descartan).
+const HASH_PAGOPAR = /^[a-f0-9]{64}$/;
+export function pagoparReenvioBase(): string | null {
+  const base = (process.env.PAGOPAR_REENVIO_URL ?? "").trim().replace(/\/+$/, "");
+  return /^https:\/\/[a-z0-9.-]+$/i.test(base) ? base : null;
+}
+
+/** Reenvía el aviso tal cual (el otro sitio valida el token con la misma clave). Nunca rompe el eco a Pagopar. */
+export async function forwardPagoparWebhook(body: unknown, hashPedido: string): Promise<void> {
+  const base = pagoparReenvioBase();
+  if (!base) return;
+  try {
+    const r = await fetch(`${base}/api/pagopar/webhook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10_000),
+    });
+    console.log(`[billing/webhook pagopar] ${hashPedido.slice(0, 8)} no es de Publi.lat: reenviado a ${base} (HTTP ${r.status})`);
+  } catch (e) {
+    // El otro sitio igual le pregunta a Pagopar cada pocos minutos: el pago no se pierde.
+    console.warn(`[billing/webhook pagopar] no se pudo reenviar ${hashPedido.slice(0, 8)} a ${base}:`, e instanceof Error ? e.message : String(e));
+  }
+}
+
+/**
+ * Vuelta del comprador: Pagopar lo manda a /billing?pagopar=<hash> (panel de Publi.lat, con login). Si el pedido no es
+ * de Publi.lat, va a la página de su pedido en el otro sitio. Si es de Publi.lat, sigue al panel como siempre.
+ */
+export async function pagoparReturnRedirect(req: Request, res: Response, next: () => void): Promise<void> {
+  const hash = typeof req.query.pagopar === "string" ? req.query.pagopar.toLowerCase() : "";
+  const base = pagoparReenvioBase();
+  if (!base || !HASH_PAGOPAR.test(hash)) return next();
+  try {
+    const mine = await prisma.payment.findFirst({ where: { externalId: hash, provider: "pagopar" }, select: { id: true } });
+    if (!mine) return res.redirect(302, `${base}/pedido/${hash}`);
+  } catch (e) {
+    console.warn("[billing] vuelta de Pagopar sin poder consultar la base:", e instanceof Error ? e.message : String(e));
+  }
+  next();
+}
+
 // --- Webhook Pagopar ---
 // Pagopar POSTea { respuesta, resultado: [ { pagado, cancelado, hash_pedido, token, ... } ] }
 // con token = SHA1(clave_privada + hash_pedido). Hay que responder 200 con el ECHO del
@@ -317,6 +362,10 @@ pagoparWebhookRouter.post("/", async (req, res) => {
         // Reversa de un pago ya acreditado: no descontamos días automáticamente; queda para revisión.
         console.warn(`[billing/webhook pagopar] REVERSA sobre pago aprobado ${payment.id} (hash ${hashPedido})`);
       }
+    } else if (pagoparReenvioBase()) {
+      // No es de Publi.lat: la cuenta de Pagopar la comparten otros sitios del dueño (smartrun.lat, fotos de
+      // carreras). Su aviso de pago llega acá; antes se descartaba y el pedido quedaba pendiente con el pago hecho.
+      await forwardPagoparWebhook(req.body, hashPedido);
     } else {
       console.warn(`[billing/webhook pagopar] hash sin Payment asociado: ${hashPedido}`);
     }

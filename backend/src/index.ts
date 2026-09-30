@@ -24,7 +24,7 @@ import { inboxRouter } from "./routes/inbox.js";
 import { nuevoChatRouter } from "./routes/nuevo-chat.js";
 import { chatsRouter } from "./routes/chats.js";
 import { analyticsRouter } from "./routes/analytics.js";
-import { billingRouter, billingWebhookRouter, usdtWebhookRouter, pagoparWebhookRouter, stripeWebhookHandler } from "./routes/billing.js";
+import { billingRouter, billingWebhookRouter, usdtWebhookRouter, pagoparWebhookRouter, stripeWebhookHandler, pagoparReturnRedirect } from "./routes/billing.js";
 import { referralsRouter } from "./routes/referrals.js";
 import { landingsRouter } from "./routes/landings.js";
 import { landingTemplatesRouter } from "./routes/landing-templates.js";
@@ -221,6 +221,9 @@ app.use("/api/admin", apiLimiter, requireAuth, requireAdmin, adminRouter);
 
 // 404 para rutas de API desconocidas (antes del fallback del SPA).
 app.use("/api", (_req, res) => res.status(404).json({ error: "No encontrado" }));
+
+// Vuelta de Pagopar (/billing?pagopar=<hash>): un pedido de otro sitio que comparte la cuenta va a su sitio.
+app.get("/billing", pagoparReturnRedirect);
 
 // Servir el panel (build de Vite) si está disponible -> deploy de un solo servicio.
 // FRONTEND_DIST apunta al dist; si no, intenta ../frontend/dist.
