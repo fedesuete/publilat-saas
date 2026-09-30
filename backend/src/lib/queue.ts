@@ -23,12 +23,15 @@ import { alertLineDown, alertLowBalance, lineRestrictedUntil, lineRawStatus, lin
 // STARTING" pasa a FAILED y ahí quedaba para siempre, paga y vinculada (2026-09-30: 3 líneas de
 // distintos clientes, una desde hacía 36 h). Se reintenta con un start, como mucho 1 vez cada 30 min por
 // línea (más lento que el candado general: si WhatsApp no la quiere, no insistimos cada 5 minutos).
+// Tope de 2 intentos por caída: si WhatsApp desvinculó el dispositivo, la identidad guardada sigue ahí
+// pero el login falla siempre — insistir cada 30 min para siempre es ruido. Se resetea al volver a WORKING.
 const FAILED_RETRY_MS = Number(process.env.FAILED_RETRY_MIN ?? "30") * 60_000;
-const failedRetryAt = new Map<string, number>();
+const FAILED_RETRY_MAX = 2;
+const failedRetry = new Map<string, { at: number; n: number }>();
 function tocaReintentoFailed(inst: string): boolean {
-  const t = failedRetryAt.get(inst) ?? 0;
-  if (Date.now() - t < FAILED_RETRY_MS) return false;
-  failedRetryAt.set(inst, Date.now());
+  const r = failedRetry.get(inst) ?? { at: 0, n: 0 };
+  if (r.n >= FAILED_RETRY_MAX || Date.now() - r.at < FAILED_RETRY_MS) return false;
+  failedRetry.set(inst, { at: Date.now(), n: r.n + 1 });
   return true;
 }
 import { dedupeSameNumberLines } from "./dedupe-lines.js";
@@ -312,6 +315,7 @@ export async function checkLineHealth(): Promise<void> {
         const stuckStarting = !connected && !line.connected && line.status !== "paused" && !line.banned
           && stuckInStarting(inst, rawNow);
         if (stuckStarting) console.log(`[line-health] línea ${line.id} TRABADA en STARTING (>8 min) -> restart automático`);
+        if (connected) failedRetry.delete(inst); // volvió: la próxima caída arranca con los 2 intentos
         // FAILED + paga + vinculada → start (sin QR). Va aparte del bloque de caída para no re-avisar al
         // cliente en cada vuelta: el aviso ya salió cuando se cayó.
         if (!connected && rawNow === "FAILED" && line.expiresAt && line.expiresAt > now && line.status !== "paused"

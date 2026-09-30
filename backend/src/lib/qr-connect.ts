@@ -142,14 +142,22 @@ export async function conectarSesion(
     await aplicarProxySiSirve(inst, lineId);
     st = await esperar(inst, objetivo, maxWait);
   } else if (st === "FAILED" || st === "STOPPED" || st === "DESCONOCIDO") {
-    // FAILED SIN identidad = credenciales muertas: sin logout, /start vuelve a FAILED una y otra vez.
-    // FAILED CON identidad = sigue vinculada (WhatsApp tardó y WAHA la cortó por "trabada en STARTING"):
-    // el logout la DESVINCULABA y obligaba a re-escanear el QR sin necesidad — el cliente terminaba
-    // borrando la línea y perdiendo el día pago (2026-09-30: 3 líneas pagas así). Ahí va solo un start.
-    if (st === "FAILED" && !(await sesionVinculada(inst))) await orden(inst, "logout");
+    // FAILED SIN identidad = credenciales muertas → logout + start (QR).
+    // FAILED CON identidad: puede ser un corte pasajero (se recupera con un start, sin QR) O WhatsApp que
+    // desvinculó el dispositivo desde el teléfono — WAHA conserva la identidad guardada pero el login
+    // falla ("logging in… → Connection Failure"; verificado 2026-09-30 en 3 líneas). No hay forma de
+    // distinguirlos sin probar: primero un start; si no llega a WORKING/QR, logout + start para dar QR.
+    // Nunca dejar al cliente sin QR: sin él borra la línea y pierde el día pago.
+    const vinculada = st === "FAILED" && (await sesionVinculada(inst));
+    if (st === "FAILED" && !vinculada) await orden(inst, "logout");
     await aplicarProxySiSirve(inst, lineId); // solo acá (antes de arrancar)
     await orden(inst, "start");
-    st = await esperar(inst, objetivo, maxWait);
+    st = await esperar(inst, ["SCAN_QR_CODE", "WORKING"], maxWait);
+    if (vinculada && st !== "WORKING" && st !== "SCAN_QR_CODE") {
+      await orden(inst, "logout");
+      await orden(inst, "start");
+      st = await esperar(inst, objetivo, maxWait);
+    }
   } else if (st === "STARTING") {
     st = await esperar(inst, objetivo, maxWait); // paciencia, NO reinicio
     // Si tras la espera SIGUE arrancando, casi siempre es el proxy: último intento sin él.
