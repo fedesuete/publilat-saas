@@ -18,6 +18,7 @@ import { pushBonusFor, pushOnMilestoneBody, appInstalledMilestoneBody } from "..
 import { pushEnabled, publicVapidKey, enqueuePlayerPush, enqueueAccountBroadcast, enqueueOperatorPush } from "../lib/chat-push.js";
 import { s3Enabled } from "../lib/s3.js";
 import { runChatBot } from "../lib/chat-bot.js";
+import { parseReglas, MAX_REGLAS, MAX_KEYWORDS } from "../lib/chat-auto-reply.js";
 import { forwardChatToBot, notifyBotOperatorActiveChat } from "../lib/chat-bridge.js";
 import { canOperateChat, consumeChatDayAndActivate, getAvailableDays } from "../lib/access.js";
 import { creditDepositInCasino, debitWithdrawalInCasino, sendDepositIntent, casinoLiveForAccount, casinoCvuForAccount, ensureCasinoUser, casinoPlayerPassword } from "../lib/casino-cashier.js"; // puente casino (key por cuenta)
@@ -908,18 +909,25 @@ chatRouter.patch("/popup", requireActiveLine, async (req, res) => {
 });
 
 // ---- Bot de carga/descarga (config por cuenta) ----
-const botSelect = { botEnabled: true, botPaymentInfo: true, botWelcome: true } as const;
+const botSelect = { botEnabled: true, botPaymentInfo: true, botWelcome: true, chatAskName: true, chatAutoReplies: true } as const;
 
 // GET /api/chat/bot — config actual del bot (operador) + el slug para armar el link de la landing.
 chatRouter.get("/bot", async (req, res) => {
   const u = await prisma.user.findUnique({ where: { id: req.userId! }, select: { ...botSelect, slug: true } });
-  return res.json({ bot: u ? { botEnabled: u.botEnabled, botPaymentInfo: u.botPaymentInfo, botWelcome: u.botWelcome } : null, slug: u?.slug ?? null });
+  return res.json({ bot: u ? { botEnabled: u.botEnabled, botPaymentInfo: u.botPaymentInfo, botWelcome: u.botWelcome, chatAskName: u.chatAskName, chatAutoReplies: parseReglas(u.chatAutoReplies) } : null, slug: u?.slug ?? null });
 });
 
 const botSchema = z.object({
   botEnabled: z.boolean().optional(),
   botPaymentInfo: z.string().max(1500).nullish(),
   botWelcome: z.string().max(500).nullish(),
+  // Chat directo: preguntar el nombre al entrar (apagable; ver lib/chat-bot.ts).
+  chatAskName: z.boolean().optional(),
+  // Respuestas automáticas por palabra clave (ver lib/chat-auto-reply.ts).
+  chatAutoReplies: z.array(z.object({
+    keywords: z.array(z.string().trim().min(1).max(40)).min(1).max(MAX_KEYWORDS),
+    reply: z.string().trim().min(1).max(1500),
+  })).max(MAX_REGLAS).nullish(),
 });
 // PATCH /api/chat/bot — prende/apaga el bot y edita los datos de pago / bienvenida.
 chatRouter.patch("/bot", async (req, res) => {
@@ -929,6 +937,8 @@ chatRouter.patch("/bot", async (req, res) => {
   if (parsed.data.botEnabled !== undefined) data.botEnabled = parsed.data.botEnabled;
   if (parsed.data.botPaymentInfo !== undefined) data.botPaymentInfo = parsed.data.botPaymentInfo;
   if (parsed.data.botWelcome !== undefined) data.botWelcome = parsed.data.botWelcome;
+  if (parsed.data.chatAskName !== undefined) data.chatAskName = parsed.data.chatAskName;
+  if (parsed.data.chatAutoReplies !== undefined) data.chatAutoReplies = parsed.data.chatAutoReplies ?? [];
   const bot = await prisma.user.update({ where: { id: req.userId! }, data, select: botSelect });
   return res.json({ bot });
 });
@@ -1607,6 +1617,7 @@ chatPublicRouter.post("/start", async (req, res) => {
 });
 
 const DEFAULT_DIRECT_WELCOME = "¡Hola! 🎉 Bienvenido. Para empezar, decime tu nombre 👇";
+const DEFAULT_DIRECT_WELCOME_SIN_NOMBRE = "¡Hola! 🎉 Bienvenido. Contanos qué necesitás y te ayudamos al toque 👇";
 const directSchema = z.object({
   accountSlug: z.string().min(1).max(60),
   // Nombre/apodo del gate de entrada (PWA): con él, el username sale del nombre (no más web*
@@ -1636,7 +1647,7 @@ chatPublicRouter.post("/direct", async (req, res) => {
   const skin = entry.skin;
   const acc = await prisma.user.findUnique({
     where: { id: entry.accountId },
-    select: { id: true, chatDirectWelcome: true },
+    select: { id: true, chatDirectWelcome: true, chatAskName: true },
   });
   if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
   if (!(await canOperateChat(acc.id))) {
@@ -1668,7 +1679,8 @@ chatPublicRouter.post("/direct", async (req, res) => {
 
   const conv = await prisma.chatConversation.create({
     // Con nombre del gate no hay que preguntarlo de nuevo (botStep ask_name era para eso).
-    data: { userId: acc.id, playerId: np.id, status: "open", botStep: nombreGate ? null : "ask_name" },
+    // chatAskName apagado: el jugador entra sin que se le pida el nombre (pedido de un operador).
+    data: { userId: acc.id, playerId: np.id, status: "open", botStep: nombreGate || !acc.chatAskName ? null : "ask_name" },
     select: { id: true },
   });
   // Puente al bot PRENDIDO: el BOT maneja la entrada — se dispara un forward sintético apenas el
@@ -1690,7 +1702,7 @@ chatPublicRouter.post("/direct", async (req, res) => {
     ? (nombreGate ? `¡Hola, ${nombreGate}! 👋 Un segundo que te preparamos tu cuenta… 🎰` : "¡Bienvenido! 🎰")
     : nombreGate
       ? `¡Hola, ${nombreGate}! 👋 Contanos qué necesitás y te ayudamos al toque 👇`
-      : (skin?.chatDirectWelcome ?? acc.chatDirectWelcome)?.trim() || DEFAULT_DIRECT_WELCOME;
+      : (skin?.chatDirectWelcome ?? acc.chatDirectWelcome)?.trim() || (acc.chatAskName ? DEFAULT_DIRECT_WELCOME : DEFAULT_DIRECT_WELCOME_SIN_NOMBRE);
   await prisma.chatMessage.create({
     data: { userId: acc.id, conversationId: conv.id, senderType: "system", body: welcome, metadata: {} },
   });
