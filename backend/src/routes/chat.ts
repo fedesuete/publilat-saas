@@ -2055,7 +2055,11 @@ chatPublicRouter.post("/me/deposit", requireChatClient, async (req, res) => {
 
 const withdrawalSchema = z.object({ amount: z.number().int().positive(), destino: z.string().min(3).max(60) });
 
-// POST /api/chat/me/withdrawal — el jugador pide un retiro (queda REQUESTED). Chequea saldo.
+// POST /api/chat/me/withdrawal — el jugador pide un retiro (queda REQUESTED).
+// NO se chequea contra el saldo interno (decisión del dueño, 2026-09-30): el wallet del Chat App solo
+// conoce lo que se CARGÓ por el chat, no lo que el jugador GANÓ jugando en la plataforma. Un jugador que
+// cargó $3.000 y ganó $15.000 no podía pedir su retiro (caso freydis, 54 h esperando). El control queda
+// en el cajero, que verifica contra su plataforma antes de aprobar (el retiro siempre pasa por él).
 chatPublicRouter.post("/me/withdrawal", requireChatClient, async (req, res) => {
   const parsed = withdrawalSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
@@ -2063,8 +2067,6 @@ chatPublicRouter.post("/me/withdrawal", requireChatClient, async (req, res) => {
   const accMin = await prisma.user.findUnique({ where: { id: req.accountId! }, select: { chatMinWithdrawal: true } });
   const minW = accMin?.chatMinWithdrawal ?? MIN_WITHDRAWAL;
   if (parsed.data.amount < minW) return res.status(400).json({ error: `El retiro mínimo es ${ars(minW)}.` });
-  const wallet = await prisma.chatWallet.findUnique({ where: { playerId: req.chatPlayerId! }, select: { balance: true } });
-  if (!wallet || wallet.balance < parsed.data.amount) return res.status(400).json({ error: "Saldo insuficiente para ese retiro." });
   const w = await prisma.chatWithdrawal.create({
     data: { userId: req.accountId!, playerId: req.chatPlayerId!, amount: parsed.data.amount, destino: parsed.data.destino.trim(), status: "requested" },
     select: { id: true, amount: true, destino: true, status: true, createdAt: true },
@@ -2136,15 +2138,18 @@ chatRouter.post("/cashier/deposit/:id/reject", async (req, res) => {
   return res.json({ ok: true });
 });
 
-// POST /api/chat/cashier/withdrawal/:id/approve — DÉBITO atómico (solo si el saldo alcanza) + paid.
+// POST /api/chat/cashier/withdrawal/:id/approve — marca paid + descuenta del saldo interno (con piso en 0).
+// El cajero ya verificó contra su plataforma: el retiro puede ser MAYOR que el saldo interno (ganancias
+// jugando, que el Chat App no ve). Antes se rechazaba y el jugador no cobraba nunca.
 chatRouter.post("/cashier/withdrawal/:id/approve", async (req, res) => {
   const w = await prisma.chatWithdrawal.findFirst({ where: { id: req.params.id, userId: req.userId! } });
   if (!w) return res.status(404).json({ error: "No encontrado" });
   if (w.status !== "requested") return res.status(409).json({ error: "Ese retiro ya fue resuelto." });
-  // Débito condicional: solo descuenta si el saldo alcanza (evita saldo negativo en carreras).
-  const debited = await prisma.chatWallet.updateMany({ where: { playerId: w.playerId, balance: { gte: w.amount } }, data: { balance: { decrement: w.amount } } });
-  if (debited.count !== 1) return res.status(400).json({ error: "Saldo insuficiente del jugador para pagar el retiro." });
-  await prisma.chatWithdrawal.update({ where: { id: w.id }, data: { status: "paid", resolvedAt: new Date() } });
+  // Candado: solo UNA aprobación transiciona requested→paid (doble clic o dos cajeros a la vez).
+  const claimed = await prisma.chatWithdrawal.updateMany({ where: { id: w.id, status: "requested" }, data: { status: "paid", resolvedAt: new Date() } });
+  if (claimed.count !== 1) return res.status(409).json({ error: "Ese retiro ya fue resuelto." });
+  // Descuento atómico con piso en 0: nunca queda saldo negativo, aunque el retiro supere lo cargado.
+  await prisma.$executeRaw`UPDATE "ChatWallet" SET "balance" = GREATEST("balance" - ${w.amount}, 0) WHERE "playerId" = ${w.playerId}`;
   // Casino (socio ganamos, detrás del flag): debita las fichas EN ganamos. Apagado = no-op.
   const wPlayer = await prisma.chatPlayer.findUnique({ where: { id: w.playerId }, select: { casinoUsername: true } });
   if (wPlayer) void debitWithdrawalInCasino(w, wPlayer.casinoUsername);
