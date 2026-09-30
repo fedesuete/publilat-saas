@@ -113,6 +113,23 @@ export async function lineRawStatus(instanceName: string): Promise<string | null
   }
 }
 
+// ¿La sesión sigue VINCULADA (WAHA conserva la identidad del teléfono)? Un FAILED con identidad NO es
+// un logout: es WhatsApp que tardó en responder al reconectar y WAHA la dio por "trabada en STARTING"
+// ("Session stuck in STARTING status, force stopping"). Se recupera con un start, SIN QR.
+// Best-effort: ante cualquier duda devuelve false (y entonces nadie la trata como recuperable).
+export async function sesionVinculada(instanceName: string): Promise<boolean> {
+  const base = process.env.WAHA_BASE_URL, key = process.env.WAHA_API_KEY;
+  if ((process.env.WA_ENGINE ?? "").toLowerCase() !== "waha" || !base || !key) return false;
+  try {
+    const r = await fetch(`${base}/api/sessions/${instanceName}`, { headers: { "X-Api-Key": key }, signal: AbortSignal.timeout(8000) });
+    if (!r.ok) return false;
+    const s = (await r.json()) as { me?: { id?: string } | null };
+    return Boolean(s.me?.id);
+  } catch {
+    return false;
+  }
+}
+
 export async function alertLineDown(line: { id: string; userId: string; label: string | null; phone: string }): Promise<void> {
   const name = line.label || line.phone || "tu línea";
   // Testeo automático del motivo de la caída (para el aviso y para detectar bugs recurrentes).

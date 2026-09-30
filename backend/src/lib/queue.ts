@@ -16,7 +16,21 @@ import { decryptSecret } from "./crypto.js";
 import { notify } from "./notifications.js";
 import { sendAdminMail } from "./mailer.js";
 import { checkWaWebVersion } from "./wa-version.js";
-import { alertLineDown, alertLowBalance, lineRestrictedUntil, lineRawStatus, lineBanSignal } from "./line-alert.js";
+import { alertLineDown, alertLowBalance, lineRestrictedUntil, lineRawStatus, lineBanSignal, sesionVinculada } from "./line-alert.js";
+
+// FAILED que SIGUE VINCULADA: nadie la reintentaba. La recuperación de checkLineHealth solo dispara en
+// la TRANSICIÓN (conectada→caída) o si queda trabada en STARTING; cuando WAHA la corta por "stuck in
+// STARTING" pasa a FAILED y ahí quedaba para siempre, paga y vinculada (2026-09-30: 3 líneas de
+// distintos clientes, una desde hacía 36 h). Se reintenta con un start, como mucho 1 vez cada 30 min por
+// línea (más lento que el candado general: si WhatsApp no la quiere, no insistimos cada 5 minutos).
+const FAILED_RETRY_MS = Number(process.env.FAILED_RETRY_MIN ?? "30") * 60_000;
+const failedRetryAt = new Map<string, number>();
+function tocaReintentoFailed(inst: string): boolean {
+  const t = failedRetryAt.get(inst) ?? 0;
+  if (Date.now() - t < FAILED_RETRY_MS) return false;
+  failedRetryAt.set(inst, Date.now());
+  return true;
+}
 import { dedupeSameNumberLines } from "./dedupe-lines.js";
 import { alertCapiFailures } from "./capi-guard.js";
 import { rotateProxy, releaseProxy, applyLineProxy, logProxyEvent, alertAdminProxy, probeProxy, assignFallback, assignProxyPreferred, setLineWaitingProxy, verifyIproyalLine, IPROYAL_PROVIDER } from "./proxy-pool.js";
@@ -298,6 +312,13 @@ export async function checkLineHealth(): Promise<void> {
         const stuckStarting = !connected && !line.connected && line.status !== "paused" && !line.banned
           && stuckInStarting(inst, rawNow);
         if (stuckStarting) console.log(`[line-health] línea ${line.id} TRABADA en STARTING (>8 min) -> restart automático`);
+        // FAILED + paga + vinculada → start (sin QR). Va aparte del bloque de caída para no re-avisar al
+        // cliente en cada vuelta: el aviso ya salió cuando se cayó.
+        if (!connected && rawNow === "FAILED" && line.expiresAt && line.expiresAt > now && line.status !== "paused"
+          && !line.banned && tocaReintentoFailed(inst) && (await sesionVinculada(inst))) {
+          const v = await safeAutoRestart(inst, "FAILED vinculada", rawNow);
+          console.log(`[line-health] línea ${line.id} FAILED pero vinculada -> reintento (${v})`);
+        }
         if ((line.connected && !connected) || stuckStarting) {
           // BACKOFF de restricción: si WhatsApp restringió el número, reintentar NO lo recupera hasta que
           // venza y solo genera ruido (515/428 en loop) → NO reiniciamos ni encolamos recuperación, solo

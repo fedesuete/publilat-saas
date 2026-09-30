@@ -15,6 +15,7 @@
 import { getEngine } from "./wa-engine.js";
 import { applyLineProxy } from "./proxy-pool.js";
 import { markUserConnecting } from "./session-guard.js";
+import { sesionVinculada } from "./line-alert.js";
 import { prisma } from "./prisma.js";
 
 type Raw = "WORKING" | "SCAN_QR_CODE" | "STARTING" | "FAILED" | "STOPPED" | "NO_EXISTE" | "DESCONOCIDO";
@@ -141,8 +142,11 @@ export async function conectarSesion(
     await aplicarProxySiSirve(inst, lineId);
     st = await esperar(inst, objetivo, maxWait);
   } else if (st === "FAILED" || st === "STOPPED" || st === "DESCONOCIDO") {
-    // FAILED = credenciales muertas: sin logout, /start vuelve a FAILED una y otra vez.
-    if (st === "FAILED") await orden(inst, "logout");
+    // FAILED SIN identidad = credenciales muertas: sin logout, /start vuelve a FAILED una y otra vez.
+    // FAILED CON identidad = sigue vinculada (WhatsApp tardó y WAHA la cortó por "trabada en STARTING"):
+    // el logout la DESVINCULABA y obligaba a re-escanear el QR sin necesidad — el cliente terminaba
+    // borrando la línea y perdiendo el día pago (2026-09-30: 3 líneas pagas así). Ahí va solo un start.
+    if (st === "FAILED" && !(await sesionVinculada(inst))) await orden(inst, "logout");
     await aplicarProxySiSirve(inst, lineId); // solo acá (antes de arrancar)
     await orden(inst, "start");
     st = await esperar(inst, objetivo, maxWait);
