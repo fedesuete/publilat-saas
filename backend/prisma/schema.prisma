@@ -112,6 +112,12 @@ model User {
   // postea un mensaje de bienvenida y el CAJERO le crea la cuenta a mano en el chat. El loop del pixel
   // sigue intacto (external_id = usuario interno del jugador; el Purchase de la carga matchea igual).
   chatManualAccount        Boolean   @default(false)
+  // Chat directo: preguntar el nombre al entrar (el 1er mensaje se guarda como nombre y el bot saluda).
+  // Apagable por cuenta: un operador lo vivió como "un bot que autoagenda a las personas" (2026-09-30).
+  chatAskName              Boolean   @default(true)
+  // Respuestas automáticas por palabra clave del Chat App: [{ keywords: string[], reply: string }].
+  // Funcionan con el bot de carga apagado. Ver lib/chat-auto-reply.ts.
+  chatAutoReplies          Json?
   // Popup/promo que ve el jugador al entrar a la PWA (imagen + texto + link). popupUpdatedAt
   // versiona el aviso: el jugador lo ve de nuevo cada vez que cambia (dedupe en el cliente).
   popupActive              Boolean   @default(false)

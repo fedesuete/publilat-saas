@@ -1249,6 +1249,10 @@ function BotTab() {
   const [enabled, setEnabled] = useState(false);
   const [pay, setPay] = useState("");
   const [welcome, setWelcome] = useState("");
+  // Chat directo: pedir el nombre al entrar (un operador lo vivió como "un bot que autoagenda").
+  const [askName, setAskName] = useState(true);
+  // Respuestas automáticas por palabra clave (funcionan con el bot de carga apagado).
+  const [reglas, setReglas] = useState<{ keywords: string; reply: string }[]>([]);
   const [slug, setSlug] = useState("");
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -1257,14 +1261,29 @@ function BotTab() {
   const link = slug ? `${CHAT_PWA_URL}/login?a=${slug}` : "";
 
   useEffect(() => {
-    void api.get<{ bot: { botEnabled: boolean; botPaymentInfo: string | null; botWelcome: string | null } | null; slug: string | null }>("/api/chat/bot")
-      .then(({ data }) => { const b = data.bot; if (b) { setEnabled(!!b.botEnabled); setPay(b.botPaymentInfo ?? ""); setWelcome(b.botWelcome ?? ""); } setSlug(data.slug ?? ""); })
+    void api.get<{ bot: { botEnabled: boolean; botPaymentInfo: string | null; botWelcome: string | null; chatAskName?: boolean; chatAutoReplies?: { keywords: string[]; reply: string }[] } | null; slug: string | null }>("/api/chat/bot")
+      .then(({ data }) => {
+        const b = data.bot;
+        if (b) {
+          setEnabled(!!b.botEnabled); setPay(b.botPaymentInfo ?? ""); setWelcome(b.botWelcome ?? "");
+          setAskName(b.chatAskName !== false);
+          setReglas((b.chatAutoReplies ?? []).map((r) => ({ keywords: r.keywords.join(", "), reply: r.reply })));
+        }
+        setSlug(data.slug ?? "");
+      })
       .catch(() => undefined);
   }, []);
 
   const save = async () => {
     setBusy(true); setError(null); setOk(false);
-    try { await api.patch("/api/chat/bot", { botEnabled: enabled, botPaymentInfo: pay, botWelcome: welcome }); setOk(true); }
+    try {
+      // Las reglas viajan limpias: palabras separadas por coma, sin vacías; una regla sin palabras o sin respuesta no se guarda.
+      const chatAutoReplies = reglas
+        .map((r) => ({ keywords: r.keywords.split(",").map((k) => k.trim()).filter(Boolean).slice(0, 10), reply: r.reply.trim() }))
+        .filter((r) => r.keywords.length && r.reply);
+      await api.patch("/api/chat/bot", { botEnabled: enabled, botPaymentInfo: pay, botWelcome: welcome, chatAskName: askName, chatAutoReplies });
+      setOk(true);
+    }
     catch (e) { setError(apiError(e)); } finally { setBusy(false); }
   };
 
@@ -1284,6 +1303,30 @@ function BotTab() {
 
         <label className="mb-1 block text-xs text-slate-400">Saludo del bot (opcional)</label>
         <textarea value={welcome} onChange={(e) => setWelcome(e.target.value)} rows={2} placeholder="Ej: ¡Hola! Soy tu asistente 👋" className="mb-3 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
+
+        {/* Pedir el nombre al entrar: era fijo y un operador no encontraba dónde apagarlo. */}
+        <label className="mb-4 flex items-start gap-3 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2.5">
+          <input type="checkbox" checked={askName} onChange={(e) => setAskName(e.target.checked)} className="mt-0.5 h-5 w-5 accent-wa-green" />
+          <span className="text-sm text-slate-200">
+            Pedir el nombre al entrar por el chat directo
+            <span className="mt-0.5 block text-xs text-slate-500">Prendido: lo primero que escribe el cliente se guarda como su nombre y el bot lo saluda. Apagado: entra y escribe directo, sin saludo automático.</span>
+          </span>
+        </label>
+
+        <div className="mb-1 text-sm font-semibold text-slate-100">⚡ Respuestas automáticas por palabra clave</div>
+        <p className="mb-2 text-xs text-slate-500">Si el cliente escribe alguna de estas palabras, el bot le contesta solo con el texto que pongas. Funciona aunque el bot de carga esté apagado. Manda la primera regla que coincida.</p>
+        {reglas.map((r, i) => (
+          <div key={i} className="mb-2 rounded-lg border border-slate-700 bg-slate-900/60 p-2.5">
+            <div className="mb-1.5 flex items-center gap-2">
+              <Input value={r.keywords} onChange={(e) => setReglas((xs) => xs.map((x, j) => (j === i ? { ...x, keywords: e.target.value } : x)))} placeholder="Palabras, separadas por coma. Ej: alias, cbu, cvu" className="flex-1" />
+              <Button type="button" variant="secondary" onClick={() => setReglas((xs) => xs.filter((_, j) => j !== i))}>Quitar</Button>
+            </div>
+            <textarea value={r.reply} onChange={(e) => setReglas((xs) => xs.map((x, j) => (j === i ? { ...x, reply: e.target.value } : x)))} rows={3} placeholder={"Respuesta. Ej:\nAlias: minegocio.mp\nTitular: Juan Pérez"} className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green" />
+          </div>
+        ))}
+        <div className="mb-3">
+          <Button type="button" variant="secondary" disabled={reglas.length >= 30} onClick={() => setReglas((xs) => [...xs, { keywords: "", reply: "" }])}>+ Agregar regla</Button>
+        </div>
 
         {error && <div className="mb-2"><ErrorMsg>{error}</ErrorMsg></div>}
         <div className="flex items-center gap-3">

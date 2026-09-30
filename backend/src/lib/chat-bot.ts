@@ -6,6 +6,7 @@
 // no-op. No toca WhatsApp, ni el flujo actual del Chat App, ni la atribución.
 import crypto from "node:crypto";
 import { prisma } from "./prisma.js";
+import { elegirRespuesta, parseReglas } from "./chat-auto-reply.js";
 import { emitChat, playerIsForeground } from "./io.js";
 import { enqueuePlayerPush } from "./chat-push.js"; // Web Push al jugador si tiene el chat cerrado/de fondo
 import { casinoLiveForAccount, casinoCvuForAccount, ensureCasinoUser, casinoPlayerPassword } from "./casino-cashier.js"; // modelo B (auto-carga, key por cuenta)
@@ -69,6 +70,14 @@ export async function runChatBot(accountId: string, convId: string, playerId: st
   // Corre AUNQUE el bot general esté apagado: deja el nombre guardado, saluda y (si el bot está
   // prendido) muestra el menú. Los botones de cargar/retirar salen solos en la app (barra del cajero).
   if (conv.botStep === "ask_name") {
+    // APAGABLE por cuenta (chatAskName): sin la pregunta, el 1er mensaje NO es un nombre y no se saluda
+    // solo. Un operador lo vivió como "un bot que autoagenda a las personas" y no tenía dónde apagarlo
+    // (2026-09-30). Se limpia el paso y el mensaje se atiende como cualquier otro.
+    const askCfg = await prisma.user.findUnique({ where: { id: accountId }, select: { chatAskName: true } });
+    if (askCfg && !askCfg.chatAskName) {
+      await prisma.chatConversation.update({ where: { id: convId }, data: { botStep: null } });
+      return runChatBot(accountId, convId, playerId, rawText);
+    }
     const name = rawText.trim().slice(0, 40);
     if (name) await prisma.chatPlayer.update({ where: { id: playerId }, data: { nombre: name } }).catch(() => undefined);
     await prisma.chatConversation.update({ where: { id: convId }, data: { botStep: null } });
@@ -97,6 +106,14 @@ export async function runChatBot(accountId: string, convId: string, playerId: st
     const greet = name ? `¡Genial, ${name}! ¿Qué querés hacer? 👇` : "¿Qué querés hacer? 👇";
     await botSay(accountId, convId, playerId, greet);
     return;
+  }
+
+  // ---------- RESPUESTAS AUTOMÁTICAS por palabra clave (funcionan con el bot de carga apagado) ----------
+  // Solo cuando no hay una carga/retiro en curso ni el chat lo tomó un cajero. Ver lib/chat-auto-reply.ts.
+  if (!conv.botStep) {
+    const cfg = await prisma.user.findUnique({ where: { id: accountId }, select: { chatAutoReplies: true } });
+    const respuesta = elegirRespuesta(rawText, parseReglas(cfg?.chatAutoReplies));
+    if (respuesta) { await botSay(accountId, convId, playerId, respuesta); return; }
   }
 
   const acc = await prisma.user.findUnique({ where: { id: accountId }, select: { botEnabled: true, botPaymentInfo: true, botWelcome: true } });
