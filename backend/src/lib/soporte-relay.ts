@@ -283,16 +283,71 @@ export async function relayConsultas(): Promise<number> {
 
 // ============================ GRUPOS: lo que llega por el segundo webhook ============================
 
-type Cuenta = { id: string; supportGroupId: string; supportIgnoreGroups: unknown };
+type Cuenta = { id: string; supportGroupId: string; supportIgnoreGroups: unknown; supportTeamNumbers: unknown };
+
+// ============================ Quién es del EQUIPO ============================
+// Solo lo que escribe el CLIENTE se relayea. Lo que escribe el equipo desde sus propios teléfonos en el
+// grupo de un cliente no va a SOPORTE ni recibe acuse (2026-09-30: Emi contestaba en Ganaencasavip y el
+// relay lo reenviaba y le agradecía como si fuera un cliente). Equipo = miembros del grupo SOPORTE
+// (detectados solos, por LID y por teléfono: WhatsApp manda los remitentes de las dos formas) + los
+// números cargados a mano en User.supportTeamNumbers.
+const EQUIPO_TTL_MS = 5 * 60_000;
+const equipoCache = new Map<string, { at: number; ids: Set<string> }>();
+
+/** Id comparable: un LID queda como "…@lid" en minúsculas; un teléfono, solo dígitos. */
+export function normalizarId(x: unknown): string | null {
+  if (typeof x !== "string" || !x.trim()) return null;
+  const s = x.trim();
+  if (s.toLowerCase().endsWith("@lid")) return s.toLowerCase();
+  const d = s.split("@")[0].replace(/\D/g, "");
+  return d.length >= 6 ? d : null;
+}
+
+/** Todas las identidades con las que viene el remitente de un mensaje de grupo (LID y/o teléfono). */
+export function remitenteDe(p: Record<string, any> | null | undefined): string[] {
+  if (!p) return [];
+  const rk = p._data?.key ?? {};
+  const cand = [p.participant, p.author, rk.participant, rk.participantPn, rk.senderPn, rk.participantAlt, rk.senderAlt, p.participantPn, p.senderPn];
+  const out = new Set<string>();
+  for (const c of cand) { const n = normalizarId(typeof c === "string" ? c : c?._serialized); if (n) out.add(n); }
+  return [...out];
+}
+
+export function esDelEquipo(remitente: string[], equipo: Set<string>): boolean {
+  return remitente.some((r) => equipo.has(r));
+}
+
+/** Ids (LID + teléfono) de los miembros del grupo SOPORTE + los cargados a mano. Caché 5 min por sesión. */
+async function equipoDe(session: string, cuenta: Cuenta): Promise<Set<string>> {
+  const key = `${session}:${cuenta.supportGroupId}`;
+  const c = equipoCache.get(key);
+  if (c && Date.now() - c.at < EQUIPO_TTL_MS) return c.ids;
+  const ids = new Set<string>();
+  for (const n of Array.isArray(cuenta.supportTeamNumbers) ? cuenta.supportTeamNumbers : []) { const x = normalizarId(n); if (x) ids.add(x); }
+  try {
+    // La lista completa de grupos (probada en prod); el endpoint de un grupo solo no está verificado.
+    const { data } = await waha().get(`/api/${encodeURIComponent(session)}/groups`);
+    const lista: any[] = Array.isArray(data) ? data : Object.values(data ?? {});
+    const sop = lista.find((g) => (typeof g?.id === "string" ? g.id : g?.id?._serialized) === cuenta.supportGroupId);
+    for (const part of Array.isArray(sop?.participants) ? sop.participants : []) {
+      for (const v of [part?.id, part?.phoneNumber, part?.jid]) { const x = normalizarId(typeof v === "string" ? v : v?._serialized); if (x) ids.add(x); }
+    }
+  } catch (e) {
+    console.warn("[soporte] no pude leer los miembros del grupo de soporte:", e instanceof Error ? e.message : String(e));
+    if (c) return c.ids; // mejor la lista vieja que ninguna
+  }
+  equipoCache.set(key, { at: Date.now(), ids });
+  return ids;
+}
 
 async function cuentaDeSesion(session: string): Promise<Cuenta | null> {
   const line = await prisma.waLine.findFirst({
     where: { OR: [{ sessionId: session }, { id: session.replace(/^line_/, "") }] },
-    select: { user: { select: { id: true, supportGroupId: true, supportRelayEnabled: true, supportIgnoreGroups: true } } },
+    select: { user: { select: { id: true, supportGroupId: true, supportRelayEnabled: true, supportIgnoreGroups: true, supportTeamNumbers: true } } },
   });
   const u = line?.user;
   if (!u || !u.supportRelayEnabled || !u.supportGroupId) return null;
-  return { id: u.id, supportGroupId: u.supportGroupId, supportIgnoreGroups: u.supportIgnoreGroups };
+  return { id: u.id, supportGroupId: u.supportGroupId, supportIgnoreGroups: u.supportIgnoreGroups, supportTeamNumbers: u.supportTeamNumbers };
 }
 
 function grupoIgnorado(cuenta: Cuenta, jid: string): boolean {
@@ -370,6 +425,8 @@ export async function onEventoDeGrupo(session: string, p: Record<string, any>): 
   // ---- Un grupo de CLIENTE: se reenvía a SOPORTE y se le contesta al toque. ----
   if (p?.fromMe) return; // lo nuestro (acuses, respuestas B-, o lo que se tipee desde el teléfono de soporte)
   if (grupoIgnorado(cuenta, chat)) return;
+  // Solo el CLIENTE: si escribió alguien del equipo desde su propio teléfono, ni se reenvía ni se le contesta.
+  if (esDelEquipo(remitenteDe(p), await equipoDe(session, cuenta))) return;
   if (!idMsg) return;
 
   const hilo = await hiloDeGrupo(cuenta.id, chat, await nombreDeGrupo(session, chat, p));

@@ -159,6 +159,7 @@ model User {
   supportRelayEnabled      Boolean   @default(false)
   supportAckText           String? // acuse al cliente (null = el texto por defecto)
   supportIgnoreGroups      Json? // JIDs de grupos INTERNOS que no se relayean (el de soporte se excluye solo)
+  supportTeamNumbers       Json? // teléfonos del EQUIPO cargados a mano (además de los miembros del grupo de soporte): lo que escriben en los grupos de clientes no se relayea
   createdAt                DateTime  @default(now())
 
   lines             WaLine[]
