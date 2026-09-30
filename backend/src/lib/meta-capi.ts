@@ -3,6 +3,7 @@
 import axios from "axios";
 import crypto from "node:crypto";
 import { resolveShadowPixels } from "./pixel.js";
+import { phoneGeo } from "./phone-geo.js";
 
 // Defaults globales del .env. OJO multi-tenant: por defecto NO se usan como fallback, porque un
 // cliente sin Pixel propio terminaría enviando sus eventos al pixel del .env (otra cuenta) en
@@ -101,7 +102,14 @@ export async function sendCapiEvent(input: CapiEventInput): Promise<CapiResult> 
   };
   if (input.fbp) userData.fbp = input.fbp;          // fbp/fbc NO se hashean
   if (input.fbc) userData.fbc = input.fbc;
-  if (input.phone) userData.ph = sha256(input.phone);
+  if (input.phone) {
+    userData.ph = sha256(input.phone);
+    // País/provincia/ciudad del prefijo del número (phone-geo.ts): claves de match extra → más EMQ.
+    const geo = phoneGeo(input.phone);
+    if (geo.country) userData.country = sha256(geo.country);
+    if (geo.st) userData.st = sha256(geo.st);
+    if (geo.ct) userData.ct = sha256(geo.ct);
+  }
   if (input.email) userData.em = sha256(input.email); // email normalizado (trim+lower) y hasheado
   if (input.firstName) {
     // fn = primer nombre, ln = último apellido: dos claves de match en vez de una (Meta
