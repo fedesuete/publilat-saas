@@ -111,6 +111,32 @@ export default function LoginPage() {
     }
   };
 
+  // "¿No recordás tu clave?": entra al chat SIN clave. Si el usuario (o el alias con el que lo agendó el
+  // cajero) existe, retoma SU chat con el historial; si no, abre uno nuevo para hablar con el cajero.
+  // Nadie queda trabado en esta pantalla (2026-10-01: jugadores del link directo nunca tuvieron clave).
+  const entrarSinClave = async () => {
+    const slug = accountSlug.trim();
+    if (!username.trim()) { setError("Escribí tu usuario y tocá de nuevo."); return; }
+    if (!slug) { setAccountLocked(false); setError("Escribí el nombre de la cuenta y tocá de nuevo."); return; }
+    setBusy(true);
+    setError(null);
+    try {
+      const { data } = await api.post("/api/chat/start", { accountSlug: slug, username: username.trim() });
+      setToken(data.token);
+      if (!saved?.accountSlug) {
+        try {
+          const pub = await api.get(`/api/chat/public/${encodeURIComponent(slug)}`);
+          saveBranding(pub.data.accountSlug, pub.data.branding);
+        } catch { /* noop */ }
+      }
+      navigate("/chat", { replace: true });
+    } catch (e) {
+      setError(apiError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const name = brand?.brandName || "Chat";
 
   return (
@@ -163,11 +189,15 @@ export default function LoginPage() {
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           placeholder="Tu usuario"
+          name="username"
+          autoComplete="username"
           autoCapitalize="none"
           className="w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-center outline-none"
         />
         <input
           type="password"
+          name="password"
+          autoComplete="current-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Tu clave"
@@ -183,6 +213,15 @@ export default function LoginPage() {
           {busy ? "Entrando…" : "Entrar"}
         </button>
       </form>
+      <button
+        type="button"
+        onClick={() => void entrarSinClave()}
+        disabled={busy || inactive}
+        className="mt-4 text-sm font-semibold underline underline-offset-4 disabled:opacity-50"
+        style={{ color: "var(--brand-primary)" }}
+      >
+        ¿No recordás tu clave? Entrá al chat
+      </button>
 
       {showIosGuide && <InstallGuide onClose={() => setShowIosGuide(false)} />}
       {showAndroidGuide && <AndroidInstallGuide onClose={() => setShowAndroidGuide(false)} />}

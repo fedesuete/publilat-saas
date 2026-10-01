@@ -19,6 +19,7 @@ import { pushEnabled, publicVapidKey, enqueuePlayerPush, enqueueAccountBroadcast
 import { s3Enabled } from "../lib/s3.js";
 import { runChatBot } from "../lib/chat-bot.js";
 import { parseReglas, MAX_REGLAS, MAX_KEYWORDS } from "../lib/chat-auto-reply.js";
+import { jugadorPorAlias } from "../lib/chat-alias.js"; // login / retomar el chat por el alias del cajero
 import { forwardChatToBot, notifyBotOperatorActiveChat } from "../lib/chat-bridge.js";
 import { canOperateChat, consumeChatDayAndActivate, getAvailableDays } from "../lib/access.js";
 import { creditDepositInCasino, debitWithdrawalInCasino, sendDepositIntent, casinoLiveForAccount, casinoCvuForAccount, ensureCasinoUser, casinoPlayerPassword } from "../lib/casino-cashier.js"; // puente casino (key por cuenta)
@@ -1433,6 +1434,8 @@ chatPublicRouter.post("/login", async (req, res) => {
       where: { userId_casinoUsername: { userId: entry.accountId, casinoUsername: username } },
       select: { id: true, casinoUsername: true, password: true, userId: true, skin: { select: { slug: true } } },
     });
+    // Si no es el usuario interno, probamos el ALIAS que le puso el cajero (ver lib/chat-alias.ts).
+    if (!player) player = await jugadorPorAlias(username, entry.accountId);
   } else {
     // Sin slug: resolvemos por usuario (jugadores con clave = accesos nuevos).
     const matches = await prisma.chatPlayer.findMany({
@@ -1444,10 +1447,14 @@ chatPublicRouter.post("/login", async (req, res) => {
     else if (matches.length > 1) {
       return res.status(409).json({ error: "Necesitamos el nombre de la cuenta.", code: "account_required" });
     }
-    // 0 matches -> cae al "usuario no encontrado" de abajo.
+    // 0 matches -> probamos el ALIAS (único en toda la plataforma); si no, "usuario no encontrado".
+    if (!player) {
+      const porAlias = await jugadorPorAlias(username, null);
+      if (porAlias) { player = porAlias; accId = porAlias.userId; }
+    }
   }
 
-  if (!player || !accId) return res.status(404).json({ error: "No encontramos ese usuario. Pedile el acceso a quien te invitó." });
+  if (!player || !accId) return res.status(404).json({ error: "No encontramos ese usuario. Tocá «¿No recordás tu clave?» y entrás al chat.", code: "not_found" });
   // Clave: si el acceso tiene clave, se verifica; si no (jugador viejo), entra sin clave.
   if (player.password) {
     const ok = parsed.data.password ? await verifyPassword(parsed.data.password, player.password) : false;
@@ -1579,10 +1586,16 @@ chatPublicRouter.post("/start", async (req, res) => {
   // --- Modo clásico (username explícito): retoma si existe, o crea si es nuevo. ---
   const username = (parsed.data.username ?? "").trim();
   if (username.length < 2) return res.status(400).json({ error: "Falta el usuario." });
-  let player = await prisma.chatPlayer.findUnique({
+  let player: { id: string; casinoUsername: string } | null = await prisma.chatPlayer.findUnique({
     where: { userId_casinoUsername: { userId: acc.id, casinoUsername: username.trim() } },
     select: { id: true, casinoUsername: true },
   });
+  // Por ALIAS (el usuario del casino con el que lo agendó el cajero): retoma SU chat con el historial,
+  // en vez de crearle uno nuevo que el cajero no reconoce. Lo usa "¿No recordás tu clave?" del login.
+  if (!player) {
+    const porAlias = await jugadorPorAlias(username, acc.id);
+    if (porAlias) player = { id: porAlias.id, casinoUsername: porAlias.casinoUsername };
+  }
   let conversationId: string | null = null;
 
   if (player) {
