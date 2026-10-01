@@ -4,7 +4,7 @@ import { api, apiError, API_BASE, getToken, clearToken, loadBranding, saveBrandi
 import { subscribeToPush, pushSupported, pushPermission } from "../lib/push";
 import InstallPrompt, { InstallGuide, AndroidInstallGuide } from "../components/InstallPrompt";
 import PushPrompt from "../components/PushPrompt";
-import { promptInstall, onInstallAvailable, bakeSessionIntoUrl, pointManifestToSession, isStandalone, isIos, waitForInstallPrompt, reportAppInstalled } from "../lib/install";
+import { promptInstall, onInstallAvailable, bakeSessionIntoUrl, pointManifestToSession, isStandalone, isIos, waitForInstallPrompt, reportAppInstalled, instalarDesdeChromeSiHaceFalta } from "../lib/install";
 
 interface Pay { cbu: string | null; alias: string | null; titular: string | null }
 interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; image?: string | null; buttons?: string[] | null; link?: { label: string; url: string } | null; copy?: { label: string; value: string } | null; pay?: Pay | null; install?: boolean; createdAt: string }
@@ -175,6 +175,7 @@ export default function ChatPage() {
   // beforeinstallprompt todavía no llegó, esperamos un instante a que aparezca antes de rendirnos. Solo
   // si de verdad no hay prompt nativo mostramos la guía manual (iPhone: Compartir→Agregar; Android: menú ⋮).
   const doInstall = async () => {
+    if (instalarDesdeChromeSiHaceFalta()) return; // Samsung Internet & cía.: la app sale bloqueada por Play Protect
     if (canInstall || (!isIos() && (await waitForInstallPrompt(1800)))) { void promptInstall(); return; }
     bakeSessionIntoUrl();
     setGuide(isIos() ? "ios" : "android");

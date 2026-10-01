@@ -68,8 +68,17 @@ export async function canOperateChat(userId: string): Promise<boolean> {
   const now = new Date();
   // El día pagado vale hasta que VENCE, aunque el cliente haya apagado la auto-renovación
   // (no se pierde lo pagado). `chatDayEnabled` solo controla si se renueva al vencer.
-  const u = await prisma.user.findUnique({ where: { id: userId }, select: { chatDayExpiresAt: true } });
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { chatDayExpiresAt: true, chatDayEnabled: true } });
   if (u?.chatDayExpiresAt && u.chatDayExpiresAt > now) return true;
+  // GRACIA de renovación: el día se renueva recién DESPUÉS de vencer, en el job que corre cada 60 s.
+  // En ese minuto el Chat App quedaba apagado todos los días: el operador veía "Necesitás una línea de
+  // WhatsApp activa" con 28 días de saldo (Black Win, 2026-10-01 17:23→17:24) y los jugadores no podían
+  // entrar. Si la auto-renovación está prendida, hay saldo y venció hace menos de 5 min, sigue activo:
+  // el job lo renueva en segundos.
+  if (u?.chatDayEnabled && u.chatDayExpiresAt && now.getTime() - u.chatDayExpiresAt.getTime() < 5 * 60_000) {
+    const credit = await prisma.credit.findUnique({ where: { userId }, select: { days: true } });
+    if ((credit?.days ?? 0) >= 1) return true;
+  }
   return hasActiveWaLine(userId);
 }
 

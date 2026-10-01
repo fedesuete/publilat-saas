@@ -8,6 +8,7 @@ import {
   isStandalone,
   isInAppBrowser,
   bakeSessionIntoUrl,
+  instalarDesdeChromeSiHaceFalta,
 } from "../lib/install";
 import { InstallGuide, AndroidInstallGuide } from "../components/InstallPrompt";
 
@@ -41,6 +42,7 @@ export default function LoginPage() {
   const [showAndroidGuide, setShowAndroidGuide] = useState(false);
 
   const installApp = async () => {
+    if (instalarDesdeChromeSiHaceFalta()) return; // Samsung Internet & cía.: la app sale bloqueada por Play Protect
     if (isIos()) {
       bakeSessionIntoUrl();
       setShowIosGuide(true);

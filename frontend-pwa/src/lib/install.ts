@@ -75,7 +75,37 @@ export function onInstallAvailable(cb: (available: boolean) => void): () => void
   return () => listeners.delete(cb);
 }
 
+// ---- Android en un navegador que NO es Chrome (2026-10-01) ----
+// Instalar desde Chrome = Google arma la app (WebAPK) en sus servidores, firmada y al día. Otros
+// navegadores (Samsung Internet sobre todo, que viene de fábrica en los Samsung) arman su propia app con
+// una base de Android vieja, y Google Play Protect la BLOQUEA: "Se bloqueó la app no segura. Esta app se
+// diseñó para una versión anterior de Android" (Black Win: "a muchos usuarios les aparece así"). Además
+// se instalaba como "Chat" genérico. Solución: al tocar Instalar, abrimos ESTA misma página en Chrome,
+// con la sesión en el link (main.tsx la lee) para que entre logueado: Chrome no comparte storage.
+export function isAndroidNoChrome(): boolean {
+  const ua = navigator.userAgent || "";
+  if (!/Android/i.test(ua)) return false;
+  if (isInAppBrowser()) return false; // WhatsApp/Instagram/etc. tienen su propio aviso
+  return /SamsungBrowser|OPR\/|Opera|MiuiBrowser|XiaoMi|UCBrowser|Firefox|FxiOS|EdgA|YaBrowser|HuaweiBrowser|HeyTapBrowser|vivoBrowser|DuckDuckGo|Silk|Kiwi/i.test(ua);
+}
+
+/** Abre la página actual (con la sesión) en Chrome. Si Chrome no está, lleva a instalarlo. */
+export function abrirEnChrome(): void {
+  bakeSessionIntoUrl();
+  const sinEsquema = window.location.href.replace(/^https?:\/\//, "");
+  const fallback = encodeURIComponent("https://play.google.com/store/apps/details?id=com.android.chrome");
+  window.location.href = `intent://${sinEsquema}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${fallback};end`;
+}
+
+/** Si hace falta pasar a Chrome para instalar, lo hace y devuelve true (el llamador no sigue). */
+export function instalarDesdeChromeSiHaceFalta(): boolean {
+  if (!isAndroidNoChrome()) return false;
+  abrirEnChrome();
+  return true;
+}
+
 export async function promptInstall(): Promise<boolean> {
+  if (instalarDesdeChromeSiHaceFalta()) return false;
   if (!deferred) return false;
   await deferred.prompt();
   const choice = await deferred.userChoice;

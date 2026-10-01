@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { onInstallAvailable, promptInstall, isIos, isStandalone, isInAppBrowser, bakeSessionIntoUrl } from "../lib/install";
+import { onInstallAvailable, promptInstall, isIos, isStandalone, isInAppBrowser, bakeSessionIntoUrl, isAndroidNoChrome, abrirEnChrome } from "../lib/install";
 
 const HIDE_KEY = "publilat_install_hidden";
 
@@ -125,6 +125,11 @@ export default function InstallPrompt({ branding, onClose }: { branding?: { bran
             className="mt-4 w-full rounded-2xl bg-white/15 p-4 text-left text-[15px] leading-relaxed ring-1 ring-white/25 transition active:scale-[.99]">
             Tocá <b className="inline-flex items-center gap-1">Compartir <ShareIcon /></b> y después{" "}
             <b>Agregar a inicio <span className="text-emerald-300">＋</span></b> .
+          </button>
+        ) : isAndroidNoChrome() ? (
+          <button onClick={() => abrirEnChrome()}
+            className="mt-4 w-full rounded-2xl bg-white py-3.5 text-base font-extrabold text-slate-900 shadow-lg transition active:scale-[.98]">
+            Instalar app (se abre en Chrome)
           </button>
         ) : (
           <div className="mt-4 rounded-2xl bg-white/15 p-4 text-left text-[15px] leading-relaxed ring-1 ring-white/25">
