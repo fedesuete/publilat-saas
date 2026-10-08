@@ -17,6 +17,8 @@ vi.mock("./prisma.js", () => ({
       update: vi.fn(async () => ({})),
       findFirst: vi.fn(async () => null),
     },
+    // meta-events consulta si la cuenta usa la landing (Lead solo con código ref): sin landing → null.
+    contact: { findFirst: vi.fn(async () => null), findUnique: vi.fn(async () => null) },
   },
 }));
 vi.mock("./capi-guard.js", () => ({ notifyMissingPixel: vi.fn() }));
