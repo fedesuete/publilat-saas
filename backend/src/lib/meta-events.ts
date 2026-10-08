@@ -28,6 +28,7 @@ export interface EventContact {
   landingUrl?: string | null;
   clientIp?: string | null;        // IP del visitante capturada en el clic de /go
   clientUserAgent?: string | null; // UA del visitante capturado en el clic de /go
+  code?: string | null;            // ref del clic de /go o del "(ref: …)" del 1er mensaje (ver leadRequiresRef)
 }
 
 export interface FireMetaOpts {
@@ -56,6 +57,19 @@ export function leadOnInboundDefault(): boolean {
   return (process.env.LEAD_ON_INBOUND_DEFAULT ?? "on").toLowerCase() !== "off";
 }
 
+// Cuentas que mandan el Lead SOLO si el contacto trae el código ref: lo pone /go al clic del botón de la
+// landing, o el webhook cuando el 1er mensaje trae "(ref: …)". Así no ensucian el público del píxel los
+// canales de WhatsApp, los chats personales del chip ni los que escriben directo sin venir del anuncio
+// (pedido de Eduardo 08/10, cuenta valentinolocal). `LEAD_REQUIRE_REF_USERS` = User.id separados por
+// coma; vacío = comportamiento de siempre. Solo filtra el Lead: Purchase y Registro no cambian.
+export function leadRequiresRef(userId: string): boolean {
+  return (process.env.LEAD_REQUIRE_REF_USERS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .includes(userId);
+}
+
 /**
  * Dispara un evento de conversión a Meta para un contacto. Punto ÚNICO de salida de eventos.
  */
@@ -64,6 +78,19 @@ export async function fireMetaEvent(
   eventName: MetaEventName,
   opts: FireMetaOpts = {},
 ): Promise<FireMetaResult> {
+  // Lead solo con código ref para las cuentas de LEAD_REQUIRE_REF_USERS. Si el llamador no trajo el
+  // código, se lee de la base. Sin código: no sale a Meta ni se registra en MetaEvent.
+  if (eventName === "Lead" && leadRequiresRef(contact.userId)) {
+    const code =
+      contact.code !== undefined
+        ? contact.code
+        : (await prisma.contact.findUnique({ where: { id: contact.id }, select: { code: true } }))?.code;
+    if (!code) {
+      console.log(`[meta-events] Lead omitido: contacto ${contact.id} sin código ref (cuenta ${contact.userId})`);
+      return { ok: true, skipped: true };
+    }
+  }
+
   // Idempotencia por contacto (opcional): un Lead/Registro por contacto. El Purchase suele ir por
   // carga (eventId propio), así que ese usa la dedup de Meta por event_id, no este guard.
   if (opts.oncePerContact) {
