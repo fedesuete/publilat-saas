@@ -28,6 +28,7 @@ export interface EventContact {
   landingUrl?: string | null;
   clientIp?: string | null;        // IP del visitante capturada en el clic de /go
   clientUserAgent?: string | null; // UA del visitante capturado en el clic de /go
+  code?: string | null;            // ref del clic de /go o del "(ref: …)" del 1er mensaje (ver leadRequiresRef)
 }
 
 export interface FireMetaOpts {
@@ -56,6 +57,43 @@ export function leadOnInboundDefault(): boolean {
   return (process.env.LEAD_ON_INBOUND_DEFAULT ?? "on").toLowerCase() !== "off";
 }
 
+// El Lead sale SOLO si el contacto trae el código ref (lo pone /go al clic del botón de la landing, o el
+// webhook cuando el 1er mensaje trae "(ref: …)") en las cuentas que publicitan con la landing. Así no
+// ensucian el público del píxel los canales de WhatsApp, los chats personales del chip ni los que escriben
+// directo sin venir del anuncio (pedido de Eduardo 08/10). "Publicita con la landing" = tuvo clics del botón
+// con código desde anuncios (fbclid/fbc) en los últimos 30 días. Las cuentas sin landing siguen igual: si no,
+// sus Lead de gente que escribe directo quedarían en cero. `LEAD_REQUIRE_REF_LANDING=off` apaga la
+// detección; `LEAD_REQUIRE_REF_USERS` (User.id por coma) fuerza cuentas puntuales. Solo filtra el Lead.
+const LANDING_VENTANA_MS = 30 * 24 * 3600 * 1000;
+const LANDING_CACHE_MS = 10 * 60 * 1000;
+const usaLandingCache = new Map<string, { usa: boolean; at: number }>();
+
+async function usaLaLanding(userId: string): Promise<boolean> {
+  const hit = usaLandingCache.get(userId);
+  if (hit && Date.now() - hit.at < LANDING_CACHE_MS) return hit.usa;
+  const clic = await prisma.contact.findFirst({
+    where: {
+      userId,
+      code: { not: null },
+      createdAt: { gte: new Date(Date.now() - LANDING_VENTANA_MS) },
+      OR: [{ fbclid: { not: null } }, { fbc: { not: null } }],
+    },
+    select: { id: true },
+  });
+  usaLandingCache.set(userId, { usa: !!clic, at: Date.now() });
+  return !!clic;
+}
+
+export async function leadRequiresRef(userId: string): Promise<boolean> {
+  const forzadas = (process.env.LEAD_REQUIRE_REF_USERS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (forzadas.includes(userId)) return true;
+  if ((process.env.LEAD_REQUIRE_REF_LANDING ?? "on").toLowerCase() === "off") return false;
+  return usaLaLanding(userId);
+}
+
+// Un solo log por contacto omitido: los canales publican muchas veces por día y llenarían el log.
+const omitidosLogueados = new Set<string>();
+
 /**
  * Dispara un evento de conversión a Meta para un contacto. Punto ÚNICO de salida de eventos.
  */
@@ -64,6 +102,32 @@ export async function fireMetaEvent(
   eventName: MetaEventName,
   opts: FireMetaOpts = {},
 ): Promise<FireMetaResult> {
+  // Lead solo con código ref en las cuentas que publicitan con la landing (ver leadRequiresRef). Sin
+  // código: no sale a Meta ni se registra en MetaEvent. Si el llamador no trajo el campo, se lee de la base
+  // (solo en esas cuentas). Best-effort: si la detección falla, el Lead sale como antes.
+  if (eventName === "Lead" && !contact.code) {
+    let omitir = false;
+    try {
+      if (await leadRequiresRef(contact.userId)) {
+        const code =
+          contact.code === undefined
+            ? (await prisma.contact.findUnique({ where: { id: contact.id }, select: { code: true } }))?.code
+            : null;
+        omitir = !code;
+      }
+    } catch (e) {
+      console.warn("[meta-events] no se pudo chequear el código ref, el Lead sale igual:", e instanceof Error ? e.message : String(e));
+    }
+    if (omitir) {
+      if (!omitidosLogueados.has(contact.id)) {
+        if (omitidosLogueados.size > 5000) omitidosLogueados.clear();
+        omitidosLogueados.add(contact.id);
+        console.log(`[meta-events] Lead omitido: contacto ${contact.id} sin código ref (cuenta ${contact.userId})`);
+      }
+      return { ok: true, skipped: true };
+    }
+  }
+
   // Idempotencia por contacto (opcional): un Lead/Registro por contacto. El Purchase suele ir por
   // carga (eventId propio), así que ese usa la dedup de Meta por event_id, no este guard.
   if (opts.oncePerContact) {
