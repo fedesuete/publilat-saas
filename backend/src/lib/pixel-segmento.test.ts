@@ -71,3 +71,16 @@ describe("resolveContactPixel (por contacto)", () => {
     expect(await resolveContactPixel("u1", null, "Lead")).toMatchObject({ pixelId: "meta-principal" });
   });
 });
+
+describe("landing solo-servidor (sin pixel de navegador)", async () => {
+  const { injectCurrentPixel, injectMirrorPixels, SIN_PIXEL_MARK } = await import("./landing-template.js");
+  const conMarca = `<html><head><meta name="${SIN_PIXEL_MARK}" content="1"></head><body></body></html>`;
+  const sinMarca = `<html><head></head><body></body></html>`;
+  it("con la marca, el publicador no mete ni el pixel principal ni los espejos", () => {
+    expect(injectCurrentPixel(conMarca, "123456789")).toBe(conMarca);
+    expect(injectMirrorPixels(conMarca, ["987654321"])).toBe(conMarca);
+  });
+  it("sin la marca, todo sigue igual: se inyecta el pixel", () => {
+    expect(injectCurrentPixel(sinMarca, "123456789")).toContain("fbq('init','123456789')");
+  });
+});

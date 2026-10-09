@@ -54,8 +54,18 @@ export function injectGoTracking(html: string, goBase = ""): string {
 // del dueño (Mi Pixel), para que un cambio de pixel se refleje sin re-guardar/re-publicar la landing.
 // Si el HTML no tiene pixel y hay uno vigente, lo inyecta en el <head>. Idempotente respecto del id.
 // (Solo aplica a landings servidas por /p/:slug; las publicadas en S3/CloudFront son estáticas.)
+// Landing "SOLO SERVIDOR": con la marca SIN_PIXEL_MARK el publicador NO mete pixel de navegador (ni el
+// principal ni los espejos). Toda la medición va por CAPI desde el backend (/api/land/track, que elige el
+// pixel según el tipo de cliente). Sin esto, con varios pixeles por tipo de cliente, cada visita de una
+// landing de un tipo igual le llegaba al pixel PRINCIPAL y lo entrenaba mal (2026-10-09).
+export const SIN_PIXEL_MARK = "pl-sin-pixel-navegador";
+export function sinPixelNavegador(html: string): boolean {
+  return !!html && html.includes(SIN_PIXEL_MARK);
+}
+
 export function injectCurrentPixel(html: string, pixelId: string): string {
   if (!html || !pixelId) return html;
+  if (sinPixelNavegador(html)) return html;
   const id = pixelId.replace(/[^0-9]/g, ""); // el pixel de Meta es numérico
   if (!id) return html;
   let hadInit = false;
@@ -87,6 +97,7 @@ export function injectCurrentPixel(html: string, pixelId: string): string {
 // Va DESPUÉS del snippet del pixel principal: `trackSingle` manda el PageView SOLO al espejo, así
 // el principal no cuenta dos veces. Si el espejo ya está en el HTML, no se duplica.
 export function injectMirrorPixels(html: string, mirrorIds: string[]): string {
+  if (sinPixelNavegador(html)) return html;
   const ids = [...new Set(mirrorIds.map((m) => m.replace(/\D/g, "")).filter(Boolean))]
     .filter((id) => !html.includes(`'${id}'`) && !html.includes(`"${id}"`));
   if (!html || ids.length === 0) return html;

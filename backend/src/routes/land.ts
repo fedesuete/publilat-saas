@@ -14,7 +14,7 @@ import { notifyNewSignup } from "../lib/signup-notify.js";
 import { sendRegistrationOutreach } from "../lib/signup-outreach.js";
 import { fireMarketingEvent } from "../lib/marketing-capi.js";
 import { sendCapiEvent } from "../lib/meta-capi.js";
-import { resolveUserPixel } from "../lib/pixel.js";
+import { resolveUserPixel, resolveContactPixel } from "../lib/pixel.js";
 import crypto from "node:crypto";
 
 export const landRouter = Router();
@@ -89,6 +89,9 @@ const trackSchema = z.object({
   // aunque nunca llegue a mandar el mensaje de WhatsApp.
   nombre: z.string().trim().max(80).optional(),
   telefono: z.string().trim().max(40).optional(),
+  // TIPO de cliente de esta landing ("Plataforma", "Fichas"…): el contacto queda marcado solo y su Lead
+  // va al pixel con ese nombre (ver routes/segments.ts). Si la cuenta no tiene ese pixel, se ignora.
+  segmento: z.string().trim().max(40).optional(),
 });
 
 const shortRef = () => crypto.randomBytes(4).toString("hex").toUpperCase().slice(0, 7);
@@ -134,11 +137,24 @@ landRouter.post("/track", async (req, res) => {
     // Lead por CAPI (best-effort, mismo eventId que el pixel del navegador → dedup). fbc derivado del fbclid
     // si no vino la cookie _fbc (formato de Meta). Sin pixel del cliente, es no-op silencioso.
     const fbcEff = fbc || (fbclid ? `fb.1.${contact.createdAt.getTime()}.${fbclid}` : undefined);
-    const creds = await resolveUserPixel(acc.id, "Lead");
+    // Tipo de cliente que declara la landing → el contacto queda marcado (mismo efecto que marcarlo a mano
+    // en el Inbox) y el Lead sale al pixel de ese tipo. Match por nombre sin mayúsculas.
+    if (parsed.data.segmento) {
+      const seg = await prisma.pixel.findFirst({
+        where: { userId: acc.id, hidden: false, mirror: false, label: { equals: parsed.data.segmento, mode: "insensitive" } },
+        select: { id: true },
+      });
+      if (seg) await prisma.contactSegment.create({ data: { userId: acc.id, contactId: contact.id, pixelRowId: seg.id } }).catch(() => undefined);
+    }
+    const creds = await resolveContactPixel(acc.id, contact.id, "Lead");
     if (creds) {
       void sendCapiEvent({
         eventName: "Lead", externalId, fbp, fbc: fbcEff, eventId: eid,
         clientIp: req.ip, userAgent: req.get("user-agent") ?? undefined,
+        // Nombre y teléfono del formulario (se hashean en sendCapiEvent): suben la calidad de coincidencia
+        // del Lead, que antes salía solo con fbp/fbc/IP.
+        phone: phoneOk ?? (formPhone.length >= 8 && formPhone.length <= 15 ? formPhone : undefined),
+        firstName: formName ?? undefined,
         pixelId: creds.pixelId, capiToken: creds.capiToken,
       }).catch(() => undefined);
     }
