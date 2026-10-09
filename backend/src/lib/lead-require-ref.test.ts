@@ -22,6 +22,8 @@ vi.mock("./prisma.js", () => ({
 }));
 vi.mock("./pixel.js", () => ({
   resolveUserPixel: vi.fn(async () => ({ pixelId: "pix-1", capiToken: "tok-1" })),
+  // fireMetaEvent elige el pixel por contacto (tipo de cliente) y cae al principal: mismo pixel acá.
+  resolveContactPixel: vi.fn(async () => ({ pixelId: "pix-1", capiToken: "tok-1" })),
   resolveShadowPixels: vi.fn(async () => []),
 }));
 vi.mock("./capi-guard.js", () => ({ notifyMissingPixel: vi.fn() }));
