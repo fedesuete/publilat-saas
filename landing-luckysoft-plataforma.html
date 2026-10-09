@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Lucky Soft — Tu propia plataforma en 7 días</title>
-<meta name="description" content="Plataforma propia llave en mano: tu marca, tu panel de cajeros y el control de tus ganancias. Lista en 7 días." />
+<meta name="description" content="Plataforma propia llave en mano con chat propio: tu marca, tu panel de cajeros y sin depender de WhatsApp. Lista en 7 días, desde USD 200 por mes." />
 <!-- Landing SOLO SERVIDOR: sin pixel de navegador. El publicador de Publi.lat respeta esta marca y no
      inyecta ningún pixel. Toda la medición va por CAPI desde /api/land/track, que manda el Lead al pixel
      del tipo de cliente y SOLO si el interesado califica. -->
@@ -49,6 +49,22 @@
   .tit{text-align:center;margin-bottom:26px}
   .tit h2{font-size:clamp(26px,5vw,40px);line-height:1.15}
   .tit p{color:var(--gris);margin-top:8px}
+
+  /* chat propio */
+  .chatsec{display:grid;grid-template-columns:1.05fr .95fr;gap:28px;align-items:center;background:linear-gradient(135deg,rgba(201,161,74,.10),rgba(37,211,102,.05));border:1px solid rgba(201,161,74,.35);border-radius:22px;padding:28px}
+  .chatsec .tag{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.16em;color:#062a14;background:var(--verde);padding:5px 10px;border-radius:999px}
+  .chatsec h2{font-size:clamp(26px,4.6vw,38px);line-height:1.12;margin:12px 0 10px;text-align:left}
+  .chatsec p.lead{color:#C9CCD3;margin-bottom:14px}
+  .chatsec ul li{list-style:none;padding:7px 0;color:#E4E5E9;font-size:15px}
+  .chatsec ul li b{color:var(--oro2)}
+  .tel-mock{background:#0b141a;border:1px solid var(--borde);border-radius:26px;padding:14px;max-width:320px;width:100%;margin:0 auto;box-shadow:0 24px 60px rgba(0,0,0,.55)}
+  .tel-mock .hd{display:flex;align-items:center;gap:10px;padding:6px 6px 12px;border-bottom:1px solid var(--borde)}
+  .tel-mock .av{width:34px;height:34px;border-radius:50%;background:linear-gradient(180deg,#F3D78E,var(--oro));display:grid;place-items:center;color:#1a1204;font-weight:800;font-size:13px}
+  .tel-mock .hd small{display:block;color:#37d67a;font-size:11px}
+  .burb{max-width:82%;padding:9px 12px;border-radius:14px;font-size:13.5px;margin:9px 0;line-height:1.35}
+  .burb.j{background:#1f2c33;border-top-left-radius:4px}
+  .burb.c{background:#005c4b;margin-left:auto;border-top-right-radius:4px}
+  .burb.s{background:rgba(201,161,74,.15);color:var(--oro2);text-align:center;margin:10px auto;font-size:12px;max-width:100%}
 
   /* comparativa */
   .vs{display:grid;grid-template-columns:1fr 1fr;gap:14px}
@@ -130,6 +146,7 @@
   .inapp a{display:inline-block;background:linear-gradient(180deg,#F3D78E,var(--oro));color:#1a1204;text-decoration:none;font-weight:800;padding:14px 22px;border-radius:12px}
 
   @media (max-width:820px){
+    .chatsec{grid-template-columns:1fr;padding:22px}
     .grid{grid-template-columns:1fr 1fr}
     .pasos{grid-template-columns:1fr 1fr}
     .planes{grid-template-columns:1fr;gap:22px}
@@ -157,10 +174,34 @@
     <p class="sub">Con tu marca, tu panel de cajeros y el control total de tus ganancias. Sin programadores, sin equipo técnico y sin experiencia previa: nosotros armamos todo.</p>
     <a class="cta" href="#empezar">Quiero mi plataforma →</a>
     <div class="chips">
-      <span>🎮 +7.000 juegos</span><span>🃏 Casino en vivo</span><span>⚽ Deportes</span><span>🚀 Crash</span><span>💬 Soporte 24/7 en español</span>
+      <span>💬 Chat propio, sin depender de WhatsApp</span><span>🎮 +7.000 juegos</span><span>🃏 Casino en vivo</span><span>⚽ Deportes</span><span>🚀 Crash</span><span>💬 Soporte 24/7 en español</span>
     </div>
     <div class="panel"><img src="{{PANEL}}" alt="Panel de administración de Lucky Soft" width="960" height="473" loading="lazy" /></div>
     <p class="cap">Tu panel: ventas, retiros y neto del mes, y quién está conectado, en una sola pantalla.</p>
+  </section>
+
+  <section>
+    <div class="chatsec">
+      <div>
+        <span class="tag">LO QUE TE CAMBIA EL NEGOCIO</span>
+        <h2>Tu propio chat. <span class="oro">Chau a depender de WhatsApp.</span></h2>
+        <p class="lead">El mayor problema de este negocio es que te bloqueen la línea: perdés a tus jugadores de un día para el otro. Con Lucky Soft tus jugadores te escriben <b>dentro de tu plataforma</b>.</p>
+        <ul>
+          <li>🔒 <b>No te pueden bloquear el número:</b> el chat es tuyo, no de WhatsApp.</li>
+          <li>👥 <b>No perdés contactos:</b> todas las charlas quedan en tu plataforma.</li>
+          <li>💰 <b>Cargas y retiros desde el mismo chat</b>, con tus cajeros.</li>
+          <li>📱 <b>Atendés desde el celular</b>, igual que en WhatsApp.</li>
+        </ul>
+      </div>
+      <div class="tel-mock" aria-hidden="true">
+        <div class="hd"><span class="av">TU</span><div><b style="font-size:14px">Tu marca</b><small>● en línea</small></div></div>
+        <div class="burb j">Hola! Quiero cargar 💸</div>
+        <div class="burb c">¡Hola! Pasame el comprobante y te acredito al toque 🙌</div>
+        <div class="burb j">Listo, ahí va 📎</div>
+        <div class="burb s">✅ Carga acreditada</div>
+        <div class="burb c">¡Listo! Ya tenés tus fichas. ¡Suerte! 🍀</div>
+      </div>
+    </div>
   </section>
 
   <section>
@@ -174,6 +215,7 @@
         <ul>
           <li>Te quedás con un porcentaje que decide otro</li>
           <li>Los jugadores no son tuyos</li>
+          <li>Si te bloquean el WhatsApp, perdés a tus jugadores</li>
           <li>Si te cortan, perdés todo de un día para el otro</li>
           <li>No podés poner tu marca ni tus promos</li>
         </ul>
@@ -183,6 +225,7 @@
         <ul>
           <li>Las ganancias son tuyas</li>
           <li>Tus jugadores, tu base, tu marca</li>
+          <li>Chat propio: nadie te bloquea la línea</li>
           <li>Armás tu red de cajeros y agentes</li>
           <li>Tus bonos, tus promos, tus reglas</li>
         </ul>
@@ -197,7 +240,7 @@
     <div class="grid">
       <div class="card"><div class="ic">🎨</div><h4>Tu marca</h4><p>Diseño personalizado, tu logo y tu dominio.</p></div>
       <div class="card"><div class="ic">🧑‍💼</div><h4>Panel de cajeros</h4><p>Creás agentes y cajeros, cargás y retirás fichas desde el celular.</p></div>
-      <div class="card"><div class="ic">💬</div><h4>Chat propio</h4><p>Atendé a tus jugadores dentro de la plataforma, sin depender de que no se te caiga el WhatsApp.</p></div>
+      <div class="card" style="border-color:rgba(201,161,74,.45)"><div class="ic">💬</div><h4>Chat propio integrado</h4><p>Tus jugadores te escriben dentro de la plataforma. Sin WhatsApp, sin bloqueos, sin perder contactos.</p></div>
       <div class="card"><div class="ic">🎮</div><h4>+7.000 juegos</h4><p>Slots de los proveedores más jugados, casino en vivo, deportes y crash.</p></div>
       <div class="card"><div class="ic">🎁</div><h4>Bonos y afiliados</h4><p>Promociones y sistema de afiliados para hacer crecer tu base.</p></div>
       <div class="card"><div class="ic">🛟</div><h4>Soporte 24/7</h4><p>En español, con gente que conoce el negocio.</p></div>
@@ -220,16 +263,25 @@
 
   <section>
     <div class="tit">
-      <h2>Planes <span class="oro">de pago único</span></h2>
-      <p>Todos incluyen onboarding, capacitación y soporte.</p>
+      <h2>Elegí cómo <span class="oro">arrancar</span></h2>
+      <p>Todos incluyen chat propio, onboarding, capacitación y soporte.</p>
     </div>
     <div class="planes">
+      <div class="plan">
+        <h3>SIMPLE</h3>
+        <div class="precio">USD 200</div>
+        <div class="per">por mes + las fichas que uses</div>
+        <ul>
+          <li>Tu marca, lista para operar</li><li>Billetera propia</li><li>Chat propio integrado</li><li>Panel de cajeros y agentes</li><li>Sin una inversión inicial grande</li><li>Soporte 24/7</li>
+        </ul>
+        <div class="vp"><a href="#empezar">Arrancar con USD 200</a></div>
+      </div>
       <div class="plan">
         <h3>STARTER</h3>
         <div class="precio">USD 2.500</div>
         <div class="per">Pago único</div>
         <ul>
-          <li>Slots premium</li><li>Diseño personalizado</li><li>CRM integrado</li><li>Bonos, promos y afiliados</li><li>Dominio gratis 1 año</li><li>Soporte 24/7</li>
+          <li>Slots premium</li><li>Diseño personalizado</li><li>Chat propio + CRM</li><li>Bonos, promos y afiliados</li><li>Dominio gratis 1 año</li><li>Soporte 24/7</li>
         </ul>
         <div class="vp"><a href="#empezar">Empezar ahora</a></div>
       </div>
@@ -243,15 +295,6 @@
         </ul>
         <div class="vp"><a href="#empezar">Elegir este plan</a></div>
       </div>
-      <div class="plan">
-        <h3>PREMIUM</h3>
-        <div class="precio">USD 15.000</div>
-        <div class="per">Pago único</div>
-        <ul>
-          <li>Todo lo del Completo</li><li>5 marcas</li><li>Pasarela de pagos en cripto</li><li>App instalable</li><li>Diseño 100% a medida</li><li>Onboarding 30 días</li>
-        </ul>
-        <div class="vp"><a href="#empezar">Hablar con ventas</a></div>
-      </div>
     </div>
     <p class="nota">Precios en dólares. Consultanos por financiación y planes a medida.</p>
   </section>
@@ -261,7 +304,7 @@
     <details><summary>¿Necesito saber de programación?</summary><p>No. Te entregamos la plataforma funcionando y te enseñamos a usar el panel. Vos te ocupás de tus jugadores y tus cajeros.</p></details>
     <details><summary>¿Cuánto tarda en estar lista?</summary><p>Alrededor de 7 días desde que elegís el plan y nos pasás tu marca.</p></details>
     <details><summary>¿Cómo cargo fichas a mis jugadores?</summary><p>Desde tu panel: creás cajeros y agentes, cada uno con su saldo, y cargan o retiran desde el celular.</p></details>
-    <details><summary>¿Y si me bloquean el WhatsApp?</summary><p>La plataforma trae chat propio: tus jugadores te escriben adentro, así no dependés de que te funcione la línea.</p></details>
+    <details open><summary>¿Y si me bloquean el WhatsApp?</summary><p>No te afecta: la plataforma trae su propio chat. Tus jugadores te escriben adentro, cargan y retiran desde ahí, y las conversaciones quedan guardadas en tu plataforma. WhatsApp pasa a ser opcional.</p></details>
     <details><summary>¿Puedo ver una demo antes?</summary><p>Sí. Completá el formulario y te mostramos una plataforma funcionando.</p></details>
   </section>
 
@@ -320,10 +363,11 @@
         </div>
 
         <div id="bloqueInv">
-          <label class="l">Los planes arrancan en USD 2.500 de pago único. ¿Contás con ese monto?</label>
+          <label class="l">¿Con qué inversión querés arrancar?</label>
           <div class="opts">
-            <label class="opt"><input type="radio" name="inv" value="si" /> Sí</label>
-            <label class="opt"><input type="radio" name="inv" value="no" /> Todavía no</label>
+            <label class="opt"><input type="radio" name="inv" value="simple" /> Plan Simple: USD 200 por mes</label>
+            <label class="opt"><input type="radio" name="inv" value="unico" /> Pago único: desde USD 2.500</label>
+            <label class="opt"><input type="radio" name="inv" value="no" /> Todavía no tengo para invertir</label>
           </div>
         </div>
 
@@ -401,13 +445,14 @@
     e.preventDefault();
     var nombre = $("nombre").value.trim(), que = elegido("que"), cuando = elegido("cuando"), inv = elegido("inv");
     if (!cuando) { $("err2").textContent = "Elegí cuándo querés arrancar."; return; }
-    if (que === "Plataforma" && !inv) { $("err2").textContent = "Contanos si contás con el monto."; return; }
+    if (que === "Plataforma" && !inv) { $("err2").textContent = "Elegí con qué inversión querés arrancar."; return; }
     $("err2").textContent = "";
 
     /* CALIFICA = está por arrancar y (si es plataforma) tiene el monto. Solo a esos se los registra y se le
        manda el Lead a Meta: así el pixel aprende de gente que compra, no de curiosos. */
-    var califica = cuando !== "mirando" && (que !== "Plataforma" || inv === "si");
-    var base = "Hola! Soy " + nombre + ", " + TEXTO[que] + ". " + CUANDO[cuando] + ".";
+    var califica = cuando !== "mirando" && (que !== "Plataforma" || (inv !== "" && inv !== "no"));
+    var PLAN = { simple: " Me interesa el plan de USD 200 por mes.", unico: " Me interesa un plan de pago único." };
+    var base = "Hola! Soy " + nombre + ", " + TEXTO[que] + ". " + CUANDO[cuando] + "." + (que === "Plataforma" && PLAN[inv] ? PLAN[inv] : "");
 
     if (!califica) {
       $("nomG").textContent = nombre;
