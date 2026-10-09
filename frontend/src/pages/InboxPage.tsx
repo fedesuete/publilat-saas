@@ -5,6 +5,7 @@ import { getSocket, type InboxMessagePayload, type InboxMessageStatusPayload } f
 import type { Msg, Stage } from "../lib/types";
 import { fmtDate } from "../lib/format";
 import { Button, Input, StageBadge, ErrorMsg } from "../components/ui";
+import SegmentPicker from "../components/SegmentPicker"; // tipo de cliente → a qué pixel van sus eventos
 
 interface Conversation {
   id: string;
@@ -551,6 +552,7 @@ export default function InboxPage() {
                   {current?.number}{current?.line ? ` · vía ${current.line}` : ""}
                 </div>
               </div>
+              {current && <SegmentPicker contactId={current.id} />}
               {current && <StageBadge stage={current.stage} />}
               {current && (
                 <button

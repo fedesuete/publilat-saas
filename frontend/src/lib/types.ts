@@ -80,4 +80,5 @@ export interface Pixel {
   tokenMask: string;
   createdAt: string;
   mirror?: boolean; // espejo: pixel de respaldo, recibe copia de todos los eventos
+  label?: string | null; // tipo de cliente ("Fichas"…): pixel de segmento, nunca el principal
 }

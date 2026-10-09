@@ -3,7 +3,7 @@
 // Se usa desde el endpoint /api/leads/:id/purchase Y desde la detección automática de pago.
 import { prisma } from "./prisma.js";
 import { sendCapiEvent, globalPixelAllowed, contactFbc, metaErrorDetail } from "./meta-capi.js";
-import { resolveUserPixel } from "./pixel.js";
+import { resolveContactPixel } from "./pixel.js";
 import { fireIntegration } from "./integrations.js";
 import { emitToUser } from "./io.js";
 import { notify } from "./notifications.js";
@@ -80,7 +80,8 @@ export async function markPurchase(
     source: contact.source,
   });
 
-  const creds = await resolveUserPixel(userId, "Purchase");
+  // Pixel del TIPO de cliente si el operador lo marcó (ContactSegment); si no, el principal.
+  const creds = await resolveContactPixel(userId, contact.id, "Purchase");
   const metaEvent = await prisma.metaEvent.create({
     data: {
       userId,

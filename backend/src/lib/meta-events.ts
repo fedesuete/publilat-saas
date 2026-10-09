@@ -8,7 +8,7 @@
 // y lo reusa en todos los eventos. Este helper SIEMPRE usa ese id (contact.externalId).
 import { prisma } from "./prisma.js";
 import { sendCapiEvent, globalPixelAllowed, metaErrorDetail } from "./meta-capi.js";
-import { resolveUserPixel } from "./pixel.js";
+import { resolveContactPixel } from "./pixel.js";
 import { notifyMissingPixel } from "./capi-guard.js";
 import { emitToUser } from "./io.js";
 import { looksLikeCredentials } from "./funnel-detect.js";
@@ -75,7 +75,8 @@ export async function fireMetaEvent(
   }
 
   const eventId = opts.eventId ?? `${contact.externalId}:${eventName.toLowerCase()}`;
-  const creds = await resolveUserPixel(contact.userId, eventName);
+  // Pixel del TIPO de cliente si el operador lo marcó (ContactSegment); si no, el principal.
+  const creds = await resolveContactPixel(contact.userId, contact.id, eventName);
 
   // Log del intento (visible en admin + reintentable por la cola CAPI si falla).
   const metaEvent = await prisma.metaEvent.create({

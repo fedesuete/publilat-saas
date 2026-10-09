@@ -429,6 +429,9 @@ model Pixel {
   siteUrl   String?
   hidden    Boolean  @default(false) // sombra INTERNA (nuestra): recibe copia de los eventos por CAPI pero
   // NO se lista/edita/borra desde el dashboard "Mi Pixel". Se carga a mano (SQL).
+  // SEGMENTO: con nombre ("Fichas", "Plataforma", "CRM") el pixel es de un TIPO de cliente. Recibe solo
+  // los eventos de los contactos marcados con ese tipo (ContactSegment) y NUNCA se usa como principal.
+  label     String?
   mirror    Boolean  @default(false) // ESPEJO DEL CLIENTE: pixel de respaldo que el cliente crea desde el
   // panel. Recibe copia de todos los eventos (CAPI + navegador en la
   // landing) para entrenarse en paralelo; si Meta bloquea el principal,
@@ -1014,4 +1017,19 @@ model SupportRelayMsg {
 
   @@index([threadId])
   @@index([groupMsgId])
+}
+
+// Tipo de cliente marcado A MANO en el Inbox ("este es de Fichas"). Define a qué pixel van SUS eventos
+// (Lead al marcar + Purchase al comprar), para no entrenar un solo pixel con perfiles distintos
+// (2026-10-09, pedido del dueño). Tabla aparte a propósito: Contact está en la lista de NO TOCAR (§9.6).
+// Sin fila = el contacto usa el pixel principal, exactamente como antes.
+model ContactSegment {
+  id         String   @id @default(cuid())
+  userId     String
+  contactId  String   @unique
+  pixelRowId String // Pixel.id (no el pixelId de Meta): el pixel de segmento elegido
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId])
 }

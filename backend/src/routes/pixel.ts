@@ -22,6 +22,9 @@ const createSchema = z.object({
   // true = pixel ESPEJO (respaldo del cliente): nunca se usa como principal, pero recibe copia de
   // todos los eventos (CAPI + navegador en la landing) para entrenarse en paralelo.
   mirror: z.boolean().optional(),
+  // Nombre del TIPO de cliente ("Fichas", "Plataforma", "CRM"). Con nombre, el pixel es de segmento:
+  // recibe solo los eventos de los contactos marcados con ese tipo y nunca es el principal.
+  label: z.string().trim().max(40).optional().or(z.literal("")),
 });
 
 const updateSchema = z.object({
@@ -29,17 +32,18 @@ const updateSchema = z.object({
   capiToken: CAPI_TOKEN.optional(), // si llega, reemplaza el cifrado
   eventType: z.enum(["Lead", "Purchase"]).optional(),
   siteUrl: z.string().url("La URL del sitio no es válida (dejala vacía si no tenés).").optional().or(z.literal("")),
+  label: z.string().trim().max(40).optional().or(z.literal("")),
 });
 
 // Forma pública: sin el token entero, con la máscara.
-function toPublic(p: { id: string; pixelId: string; eventType: string; siteUrl: string | null; capiToken: string; createdAt: Date; mirror?: boolean }) {
+function toPublic(p: { id: string; pixelId: string; eventType: string; siteUrl: string | null; capiToken: string; createdAt: Date; mirror?: boolean; label?: string | null }) {
   let tokenMask = "••••";
   try {
     tokenMask = maskSecret(decryptSecret(p.capiToken));
   } catch {
     tokenMask = "•••• (error)";
   }
-  return { id: p.id, pixelId: p.pixelId, eventType: p.eventType, siteUrl: p.siteUrl, tokenMask, createdAt: p.createdAt, mirror: !!p.mirror };
+  return { id: p.id, pixelId: p.pixelId, eventType: p.eventType, siteUrl: p.siteUrl, tokenMask, createdAt: p.createdAt, mirror: !!p.mirror, label: p.label ?? null };
 }
 
 // GET /api/pixels — pixels del usuario (token enmascarado).
@@ -123,7 +127,7 @@ pixelRouter.post("/", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Input inválido", details: parsed.error.flatten() });
   }
-  const { pixelId, capiToken, eventType, siteUrl, mirror } = parsed.data;
+  const { pixelId, capiToken, eventType, siteUrl, mirror, label } = parsed.data;
   // Validar contra Meta ANTES de guardar: si el token/pixel están mal, avisamos en el acto.
   const v = await validatePixelCreds(pixelId, capiToken);
   if (!v.ok) return res.status(400).json({ error: `El Pixel o el token no son válidos según Meta: ${v.error}` });
@@ -135,6 +139,7 @@ pixelRouter.post("/", async (req, res) => {
       eventType,
       siteUrl: siteUrl || null,
       mirror: mirror ?? false, // espejo = respaldo entrenado en paralelo, nunca principal
+      label: label ? label : null, // con nombre = pixel de un tipo de cliente
     },
   });
   return res.status(201).json({ pixel: toPublic(pixel) });
@@ -153,6 +158,7 @@ pixelRouter.put("/:id", async (req, res) => {
   if (parsed.data.pixelId) data.pixelId = parsed.data.pixelId;
   if (parsed.data.eventType) data.eventType = parsed.data.eventType;
   if (parsed.data.siteUrl !== undefined) data.siteUrl = parsed.data.siteUrl || null;
+  if (parsed.data.label !== undefined) data.label = parsed.data.label || null;
   if (parsed.data.capiToken) data.capiToken = encryptSecret(parsed.data.capiToken);
 
   // Si cambió el pixel o el token, revalidar contra Meta (token nuevo o el existente descifrado).

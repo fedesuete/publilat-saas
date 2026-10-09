@@ -31,6 +31,7 @@ import { landingTemplatesRouter } from "./routes/landing-templates.js";
 import { integrationsRouter, inboundIntegrationsRouter } from "./routes/integrations.js";
 import { leadgenRouter } from "./routes/leadgen.js";
 import { pixelRouter } from "./routes/pixel.js";
+import { segmentsRouter } from "./routes/segments.js"; // tipo de cliente → pixel (marcado en el Inbox)
 import { setupRouter } from "./routes/setup.js";
 import { adminRouter } from "./routes/admin.js";
 import { supportRouter } from "./routes/support.js";
@@ -201,6 +202,7 @@ app.use("/api/landings", apiLimiter, requireAuth, landingsRouter);
 app.use("/api/landing-templates", apiLimiter, requireAuth, landingTemplatesRouter);
 app.use("/api/integrations", apiLimiter, requireAuth, integrationsRouter);
 app.use("/api/pixels", apiLimiter, requireAuth, pixelRouter);
+app.use("/api/segments", apiLimiter, requireAuth, segmentsRouter);
 app.use("/api/setup", apiLimiter, requireAuth, setupRouter);
 app.use("/api/support", apiLimiter, requireAuth, supportRouter);
 app.use("/api/notifications", apiLimiter, requireAuth, notificationsRouter);

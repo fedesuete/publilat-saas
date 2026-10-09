@@ -13,9 +13,10 @@ interface FormState {
   eventType: EventType;
   siteUrl: string;
   mirror: boolean; // true = pixel ESPEJO (respaldo entrenado en paralelo)
+  label: string; // tipo de cliente ("Fichas", "Plataforma"…): con nombre = pixel de segmento
 }
 
-const EMPTY: FormState = { id: null, pixelId: "", capiToken: "", eventType: "Lead", siteUrl: "", mirror: false };
+const EMPTY: FormState = { id: null, pixelId: "", capiToken: "", eventType: "Lead", siteUrl: "", mirror: false, label: "" };
 
 interface Health {
   hasPixel: boolean;
@@ -78,7 +79,7 @@ export default function PixelPage() {
   }, []);
 
   const startEdit = (p: Pixel) => {
-    setForm({ id: p.id, pixelId: p.pixelId, capiToken: "", eventType: p.eventType, siteUrl: p.siteUrl ?? "", mirror: !!p.mirror });
+    setForm({ id: p.id, pixelId: p.pixelId, capiToken: "", eventType: p.eventType, siteUrl: p.siteUrl ?? "", mirror: !!p.mirror, label: p.label ?? "" });
     setError(null);
   };
 
@@ -94,6 +95,7 @@ export default function PixelPage() {
           pixelId: form.pixelId,
           eventType: form.eventType,
           siteUrl: form.siteUrl,
+          label: form.label,
         };
         if (form.capiToken.trim()) body.capiToken = form.capiToken.trim();
         await api.put(`/api/pixels/${form.id}`, body);
@@ -104,6 +106,7 @@ export default function PixelPage() {
           eventType: form.eventType,
           siteUrl: form.siteUrl,
           mirror: form.mirror,
+          label: form.mirror ? "" : form.label,
         });
       }
       reset();
@@ -265,6 +268,22 @@ export default function PixelPage() {
                 placeholder="https://tudominio.com"
               />
             </div>
+            {!form.mirror && (
+              <div>
+                <label className="mb-1 block text-xs text-slate-400">Tipo de cliente (opcional)</label>
+                <Input
+                  value={form.label}
+                  onChange={(e) => setForm({ ...form, label: e.target.value })}
+                  placeholder="Ej: Fichas · Plataforma · CRM"
+                  maxLength={40}
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Dejalo vacío para tu pixel <b className="text-slate-300">principal</b>. Con nombre, este pixel solo recibe los
+                  eventos de los clientes que marques con ese tipo arriba del chat, así cada pixel aprende de un solo
+                  tipo de cliente. Usalo en la campaña de ese tipo.
+                </p>
+              </div>
+            )}
             {!editing && (
               <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-slate-700 bg-slate-800/50 p-3">
                 <input
@@ -325,6 +344,15 @@ export default function PixelPage() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-sm text-slate-100">{p.pixelId}</span>
+                        {p.label ? (
+                          <span className="rounded-full border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[10px] font-bold text-violet-300">
+                            🏷️ {p.label}
+                          </span>
+                        ) : !p.mirror ? (
+                          <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                            PRINCIPAL
+                          </span>
+                        ) : null}
                         {p.mirror && (
                           <span className="rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[10px] font-bold text-sky-300">
                             🪞 ESPEJO

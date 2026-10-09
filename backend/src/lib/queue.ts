@@ -6,7 +6,7 @@ import { Queue, Worker, type Job } from "bullmq";
 import { prisma } from "./prisma.js";
 import { emitToUser } from "./io.js";
 import { sendCapiEvent, contactFbc } from "./meta-capi.js";
-import { resolveUserPixel } from "./pixel.js";
+import { resolveUserPixel, resolveContactPixel } from "./pixel.js";
 import { consumeDayAndActivate, consumeChatDayAndActivate } from "./access.js";
 import { notifyMissingPixel } from "./capi-guard.js";
 import { getEngine } from "./wa-engine.js";
@@ -163,7 +163,8 @@ export async function retryFailedCapi(opts?: { includeDead?: boolean; max?: numb
     const contact = await prisma.contact.findUnique({ where: { id: ev.contactId! } });
     if (!contact) continue;
     const eventName: "Lead" | "Purchase" = ev.eventName === "Purchase" ? "Purchase" : "Lead";
-    const creds = await resolveUserPixel(ev.userId, eventName);
+    // El reintento va al MISMO pixel que el original: el del tipo de cliente si está marcado.
+    const creds = await resolveContactPixel(ev.userId, ev.contactId, eventName);
     if (!creds) { void notifyMissingPixel(ev.userId); continue; } // sin pixel: avisamos y no gastamos intentos
     try {
       const result = await sendCapiEvent({

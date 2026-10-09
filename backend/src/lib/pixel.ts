@@ -14,14 +14,43 @@ export async function resolveUserPixel(
   eventName: "Lead" | "Purchase" | "CompleteRegistration"
 ): Promise<ResolvedPixel | undefined> {
   // El PRIMARIO nunca es un sombra interno (hidden) ni el espejo del cliente (mirror): esos solo
-  // reciben la COPIA (fan-out).
+  // reciben la COPIA (fan-out). Tampoco un pixel de SEGMENTO (con label): esos son solo para los
+  // contactos marcados con ese tipo. Si la cuenta SOLO tiene pixeles con label, se usa el más viejo
+  // (mejor eso que dejar los eventos sin pixel). Orden fijo por fecha: antes era "el primero que
+  // devuelva la base", que con varios pixeles es al azar.
+  const base = { userId, hidden: false, mirror: false } as const;
+  const orden = { createdAt: "asc" } as const;
   const pixel =
-    (await prisma.pixel.findFirst({ where: { userId, eventType: eventName, hidden: false, mirror: false } })) ??
-    (await prisma.pixel.findFirst({ where: { userId, hidden: false, mirror: false } }));
+    (await prisma.pixel.findFirst({ where: { ...base, label: null, eventType: eventName }, orderBy: orden })) ??
+    (await prisma.pixel.findFirst({ where: { ...base, label: null }, orderBy: orden })) ??
+    (await prisma.pixel.findFirst({ where: base, orderBy: orden }));
 
   if (!pixel) return undefined;
   // El token está cifrado en reposo; lo desciframos antes de usarlo en la CAPI.
   return { pixelId: pixel.pixelId, capiToken: decryptSecret(pixel.capiToken) };
+}
+
+// Pixel para un evento de UN CONTACTO: si el operador lo marcó con un tipo de cliente (ContactSegment),
+// va al pixel de ese tipo; si no, al principal (lo de siempre). Lo usan Lead/Purchase del CRM.
+export async function resolveContactPixel(
+  userId: string,
+  contactId: string | null | undefined,
+  eventName: "Lead" | "Purchase" | "CompleteRegistration",
+): Promise<ResolvedPixel | undefined> {
+  if (contactId) {
+    const seg = await prisma.contactSegment.findUnique({ where: { contactId }, select: { pixelRowId: true } }).catch(() => null);
+    if (seg) {
+      const p = await prisma.pixel.findFirst({ where: { id: seg.pixelRowId, userId, hidden: false, mirror: false } });
+      if (p) {
+        try {
+          return { pixelId: p.pixelId, capiToken: decryptSecret(p.capiToken) };
+        } catch {
+          /* token roto: cae al principal antes que perder el evento */
+        }
+      }
+    }
+  }
+  return resolveUserPixel(userId, eventName);
 }
 
 // Pixeles SOMBRA del usuario (hidden:true): reciben una copia de CADA evento CAPI (Lead/Purchase/
