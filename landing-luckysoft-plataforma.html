@@ -469,6 +469,8 @@
         body: JSON.stringify({
           accountSlug: CUENTA, ref: ref, eventId: "ls-" + ref,
           nombre: nombre, telefono: telE164(), segmento: SEGMENTO,
+          categoria: que, plazo: cuando, inversion: (que === "Plataforma" && inv) ? inv : undefined,
+          url: location.origin + location.pathname,
           fbclid: here.get("fbclid") || undefined, fbp: cookie("_fbp") || undefined, fbc: cookie("_fbc") || undefined
         })
       }).catch(function () {});

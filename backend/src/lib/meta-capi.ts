@@ -49,6 +49,9 @@ export interface CapiEventInput {
   currency?: string;           // ej "ARS"
   eventId?: string;            // para deduplicar con el Pixel del navegador
   eventSourceUrl?: string;     // url donde ocurrió el evento (override del global)
+  // Parámetros extra de custom_data (ej. content_category, plazo, inversion de la landing B2B): con ellos
+  // se arman conversiones personalizadas en Meta. Se suman a value/currency del Purchase.
+  customData?: Record<string, string | number>;
   // Atribución por anuncio Click-to-WhatsApp (CTWA, vía Cloud API):
   // - website: flujo landing (default). business_messaging: CTWA con ctwa_clid (y WABA).
   // - chat: lead de conversación SIN clid ni WABA (ej. backfill de mensajes directos);
@@ -146,6 +149,9 @@ export async function sendCapiEvent(input: CapiEventInput): Promise<CapiResult> 
       value: input.value ?? 0,
       currency: input.currency ?? "ARS",
     };
+  }
+  if (input.customData && Object.keys(input.customData).length) {
+    event.custom_data = { ...input.customData, ...((event.custom_data as Record<string, unknown>) ?? {}) };
   }
 
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/${pixelId}/events`;

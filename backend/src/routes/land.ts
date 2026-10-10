@@ -3,6 +3,7 @@
 // (WhatsApp + email) y devuelve una URL de auto-login para dejar al cliente logueado en el panel y que
 // compre sus días. No usa cookie cross-site (frágil): el token va en la URL de /api/auth/autologin, que
 // SÍ setea la cookie same-site en app.publi.lat.
+import { customDataLanding } from "../lib/landing-custom-data.js";
 import { Router } from "express";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
@@ -92,7 +93,14 @@ const trackSchema = z.object({
   // TIPO de cliente de esta landing ("Plataforma", "Fichas"…): el contacto queda marcado solo y su Lead
   // va al pixel con ese nombre (ver routes/segments.ts). Si la cuenta no tiene ese pixel, se ignora.
   segmento: z.string().trim().max(40).optional(),
+  // Respuestas del formulario calificado (landing B2B): viajan en custom_data del Lead para armar
+  // conversiones personalizadas en Meta. En minúscula y con valores fijos.
+  categoria: z.string().trim().max(40).optional(), // Plataforma | Fichas | CRM | A medida
+  plazo: z.enum(["ya", "mes", "mirando"]).optional(),
+  inversion: z.enum(["simple", "unico", "no"]).optional(),
+  url: z.string().trim().url().max(500).optional(), // url de la landing (event_source_url)
 });
+
 
 const shortRef = () => crypto.randomBytes(4).toString("hex").toUpperCase().slice(0, 7);
 
@@ -155,6 +163,8 @@ landRouter.post("/track", async (req, res) => {
         // del Lead, que antes salía solo con fbp/fbc/IP.
         phone: phoneOk ?? (formPhone.length >= 8 && formPhone.length <= 15 ? formPhone : undefined),
         firstName: formName ?? undefined,
+        customData: customDataLanding(parsed.data),
+        ...(parsed.data.url ? { eventSourceUrl: parsed.data.url } : {}),
         pixelId: creds.pixelId, capiToken: creds.capiToken,
       }).catch(() => undefined);
     }
