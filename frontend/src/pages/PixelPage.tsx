@@ -35,6 +35,7 @@ export default function PixelPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [testCode, setTestCode] = useState("");
+  const [testPixel, setTestPixel] = useState(""); // "" = el principal; si no, el id de la fila a probar
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [currency, setCurrency] = useState("ARS");
@@ -122,16 +123,17 @@ export default function PixelPage() {
     setTesting(true);
     setTestResult(null);
     try {
-      const { data } = await api.post<{ ok: boolean; error?: string; live?: boolean }>(
+      const { data } = await api.post<{ ok: boolean; error?: string; live?: boolean; pixelId?: string }>(
         "/api/pixels/test",
-        testCode.trim() ? { testEventCode: testCode.trim() } : {},
+        { ...(testCode.trim() ? { testEventCode: testCode.trim() } : {}), ...(testPixel ? { pixelRowId: testPixel } : {}) },
       );
       if (data.ok) {
+        const a = data.pixelId ? ` al pixel ${data.pixelId}` : "";
         setTestResult({
           ok: true,
           msg: testCode.trim()
-            ? "✓ Meta recibió el evento de prueba. Miralo en vivo en Meta → Administrador de eventos → Eventos de prueba."
-            : "✓ Meta recibió el evento (Lead real). Aparece en Administrador de eventos → Actividad del pixel (puede tardar unos minutos).",
+            ? `✓ Meta recibió el evento de prueba${a}. Miralo en vivo en Meta → Administrador de eventos → ese pixel → Eventos de prueba.`
+            : `✓ Meta recibió el evento (Lead real)${a}. Aparece en Administrador de eventos → Actividad del pixel (puede tardar unos minutos).`,
         });
       } else {
         setTestResult({ ok: false, msg: data.error ?? "Meta no aceptó el evento." });
@@ -200,6 +202,20 @@ export default function PixelPage() {
               Eventos de prueba) para verlo ahí en vivo sin ensuciar tus datos. Sin código, se manda como un Lead real.
             </p>
             <div className="flex flex-wrap items-center gap-2">
+              {pixels.length > 1 && (
+                <select
+                  value={testPixel}
+                  onChange={(e) => setTestPixel(e.target.value)}
+                  className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-wa-green"
+                >
+                  <option value="">El principal (el que usa la cuenta)</option>
+                  {pixels.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.pixelId}{p.label ? ` · ${p.label}` : ""}{p.mirror ? " · espejo" : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
               <Input
                 value={testCode}
                 onChange={(e) => setTestCode(e.target.value)}

@@ -97,11 +97,21 @@ pixelRouter.get("/health", async (req, res) => {
 // confirme en el acto que su Pixel + token andan. Con `testEventCode` (de Meta → Administrador de eventos
 // → Eventos de prueba) el evento aparece ahí EN VIVO y NO ensucia los datos reales; sin código, va como un
 // Lead real. Devuelve si Meta lo recibió (events_received) o el error puntual de Meta.
-const testSchema = z.object({ testEventCode: z.string().trim().max(60).optional() });
+// `pixelRowId`: probar UN pixel puntual de la lista. Sin él, prueba el principal (el que usa la cuenta);
+// antes no se podía elegir y con dos pixeles sin tipo la prueba iba siempre al más viejo.
+const testSchema = z.object({ testEventCode: z.string().trim().max(60).optional(), pixelRowId: z.string().trim().max(40).optional() });
 pixelRouter.post("/test", async (req, res) => {
   const parsed = testSchema.safeParse(req.body ?? {});
   const testEventCode = parsed.success && parsed.data.testEventCode ? parsed.data.testEventCode : undefined;
-  const px = await resolveUserPixel(req.userId!, "Lead");
+  const rowId = parsed.success ? parsed.data.pixelRowId : undefined;
+  let px: { pixelId: string; capiToken: string } | undefined;
+  if (rowId) {
+    const row = await prisma.pixel.findFirst({ where: { id: rowId, userId: req.userId! }, select: { pixelId: true, capiToken: true } });
+    if (!row) return res.status(404).json({ ok: false, error: "Ese pixel no existe en tu cuenta." });
+    px = { pixelId: row.pixelId, capiToken: decryptSecret(row.capiToken) };
+  } else {
+    px = await resolveUserPixel(req.userId!, "Lead");
+  }
   if (!px) return res.status(400).json({ ok: false, error: "Todavía no tenés un Pixel configurado. Cargá tu Pixel ID + token de Conversions API arriba y probá de nuevo." });
   try {
     const r = await sendCapiEvent({
