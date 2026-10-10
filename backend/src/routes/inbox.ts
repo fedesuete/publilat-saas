@@ -10,6 +10,7 @@ import { checkWarmupGate } from "../lib/warmup.js";
 import { uniquifyAudio } from "../lib/audio-uniquify.js";
 import { maybeAutoRegister } from "../lib/meta-events.js";
 import { notifyBotOperatorActive } from "../lib/notify-bot.js";
+import { enviarImagenAContacto } from "../lib/wa-image.js";
 
 export const inboxRouter = Router();
 
@@ -413,6 +414,39 @@ inboxRouter.post("/:contactId/audio", async (req, res) => {
   });
   notifyBotOperatorActive(line.id, contact.phone, line.userId); // el bot cajero se calla 30 min (no pisa al operador)
   return res.status(201).json({ message: { id: message.id, direction: "out", body: "", status: message.status, mediaUrl, createdAt: message.createdAt } });
+});
+
+const IMAGEN_MIMES = ["image/jpeg", "image/png", "image/webp"] as const;
+const imageSchema = z.object({
+  image: z.string().min(1), // data URL o base64 pelado
+  caption: z.string().max(1024).optional(),
+});
+
+// POST /api/inbox/:contactId/image — el operador manda una imagen (foto, captura, comprobante) por
+// WhatsApp. El panel ya la achica antes de subirla; acá se valida tipo y tamaño y sale por wa-image.
+inboxRouter.post("/:contactId/image", async (req, res) => {
+  const parsed = imageSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const contact = await getOwnedContact(req.userId!, req.params.contactId);
+  if (!contact) return res.status(404).json({ error: "Contacto no encontrado" });
+  // Cura contact.lineId si estaba vacío (mismo criterio que texto y audio).
+  const line = await resolveContactLine(req.userId!, contact);
+  if (!line) return res.status(400).json({ error: "El contacto no tiene una línea para responder. Revisá que tengas una línea de WhatsApp activa." });
+
+  const mime = parsed.data.image.match(/^data:([^;]+);base64,/)?.[1] ?? "image/jpeg";
+  if (!(IMAGEN_MIMES as readonly string[]).includes(mime)) return res.status(400).json({ error: "Formato no soportado. Usá JPG, PNG o WEBP." });
+  const base64 = parsed.data.image.replace(/^data:[^;]+;base64,/, "");
+  const bytes = Buffer.from(base64, "base64").length;
+  if (bytes < 100) return res.status(400).json({ error: "La imagen llegó vacía" });
+  if (bytes > 8 * 1024 * 1024) return res.status(413).json({ error: "La imagen es muy pesada (máx 8 MB)" });
+
+  const r = await enviarImagenAContacto(req.userId!, contact.id, base64, mime, { caption: parsed.data.caption, guardarImagen: true });
+  if (!r.ok) return res.status(r.status).json({ error: r.error, ...(r.code ? { code: r.code } : {}) });
+  notifyBotOperatorActive(line.id, contact.phone, line.userId); // el bot cajero se calla 30 min (no pisa al operador)
+  const caption = parsed.data.caption?.trim() ?? "";
+  return res.status(201).json({
+    message: { id: r.message.id, direction: "out", body: caption, status: r.message.status, mediaUrl: `data:${mime};base64,${base64}`, createdAt: r.message.createdAt },
+  });
 });
 
 const audioClipSendSchema = z.object({ clipId: z.string().min(1) });

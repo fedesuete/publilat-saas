@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { ArrowLeft, PanelLeftClose, PanelLeftOpen, Smile, Mic, Square, MessageSquareText, Music, Upload, Trash2, Send, X } from "lucide-react";
+import { ArrowLeft, PanelLeftClose, PanelLeftOpen, Smile, Mic, Square, MessageSquareText, Music, Upload, Trash2, Send, X, Paperclip } from "lucide-react";
 import { api, apiError } from "../lib/api";
 import { getSocket, type InboxMessagePayload, type InboxMessageStatusPayload } from "../lib/socket";
 import type { Msg, Stage } from "../lib/types";
@@ -116,6 +116,7 @@ export default function InboxPage() {
   const chunksRef = useRef<Blob[]>([]);
   const recTargetRef = useRef<"chat" | "lib">("chat"); // destino de la grabación en curso
   const fileRef = useRef<HTMLInputElement>(null); // input oculto para subir audios a la biblioteca
+  const imgRef = useRef<HTMLInputElement>(null); // input oculto para mandar una imagen al chat
   const draftRef = useRef<HTMLTextAreaElement>(null); // compositor (para auto-alto)
   const holdStartRef = useRef(0); // inicio del "mantener apretado" (descarta toques muy cortos)
   const recCancelRef = useRef(false); // grabación cancelada -> no enviar
@@ -277,6 +278,31 @@ export default function InboxPage() {
       const r = (err as { response?: { status?: number; data?: { requiresTemplate?: boolean } } })?.response;
       if (r?.status === 409 && r.data?.requiresTemplate) void loadTemplates();
     } finally { setSending(false); }
+  };
+
+  // --- Imagen al chat: se achica en el navegador (máx 1600 px, JPEG) y sale con el texto escrito como pie ---
+  const sendImage = async (file: File) => {
+    if (!selected) return;
+    if (!file.type.startsWith("image/")) { setChatError("Elegí una imagen (JPG, PNG o WEBP)."); return; }
+    const target = selected;
+    const caption = draft.trim();
+    setSending(true); setChatError(null);
+    try {
+      const image = await achicarImagen(file);
+      const { data } = await api.post<{ message: Msg }>(`/api/inbox/${target}/image`, { image, ...(caption ? { caption } : {}) });
+      if (selectedRef.current === target) {
+        setMessages((prev) => appendUnique(prev, data.message));
+        if (caption) setDraft("");
+        setShowEmoji(false); setShowQuick(false); setShowAudios(false);
+      }
+      void loadConvs();
+    } catch (err) { setChatError(apiError(err)); }
+    finally { setSending(false); }
+  };
+  const onImagePicked = (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (f) void sendImage(f);
   };
 
   const loadTemplates = async () => {
@@ -736,6 +762,7 @@ export default function InboxPage() {
 
               <form onSubmit={send} className="flex items-end gap-1.5 px-3 pt-2.5" style={{ paddingBottom: "calc(0.6rem + env(safe-area-inset-bottom))" }}>
                 <input ref={fileRef} type="file" accept="audio/*" onChange={onFilePicked} className="hidden" />
+                <input ref={imgRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={onImagePicked} className="hidden" />
                 {recording ? (
                   <div className="flex h-[46px] flex-1 items-center gap-2 rounded-2xl bg-rose-500/15 px-4 text-sm font-medium text-rose-300">
                     <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-rose-500" />
@@ -752,6 +779,9 @@ export default function InboxPage() {
                     <button type="button" title="Biblioteca de audios" onClick={() => { setShowAudios((v) => !v); setShowEmoji(false); setShowQuick(false); }} className={`rounded p-2 ${showAudios ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
                       <Music className="h-5 w-5" />
                     </button>
+                    <button type="button" title="Mandar imagen (lo que escribas va como texto de la foto)" disabled={sending} onClick={() => imgRef.current?.click()} className="rounded p-2 text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-50">
+                      <Paperclip className="h-5 w-5" />
+                    </button>
                     <textarea
                       ref={draftRef}
                       rows={1}
@@ -759,6 +789,12 @@ export default function InboxPage() {
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
                       onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
+                      onPaste={(e) => {
+                        // Pegar una captura (Ctrl+V) la manda como imagen, como en WhatsApp Web.
+                        const item = Array.from(e.clipboardData.items).find((i) => i.kind === "file" && i.type.startsWith("image/"));
+                        const f = item?.getAsFile();
+                        if (f) { e.preventDefault(); void sendImage(f); }
+                      }}
                       className="max-h-36 min-h-[46px] flex-1 resize-none rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-base text-slate-100 placeholder-slate-500 outline-none focus:border-wa-green"
                     />
                   </>
@@ -820,4 +856,27 @@ export default function InboxPage() {
       )}
     </div>
   );
+}
+
+// Achica la imagen antes de subirla: WhatsApp la recomprime igual, y así sale rápido y no pesa en la base.
+function achicarImagen(file: File, max = 1600): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * k);
+      c.height = Math.round(img.height * k);
+      const ctx = c.getContext("2d");
+      if (!ctx) { reject(new Error("No se pudo preparar la imagen")); return; }
+      ctx.fillStyle = "#fff"; // PNG con transparencia → fondo blanco (JPEG no tiene alfa)
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      resolve(c.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("No se pudo leer la imagen")); };
+    img.src = url;
+  });
 }
