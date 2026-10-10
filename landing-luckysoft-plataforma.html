@@ -401,13 +401,6 @@
   </footer>
 </div>
 
-<div class="inapp" id="inapp">
-  <div>
-    <h3>Abrí en tu navegador 🌐</h3>
-    <p>Estás dentro del navegador de la app. Abrilo en Chrome o Safari para continuar.</p>
-    <a id="abrirNav" href="#">Abrir en el navegador</a>
-  </div>
-</div>
 
 <script>
 (function () {
@@ -510,13 +503,9 @@
     location.href = "https://wa.me/" + WA + "?text=" + encodeURIComponent(base + " (ref:" + ref + ")");
   });
 
-  /* Navegador interno de Instagram/Facebook/TikTok: ahí WhatsApp a veces no abre. */
-  var ua = navigator.userAgent || "";
-  if (/FBAN|FBAV|FB_IAB|FBIOS|Instagram|Messenger|TikTok|musical_ly|Bytedance/i.test(ua)) {
-    $("inapp").style.display = "flex";
-    var url = location.href;
-    $("abrirNav").href = /Android/i.test(ua) ? "intent://" + url.replace(/^https?:\/\//, "") + "#Intent;scheme=https;end" : url;
-  }
+  /* Sin cartel de "Abrí en tu navegador": los clics de los anuncios abren en el navegador interno de
+     Facebook/Instagram y un cartel a pantalla completa ahí frenaba a casi todos. El formulario y el botón de
+     WhatsApp (wa.me) funcionan dentro de la app; la medición es por servidor y no depende de cookies. */
 })();
 </script>
 </body>
