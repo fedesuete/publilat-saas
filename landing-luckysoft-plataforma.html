@@ -401,6 +401,7 @@
 <script>
 (function () {
   /* ===== CONFIG ===== */
+  var SEGMENTO = "Lucky Soft B2B"; /* tipo de cliente del pixel B2B en publi.lat: el Lead de la landing va a ESE pixel */
   var CUENTA = "federico";                 // cuenta de Publi.lat
   var WA = "595975112248";                 // WhatsApp que atiende
   var API = "https://app.publi.lat/api/land/track";
@@ -467,7 +468,7 @@
         method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           accountSlug: CUENTA, ref: ref, eventId: "ls-" + ref,
-          nombre: nombre, telefono: telE164(), segmento: que,
+          nombre: nombre, telefono: telE164(), segmento: SEGMENTO,
           fbclid: here.get("fbclid") || undefined, fbp: cookie("_fbp") || undefined, fbc: cookie("_fbc") || undefined
         })
       }).catch(function () {});

@@ -14,3 +14,10 @@ ARG WAHA_BASE=devlikeapro/waha@sha256:dc134637dfa0bd65202010a65e4ff8176101791699
 FROM ${WAHA_BASE}
 RUN sed -i "s/countryCode: 'US'/countryCode: 'AR'/g" /app/node_modules/@adiwajshing/baileys/lib/Defaults/index.js \
  && grep -q "countryCode: 'AR'" /app/node_modules/@adiwajshing/baileys/lib/Defaults/index.js
+
+# Miniatura de IMÁGENES (2026-10-10): el sharp de la imagen trae un binario compilado en src/build que NO
+# coincide con su JS (falla toda miniatura con "vips_colourspace: no known route from 'srgb' to 'last'").
+# Sin miniatura Baileys no manda ancho/alto y WhatsApp muestra la foto RECORTADA en un cuadrado. Sacando
+# ese build, sharp usa su binario prebuilt correcto. La prueba final ROMPE el build si vuelve a fallar.
+RUN rm -rf /app/node_modules/sharp/src/build \
+ && cd /app && node -e "require('sharp')({create:{width:40,height:20,channels:3,background:'#fff'}}).jpeg().toBuffer().then(b=>require('sharp')(b).resize(32).jpeg({quality:50}).toBuffer()).then(()=>console.log('sharp OK')).catch(e=>{console.error('sharp ROTO',e.message);process.exit(1)})"
