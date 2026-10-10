@@ -154,3 +154,13 @@ describe("Lead solo con código ref en cuentas que usan la landing (detección a
     expect(sendMock).not.toHaveBeenCalled();
   });
 });
+
+describe("Lead calificado a mano en el Inbox", () => {
+  it("cuenta que exige código: el Lead marcado por el operador sale igual", async () => {
+    process.env.LEAD_REQUIRE_REF_USERS = "u-ref";
+    const r = await fireMetaEvent({ id: "c20", userId: "u-ref", externalId: "e20", code: null }, "Lead", { calificadoManual: true });
+    expect(r.ok).toBe(true);
+    expect(r.skipped).toBeUndefined();
+    expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+});

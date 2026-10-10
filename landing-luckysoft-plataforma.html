@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Lucky Soft — Tu propia plataforma en 7 días</title>
+<title>Lucky Soft — Tu casino online propio en 7 días</title>
 <meta name="description" content="Plataforma propia llave en mano con chat propio: tu marca, tu panel de cajeros y sin depender de WhatsApp. Lista en 7 días, desde USD 200 por mes." />
 <!-- Landing SOLO SERVIDOR: sin pixel de navegador. El publicador de Publi.lat respeta esta marca y no
      inyecta ningún pixel. Toda la medición va por CAPI desde /api/land/track, que manda el Lead al pixel
@@ -169,10 +169,11 @@
   </header>
 
   <section class="hero" style="padding-top:28px">
-    <span class="eyebrow">PLATAFORMA PROPIA · LLAVE EN MANO</span>
-    <h1>Tu propia plataforma de juegos, <span class="oro">lista en 7 días</span></h1>
-    <p class="sub">Con tu marca, tu panel de cajeros y el control total de tus ganancias. Sin programadores, sin equipo técnico y sin experiencia previa: nosotros armamos todo.</p>
-    <a class="cta" href="#empezar">Quiero mi plataforma →</a>
+    <span class="eyebrow">CASINO ONLINE · LLAVE EN MANO</span>
+    <h1>Tu propio casino online, <span class="oro">listo en 7 días</span></h1>
+    <p class="sub">Plataforma de casino con tu marca, tu panel de cajeros y el control total de tus ganancias. También fichas para cajeros que ya tienen jugadores. Sin programadores, sin equipo técnico y sin experiencia previa: nosotros armamos todo.</p>
+    <a class="cta" href="#empezar">Quiero mi casino →</a>
+    <p class="muted" style="margin-top:10px;font-size:13px">Exclusivo para el rubro casino online. No hacemos IPTV, TV ni streaming.</p>
     <div class="chips">
       <span>💬 Chat propio, sin depender de WhatsApp</span><span>🎮 +7.000 juegos</span><span>🃏 Casino en vivo</span><span>⚽ Deportes</span><span>🚀 Crash</span><span>💬 Soporte 24/7 en español</span>
     </div>
@@ -346,11 +347,19 @@
         <h3>Contanos qué buscás</h3>
         <p class="muted">Así te atiende la persona indicada.</p>
 
+        <label class="l">¿A qué te dedicás?</label>
+        <div class="opts">
+          <label class="opt"><input type="radio" name="rubro" value="casino" /> Tengo o quiero armar un casino online</label>
+          <label class="opt"><input type="radio" name="rubro" value="cajero" /> Soy cajero: cargo fichas a jugadores</label>
+          <label class="opt"><input type="radio" name="rubro" value="otro" /> Otro rubro (IPTV, TV, streaming, otro)</label>
+        </div>
+
+        <div id="bloqueQue">
         <label class="l">¿Qué te interesa?</label>
         <div class="opts">
-          <label class="opt"><input type="radio" name="que" value="Plataforma" checked /> Mi propia plataforma</label>
-          <label class="opt"><input type="radio" name="que" value="Fichas" /> Comprar fichas para revender</label>
-          <label class="opt"><input type="radio" name="que" value="CRM" /> Solo el CRM para atender a mis clientes</label>
+          <label class="opt"><input type="radio" name="que" value="Plataforma" checked /> Mi propia plataforma de casino</label>
+          <label class="opt"><input type="radio" name="que" value="Fichas" /> Comprar fichas para mis jugadores</label>
+          <label class="opt"><input type="radio" name="que" value="CRM" /> Solo el CRM para atender a mis jugadores</label>
         </div>
 
         <label class="l">¿Cuándo querés arrancar?</label>
@@ -369,6 +378,8 @@
           </div>
         </div>
 
+        </div>
+
         <div class="err" id="err2"></div>
         <button type="submit" class="btn wa" id="enviar">💬 Hablar con un asesor</button>
         <button type="button" class="back" id="volver">← Volver</button>
@@ -378,7 +389,7 @@
       <!-- Todavía no califica: sin Lead, puerta abierta -->
       <div id="despues" class="hide" style="text-align:center">
         <h3>¡Gracias, <span id="nomG"></span>!</h3>
-        <p class="muted" style="margin-top:8px">Cuando estés listo para arrancar, escribinos y te armamos todo. Mientras tanto te dejamos el contacto.</p>
+        <p class="muted" style="margin-top:8px" id="txtDespues">Cuando estés listo para arrancar, escribinos y te armamos todo. Mientras tanto te dejamos el contacto.</p>
         <a class="btn wa" id="waDespues" style="display:block;text-decoration:none;text-align:center" href="#">💬 Escribir por WhatsApp</a>
       </div>
     </form>
@@ -432,9 +443,20 @@
     $("paso2").classList.add("hide"); $("paso1").classList.remove("hide"); $("p2").classList.remove("on");
   });
 
-  /* La pregunta de inversión solo aplica a la plataforma. */
-  function syncInv() { $("bloqueInv").style.display = elegido("que") === "Plataforma" ? "" : "none"; }
+  /* Otro rubro (IPTV, TV, streaming…) no ve el resto: Lucky Soft es solo casino. La inversión solo aplica a la plataforma.
+     El cajero arranca con "Fichas" marcado (es lo que suele buscar). */
+  function syncInv() {
+    var r = elegido("rubro");
+    $("bloqueQue").style.display = r === "otro" ? "none" : "";
+    $("bloqueInv").style.display = r !== "otro" && elegido("que") === "Plataforma" ? "" : "none";
+  }
   Array.prototype.forEach.call(document.querySelectorAll('input[name="que"]'), function (r) { r.addEventListener("change", syncInv); });
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="rubro"]'), function (r) {
+    r.addEventListener("change", function () {
+      if (r.value === "cajero" && r.checked) document.querySelector('input[name="que"][value="Fichas"]').checked = true;
+      syncInv();
+    });
+  });
   syncInv();
 
   var TEXTO = { Plataforma: "quiero mi propia plataforma", Fichas: "quiero comprar fichas para revender", CRM: "me interesa el CRM para atender a mis clientes" };
@@ -442,7 +464,17 @@
 
   $("f").addEventListener("submit", function (e) {
     e.preventDefault();
-    var nombre = $("nombre").value.trim(), que = elegido("que"), cuando = elegido("cuando"), inv = elegido("inv");
+    var nombre = $("nombre").value.trim(), que = elegido("que"), cuando = elegido("cuando"), inv = elegido("inv"), rubro = elegido("rubro");
+    if (!rubro) { $("err2").textContent = "Elegí a qué te dedicás."; return; }
+    if (rubro === "otro") {
+      /* Fuera del nicho: ni registro ni Lead a Meta (el pixel no aprende de IPTV/TV/streaming), y sin WhatsApp. */
+      $("err2").textContent = "";
+      $("nomG").textContent = nombre;
+      $("txtDespues").textContent = "Lucky Soft trabaja solo con casino online, así que por ahora no tenemos algo para tu rubro. ¡Gracias por tu tiempo!";
+      $("waDespues").style.display = "none";
+      $("paso2").classList.add("hide"); $("despues").classList.remove("hide");
+      return;
+    }
     if (!cuando) { $("err2").textContent = "Elegí cuándo querés arrancar."; return; }
     if (que === "Plataforma" && !inv) { $("err2").textContent = "Elegí con qué inversión querés arrancar."; return; }
     $("err2").textContent = "";
@@ -451,7 +483,7 @@
        manda el Lead a Meta: así el pixel aprende de gente que compra, no de curiosos. */
     var califica = cuando !== "mirando" && (que !== "Plataforma" || (inv !== "" && inv !== "no"));
     var PLAN = { simple: " Me interesa el plan de USD 200 por mes.", unico: " Me interesa un plan de pago único." };
-    var base = "Hola! Soy " + nombre + ", " + TEXTO[que] + ". " + CUANDO[cuando] + "." + (que === "Plataforma" && PLAN[inv] ? PLAN[inv] : "");
+    var base = "Hola! Soy " + nombre + (rubro === "cajero" ? ", soy cajero" : "") + ", " + TEXTO[que] + ". " + CUANDO[cuando] + "." + (que === "Plataforma" && PLAN[inv] ? PLAN[inv] : "");
 
     if (!califica) {
       $("nomG").textContent = nombre;

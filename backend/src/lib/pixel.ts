@@ -11,7 +11,7 @@ export interface ResolvedPixel {
 
 export async function resolveUserPixel(
   userId: string,
-  eventName: "Lead" | "Purchase" | "CompleteRegistration"
+  eventName: "Lead" | "Purchase" | "CompleteRegistration" | "Schedule"
 ): Promise<ResolvedPixel | undefined> {
   // El PRIMARIO nunca es un sombra interno (hidden) ni el espejo del cliente (mirror): esos solo
   // reciben la COPIA (fan-out). Tampoco un pixel de SEGMENTO (con label): esos son solo para los
@@ -35,7 +35,7 @@ export async function resolveUserPixel(
 export async function resolveContactPixel(
   userId: string,
   contactId: string | null | undefined,
-  eventName: "Lead" | "Purchase" | "CompleteRegistration",
+  eventName: "Lead" | "Purchase" | "CompleteRegistration" | "Schedule",
 ): Promise<ResolvedPixel | undefined> {
   if (contactId) {
     const seg = await prisma.contactSegment.findUnique({ where: { contactId }, select: { pixelRowId: true } }).catch(() => null);

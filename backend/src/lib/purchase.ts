@@ -4,6 +4,7 @@
 import { prisma } from "./prisma.js";
 import { sendCapiEvent, globalPixelAllowed, contactFbc, metaErrorDetail } from "./meta-capi.js";
 import { resolveContactPixel } from "./pixel.js";
+import { customDataDeContacto } from "./meta-events.js";
 import { fireIntegration } from "./integrations.js";
 import { emitToUser } from "./io.js";
 import { notify } from "./notifications.js";
@@ -82,6 +83,7 @@ export async function markPurchase(
 
   // Pixel del TIPO de cliente si el operador lo marcó (ContactSegment); si no, el principal.
   const creds = await resolveContactPixel(userId, contact.id, "Purchase");
+  const customData = await customDataDeContacto(contact.id); // content_category del producto marcado
   const metaEvent = await prisma.metaEvent.create({
     data: {
       userId,
@@ -130,6 +132,7 @@ export async function markPurchase(
       userAgent: contact.clientUserAgent ?? undefined,
       value: amount,
       currency,
+      ...(customData ? { customData } : {}),
       eventId: opts?.eventId ?? `${contact.externalId}:purchase`,
       eventSourceUrl: contact.landingUrl ?? undefined,
       actionSource: isCtwa ? "business_messaging" : "website",

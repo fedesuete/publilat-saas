@@ -1028,6 +1028,9 @@ model ContactSegment {
   userId     String
   contactId  String   @unique
   pixelRowId String // Pixel.id (no el pixelId de Meta): el pixel de segmento elegido
+  // Producto que le interesa (embudo B2B): "Plataforma" | "A medida" | "Fichas" | "CRM". Viaja como
+  // content_category en su Lead, Schedule y Purchase (conversiones personalizadas en Meta).
+  categoria  String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

@@ -12,8 +12,9 @@ import { resolveContactPixel } from "./pixel.js";
 import { notifyMissingPixel } from "./capi-guard.js";
 import { emitToUser } from "./io.js";
 import { looksLikeCredentials } from "./funnel-detect.js";
+import { contentCategory } from "./landing-custom-data.js";
 
-export type MetaEventName = "Lead" | "CompleteRegistration" | "Purchase";
+export type MetaEventName = "Lead" | "CompleteRegistration" | "Purchase" | "Schedule";
 
 // Subconjunto de Contact que necesita el helper (para no acoplarse a todo el modelo).
 export interface EventContact {
@@ -38,6 +39,12 @@ export interface FireMetaOpts {
   eventSourceUrl?: string;
   eventTime?: Date;          // backfill: hora real del evento (Meta acepta hasta 7 días atrás)
   oncePerContact?: boolean;  // si ya se mandó (sent) este evento para el contacto, NO re-dispara
+  // custom_data extra. Sin él, si el contacto tiene producto marcado (ContactSegment.categoria) va
+  // { content_category } solo: así Lead/Schedule/Purchase del embudo B2B llevan su categoría.
+  customData?: Record<string, string | number>;
+  // El operador lo calificó a mano (marcó su producto en el Inbox): el Lead sale aunque la cuenta exija
+  // código ref — esa marca es justamente la señal de "interesado real" que queremos que Meta aprenda.
+  calificadoManual?: boolean;
 }
 
 export interface FireMetaResult {
@@ -94,6 +101,17 @@ export async function leadRequiresRef(userId: string): Promise<boolean> {
 // Un solo log por contacto omitido: los canales publican muchas veces por día y llenarían el log.
 const omitidosLogueados = new Set<string>();
 
+// { content_category } del producto marcado del contacto (landing o Inbox). Best-effort: sin marca → nada.
+export async function customDataDeContacto(contactId: string): Promise<Record<string, string> | undefined> {
+  try {
+    const seg = await prisma.contactSegment.findUnique({ where: { contactId }, select: { categoria: true } });
+    const cc = contentCategory(seg?.categoria);
+    return cc ? { content_category: cc } : undefined;
+  } catch {
+    return undefined; // nunca frena el evento
+  }
+}
+
 /**
  * Dispara un evento de conversión a Meta para un contacto. Punto ÚNICO de salida de eventos.
  */
@@ -105,7 +123,7 @@ export async function fireMetaEvent(
   // Lead solo con código ref en las cuentas que publicitan con la landing (ver leadRequiresRef). Sin
   // código: no sale a Meta ni se registra en MetaEvent. Si el llamador no trajo el campo, se lee de la base
   // (solo en esas cuentas). Best-effort: si la detección falla, el Lead sale como antes.
-  if (eventName === "Lead" && !contact.code) {
+  if (eventName === "Lead" && !contact.code && !opts.calificadoManual) {
     let omitir = false;
     try {
       if (await leadRequiresRef(contact.userId)) {
@@ -141,6 +159,7 @@ export async function fireMetaEvent(
   const eventId = opts.eventId ?? `${contact.externalId}:${eventName.toLowerCase()}`;
   // Pixel del TIPO de cliente si el operador lo marcó (ContactSegment); si no, el principal.
   const creds = await resolveContactPixel(contact.userId, contact.id, eventName);
+  const customData = opts.customData ?? (await customDataDeContacto(contact.id));
 
   // Log del intento (visible en admin + reintentable por la cola CAPI si falla).
   const metaEvent = await prisma.metaEvent.create({
@@ -168,6 +187,7 @@ export async function fireMetaEvent(
       userAgent: contact.clientUserAgent ?? undefined, // mismos que ya manda el Purchase
       ...(opts.value != null ? { value: opts.value, currency: opts.currency ?? "ARS" } : {}),
       eventId,
+      ...(customData ? { customData } : {}),
       eventSourceUrl: opts.eventSourceUrl ?? contact.landingUrl ?? undefined,
       actionSource: isCtwa ? "business_messaging" : "website",
       ctwaClid: contact.ctwaClid ?? undefined,

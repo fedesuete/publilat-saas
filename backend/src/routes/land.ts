@@ -134,7 +134,7 @@ landRouter.post("/track", async (req, res) => {
     let contact: { id: string; createdAt: Date };
     try {
       contact = await prisma.contact.create({
-        data: { userId: acc.id, externalId, code: ref, fbclid: fbclid ?? null, fbp: fbp ?? null, fbc: fbc ?? null, source: "an", stage: "NUEVO", clientIp: req.ip ?? null, clientUserAgent: req.get("user-agent") ?? null, ...(formName ? { name: formName } : {}), ...(phoneOk ? { phone: phoneOk } : {}) },
+        data: { userId: acc.id, externalId, code: ref, fbclid: fbclid ?? null, fbp: fbp ?? null, fbc: fbc ?? null, source: "an", stage: "NUEVO", clientIp: req.ip ?? null, clientUserAgent: req.get("user-agent") ?? null, ...(formName ? { name: formName } : {}), ...(phoneOk ? { phone: phoneOk } : {}), ...(parsed.data.url ? { landingUrl: parsed.data.url } : {}) },
         select: { id: true, createdAt: true },
       });
     } catch (e) {
@@ -152,10 +152,15 @@ landRouter.post("/track", async (req, res) => {
         where: { userId: acc.id, hidden: false, mirror: false, label: { equals: parsed.data.segmento, mode: "insensitive" } },
         select: { id: true },
       });
-      if (seg) await prisma.contactSegment.create({ data: { userId: acc.id, contactId: contact.id, pixelRowId: seg.id } }).catch(() => undefined);
+      if (seg) await prisma.contactSegment.create({ data: { userId: acc.id, contactId: contact.id, pixelRowId: seg.id, categoria: parsed.data.categoria ?? null } }).catch(() => undefined);
     }
     const creds = await resolveContactPixel(acc.id, contact.id, "Lead");
     if (creds) {
+      // Queda registrado como enviado: cuando la persona escribe por WhatsApp (con su ref), el Lead del
+      // primer mensaje (oncePerContact) ve este y NO manda un segundo Lead con otro event_id.
+      const me = await prisma.metaEvent.create({
+        data: { userId: acc.id, contactId: contact.id, eventName: "Lead", pixelId: creds.pixelId, payload: {}, status: "pending" },
+      }).catch(() => null);
       void sendCapiEvent({
         eventName: "Lead", externalId, fbp, fbc: fbcEff, eventId: eid,
         clientIp: req.ip, userAgent: req.get("user-agent") ?? undefined,
@@ -166,7 +171,9 @@ landRouter.post("/track", async (req, res) => {
         customData: customDataLanding(parsed.data),
         ...(parsed.data.url ? { eventSourceUrl: parsed.data.url } : {}),
         pixelId: creds.pixelId, capiToken: creds.capiToken,
-      }).catch(() => undefined);
+      })
+        .then((r) => me && prisma.metaEvent.update({ where: { id: me.id }, data: { status: "sent", payload: r.payload as object, response: r.response as object } }))
+        .catch((e) => me && prisma.metaEvent.update({ where: { id: me.id }, data: { status: "failed", response: { error: e instanceof Error ? e.message : String(e) } } }).catch(() => undefined));
     }
     return res.json({ ref, eventId: eid, pixel: creds?.pixelId ?? null });
   } catch (e) {

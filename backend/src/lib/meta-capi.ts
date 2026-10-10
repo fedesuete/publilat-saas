@@ -36,7 +36,7 @@ const sha256 = (v: string) =>
   crypto.createHash("sha256").update(v.trim().toLowerCase()).digest("hex");
 
 export interface CapiEventInput {
-  eventName: "Lead" | "Purchase" | "CompleteRegistration";
+  eventName: "Lead" | "Purchase" | "CompleteRegistration" | "Schedule";
   externalId: string;          // mismo id en Lead/registro y Purchase -> permite el match
   fbp?: string;
   fbc?: string;
