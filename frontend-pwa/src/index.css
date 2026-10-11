@@ -76,3 +76,7 @@ html, body, #root {
 @media (pointer: coarse) {
   input, select, textarea { font-size: 16px !important; }
 }
+
+/* Ruleta de premios: el 🎡 del aviso salta para llamar la atención. */
+@keyframes wheelBounce { 0%,100% { transform: rotate(0) scale(1); } 50% { transform: rotate(25deg) scale(1.12); } }
+.wheel-bounce { display:inline-block; animation: wheelBounce 1.6s ease-in-out infinite; }

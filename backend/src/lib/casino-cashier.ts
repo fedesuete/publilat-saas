@@ -163,11 +163,20 @@ export async function sendDepositIntent(
 
 // Acredita en ganamos una carga YA APROBADA por el operador. Idempotente por `dep-<id>`.
 export async function creditDepositInCasino(dep: Op, casinoUsername: string): Promise<void> {
+  if (await casinoAutoCreditForAccount(dep.userId)) return; // auto-carga: la acredita el callback, no el /credit del approve.
+  await creditInCasino(dep, casinoUsername, `dep-${dep.id}`, "La carga");
+}
+
+// Acredita en ganamos un PREMIO de la ruleta YA APROBADO por el cajero. Idempotente por `spin-<id>`.
+// Va por /credit aunque la cuenta tenga auto-carga: el premio no pasa por ninguna transferencia.
+export async function creditPrizeInCasino(spin: Op, casinoUsername: string): Promise<void> {
+  await creditInCasino(spin, casinoUsername, `spin-${spin.id}`, "El premio de la ruleta");
+}
+
+async function creditInCasino(dep: Op, casinoUsername: string, referencia: string, que: string): Promise<void> {
   const creds = await resolveCasinoCreds(dep.userId);
   if (!creds) return; // la cuenta no tiene casino
-  if (await casinoAutoCreditForAccount(dep.userId)) return; // auto-carga: la acredita el callback, no el /credit del approve.
   try {
-    const referencia = `dep-${dep.id}`;
     const existing = await prisma.casinoTx.findUnique({ where: { referencia } });
     if (existing?.status === "completed") return; // ya acreditado (idempotente)
     if (existing) {
@@ -193,8 +202,8 @@ export async function creditDepositInCasino(dep: Op, casinoUsername: string): Pr
     await prisma.casinoTx.update({ where: { referencia }, data: { status: r.retryable ? "pending" : "failed", errorCode: r.errorCode ?? null } });
     await notify(dep.userId, "system", "⚠️ Carga a ganamos",
       r.retryable
-        ? `La carga de ${ars(dep.amount)} al jugador ${casinoUsername} quedó EN COLA en ganamos (se puede reintentar). Ojo: las fichas todavía NO entraron.`
-        : `La carga de ${ars(dep.amount)} al jugador ${casinoUsername} FALLÓ en ganamos (${r.errorCode ?? "error"}). Cargá las fichas a mano en ganamos.`);
+        ? `${que} de ${ars(dep.amount)} al jugador ${casinoUsername} quedó EN COLA en ganamos (se puede reintentar). Ojo: las fichas todavía NO entraron.`
+        : `${que} de ${ars(dep.amount)} al jugador ${casinoUsername} FALLÓ en ganamos (${r.errorCode ?? "error"}). Cargá las fichas a mano en ganamos.`);
   } catch (e) {
     console.error("[casino-cashier] creditDeposit error:", e instanceof Error ? e.message : String(e));
   }

@@ -10,6 +10,7 @@ import { subscribeOperatorPush, opushPermission } from "../lib/opush";
 import { Button, Input, Card, ErrorMsg } from "../components/ui";
 import OnboardingTour, { type TourStep } from "../components/OnboardingTour";
 import { GraduationCap } from "lucide-react";
+import { RuletaTab, PremiosRuleta } from "../components/WheelEditor"; // ruleta de premios
 
 const CHAT_PWA_URL = (import.meta.env.VITE_CHAT_PWA_URL as string | undefined) ?? "https://chat.publi.lat";
 
@@ -183,7 +184,7 @@ function RevisionChatApp() {
 }
 
 export default function ChatAppPage() {
-  const [tab, setTab] = useState<"chats" | "invites" | "brand" | "avisos" | "bot" | "cajero">("chats");
+  const [tab, setTab] = useState<"chats" | "invites" | "brand" | "avisos" | "bot" | "cajero" | "ruleta">("chats");
   const [convs, setConvs] = useState<Conv[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -343,6 +344,7 @@ export default function ChatAppPage() {
           <button id="ca-tab-avisos" onClick={() => setTab("avisos")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "avisos" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>Avisos</button>
           <button id="ca-tab-bot" onClick={() => setTab("bot")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "bot" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>🤖 Bot</button>
           <button id="ca-tab-cajero" onClick={() => setTab("cajero")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "cajero" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>💰 Cajero</button>
+          <button id="ca-tab-ruleta" onClick={() => setTab("ruleta")} className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 font-medium ${tab === "ruleta" ? "bg-wa-green text-slate-900" : "text-slate-300"}`}>🎡 Ruleta</button>
         </div>
       </div>
 
@@ -493,6 +495,8 @@ export default function ChatAppPage() {
         <AvisosTab />
       ) : tab === "bot" ? (
         <BotTab />
+      ) : tab === "ruleta" ? (
+        <RuletaTab />
       ) : (
         <CajeroTab />
       )}
@@ -1474,6 +1478,8 @@ function CajeroTab() {
           </div>
         )}
       </div>
+
+      <PremiosRuleta />
 
       <p className="text-xs text-slate-600">💡 Acreditá una carga SOLO después de confirmar que la plata entró de verdad. Al acreditar se suma al saldo del cliente y se registra la venta (Purchase) en tu pixel.</p>
 

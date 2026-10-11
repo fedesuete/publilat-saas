@@ -1036,3 +1036,38 @@ model ContactSegment {
 
   @@index([userId])
 }
+
+// Ruleta de premios del Chat App (2026-10-11). Una por cuenta: el operador arma las porciones en el panel
+// y la activa; el jugador la ve en el chat y gira. El premio NO se acredita solo: queda pendiente y lo
+// aprueba el cajero (misma regla que las cargas: nadie recibe fichas sin que lo vea una persona).
+model ChatWheel {
+  id          String    @id @default(cuid())
+  userId      String    @unique
+  // [{ label, color, icon, type: "fichas" | "giro" | "nada", amount, weight }] — weight = % (suman 100)
+  segments    Json      @default("[]")
+  durationMin Int       @default(0) // 0 = sin cierre (1 giro por día); >0 = se cierra sola (1 giro por activación)
+  status      String    @default("draft") // draft | active
+  round       Int       @default(0) // sube en cada activación: separa los giros de cada evento
+  activatedAt DateTime?
+  endsAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// Un giro de un jugador. El resultado lo decide el SERVIDOR (nunca el navegador).
+model ChatWheelSpin {
+  id         String    @id @default(cuid())
+  userId     String
+  playerId   String
+  round      Int
+  segment    Int // índice de la porción que salió
+  label      String
+  prizeType  String // fichas | giro | nada
+  amount     Int       @default(0) // fichas (ARS entero)
+  status     String // pending (espera al cajero) | credited | rejected | none (sin premio / giro extra)
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  @@index([userId, status])
+  @@index([playerId, createdAt])
+}

@@ -4,6 +4,7 @@ import { api, apiError, API_BASE, getToken, clearToken, loadBranding, saveBrandi
 import { subscribeToPush, pushSupported, pushPermission } from "../lib/push";
 import InstallPrompt, { InstallGuide, AndroidInstallGuide } from "../components/InstallPrompt";
 import PushPrompt from "../components/PushPrompt";
+import WheelOfPrizes from "../components/WheelOfPrizes"; // ruleta de premios (la activa el operador)
 import { promptInstall, onInstallAvailable, bakeSessionIntoUrl, pointManifestToSession, isStandalone, isIos, waitForInstallPrompt, reportAppInstalled, instalarDesdeChromeSiHaceFalta } from "../lib/install";
 
 interface Pay { cbu: string | null; alias: string | null; titular: string | null }
@@ -596,6 +597,10 @@ export default function ChatPage() {
       </div>
 
       {error && <div className="px-4 py-1 text-center text-xs text-rose-600">{error}</div>}
+
+      {/* Ruleta de premios: aviso "¡Ruleta activa!" sobre la barra cuando el operador la prendió y el jugador
+          puede girar (todos los temas, también redblack: es una promo que el operador activa a propósito). */}
+      <WheelOfPrizes />
 
       {/* Botones del bot (chips): tocar = mandar ese texto. Muestra los del último mensaje. Ocultos en
           redblack. SIN duplicar la barra del cajero: "Cargar/Retirar/Cajero" ya están SIEMPRE como

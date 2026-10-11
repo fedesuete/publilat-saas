@@ -39,6 +39,7 @@ import { notificationsRouter } from "./routes/notifications.js";
 import { flowsRouter } from "./routes/flows.js";
 import { trackRouter } from "./routes/track.js";
 import { chatRouter, chatPublicRouter } from "./routes/chat.js";
+import { wheelOperatorRouter, wheelPlayerRouter } from "./routes/chat-wheel.js"; // ruleta de premios del Chat App
 import { botRelayRouter } from "./routes/bot-relay.js"; // puente cajero de socio (token propio)
 import { soporteWaRouter } from "./routes/soporte-wa.js"; // 2do webhook de WAHA: grupos del número de soporte
 import { tutorialsRouter, tutorialsAdminRouter, tutorialVideoRouter } from "./routes/tutorials.js";
@@ -218,7 +219,9 @@ app.use("/api/tutorial-video", tutorialVideoRouter);
 // acá. El público (branding/register/login) va primero SIN requireAuth; el de operador
 // (invites) va después CON requireAuth.
 app.use("/api/chat", chatHttpCors, apiLimiter, chatPublicRouter);
+app.use("/api/chat", chatHttpCors, apiLimiter, wheelPlayerRouter); // jugador: /me/wheel (antes del requireAuth)
 app.use("/api/chat", chatHttpCors, apiLimiter, requireAuth, chatRouter);
+app.use("/api/chat", chatHttpCors, apiLimiter, requireAuth, wheelOperatorRouter);
 // Panel maestro: admin-only (requireAuth + requireAdmin).
 app.use("/api/admin/tutorials", apiLimiter, requireAuth, requireAdmin, tutorialsAdminRouter);
 app.use("/api/admin", apiLimiter, requireAuth, requireAdmin, adminRouter);
