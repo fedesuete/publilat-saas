@@ -89,7 +89,7 @@
   .aud li::before{content:"✓";font-weight:800;margin-right:9px}
   .aud.f{background:linear-gradient(135deg,var(--coral),var(--sun));color:#fff}
   .aud.o{background:linear-gradient(135deg,var(--amber),#ffd977);color:var(--ink)}
-  .aud .big{position:absolute;right:-6px;bottom:-22px;font-size:120px;opacity:.15;line-height:1}
+  .aud .big{position:absolute;right:-10px;bottom:-18px;opacity:.16;line-height:0}
   .steps{display:grid;gap:14px;margin-top:28px;list-style:none;padding:0}
   @media(min-width:640px){.steps{grid-template-columns:1fr 1fr}}
   @media(min-width:1000px){.steps{grid-template-columns:repeat(4,1fr)}}
@@ -203,10 +203,10 @@
       <div class="main">
         <span class="pic" style="background-image:var(--i3)"></span>
         <div class="scan"></div>
-        <div class="dorsal"><span class="n">1234</span>Dorsal leído ✅</div>
+        <div class="dorsal"><span class="n">1234</span>Dorsal leído <span style="display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--ok);color:#fff"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5L20 7"/></svg></span></div>
       </div>
-      <div class="toast" style="top:40%;left:-4px"><span class="ic" style="background:var(--violet)">🙂</span><span><b>Selfie</b><i>12 fotos encontradas</i></span></div>
-      <div class="toast" style="bottom:-18px;right:4px;animation-delay:-2s"><span class="ic" style="background:var(--ok)">💸</span><span><b>Venta nueva · Pack</b><i>Gs 70.000 para vos</i></span></div>
+      <div class="toast" style="top:40%;left:-4px"><span class="ic" style="background:var(--violet)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5s1.3 1.5 3.5 1.5 3.5-1.5 3.5-1.5"/><path d="M9 9.5h.01M15 9.5h.01"/></svg></span><span><b>Selfie</b><i>12 fotos encontradas</i></span></div>
+      <div class="toast" style="bottom:-18px;right:4px;animation-delay:-2s"><span class="ic" style="background:var(--ok)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M7 12h.01M17 12h.01"/></svg></span><span><b>Venta nueva · Pack</b><i>Gs 70.000 para vos</i></span></div>
     </div>
   </div>
 </section>
@@ -214,13 +214,13 @@
 <section class="s" style="padding-top:40px">
   <div class="wrap grid2">
     <div class="aud f">
-      <span class="big" aria-hidden="true">📷</span>
+      <span class="big" aria-hidden="true"><svg width="130" height="130" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="4"/></svg></span>
       <div class="eyebrow" style="color:rgba(255,255,255,.85)">Si sos fotógrafo</div>
       <h3>Cobrás el 70 % de cada venta</h3>
       <ul><li>Subís desde tu panel, de a cientos</li><li>Te encuentran solos: dorsal y selfie</li><li>Ves tus ventas y tu saldo al toque</li></ul>
     </div>
     <div class="aud o">
-      <span class="big" aria-hidden="true">🏁</span>
+      <span class="big" aria-hidden="true"><svg width="130" height="130" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/></svg></span>
       <div class="eyebrow" style="color:rgba(26,26,46,.7)">Si organizás carreras</div>
       <h3>Fotos oficiales sin poner un guaraní</h3>
       <ul><li>El 5 % de cada venta para tu evento</li><li>Fotógrafos resueltos, nuestros o tuyos</li><li>Online en 24–48 h con tu propia página</li></ul>
@@ -238,7 +238,7 @@
       <li><span class="k">PASO 2</span><h3>Leemos los dorsales</h3><p>Cada foto queda asociada al número de cada corredor que aparece.</p>
         <div class="demo bibs" aria-hidden="true"><span>57</span><span>1234</span><span>656</span><span>302</span><span>88</span></div></li>
       <li><span class="k">PASO 3</span><h3>Reconocemos las caras</h3><p>El corredor sin dorsal visible se encuentra con una selfie. La selfie no se guarda.</p>
-        <div class="demo thumbs" aria-hidden="true"><span class="me">🙂</span><hr /><span class="pic" style="background-image:var(--i1)"></span><span class="pic" style="background-image:var(--i2)"></span><span class="pic" style="background-image:var(--i4)"></span></div></li>
+        <div class="demo thumbs" aria-hidden="true"><span class="me"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5s1.3 1.5 3.5 1.5 3.5-1.5 3.5-1.5"/><path d="M9 9.5h.01M15 9.5h.01"/></svg></span><hr /><span class="pic" style="background-image:var(--i1)"></span><span class="pic" style="background-image:var(--i2)"></span><span class="pic" style="background-image:var(--i4)"></span></div></li>
       <li><span class="k">PASO 4</span><h3>Compra y se reparte</h3><p>Paga con QR, billetera o tarjeta, descarga en alta y la plata se divide sola.</p>
         <div class="demo pills" aria-hidden="true"><span>QR</span><span>Billetera</span><span>Tarjeta</span><span class="go">⬇ Descarga</span></div></li>
     </ol>
