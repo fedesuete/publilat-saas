@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>SmartRun — Tus fotos de carrera, vendidas solas</title>
+<meta name="description" content="Para fotógrafos y organizadores de carreras: cada corredor encuentra sus fotos por dorsal o selfie, paga con QR o tarjeta y la venta se reparte sola. Sin cuota mensual." />
+<!-- Landing de la cuenta "smartrun" de Publi.lat (12/10). El publicador respeta esta marca y NO inyecta pixeles:
+     el pixel va escrito abajo SOLO con PageView, y el Lead sale por servidor (CAPI desde /api/land/track) y SOLO si
+     el interesado califica (fotógrafo u organizador con carrera próxima). -->
+<meta name="pl-sin-pixel-navegador" content="1" />
+{{PIXEL_SNIPPET}}
+<style>:root{--i1:url({{IMG1}});--i2:url({{IMG2}});--i3:url({{IMG3}});--i4:url({{IMG4}});--i5:url({{IMG5}});--i6:url({{IMG6}})}</style>
+<meta name="theme-color" content="#1a1a2e" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Condensed:wght@700&display=swap" rel="stylesheet" />
+<style>
+  /* Paleta de SmartRun (la de smartrun.lat): azul marino, coral del logo, ámbar y violeta para los resplandores. */
+  :root{
+    --ink:#1a1a2e; --ink2:#26184f; --coral:#e94560; --coral2:#c92d47; --amber:#fbbf24; --sun:#f97316;
+    --violet:#6d4bff; --ok:#137a4b; --bg:#ffffff; --surface:#f5f6f8; --line:#e2e4ea; --muted:#5a5f73; --fg:#1a1a2e;
+    --sans:"Barlow", system-ui, sans-serif; --bib:"Barlow Condensed", "Barlow", system-ui, sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth;scroll-padding-top:16px}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:17px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  img{max-width:100%;display:block}
+  /* Fotos: cada una se embebe UNA vez (variables --i1..--i6 en :root) y se reusa como fondo. */
+  .pic{display:block;background-size:cover;background-position:center;background-color:#2c2c48}
+  a{color:inherit}
+  .wrap{max-width:1120px;margin:0 auto;padding-inline:18px}
+  h1,h2,h3{line-height:1.05;letter-spacing:-.02em;text-wrap:balance;margin:0}
+  .eyebrow{font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--coral)}
+  .muted{color:var(--muted)}
+  .bib{font-family:var(--bib);font-weight:700}
+  .shimmer{background:linear-gradient(90deg,#e94560,#fbbf24,#e94560);background-size:200% auto;-webkit-background-clip:text;background-clip:text;color:transparent;animation:sh 6s linear infinite}
+  @keyframes sh{from{background-position:200% 0}to{background-position:-200% 0}}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:52px;padding:0 24px;border-radius:999px;font-weight:800;font-size:16px;text-decoration:none;border:0;cursor:pointer;font-family:inherit;transition:transform .15s}
+  .btn:hover{transform:translateY(-2px)}
+  .btn.coral{background:var(--coral);color:#fff;box-shadow:0 10px 24px -8px rgba(233,69,96,.6)}
+  .btn.light{background:#fff;color:var(--ink)}
+  .btn.wa{background:#25d366;color:#fff;width:100%}
+  :focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+
+  /* Barra */
+  .top{background:var(--ink);color:#fff}
+  .top .wrap{display:flex;align-items:center;justify-content:space-between;padding-block:12px}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:20px}
+  .logo span{font-weight:500;opacity:.7}
+  .top a.mini{font-size:14px;font-weight:700;color:#fff;text-decoration:none;border:2px solid rgba(255,255,255,.5);border-radius:999px;padding:7px 14px}
+
+  /* Portada */
+  .hero{position:relative;overflow:hidden;background:var(--ink);color:#fff;isolation:isolate}
+  .hero::before{content:"";position:absolute;inset:0;z-index:-1;background-image:radial-gradient(rgba(255,255,255,.07) 1px,transparent 1px);background-size:22px 22px}
+  .blob{position:absolute;border-radius:50%;filter:blur(70px);z-index:-1;animation:blob 11s ease-in-out infinite}
+  @keyframes blob{50%{transform:translate(24px,-18px) scale(1.12)}}
+  .hero .wrap{display:grid;gap:36px;padding-block:40px 64px}
+  @media(min-width:960px){.hero .wrap{grid-template-columns:1.05fr 1fr;align-items:center;padding-block:72px 88px}}
+  .chip{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.08);border-radius:999px;padding:5px 12px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+  .hero h1{font-size:clamp(40px,8vw,72px);font-weight:800;margin-top:18px}
+  .hero p.lead{font-size:19px;color:rgba(255,255,255,.82);max-width:34em;margin:18px 0 0}
+  .ctas{display:flex;flex-wrap:wrap;gap:12px;margin-top:26px}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:28px;max-width:480px}
+  .stats div{border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.05);border-radius:16px;padding:12px}
+  .stats b{display:block;font-family:var(--bib);font-size:32px;line-height:1}
+  .stats small{color:rgba(255,255,255,.65);font-size:13px}
+  .scene{position:relative;max-width:440px;margin:0 auto;width:100%}
+  .scene .back{position:absolute;top:-14px;left:-6px;width:42%;aspect-ratio:3/4;object-fit:cover;border-radius:18px;transform:rotate(-8deg);opacity:.6;box-shadow:0 0 0 1px rgba(255,255,255,.2)}
+  .scene .main{position:relative;margin-left:auto;width:82%;border-radius:26px;overflow:hidden;box-shadow:0 30px 60px -20px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.2)}
+  .scene .main .pic{aspect-ratio:4/5;width:100%}
+  .scan{position:absolute;left:0;right:0;height:2px;background:var(--amber);box-shadow:0 0 18px 4px rgba(251,191,36,.55);animation:scan 2.6s ease-in-out infinite}
+  @keyframes scan{0%,100%{top:10%}50%{top:86%}}
+  .dorsal{position:absolute;top:12px;right:12px;display:flex;align-items:center;gap:8px;background:rgba(26,26,46,.88);border-radius:12px;padding:7px 10px;font-size:12px;font-weight:700}
+  .dorsal .n{background:#fff;color:var(--ink);border-radius:6px;padding:1px 8px;font-family:var(--bib);font-size:21px;line-height:1.1}
+  .toast{position:absolute;display:flex;align-items:center;gap:10px;background:#fff;color:var(--ink);border-radius:16px;padding:9px 12px;box-shadow:0 18px 30px -12px rgba(0,0,0,.5);font-size:14px;line-height:1.2;animation:float 6s ease-in-out infinite}
+  .toast b{display:block}
+  .toast i{font-style:normal;color:var(--muted)}
+  .toast .ic{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:18px}
+  @keyframes float{50%{transform:translateY(-10px)}}
+
+  /* Secciones */
+  section.s{padding-block:64px}
+  .h2{font-size:clamp(30px,5vw,48px);font-weight:800;margin-top:6px}
+  .grid2{display:grid;gap:16px}
+  @media(min-width:800px){.grid2{grid-template-columns:1fr 1fr}}
+  .aud{position:relative;overflow:hidden;border-radius:26px;padding:26px}
+  .aud h3{font-size:30px;font-weight:800;margin-top:4px}
+  .aud ul{list-style:none;padding:0;margin:16px 0 0;display:grid;gap:7px}
+  .aud li::before{content:"✓";font-weight:800;margin-right:9px}
+  .aud.f{background:linear-gradient(135deg,var(--coral),var(--sun));color:#fff}
+  .aud.o{background:linear-gradient(135deg,var(--amber),#ffd977);color:var(--ink)}
+  .aud .big{position:absolute;right:-6px;bottom:-22px;font-size:120px;opacity:.15;line-height:1}
+  .steps{display:grid;gap:14px;margin-top:28px;list-style:none;padding:0}
+  @media(min-width:640px){.steps{grid-template-columns:1fr 1fr}}
+  @media(min-width:1000px){.steps{grid-template-columns:repeat(4,1fr)}}
+  .steps li{background:var(--surface);border-radius:24px;padding:20px;display:flex;flex-direction:column}
+  .steps .k{font-family:var(--bib);color:var(--coral);font-size:14px}
+  .steps h3{font-size:20px;font-weight:800;margin-top:4px}
+  .steps p{font-size:15px;color:var(--muted);margin:6px 0 0}
+  .steps .demo{margin-top:auto;padding-top:16px}
+  .bar{height:8px;border-radius:99px;background:#fff;box-shadow:0 0 0 1px var(--line);overflow:hidden}
+  .bar i{display:block;height:100%;width:95%;background:linear-gradient(90deg,var(--coral),var(--sun))}
+  .bibs{display:flex;flex-wrap:wrap;gap:6px}
+  .bibs span{background:#fff;border-radius:7px;padding:0 8px;font-family:var(--bib);font-size:19px;box-shadow:0 0 0 1px var(--line)}
+  .thumbs{display:flex;align-items:center;gap:6px}
+  .thumbs .pic{width:40px;height:40px;border-radius:9px}
+  .thumbs .me{width:40px;height:40px;border-radius:50%;background:var(--violet);display:grid;place-items:center;color:#fff;font-size:20px}
+  .thumbs hr{flex:1;border:0;border-top:2px dashed rgba(109,75,255,.4)}
+  .pills{display:flex;flex-wrap:wrap;gap:6px;font-size:13px;font-weight:700}
+  .pills span{background:#fff;border-radius:99px;padding:4px 11px;box-shadow:0 0 0 1px var(--line)}
+  .pills .go{background:var(--ok);color:#fff;box-shadow:none}
+
+  .money{background:linear-gradient(135deg,var(--ink),var(--ink2));color:#fff;border-radius:26px;padding:26px}
+  .money .pct{font-family:var(--bib);font-size:84px;line-height:.9}
+  .money dl{display:grid;gap:8px;margin:18px 0 0}
+  .money dl div{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;background:rgba(255,255,255,.08);border-radius:12px;padding:9px 12px;font-size:15px}
+  .money dd{margin:0;font-weight:800;color:var(--amber)}
+  .org{background:var(--surface);border-radius:26px;padding:26px}
+  .org .pct{font-family:var(--bib);font-size:84px;line-height:.9;color:var(--coral)}
+  .org ol{margin:18px 0 0;padding:0;list-style:none;display:grid;gap:12px}
+  .org li{display:flex;gap:12px}
+  .org li b.n{flex:none;width:30px;height:30px;border-radius:50%;background:var(--amber);display:grid;place-items:center;font-family:var(--bib);font-size:17px}
+
+  .strip{overflow:hidden;padding-block:8px}
+  .strip .track{display:flex;gap:12px;width:max-content;animation:mq 46s linear infinite}
+  .strip .pic{width:150px;height:200px;border-radius:18px;flex:none}
+  @keyframes mq{to{transform:translateX(-50%)}}
+
+  .faq{border-radius:24px;box-shadow:0 0 0 1px var(--line)}
+  .faq details{padding:16px 20px;border-top:1px solid var(--line)}
+  .faq details:first-child{border-top:0}
+  .faq summary{cursor:pointer;font-weight:800;list-style:none;display:flex;justify-content:space-between;gap:12px}
+  .faq summary::-webkit-details-marker{display:none}
+  .faq summary::after{content:"+";flex:none;width:28px;height:28px;border-radius:50%;background:var(--surface);display:grid;place-items:center;transition:transform .2s}
+  .faq details[open] summary::after{transform:rotate(45deg)}
+  .faq p{color:var(--muted);margin:8px 0 0}
+
+  /* Formulario */
+  .cta{background:linear-gradient(135deg,var(--ink),var(--ink2) 60%,var(--ink));color:#fff;border-radius:30px;padding:28px;display:grid;gap:28px;position:relative;overflow:hidden;isolation:isolate}
+  @media(min-width:860px){.cta{grid-template-columns:1fr 1fr;padding:44px}}
+  .cta h2{font-size:clamp(30px,4.5vw,42px);font-weight:800}
+  .cta ul{list-style:none;padding:0;margin:16px 0 0;display:grid;gap:7px;color:rgba(255,255,255,.85)}
+  .cta ul li::before{content:"✓";color:var(--amber);font-weight:800;margin-right:8px}
+  form{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:22px;padding:20px}
+  .prog{display:flex;gap:6px;margin-bottom:14px}
+  .prog i{flex:1;height:5px;border-radius:9px;background:rgba(255,255,255,.18)}
+  .prog i.on{background:var(--coral)}
+  label.l{display:block;font-size:14px;font-weight:700;margin:12px 0 6px}
+  input[type=text],input[type=tel],select{width:100%;height:50px;border-radius:13px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.1);color:#fff;font:inherit;padding:0 14px}
+  select option{color:#111}
+  input::placeholder{color:rgba(255,255,255,.5)}
+  .tel{display:grid;grid-template-columns:118px 1fr;gap:8px}
+  .opts{display:grid;gap:8px}
+  .opt{display:flex;align-items:center;gap:10px;border:1px solid rgba(255,255,255,.2);border-radius:13px;padding:12px 14px;cursor:pointer;font-weight:600}
+  .opt:has(input:checked){border-color:var(--coral);background:rgba(233,69,96,.16)}
+  .opt input{accent-color:var(--coral);width:18px;height:18px}
+  .err{color:#fda4af;font-size:14px;min-height:20px;margin-top:8px}
+  .back{background:none;border:0;color:rgba(255,255,255,.6);text-decoration:underline;margin-top:10px;cursor:pointer;font:inherit;font-size:14px}
+  .hide{display:none!important}
+  form .btn{width:100%;margin-top:6px}
+  .fine{font-size:12px;color:rgba(255,255,255,.55);margin-top:10px}
+
+  footer{padding-block:36px 110px;text-align:center;color:var(--muted);font-size:14px}
+  @media(min-width:800px){footer{padding-bottom:40px}}
+  .sticky{position:fixed;left:0;right:0;bottom:0;z-index:30;background:rgba(26,26,46,.95);backdrop-filter:blur(8px);padding:12px 16px calc(12px + env(safe-area-inset-bottom))}
+  @media(min-width:800px){.sticky{display:none}}
+  .sticky .btn{width:100%}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="logo">
+      <svg width="34" height="34" viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="11" fill="#2c2c48"/><circle cx="24" cy="24" r="14.5" fill="none" stroke="#e94560" stroke-width="4.2" stroke-linecap="round" stroke-dasharray="76 15.1" transform="rotate(-38 24 24)"/><path d="M12.5 25h5.5l2.7-5.5 4.2 11 2.8-7.5 1.8 2h6" fill="none" stroke="#fff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      SmartRun <span>Fotos</span>
+    </div>
+    <a class="mini" href="#empezar">Sumarme</a>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="blob" style="width:440px;height:440px;top:-120px;right:-80px;background:rgba(109,75,255,.45)"></div>
+  <div class="blob" style="width:380px;height:380px;bottom:-140px;left:-120px;background:rgba(233,69,96,.4);animation-delay:-5s"></div>
+  <div class="wrap">
+    <div>
+      <span class="chip">⚡ Fotógrafos y organizadores de carreras</span>
+      <h1>Tus fotos de carrera, <span class="shimmer">vendidas solas.</span></h1>
+      <p class="lead">Subís las fotos y cada corredor encuentra las suyas por dorsal o con una selfie. Paga con QR o tarjeta y la venta se reparte sola. Sin cuota mensual.</p>
+      <div class="ctas">
+        <a class="btn coral" href="#empezar">Quiero sumarme</a>
+        <a class="btn light" href="#como">Cómo funciona</a>
+      </div>
+      <div class="stats" aria-label="SmartRun en números">
+        <div><b>+8.000</b><small>fotos publicadas</small></div>
+        <div><b>+1.200</b><small>corredores encontrados</small></div>
+        <div><b>70 %</b><small>para el fotógrafo</small></div>
+      </div>
+    </div>
+    <div class="scene" aria-hidden="true">
+      <span class="pic back" style="background-image:var(--i6)"></span>
+      <div class="main">
+        <span class="pic" style="background-image:var(--i3)"></span>
+        <div class="scan"></div>
+        <div class="dorsal"><span class="n">1234</span>Dorsal leído ✅</div>
+      </div>
+      <div class="toast" style="top:40%;left:-4px"><span class="ic" style="background:var(--violet)">🙂</span><span><b>Selfie</b><i>12 fotos encontradas</i></span></div>
+      <div class="toast" style="bottom:-18px;right:4px;animation-delay:-2s"><span class="ic" style="background:var(--ok)">💸</span><span><b>Venta nueva · Pack</b><i>Gs 70.000 para vos</i></span></div>
+    </div>
+  </div>
+</section>
+
+<section class="s" style="padding-top:40px">
+  <div class="wrap grid2">
+    <div class="aud f">
+      <span class="big" aria-hidden="true">📷</span>
+      <div class="eyebrow" style="color:rgba(255,255,255,.85)">Si sos fotógrafo</div>
+      <h3>Cobrás el 70 % de cada venta</h3>
+      <ul><li>Subís desde tu panel, de a cientos</li><li>Te encuentran solos: dorsal y selfie</li><li>Ves tus ventas y tu saldo al toque</li></ul>
+    </div>
+    <div class="aud o">
+      <span class="big" aria-hidden="true">🏁</span>
+      <div class="eyebrow" style="color:rgba(26,26,46,.7)">Si organizás carreras</div>
+      <h3>Fotos oficiales sin poner un guaraní</h3>
+      <ul><li>El 5 % de cada venta para tu evento</li><li>Fotógrafos resueltos, nuestros o tuyos</li><li>Online en 24–48 h con tu propia página</li></ul>
+    </div>
+  </div>
+</section>
+
+<section class="s" id="como" style="padding-top:8px">
+  <div class="wrap">
+    <div class="eyebrow">Cómo funciona</div>
+    <h2 class="h2">De la largada a la venta, sin mensajes de por medio</h2>
+    <ol class="steps">
+      <li><span class="k">PASO 1</span><h3>Subís las fotos</h3><p>Desde tu panel, de a cientos. Si se corta la conexión, sigue solo.</p>
+        <div class="demo" aria-hidden="true"><div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;margin-bottom:6px"><span>⬆ Subiendo</span><span>1.240 / 1.300</span></div><div class="bar"><i></i></div></div></li>
+      <li><span class="k">PASO 2</span><h3>Leemos los dorsales</h3><p>Cada foto queda asociada al número de cada corredor que aparece.</p>
+        <div class="demo bibs" aria-hidden="true"><span>57</span><span>1234</span><span>656</span><span>302</span><span>88</span></div></li>
+      <li><span class="k">PASO 3</span><h3>Reconocemos las caras</h3><p>El corredor sin dorsal visible se encuentra con una selfie. La selfie no se guarda.</p>
+        <div class="demo thumbs" aria-hidden="true"><span class="me">🙂</span><hr /><span class="pic" style="background-image:var(--i1)"></span><span class="pic" style="background-image:var(--i2)"></span><span class="pic" style="background-image:var(--i4)"></span></div></li>
+      <li><span class="k">PASO 4</span><h3>Compra y se reparte</h3><p>Paga con QR, billetera o tarjeta, descarga en alta y la plata se divide sola.</p>
+        <div class="demo pills" aria-hidden="true"><span>QR</span><span>Billetera</span><span>Tarjeta</span><span class="go">⬇ Descarga</span></div></li>
+    </ol>
+  </div>
+</section>
+
+<section class="s" style="padding-top:8px">
+  <div class="wrap grid2">
+    <div class="money">
+      <div style="font-size:14px;font-weight:600;opacity:.7">Fotógrafos: de cada venta te llevás</div>
+      <div class="pct shimmer">70 %</div>
+      <dl>
+        <div><dt>Foto suelta · Gs 35.000</dt><dd>Gs 24.500 para vos</dd></div>
+        <div><dt>Pack todas las fotos · Gs 100.000</dt><dd>Gs 70.000 para vos</dd></div>
+        <div><dt>Videos del dorsal · Gs 30.000</dt><dd>Gs 21.000 para vos</dd></div>
+      </dl>
+      <p style="font-size:13px;opacity:.6;margin:12px 0 0">Precios mínimos; cada evento puede cobrar más. Sin cuota mensual ni créditos para subir.</p>
+    </div>
+    <div class="org">
+      <div style="font-size:14px;font-weight:600" class="muted">Organizadores: para tu evento</div>
+      <div class="pct">5 %</div>
+      <p class="muted" style="margin:4px 0 0">de cada venta, sin poner un guaraní. Así es la semana de tu carrera:</p>
+      <ol>
+        <li><b class="n">1</b><span><b>Antes.</b> Proponés el evento en 2 minutos y te damos el link.</span></li>
+        <li><b class="n">2</b><span><b>El día.</b> Los fotógrafos cubren largada, recorrido y llegada.</span></li>
+        <li><b class="n">3</b><span><b>24–48 h.</b> Se publican las fotos con dorsales y caras leídos.</span></li>
+        <li><b class="n">4</b><span><b>Después.</b> Mandás el link a tus inscriptos y ves las ventas.</span></li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<div class="strip" aria-hidden="true">
+  <div class="track">
+    <span class="pic" style="background-image:var(--i1)"></span><span class="pic" style="background-image:var(--i2)"></span><span class="pic" style="background-image:var(--i3)"></span><span class="pic" style="background-image:var(--i4)"></span><span class="pic" style="background-image:var(--i5)"></span><span class="pic" style="background-image:var(--i6)"></span>
+    <span class="pic" style="background-image:var(--i1)"></span><span class="pic" style="background-image:var(--i2)"></span><span class="pic" style="background-image:var(--i3)"></span><span class="pic" style="background-image:var(--i4)"></span><span class="pic" style="background-image:var(--i5)"></span><span class="pic" style="background-image:var(--i6)"></span>
+  </div>
+</div>
+
+<section class="s">
+  <div class="wrap grid2" style="align-items:start">
+    <div>
+      <div class="eyebrow">Preguntas frecuentes</div>
+      <h2 class="h2">Lo que todos preguntan antes de sumarse</h2>
+    </div>
+    <div class="faq">
+      <details><summary>¿Cuánto cuesta sumarse?</summary><p>Nada fijo: sin cuota mensual y sin créditos para subir. SmartRun se queda con el 30 % de cada venta (de ahí sale el 5 % del organizador). Si no vendés, no pagás.</p></details>
+      <details><summary>¿Cómo encuentra cada corredor sus fotos?</summary><p>Por el número de dorsal, con una selfie o por la hora en que pasó por cada punto. No te escribe nadie pidiéndote que busques.</p></details>
+      <details><summary>¿Cómo y cuándo cobro?</summary><p>Cada venta se reparte sola al momento del pago. Ves tu saldo en tu panel y te lo liquidamos por transferencia.</p></details>
+      <details><summary>¿Qué necesito para subir?</summary><p>Tu panel de fotógrafo y las fotos en JPG (hasta 40 MB cada una). Subís de a cientos y, si se corta la conexión, sigue solo.</p></details>
+      <details><summary>¿En qué países funciona?</summary><p>Hoy operamos en Paraguay, con pagos por QR, billeteras y tarjeta. Si estás en otro país, escribinos: estamos sumando países.</p></details>
+    </div>
+  </div>
+</section>
+
+<section class="s" id="empezar" style="padding-top:8px">
+  <div class="wrap">
+    <div class="cta">
+      <div class="blob" style="width:300px;height:300px;top:-90px;right:30px;background:rgba(233,69,96,.4)"></div>
+      <div>
+        <h2>Arranquemos con tu próxima carrera</h2>
+        <p style="color:rgba(255,255,255,.82);margin:12px 0 0">Dejanos tus datos y te escribimos por WhatsApp: te contamos cómo funciona, te creamos la cuenta y, si querés, cubrimos tu primera carrera con nuestro equipo.</p>
+        <ul><li>Te respondemos por WhatsApp</li><li>Sin compromiso y sin cuota mensual</li><li>Arrancás con tu próxima carrera</li></ul>
+      </div>
+
+      <form id="f" novalidate autocomplete="on">
+        <div class="prog"><i class="on"></i><i id="p2"></i></div>
+
+        <div id="paso1">
+          <label class="l" for="nombre">Tu nombre</label>
+          <input type="text" id="nombre" name="name" autocomplete="name" placeholder="Ej: Martín" maxlength="60" />
+          <label class="l" for="tel">Tu WhatsApp</label>
+          <div class="tel">
+            <select id="pais" aria-label="País">
+              <option value="595">🇵🇾 +595</option>
+              <option value="549">🇦🇷 +54</option>
+              <option value="598">🇺🇾 +598</option>
+              <option value="591">🇧🇴 +591</option>
+              <option value="56">🇨🇱 +56</option>
+              <option value="55">🇧🇷 +55</option>
+              <option value="">🌎 Otro</option>
+            </select>
+            <input type="tel" id="tel" name="tel" autocomplete="tel-national" inputmode="tel" placeholder="Ej: 0981 123 456" maxlength="20" />
+          </div>
+          <div class="err" id="err1"></div>
+          <button type="button" class="btn coral" id="sig">Siguiente →</button>
+        </div>
+
+        <div id="paso2" class="hide">
+          <label class="l">¿Qué hacés?</label>
+          <div class="opts">
+            <label class="opt"><input type="radio" name="que" value="Fotografo" /> Soy fotógrafo de carreras</label>
+            <label class="opt"><input type="radio" name="que" value="Organizador" /> Organizo carreras</label>
+            <label class="opt"><input type="radio" name="que" value="corredor" /> Corro y busco mis fotos</label>
+          </div>
+          <div id="bloqueCuando">
+            <label class="l">¿Cuándo es tu próxima carrera?</label>
+            <div class="opts">
+              <label class="opt"><input type="radio" name="cuando" value="mes" /> Este mes</label>
+              <label class="opt"><input type="radio" name="cuando" value="pronto" /> En los próximos 3 meses</label>
+              <label class="opt"><input type="radio" name="cuando" value="mirando" /> Todavía no tengo fecha</label>
+            </div>
+          </div>
+          <div class="err" id="err2"></div>
+          <button type="submit" class="btn wa" id="enviar">💬 Hablar por WhatsApp</button>
+          <button type="button" class="back" id="volver">← Volver</button>
+          <p class="fine">Tus datos no se comparten.</p>
+        </div>
+
+        <div id="despues" class="hide" style="text-align:center">
+          <h3 style="font-size:24px">¡Gracias, <span id="nomG"></span>!</h3>
+          <p id="txtDespues" style="color:rgba(255,255,255,.8)">Cuando tengas fecha para tu próxima carrera, escribinos y lo armamos.</p>
+          <a class="btn wa" id="waDespues" href="#" style="margin-top:8px">💬 Escribir por WhatsApp</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</section>
+
+<footer>
+  SmartRun · Fotos y videos de carreras por dorsal y selfie · <a href="https://smartrun.lat">smartrun.lat</a>
+</footer>
+
+<div class="sticky"><a class="btn coral" href="#empezar">Quiero sumarme</a></div>
+
+<script>
+(function () {
+  /* ===== CONFIG ===== */
+  var CUENTA = "smartrun";                 // cuenta de Publi.lat
+  var WA = "595994172823";                 // WhatsApp de SmartRun
+  var API = "https://app.publi.lat/api/land/track";
+  var SITIO = "https://smartrun.lat";      // los corredores van a buscar sus fotos acá
+
+  var $ = function (id) { return document.getElementById(id); };
+  function cookie(n) { var m = document.cookie.match("(^|; )" + n + "=([^;]+)"); return m ? decodeURIComponent(m[2]) : ""; }
+  function rnd(n) { var s = "", c = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; for (var i = 0; i < n; i++) s += c[Math.floor(Math.random() * c.length)]; return s; }
+  function elegido(n) { var x = document.querySelector('input[name="' + n + '"]:checked'); return x ? x.value : ""; }
+
+  /* Teléfono a formato internacional (solo dígitos): saca el 0 inicial; en Argentina además el 9 y el 15. */
+  function telE164() {
+    var pref = $("pais").value, d = $("tel").value.replace(/\D/g, "");
+    if (!pref) return d;
+    d = d.replace(/^0+/, "");
+    if (pref === "549") { d = d.replace(/^9/, ""); d = d.replace(/^(\d{2,4})15(\d{6,8})$/, "$1$2"); }
+    return pref + d;
+  }
+
+  $("sig").addEventListener("click", function () {
+    var n = $("nombre").value.trim(), t = $("tel").value.replace(/\D/g, "");
+    if (n.length < 2) { $("err1").textContent = "Escribí tu nombre."; $("nombre").focus(); return; }
+    if (t.length < 7) { $("err1").textContent = "Escribí tu WhatsApp."; $("tel").focus(); return; }
+    $("err1").textContent = "";
+    $("paso1").classList.add("hide"); $("paso2").classList.remove("hide"); $("p2").classList.add("on");
+  });
+  $("volver").addEventListener("click", function () {
+    $("paso2").classList.add("hide"); $("paso1").classList.remove("hide"); $("p2").classList.remove("on");
+  });
+
+  /* El corredor no ve la pregunta de la fecha: no es cliente de esta página, lo mandamos a buscar sus fotos. */
+  function sync() { $("bloqueCuando").style.display = elegido("que") === "corredor" ? "none" : ""; }
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="que"]'), function (r) { r.addEventListener("change", sync); });
+
+  var TEXTO = { Fotografo: "soy fotógrafo de carreras y quiero vender mis fotos en SmartRun", Organizador: "organizo carreras y quiero sumar mi evento a SmartRun" };
+  var CUANDO = { mes: "Mi próxima carrera es este mes", pronto: "Mi próxima carrera es en los próximos meses", mirando: "Todavía no tengo fecha" };
+
+  $("f").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var nombre = $("nombre").value.trim(), que = elegido("que"), cuando = elegido("cuando");
+    if (!que) { $("err2").textContent = "Elegí qué hacés."; return; }
+    if (que === "corredor") {
+      /* Corredor: no es un interesado de la venta B2B. Ni registro ni Lead a Meta; lo mandamos a buscar sus fotos. */
+      $("nomG").textContent = nombre;
+      $("txtDespues").textContent = "Esta página es para fotógrafos y organizadores. Tus fotos las encontrás en smartrun.lat con tu número de dorsal o una selfie.";
+      $("waDespues").textContent = "🔎 Buscar mis fotos"; $("waDespues").href = SITIO;
+      $("paso2").classList.add("hide"); $("despues").classList.remove("hide");
+      return;
+    }
+    if (!cuando) { $("err2").textContent = "Elegí cuándo es tu próxima carrera."; return; }
+    $("err2").textContent = "";
+
+    var base = "Hola! Soy " + nombre + ", " + TEXTO[que] + ". " + CUANDO[cuando] + ".";
+    /* CALIFICA = fotógrafo u organizador con una carrera en los próximos meses. Solo a esos se los registra y se
+       le manda el Lead a Meta: así el pixel aprende de quien de verdad puede arrancar. */
+    if (cuando === "mirando") {
+      $("nomG").textContent = nombre;
+      $("waDespues").href = "https://wa.me/" + WA + "?text=" + encodeURIComponent(base);
+      $("paso2").classList.add("hide"); $("despues").classList.remove("hide");
+      return;
+    }
+
+    var ref = rnd(7);
+    var here = new URLSearchParams(location.search);
+    try {
+      /* keepalive: el registro sobrevive a la navegación a WhatsApp. Si falla, igual llega por el ref del mensaje. */
+      fetch(API, {
+        method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountSlug: CUENTA, ref: ref, eventId: "sr-" + ref,
+          nombre: nombre, telefono: telE164(), categoria: que,
+          url: location.origin + location.pathname,
+          fbclid: here.get("fbclid") || undefined, fbp: cookie("_fbp") || undefined, fbc: cookie("_fbc") || undefined
+        })
+      }).catch(function () {});
+    } catch (_) {}
+    location.href = "https://wa.me/" + WA + "?text=" + encodeURIComponent(base + " (ref:" + ref + ")");
+  });
+})();
+</script>
+</body>
+</html>
