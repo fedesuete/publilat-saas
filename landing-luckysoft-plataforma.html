@@ -5,10 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Lucky Soft — Tu casino online propio en 7 días</title>
 <meta name="description" content="Plataforma propia llave en mano con chat propio: tu marca, tu panel de cajeros y sin depender de WhatsApp. Lista en 7 días, desde USD 200 por mes." />
-<!-- Landing SOLO SERVIDOR: sin pixel de navegador. El publicador de Publi.lat respeta esta marca y no
-     inyecta ningún pixel. Toda la medición va por CAPI desde /api/land/track, que manda el Lead al pixel
-     del tipo de cliente y SOLO si el interesado califica. -->
+<!-- El publicador de Publi.lat respeta esta marca y NO inyecta pixeles (ni el principal ni espejos).
+     El Lead sale SOLO por servidor (CAPI desde /api/land/track) y SOLO si el interesado califica. -->
 <meta name="pl-sin-pixel-navegador" content="1" />
+<!-- Pixel B2B en el navegador SOLO para PageView (12/10): sin él Meta no veía ninguna visita de la campaña
+     y nadie creaba la cookie _fbp que /api/land/track manda en el Lead. NO dispara Lead acá (no duplicar). -->
+<script>
+!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version="2.0";n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,"script","https://connect.facebook.net/en_US/fbevents.js");
+fbq("init","1104282115516094");
+fbq("track","PageView");
+</script>
+<noscript><img height="1" width="1" style="display:none" alt="" src="https://www.facebook.com/tr?id=1104282115516094&ev=PageView&noscript=1" /></noscript>
 <meta name="theme-color" content="#060606" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&family=Inter:wght@400;500;600;800&display=swap" rel="stylesheet" />
