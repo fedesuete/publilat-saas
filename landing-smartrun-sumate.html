@@ -300,7 +300,7 @@
       <div class="blob" style="width:300px;height:300px;top:-90px;right:30px;background:rgba(233,69,96,.4)"></div>
       <div>
         <h2>Arranquemos con tu próxima carrera</h2>
-        <p style="color:rgba(255,255,255,.82);margin:12px 0 0">Dejanos tus datos y te escribimos por WhatsApp: te contamos cómo funciona, te creamos la cuenta y, si querés, cubrimos tu primera carrera con nuestro equipo.</p>
+        <p style="color:rgba(255,255,255,.82);margin:12px 0 0">Dejanos tus datos y seguí en SmartRun: si organizás, proponés tu evento en 2 minutos; si sos fotógrafo, ves cómo vender tus fotos. Te escribimos por WhatsApp para ayudarte a arrancar.</p>
         <ul><li>Te respondemos por WhatsApp</li><li>Sin compromiso y sin cuota mensual</li><li>Arrancás con tu próxima carrera</li></ul>
       </div>
 
@@ -343,15 +343,15 @@
             </div>
           </div>
           <div class="err" id="err2"></div>
-          <button type="submit" class="btn wa" id="enviar">💬 Hablar por WhatsApp</button>
+          <button type="submit" class="btn coral" id="enviar">Continuar →</button>
           <button type="button" class="back" id="volver">← Volver</button>
           <p class="fine">Tus datos no se comparten.</p>
         </div>
 
         <div id="despues" class="hide" style="text-align:center">
           <h3 style="font-size:24px">¡Gracias, <span id="nomG"></span>!</h3>
-          <p id="txtDespues" style="color:rgba(255,255,255,.8)">Cuando tengas fecha para tu próxima carrera, escribinos y lo armamos.</p>
-          <a class="btn wa" id="waDespues" href="#" style="margin-top:8px">💬 Escribir por WhatsApp</a>
+          <p id="txtDespues" style="color:rgba(255,255,255,.8)">Cuando tengas fecha para tu próxima carrera, volvé y lo armamos. Mientras tanto, conocé cómo funciona SmartRun.</p>
+          <a class="btn coral" id="waDespues" href="https://smartrun.lat/sumate" style="margin-top:8px;width:100%">Conocer SmartRun →</a>
         </div>
       </form>
     </div>
@@ -368,7 +368,9 @@
 (function () {
   /* ===== CONFIG ===== */
   var CUENTA = "smartrun";                 // cuenta de Publi.lat
-  var WA = "595994172823";                 // WhatsApp de SmartRun
+    /* Después del formulario cada uno sigue en la web oficial (12/10, pedido del dueño): el organizador propone su
+     evento ahí mismo y el fotógrafo ve la sección para fotógrafos. El contacto queda en el CRM de Publi.lat. */
+  var DESTINO = { Organizador: "https://smartrun.lat/organizador", Fotografo: "https://smartrun.lat/sumate#fotografos" };
   var API = "https://app.publi.lat/api/land/track";
   var SITIO = "https://smartrun.lat";      // los corredores van a buscar sus fotos acá
 
@@ -424,7 +426,8 @@
        le manda el Lead a Meta: así el pixel aprende de quien de verdad puede arrancar. */
     if (cuando === "mirando") {
       $("nomG").textContent = nombre;
-      $("waDespues").href = "https://wa.me/" + WA + "?text=" + encodeURIComponent(base);
+      /* Sin fecha: no se registra ni va Lead a Meta; puede seguir mirando la web oficial. */
+      $("waDespues").textContent = "Conocer SmartRun →"; $("waDespues").href = "https://smartrun.lat/sumate";
       $("paso2").classList.add("hide"); $("despues").classList.remove("hide");
       return;
     }
@@ -443,7 +446,9 @@
         })
       }).catch(function () {});
     } catch (_) {}
-    location.href = "https://wa.me/" + WA + "?text=" + encodeURIComponent(base + " (ref:" + ref + ")");
+    /* A la web oficial. Un instante de margen para que salga el registro (keepalive igual lo protege). */
+    $("enviar").disabled = true; $("enviar").textContent = "Abriendo SmartRun…";
+    setTimeout(function () { location.href = DESTINO[que]; }, 250);
   });
 })();
 </script>
