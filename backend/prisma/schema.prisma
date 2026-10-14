@@ -1071,3 +1071,16 @@ model ChatWheelSpin {
   @@index([userId, status])
   @@index([playerId, createdAt])
 }
+
+// Imágenes guardadas del Inbox (2026-10-14): las que el operador manda seguido (lámina de planes, precios,
+// datos de pago) para mandarlas con un toque sin buscarlas en el celu/PC. Igual que AudioClip.
+model ImageClip {
+  id          String   @id @default(cuid())
+  userId      String
+  title       String
+  contentType String // image/jpeg | image/png | image/webp
+  data        Bytes
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}

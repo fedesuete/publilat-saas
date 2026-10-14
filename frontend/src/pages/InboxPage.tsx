@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { ArrowLeft, PanelLeftClose, PanelLeftOpen, Smile, Mic, Square, MessageSquareText, Music, Upload, Trash2, Send, X, Paperclip } from "lucide-react";
+import { ArrowLeft, PanelLeftClose, PanelLeftOpen, Smile, Mic, Square, MessageSquareText, Music, Upload, Trash2, Send, X, Paperclip, Images } from "lucide-react";
 import { api, apiError } from "../lib/api";
 import { getSocket, type InboxMessagePayload, type InboxMessageStatusPayload } from "../lib/socket";
 import type { Msg, Stage } from "../lib/types";
@@ -22,6 +22,7 @@ interface Conversation {
 }
 interface QuickReply { id: string; title: string; body: string }
 interface AudioClip { id: string; title: string; contentType: string; createdAt: string }
+interface ImageClip { id: string; title: string; contentType: string; createdAt: string }
 interface Tpl { name: string; language: string; category?: string; bodyParams: number }
 
 const shortTime = (iso: string) =>
@@ -117,6 +118,12 @@ export default function InboxPage() {
   const recTargetRef = useRef<"chat" | "lib">("chat"); // destino de la grabación en curso
   const fileRef = useRef<HTMLInputElement>(null); // input oculto para subir audios a la biblioteca
   const imgRef = useRef<HTMLInputElement>(null); // input oculto para mandar una imagen al chat
+  const imgClipRef = useRef<HTMLInputElement>(null); // input oculto para GUARDAR una imagen en la biblioteca
+  // Imágenes guardadas: las que se mandan seguido (planes, precios, datos de pago), a un toque.
+  const [showImgs, setShowImgs] = useState(false);
+  const [imageClips, setImageClips] = useState<ImageClip[]>([]);
+  const [imageClipsMax, setImageClipsMax] = useState(12);
+  const [thumbs, setThumbs] = useState<Record<string, string>>({}); // id → object URL de la miniatura
   const draftRef = useRef<HTMLTextAreaElement>(null); // compositor (para auto-alto)
   const holdStartRef = useRef(0); // inicio del "mantener apretado" (descarta toques muy cortos)
   const recCancelRef = useRef(false); // grabación cancelada -> no enviar
@@ -238,7 +245,7 @@ export default function InboxPage() {
   useEffect(() => {
     if (!selected) return;
     markRead(selected); // lo abriste = leído (persiste en localStorage, no revive en verde)
-    setChatError(null); setMessages([]); setShowEmoji(false); setShowQuick(false); setShowAudios(false); setNeedTemplate(false); setTemplates([]);
+    setChatError(null); setMessages([]); setShowEmoji(false); setShowQuick(false); setShowAudios(false); setShowImgs(false); setNeedTemplate(false); setTemplates([]);
     setConvs((prev) => prev.map((c) => (c.id === selected ? { ...c, unread: 0 } : c)));
     setLoadingMsgs(true);
     api.get<{ messages: Msg[] }>(`/api/inbox/${selected}/messages`)
@@ -269,7 +276,7 @@ export default function InboxPage() {
       // Solo pintamos el mensaje si seguís en ESE chat; si ya te fuiste, se ve al volver (GET /messages).
       if (selectedRef.current === target) {
         setMessages((prev) => appendUnique(prev, data.message));
-        setDraft(""); setShowEmoji(false); setShowQuick(false); setShowAudios(false);
+        setDraft(""); setShowEmoji(false); setShowQuick(false); setShowAudios(false); setShowImgs(false);
       }
       void loadConvs();
     } catch (err) {
@@ -433,6 +440,60 @@ export default function InboxPage() {
     try { await api.delete(`/api/inbox/audio-clips/${id}`); await loadAudioClips(); }
     catch (err) { setChatError(apiError(err)); }
   };
+  // --- Imágenes guardadas ---
+  const loadImageClips = async () => {
+    try {
+      const { data } = await api.get<{ items: ImageClip[]; max?: number }>("/api/inbox/image-clips");
+      setImageClips(data.items);
+      if (data.max) setImageClipsMax(data.max);
+      // Miniaturas: se bajan con la sesión y se muestran como object URL. Solo las que faltan.
+      for (const it of data.items) {
+        if (thumbs[it.id]) continue;
+        api.get(`/api/inbox/image-clips/${it.id}/image`, { responseType: "blob" })
+          .then(({ data: b }) => setThumbs((t) => ({ ...t, [it.id]: URL.createObjectURL(b as Blob) })))
+          .catch(() => undefined);
+      }
+    } catch (err) { setChatError(apiError(err)); }
+  };
+  const saveImageClip = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setChatError("Elegí una imagen (JPG, PNG o WEBP)."); return; }
+    setChatError(null); setSending(true);
+    try {
+      const image = await achicarImagen(file);
+      const title = file.name.replace(/\.[^.]+$/, "").slice(0, 60) || "Imagen";
+      await api.post("/api/inbox/image-clips", { title, image });
+      await loadImageClips();
+    } catch (err) { setChatError(apiError(err)); }
+    finally { setSending(false); }
+  };
+  const delImageClip = async (id: string) => {
+    if (!window.confirm("¿Borrar esta imagen guardada?")) return;
+    try {
+      await api.delete(`/api/inbox/image-clips/${id}`);
+      setThumbs((t) => { const n = { ...t }; if (n[id]) URL.revokeObjectURL(n[id]); delete n[id]; return n; });
+      await loadImageClips();
+    } catch (err) { setChatError(apiError(err)); }
+  };
+  const sendImageClip = async (clipId: string) => {
+    if (!selected) return;
+    const target = selected;
+    const caption = draft.trim(); // lo escrito va como texto de la foto, igual que el clip
+    setChatError(null); setSending(true);
+    try {
+      const { data } = await api.post<{ message: Msg }>(`/api/inbox/${target}/image-clip`, { clipId, ...(caption ? { caption } : {}) });
+      if (selectedRef.current === target) {
+        setMessages((prev) => appendUnique(prev, data.message));
+        if (caption) setDraft("");
+        setShowImgs(false);
+      }
+      void loadConvs();
+    } catch (err) { setChatError(apiError(err)); }
+    finally { setSending(false); }
+  };
+
   const sendAudioClip = async (clipId: string) => {
     if (!selected) return;
     const target = selected; // contacto destino al momento de tocar Enviar
@@ -734,6 +795,36 @@ export default function InboxPage() {
                   )}
                 </div>
               )}
+              {showImgs && (
+                <div className="absolute bottom-full left-2 mb-2 w-80 rounded-lg border border-slate-700 bg-slate-900 p-2 shadow-xl">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-300">Imágenes guardadas</span>
+                    <button type="button" disabled={sending || imageClips.length >= imageClipsMax} onClick={() => imgClipRef.current?.click()} className="flex items-center gap-1 text-xs font-medium text-wa-green hover:underline disabled:opacity-40">
+                      <Upload className="h-3.5 w-3.5" /> Guardar imagen
+                    </button>
+                  </div>
+                  <p className="mb-2 px-1 text-[10px] leading-tight text-slate-500">Tocá una para mandarla. Lo que tengas escrito va como texto de la foto. Máximo {imageClipsMax}.</p>
+                  {imageClips.length === 0 ? (
+                    <p className="px-1 py-2 text-xs text-slate-500">Sin imágenes. Guardá las que mandás seguido (planes, precios, datos de pago).</p>
+                  ) : (
+                    <div className="grid max-h-72 grid-cols-3 gap-2 overflow-y-auto">
+                      {imageClips.map((c) => (
+                        <div key={c.id} className="group relative">
+                          <button type="button" disabled={sending || !selected} onClick={() => void sendImageClip(c.id)} title={`Mandar "${c.title}"`}
+                            className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-md bg-slate-800 ring-1 ring-slate-700 hover:ring-wa-green disabled:opacity-50">
+                            {thumbs[c.id] ? <img src={thumbs[c.id]} alt={c.title} className="h-full w-full object-cover" /> : <span className="text-[10px] text-slate-500">…</span>}
+                          </button>
+                          <span className="mt-0.5 block truncate text-[10px] text-slate-400">{c.title}</span>
+                          <button type="button" onClick={() => void delImageClip(c.id)} aria-label={`Borrar ${c.title}`}
+                            className="absolute right-1 top-1 rounded-full bg-black/70 p-1 text-slate-300 opacity-0 transition group-hover:opacity-100 hover:text-rose-400 focus:opacity-100">
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               {showAudios && (
                 <div className="absolute bottom-full left-2 mb-2 w-80 rounded-lg border border-slate-700 bg-slate-900 p-2 shadow-xl">
                   <div className="mb-2 flex items-center justify-between">
@@ -763,6 +854,7 @@ export default function InboxPage() {
               <form onSubmit={send} className="flex items-end gap-1.5 px-3 pt-2.5" style={{ paddingBottom: "calc(0.6rem + env(safe-area-inset-bottom))" }}>
                 <input ref={fileRef} type="file" accept="audio/*" onChange={onFilePicked} className="hidden" />
                 <input ref={imgRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={onImagePicked} className="hidden" />
+                <input ref={imgClipRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => void saveImageClip(e)} className="hidden" />
                 {recording ? (
                   <div className="flex h-[46px] flex-1 items-center gap-2 rounded-2xl bg-rose-500/15 px-4 text-sm font-medium text-rose-300">
                     <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-rose-500" />
@@ -770,14 +862,17 @@ export default function InboxPage() {
                   </div>
                 ) : (
                   <>
-                    <button type="button" title="Emojis" onClick={() => { setShowEmoji((v) => !v); setShowQuick(false); setShowAudios(false); }} className={`rounded p-2 ${showEmoji ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
+                    <button type="button" title="Emojis" onClick={() => { setShowEmoji((v) => !v); setShowQuick(false); setShowAudios(false); setShowImgs(false); }} className={`rounded p-2 ${showEmoji ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
                       {showEmoji ? <X className="h-5 w-5" /> : <Smile className="h-5 w-5" />}
                     </button>
-                    <button type="button" title="Mensajes guardados" onClick={() => { setShowQuick((v) => !v); setShowEmoji(false); setShowAudios(false); }} className={`rounded p-2 ${showQuick ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
+                    <button type="button" title="Mensajes guardados" onClick={() => { setShowQuick((v) => !v); setShowEmoji(false); setShowAudios(false); setShowImgs(false); }} className={`rounded p-2 ${showQuick ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
                       <MessageSquareText className="h-5 w-5" />
                     </button>
-                    <button type="button" title="Biblioteca de audios" onClick={() => { setShowAudios((v) => !v); setShowEmoji(false); setShowQuick(false); }} className={`rounded p-2 ${showAudios ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
+                    <button type="button" title="Biblioteca de audios" onClick={() => { setShowAudios((v) => !v); setShowEmoji(false); setShowQuick(false); setShowImgs(false); }} className={`rounded p-2 ${showAudios ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
                       <Music className="h-5 w-5" />
+                    </button>
+                    <button type="button" title="Imágenes guardadas" onClick={() => { const abrir = !showImgs; setShowImgs(abrir); setShowEmoji(false); setShowQuick(false); setShowAudios(false); if (abrir) void loadImageClips(); }} className={`rounded p-2 ${showImgs ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
+                      <Images className="h-5 w-5" />
                     </button>
                     <button type="button" title="Mandar imagen (lo que escribas va como texto de la foto)" disabled={sending} onClick={() => imgRef.current?.click()} className="rounded p-2 text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-50">
                       <Paperclip className="h-5 w-5" />

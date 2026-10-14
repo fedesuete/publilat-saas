@@ -142,6 +142,77 @@ inboxRouter.get("/audio-clips/:id/audio", async (req, res) => {
   return res.send(Buffer.from(item.data));
 });
 
+// --- Imágenes guardadas (2026-10-14) ---------------------------------------------------------------
+// Las que el operador manda seguido (lámina de planes, precios, datos de pago): se guardan una vez y se mandan con
+// un toque, sin buscarlas en Descargas. Mismo patrón que la biblioteca de audios.
+const IMAGE_CLIP_MAX = 12; // por cuenta
+const IMAGE_CLIP_MAX_BYTES = 8 * 1024 * 1024;
+const IMAGE_CLIP_MIMES = ["image/jpeg", "image/png", "image/webp"];
+
+inboxRouter.get("/image-clips", async (req, res) => {
+  const items = await prisma.imageClip.findMany({
+    where: { userId: req.userId! },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, title: true, contentType: true, createdAt: true }, // sin los bytes
+  });
+  return res.json({ items, max: IMAGE_CLIP_MAX });
+});
+
+const imageClipSchema = z.object({ title: z.string().trim().min(1).max(60), image: z.string().min(1) });
+inboxRouter.post("/image-clips", async (req, res) => {
+  const parsed = imageClipSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const count = await prisma.imageClip.count({ where: { userId: req.userId! } });
+  if (count >= IMAGE_CLIP_MAX) return res.status(403).json({ error: `Llegaste al máximo de ${IMAGE_CLIP_MAX} imágenes guardadas. Borrá una para agregar otra.` });
+  const contentType = parsed.data.image.match(/^data:([^;]+);base64,/)?.[1] ?? "image/jpeg";
+  if (!IMAGE_CLIP_MIMES.includes(contentType)) return res.status(400).json({ error: "Formato no soportado. Usá JPG, PNG o WEBP." });
+  const data = Buffer.from(parsed.data.image.replace(/^data:[^;]+;base64,/, ""), "base64");
+  if (data.length < 100) return res.status(400).json({ error: "La imagen llegó vacía" });
+  if (data.length > IMAGE_CLIP_MAX_BYTES) return res.status(413).json({ error: "La imagen es muy pesada (máx 8 MB)" });
+  const item = await prisma.imageClip.create({
+    data: { userId: req.userId!, title: parsed.data.title, contentType, data },
+    select: { id: true, title: true, contentType: true, createdAt: true },
+  });
+  return res.status(201).json({ item });
+});
+
+inboxRouter.delete("/image-clips/:id", async (req, res) => {
+  const item = await prisma.imageClip.findFirst({ where: { id: req.params.id, userId: req.userId! }, select: { id: true } });
+  if (!item) return res.status(404).json({ error: "No encontrado" });
+  await prisma.imageClip.delete({ where: { id: item.id } });
+  return res.json({ ok: true });
+});
+
+// Miniatura / vista previa: los bytes de la imagen guardada (solo el dueño).
+inboxRouter.get("/image-clips/:id/image", async (req, res) => {
+  const item = await prisma.imageClip.findFirst({ where: { id: req.params.id, userId: req.userId! }, select: { contentType: true, data: true } });
+  if (!item) return res.status(404).json({ error: "No encontrado" });
+  res.setHeader("Content-Type", item.contentType);
+  res.setHeader("Cache-Control", "private, max-age=3600");
+  return res.send(Buffer.from(item.data));
+});
+
+const imageClipSendSchema = z.object({ clipId: z.string().min(1), caption: z.string().max(1024).optional() });
+
+// POST /api/inbox/:contactId/image-clip — manda una imagen guardada por WhatsApp (mismo camino que /image).
+inboxRouter.post("/:contactId/image-clip", async (req, res) => {
+  const parsed = imageClipSendSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const contact = await getOwnedContact(req.userId!, req.params.contactId);
+  if (!contact) return res.status(404).json({ error: "Contacto no encontrado" });
+  const line = await resolveContactLine(req.userId!, contact); // cura contact.lineId si estaba vacío
+  if (!line) return res.status(400).json({ error: "El contacto no tiene una línea para responder. Revisá que tengas una línea de WhatsApp activa." });
+  const clip = await prisma.imageClip.findFirst({ where: { id: parsed.data.clipId, userId: req.userId! }, select: { contentType: true, data: true } });
+  if (!clip) return res.status(404).json({ error: "Imagen no encontrada" });
+  const base64 = Buffer.from(clip.data).toString("base64");
+  const r = await enviarImagenAContacto(req.userId!, contact.id, base64, clip.contentType, { caption: parsed.data.caption, guardarImagen: true });
+  if (!r.ok) return res.status(r.status).json({ error: r.error, ...(r.code ? { code: r.code } : {}) });
+  notifyBotOperatorActive(line.id, contact.phone, line.userId); // el bot cajero se calla 30 min (no pisa al operador)
+  return res.status(201).json({
+    message: { id: r.message.id, direction: "out", body: parsed.data.caption?.trim() ?? "", status: r.message.status, mediaUrl: `data:${clip.contentType};base64,${base64}`, createdAt: r.message.createdAt },
+  });
+});
+
 // GET /api/inbox/conversations — lista de chats con preview, línea y no-leídos.
 inboxRouter.get("/conversations", async (req, res) => {
   const userId = req.userId!;

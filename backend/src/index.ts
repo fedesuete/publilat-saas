@@ -113,6 +113,7 @@ app.post("/api/billing/webhook/stripe", express.raw({ type: "*/*" }), stripeWebh
 // La subida de audios a la biblioteca va en base64: necesita más que el 1mb global. Va ANTES
 // del json global (que al ver el body ya parseado, se saltea). No necesita rawBody (no es webhook).
 app.use("/api/inbox/audio-clips", express.json({ limit: "20mb" }));
+app.use("/api/inbox/image-clips", express.json({ limit: "12mb" })); // imágenes guardadas del Inbox (base64)
 // Imagen que manda el operador desde el Inbox (base64; el panel ya la achica, esto es el techo).
 app.use(/^\/api\/inbox\/[^/]+\/image$/,express.json({ limit: "12mb" }));
 
