@@ -25,6 +25,7 @@ export default function SegmentPicker({ contactId }: { contactId: string }) {
   const [demo, setDemo] = useState(false);
   const [estado, setEstado] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [abierto, setAbierto] = useState(false); // celular: las opciones van en un menú desplegable
 
   useEffect(() => {
     if (cache && Date.now() - cache.at < 60_000) return;
@@ -37,7 +38,7 @@ export default function SegmentPicker({ contactId }: { contactId: string }) {
   }, []);
 
   useEffect(() => {
-    setActual(""); setCategoria(""); setDemo(false); setEstado(null);
+    setActual(""); setCategoria(""); setDemo(false); setEstado(null); setAbierto(false);
     api.get<{ pixelRowId: string | null; categoria?: string | null; demo?: boolean }>(`/api/segments/contact/${contactId}`)
       .then(({ data }) => { setActual(data.pixelRowId ?? ""); setCategoria(data.categoria ?? ""); setDemo(!!data.demo); })
       .catch(() => undefined);
@@ -63,6 +64,7 @@ export default function SegmentPicker({ contactId }: { contactId: string }) {
       avisar(apiError(e));
     } finally {
       setBusy(false);
+      setAbierto(false);
     }
   };
 
@@ -74,6 +76,7 @@ export default function SegmentPicker({ contactId }: { contactId: string }) {
       await api.post(`/api/segments/contact/${contactId}/schedule`);
       setDemo(true);
       avisar("✓ Demo agendada enviada a su pixel");
+      setAbierto(false);
     } catch (e) {
       avisar(apiError(e));
     } finally {
@@ -84,8 +87,21 @@ export default function SegmentPicker({ contactId }: { contactId: string }) {
   const unSoloTipo = segmentos.length === 1;
 
   return (
-    <div className="flex shrink-0 flex-col items-end">
-      <div className="flex flex-wrap items-center justify-end gap-1">
+    <div className="relative flex shrink-0 flex-col items-end">
+      {/* Celular: un solo botón compacto que despliega las opciones (si no, empujaban el chat fuera de la pantalla). */}
+      <button
+        type="button"
+        onClick={() => setAbierto((v) => !v)}
+        aria-expanded={abierto}
+        title="Producto y demo"
+        className={`${chip(!!actual || demo)} flex max-w-[8.5rem] items-center gap-1 md:hidden`}
+      >
+        <span className="truncate">🏷️ {categoria || (actual ? segmentos.find((x) => x.id === actual)?.label : "") || "Producto"}{demo ? " · 📅" : ""}</span>
+        <span aria-hidden="true">▾</span>
+      </button>
+      <div
+        className={`${abierto ? "flex" : "hidden"} absolute right-0 top-full z-30 mt-1 w-56 flex-col items-stretch gap-2 rounded-lg border border-slate-700 bg-slate-900 p-2 shadow-xl md:static md:mt-0 md:flex md:w-auto md:flex-row md:flex-wrap md:items-center md:justify-end md:gap-1 md:border-0 md:bg-transparent md:p-0 md:shadow-none`}
+      >
         {unSoloTipo ? (
           // Un solo pixel con tipo: el selector es directamente el producto.
           <select

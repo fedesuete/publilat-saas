@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { ArrowLeft, PanelLeftClose, PanelLeftOpen, Smile, Mic, Square, MessageSquareText, Music, Upload, Trash2, Send, X, Paperclip, Images } from "lucide-react";
+import { ArrowLeft, PanelLeftClose, PanelLeftOpen, Smile, Mic, Square, MessageSquareText, Music, Upload, Trash2, Send, X, Paperclip, Images, Plus } from "lucide-react";
 import { api, apiError } from "../lib/api";
 import { getSocket, type InboxMessagePayload, type InboxMessageStatusPayload } from "../lib/socket";
 import type { Msg, Stage } from "../lib/types";
@@ -121,6 +121,7 @@ export default function InboxPage() {
   const imgClipRef = useRef<HTMLInputElement>(null); // input oculto para GUARDAR una imagen en la biblioteca
   // Imágenes guardadas: las que se mandan seguido (planes, precios, datos de pago), a un toque.
   const [showImgs, setShowImgs] = useState(false);
+  const [showMas, setShowMas] = useState(false); // celular: menú "+" con emojis, guardados, audios, imágenes y adjuntar
   const [imageClips, setImageClips] = useState<ImageClip[]>([]);
   const [imageClipsMax, setImageClipsMax] = useState(12);
   const [thumbs, setThumbs] = useState<Record<string, string>>({}); // id → object URL de la miniatura
@@ -245,7 +246,7 @@ export default function InboxPage() {
   useEffect(() => {
     if (!selected) return;
     markRead(selected); // lo abriste = leído (persiste en localStorage, no revive en verde)
-    setChatError(null); setMessages([]); setShowEmoji(false); setShowQuick(false); setShowAudios(false); setShowImgs(false); setNeedTemplate(false); setTemplates([]);
+    setChatError(null); setMessages([]); setShowEmoji(false); setShowQuick(false); setShowAudios(false); setShowImgs(false); setShowMas(false); setNeedTemplate(false); setTemplates([]);
     setConvs((prev) => prev.map((c) => (c.id === selected ? { ...c, unread: 0 } : c)));
     setLoadingMsgs(true);
     api.get<{ messages: Msg[] }>(`/api/inbox/${selected}/messages`)
@@ -862,6 +863,31 @@ export default function InboxPage() {
                   </div>
                 ) : (
                   <>
+                    <div className="relative shrink-0 sm:hidden">
+                      <button type="button" title="Más opciones" aria-expanded={showMas}
+                        onClick={() => { setShowMas((v) => !v); setShowEmoji(false); setShowQuick(false); setShowAudios(false); setShowImgs(false); }}
+                        className={`rounded-full p-2 ${showMas ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
+                        {showMas ? <X className="h-6 w-6" /> : <Plus className="h-6 w-6" />}
+                      </button>
+                      {showMas && (
+                        <div className="absolute bottom-full left-0 z-30 mb-2 w-56 overflow-hidden rounded-xl border border-slate-700 bg-slate-900 py-1 shadow-xl">
+                          {[
+                            { icon: Smile, label: "Emojis", on: () => setShowEmoji(true) },
+                            { icon: MessageSquareText, label: "Mensajes guardados", on: () => setShowQuick(true) },
+                            { icon: Music, label: "Audios", on: () => setShowAudios(true) },
+                            { icon: Images, label: "Imágenes guardadas", on: () => { setShowImgs(true); void loadImageClips(); } },
+                            { icon: Paperclip, label: "Mandar una imagen", on: () => imgRef.current?.click() },
+                          ].map(({ icon: Icon, label, on }) => (
+                            <button key={label} type="button" disabled={sending && label === "Mandar una imagen"}
+                              onClick={() => { setShowMas(false); on(); }}
+                              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50">
+                              <Icon className="h-5 w-5 text-slate-400" />{label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="hidden shrink-0 items-center sm:flex">
                     <button type="button" title="Emojis" onClick={() => { setShowEmoji((v) => !v); setShowQuick(false); setShowAudios(false); setShowImgs(false); }} className={`rounded p-2 ${showEmoji ? "bg-slate-700 text-wa-green" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
                       {showEmoji ? <X className="h-5 w-5" /> : <Smile className="h-5 w-5" />}
                     </button>
@@ -877,6 +903,7 @@ export default function InboxPage() {
                     <button type="button" title="Mandar imagen (lo que escribas va como texto de la foto)" disabled={sending} onClick={() => imgRef.current?.click()} className="rounded p-2 text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-50">
                       <Paperclip className="h-5 w-5" />
                     </button>
+                    </div>
                     <textarea
                       ref={draftRef}
                       rows={1}
@@ -890,7 +917,7 @@ export default function InboxPage() {
                         const f = item?.getAsFile();
                         if (f) { e.preventDefault(); void sendImage(f); }
                       }}
-                      className="max-h-36 min-h-[46px] flex-1 resize-none rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-base text-slate-100 placeholder-slate-500 outline-none focus:border-wa-green"
+                      className="max-h-36 min-h-[46px] min-w-0 flex-1 resize-none rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-base text-slate-100 placeholder-slate-500 outline-none focus:border-wa-green"
                     />
                   </>
                 )}
