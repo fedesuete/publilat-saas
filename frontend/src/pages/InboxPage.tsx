@@ -617,7 +617,7 @@ export default function InboxPage() {
           </div>
         ) : (
           <>
-            <div className="flex items-center gap-3 border-b border-slate-800 px-4 py-3">
+            <div className="relative flex items-center gap-3 border-b border-slate-800 px-4 py-3">
               {/* Móvil: volver a la lista de conversaciones */}
               <button onClick={() => setSelected(null)} title="Volver" className="rounded p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white lg:hidden">
                 <ArrowLeft className="h-5 w-5" />
@@ -641,7 +641,7 @@ export default function InboxPage() {
                 </div>
               </div>
               {current && <SegmentPicker contactId={current.id} />}
-              {current && <StageBadge stage={current.stage} />}
+              {current && <span className="hidden shrink-0 sm:inline-flex"><StageBadge stage={current.stage} /></span>}
               {current && (
                 <button
                   onClick={() => void borrarChat(current.id)}

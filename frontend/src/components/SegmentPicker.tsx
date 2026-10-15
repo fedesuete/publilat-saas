@@ -87,20 +87,20 @@ export default function SegmentPicker({ contactId }: { contactId: string }) {
   const unSoloTipo = segmentos.length === 1;
 
   return (
-    <div className="relative flex shrink-0 flex-col items-end">
+    <div className="flex shrink-0 flex-col items-end md:relative">
       {/* Celular: un solo botón compacto que despliega las opciones (si no, empujaban el chat fuera de la pantalla). */}
       <button
         type="button"
         onClick={() => setAbierto((v) => !v)}
         aria-expanded={abierto}
         title="Producto y demo"
-        className={`${chip(!!actual || demo)} flex max-w-[8.5rem] items-center gap-1 md:hidden`}
+        className={`${chip(!!actual || demo)} flex max-w-[6.5rem] items-center gap-1 md:hidden`}
       >
         <span className="truncate">🏷️ {categoria || (actual ? segmentos.find((x) => x.id === actual)?.label : "") || "Producto"}{demo ? " · 📅" : ""}</span>
         <span aria-hidden="true">▾</span>
       </button>
       <div
-        className={`${abierto ? "flex" : "hidden"} absolute right-0 top-full z-30 mt-1 w-56 flex-col items-stretch gap-2 rounded-lg border border-slate-700 bg-slate-900 p-2 shadow-xl md:static md:mt-0 md:flex md:w-auto md:flex-row md:flex-wrap md:items-center md:justify-end md:gap-1 md:border-0 md:bg-transparent md:p-0 md:shadow-none`}
+        className={`${abierto ? "flex" : "hidden"} absolute inset-x-3 top-full z-30 mt-1 flex-col items-stretch gap-2 rounded-lg border border-slate-700 bg-slate-900 p-2 shadow-xl md:static md:mt-0 md:flex md:w-auto md:flex-row md:flex-wrap md:items-center md:justify-end md:gap-1 md:border-0 md:bg-transparent md:p-0 md:shadow-none`}
       >
         {unSoloTipo ? (
           // Un solo pixel con tipo: el selector es directamente el producto.
