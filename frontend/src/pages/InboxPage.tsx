@@ -605,7 +605,7 @@ export default function InboxPage() {
       </div>
 
       {/* ---- Chat. En MÓVIL: pantalla completa, visible sólo con una conversación abierta. ---- */}
-      <div className={`flex-1 flex-col ${selected ? "flex" : "hidden lg:flex"}`}>
+      <div className={`min-w-0 flex-1 flex-col ${selected ? "flex" : "hidden lg:flex"}`}>
         {!selected ? (
           <div className="flex flex-1 items-center justify-center text-slate-500">
             {!listOpen && (
@@ -679,7 +679,7 @@ export default function InboxPage() {
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   )}
-                  <div className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${
+                  <div className={`max-w-[75%] rounded-lg px-3 py-2 text-sm [overflow-wrap:anywhere] ${
                     m.direction === "out"
                       ? m.status === "failed"
                         ? "border border-rose-500 bg-rose-100 text-rose-900"
