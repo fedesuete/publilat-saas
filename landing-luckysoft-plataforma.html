@@ -462,6 +462,27 @@ fbq("track","PageView");
   var TEXTO = { Plataforma: "quiero mi propia plataforma", Fichas: "quiero comprar fichas para revender", CRM: "me interesa el CRM para atender a mis clientes" };
   var CUANDO = { ya: "Quiero arrancar esta semana", mes: "Quiero arrancar este mes", mirando: "Estoy averiguando" };
 
+  /* Registro de TODA carga, califique o no (19/10): aviso por WhatsApp al dueño + SubmitApplication a Meta.
+     Va a /api/land/carga, APARTE del /api/land/track del Lead (que sigue igual). No cambia nada de lo que ve
+     la persona. keepalive: sobrevive a la navegación a WhatsApp. */
+  var CARGA_API = "https://app.publi.lat/api/land/carga";
+  function registrarCarga(ref, califica, motivo) {
+    try {
+      var here = new URLSearchParams(location.search);
+      var utm = [here.get("utm_source"), here.get("utm_campaign")].filter(Boolean).join("/");
+      fetch(CARGA_API, {
+        method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountSlug: CUENTA, landing: "plataforma", ref: ref,
+          nombre: $("nombre").value.trim(), telefono: telE164(), segmento: SEGMENTO,
+          respuestas: { rubro: elegido("rubro"), que: elegido("rubro") === "otro" ? "" : elegido("que"), cuando: elegido("cuando"), inv: elegido("inv") },
+          califica: califica, motivo: motivo || undefined, url: location.origin + location.pathname, utm: utm || undefined,
+          fbclid: here.get("fbclid") || undefined, fbp: cookie("_fbp") || undefined, fbc: cookie("_fbc") || undefined
+        })
+      }).catch(function () {});
+    } catch (_) {}
+  }
+
   $("f").addEventListener("submit", function (e) {
     e.preventDefault();
     var nombre = $("nombre").value.trim(), que = elegido("que"), cuando = elegido("cuando"), inv = elegido("inv"), rubro = elegido("rubro");
@@ -469,6 +490,7 @@ fbq("track","PageView");
     if (rubro === "otro") {
       /* Fuera del nicho: ni registro ni Lead a Meta (el pixel no aprende de IPTV/TV/streaming), y sin WhatsApp. */
       $("err2").textContent = "";
+      registrarCarga(rnd(7), false, "otro rubro (no es casino)");
       $("nomG").textContent = nombre;
       $("txtDespues").textContent = "Lucky Soft trabaja solo con casino online, así que por ahora no tenemos algo para tu rubro. ¡Gracias por tu tiempo!";
       $("waDespues").style.display = "none";
@@ -486,6 +508,7 @@ fbq("track","PageView");
     var base = "Hola! Soy " + nombre + (rubro === "cajero" ? ", soy cajero" : "") + ", " + TEXTO[que] + ". " + CUANDO[cuando] + "." + (que === "Plataforma" && PLAN[inv] ? PLAN[inv] : "");
 
     if (!califica) {
+      registrarCarga(rnd(7), false, cuando === "mirando" ? "solo está averiguando" : "todavía no tiene para invertir");
       $("nomG").textContent = nombre;
       $("waDespues").href = "https://wa.me/" + WA + "?text=" + encodeURIComponent(base);
       $("paso2").classList.add("hide"); $("despues").classList.remove("hide");
@@ -493,6 +516,7 @@ fbq("track","PageView");
     }
 
     var ref = rnd(7);
+    registrarCarga(ref, true);
     var here = new URLSearchParams(location.search);
     try {
       /* keepalive: el registro sobrevive a la navegación a WhatsApp. Si falla, igual llega por el ref del mensaje. */

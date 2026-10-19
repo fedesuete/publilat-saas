@@ -17,6 +17,9 @@ import { fireMarketingEvent } from "../lib/marketing-capi.js";
 import { sendCapiEvent } from "../lib/meta-capi.js";
 import { resolveUserPixel, resolveContactPixel } from "../lib/pixel.js";
 import crypto from "node:crypto";
+import { decryptSecret } from "../lib/crypto.js";
+import { textoAvisoCarga, paisDeTelefono } from "../lib/landing-carga.js";
+import { enviarAvisoCarga } from "../lib/landing-carga-aviso.js";
 
 export const landRouter = Router();
 
@@ -179,5 +182,124 @@ landRouter.post("/track", async (req, res) => {
   } catch (e) {
     console.error("[land/track] error:", e instanceof Error ? e.message : String(e));
     return res.status(500).json({ error: "Error interno" });
+  }
+});
+
+// ============================================================================================================
+// POST /api/land/carga — TODA carga del formulario de una landing B2B, califique o no (2026-10-19).
+// Guarda la carga, le avisa al dueño por WhatsApp (con link wa.me) y manda a Meta un SubmitApplication (solo
+// para medir). NO toca el Lead: el Lead y el Contact del que califica siguen saliendo SOLO de /api/land/track,
+// que la landing llama aparte, igual que antes. CORS abierto (mismo router).
+// ============================================================================================================
+const cargaSchema = z.object({
+  accountSlug: z.string().min(1).max(60),
+  landing: z.string().trim().min(1).max(60),
+  ref: z.string().regex(/^[A-Za-z0-9]{3,20}$/),
+  nombre: z.string().trim().max(80).optional(),
+  telefono: z.string().trim().max(40).optional(),
+  respuestas: z.object({
+    rubro: z.string().max(20).optional(),
+    que: z.string().max(20).optional(),
+    cuando: z.string().max(20).optional(),
+    inv: z.string().max(20).optional(),
+  }).default({}),
+  califica: z.boolean(),
+  motivo: z.string().trim().max(120).optional(),
+  segmento: z.string().trim().max(40).optional(), // pixel del tipo de cliente (mismo que usa el Lead)
+  url: z.string().trim().url().max(500).optional(),
+  utm: z.string().trim().max(120).optional(),
+  fbclid: z.string().max(600).optional(),
+  fbp: z.string().max(255).optional(),
+  fbc: z.string().max(600).optional(),
+});
+
+// Freno anti-abuso: el endpoint es público y cada carga manda un WhatsApp. Máx 6 cargas por IP por hora.
+const cargasPorIp = new Map<string, number[]>();
+function frenoCarga(ip: string): boolean {
+  const ahora = Date.now();
+  const recientes = (cargasPorIp.get(ip) ?? []).filter((t) => ahora - t < 3600e3);
+  if (recientes.length >= 6) return true;
+  recientes.push(ahora);
+  cargasPorIp.set(ip, recientes);
+  if (cargasPorIp.size > 5000) cargasPorIp.clear();
+  return false;
+}
+
+landRouter.post("/carga", async (req, res) => {
+  const parsed = cargaSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const d = parsed.data;
+  const acc = await prisma.user.findUnique({ where: { slug: d.accountSlug }, select: { id: true } });
+  if (!acc) return res.status(404).json({ error: "Cuenta no encontrada" });
+  if (frenoCarga(req.ip ?? "?")) return res.status(429).json({ error: "Demasiados envíos" });
+
+  const tel = (d.telefono ?? "").replace(/\D/g, "");
+  const telefono = tel.length >= 8 && tel.length <= 15 ? tel : null;
+  const ref = d.ref.toUpperCase();
+  try {
+    // El que califica también pasó por /track (en paralelo): si su Contact ya existe, se reusa su external_id
+    // para que el SubmitApplication y el Lead sean la misma persona para Meta.
+    let contact: { id: string; externalId: string; createdAt: Date } | null = null;
+    if (d.califica) {
+      for (let i = 0; i < 4 && !contact; i++) {
+        contact = await prisma.contact.findFirst({ where: { userId: acc.id, code: ref }, select: { id: true, externalId: true, createdAt: true } });
+        if (!contact) await new Promise((r) => setTimeout(r, 700));
+      }
+    }
+    let carga;
+    try {
+      carga = await prisma.landingSubmission.create({
+        data: {
+          userId: acc.id, landing: d.landing, ref, nombre: d.nombre || null, telefono, pais: paisDeTelefono(telefono),
+          respuestas: d.respuestas, califica: d.califica, motivo: d.califica ? null : d.motivo || null,
+          fbclid: d.fbclid ?? null, fbp: d.fbp ?? null, fbc: d.fbc ?? null, utm: d.utm ?? null,
+          ip: req.ip ?? null, userAgent: req.get("user-agent") ?? null,
+          externalId: contact?.externalId ?? crypto.randomUUID(), contactId: contact?.id ?? null,
+        },
+      });
+    } catch (e) {
+      // Mismo ref otra vez (la landing reintentó): ya está registrada y avisada.
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") return res.json({ ok: true, repetida: true });
+      throw e;
+    }
+    res.json({ ok: true });
+
+    // Lo que sigue va en segundo plano: la persona ya se fue (a WhatsApp o a la pantalla de gracias).
+    const marca = d.landing === "plataforma" ? "Lucky Soft" : d.landing;
+    void enviarAvisoCarga(textoAvisoCarga({
+      marca, nombre: carga.nombre, telefono: carga.telefono, respuestas: d.respuestas,
+      califica: d.califica, motivo: carga.motivo, fbclid: d.fbclid, fbc: d.fbc, utm: d.utm, creada: carga.createdAt,
+    })).then(async (ok) => { if (ok) await prisma.landingSubmission.update({ where: { id: carga.id }, data: { notifiedAt: new Date() } }); }).catch(() => undefined);
+
+    // SubmitApplication a Meta: mismo pixel y mismas claves de coincidencia que el Lead, event_id propio.
+    void (async () => {
+      let creds = contact ? await resolveContactPixel(acc.id, contact.id, "Lead") : null;
+      if (!creds && d.segmento) {
+        const seg = await prisma.pixel.findFirst({
+          where: { userId: acc.id, hidden: false, mirror: false, label: { equals: d.segmento, mode: "insensitive" } },
+          select: { pixelId: true, capiToken: true },
+        });
+        if (seg) creds = { pixelId: seg.pixelId, capiToken: decryptSecret(seg.capiToken) };
+      }
+      if (!creds) creds = (await resolveUserPixel(acc.id, "Lead")) ?? null;
+      if (!creds) { await prisma.landingSubmission.update({ where: { id: carga.id }, data: { submitEvent: "no_pixel" } }); return; }
+      const fbcEff = d.fbc || (d.fbclid ? `fb.1.${carga.createdAt.getTime()}.${d.fbclid}` : undefined);
+      const cd = customDataLanding({ categoria: d.respuestas.que, plazo: d.respuestas.cuando === "ya" || d.respuestas.cuando === "mes" ? d.respuestas.cuando : undefined, inversion: d.respuestas.inv === "simple" || d.respuestas.inv === "unico" ? d.respuestas.inv : undefined });
+      await sendCapiEvent({
+        eventName: "SubmitApplication", externalId: carga.externalId, eventId: `sa-${ref}`,
+        fbp: d.fbp, fbc: fbcEff, clientIp: req.ip, userAgent: req.get("user-agent") ?? undefined,
+        phone: telefono ?? undefined, firstName: carga.nombre ?? undefined,
+        customData: { ...(cd ?? {}), califica: d.califica ? "si" : "no" },
+        ...(d.url ? { eventSourceUrl: d.url } : {}),
+        pixelId: creds.pixelId, capiToken: creds.capiToken,
+      });
+      await prisma.landingSubmission.update({ where: { id: carga.id }, data: { submitEvent: "sent" } });
+    })().catch((e) => {
+      console.error("[land/carga] SubmitApplication falló:", e instanceof Error ? e.message : String(e));
+      void prisma.landingSubmission.update({ where: { id: carga.id }, data: { submitEvent: "failed" } }).catch(() => undefined);
+    });
+  } catch (e) {
+    console.error("[land/carga] error:", e instanceof Error ? e.message : String(e));
+    if (!res.headersSent) return res.status(500).json({ error: "Error interno" });
   }
 });

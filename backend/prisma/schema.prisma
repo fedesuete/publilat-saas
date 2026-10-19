@@ -1084,3 +1084,31 @@ model ImageClip {
 
   @@index([userId])
 }
+
+// Cargas del formulario de una landing B2B (2026-10-19): TODA carga, califique o no. El Contact y el Lead del
+// que califica siguen saliendo de /api/land/track sin cambios; esto es el registro completo + el aviso al dueño.
+model LandingSubmission {
+  id          String    @id @default(cuid())
+  userId      String
+  landing     String // slug de la landing (ej. "plataforma")
+  ref         String    @unique // el mismo ref del mensaje de WhatsApp (dedup si la landing reintenta)
+  nombre      String?
+  telefono    String? // internacional, solo dígitos
+  pais        String?
+  respuestas  Json      @default("{}") // { rubro, que, cuando, inv }
+  califica    Boolean
+  motivo      String? // por qué no califica
+  fbclid      String?
+  fbp         String?
+  fbc         String?
+  utm         String?
+  ip          String?
+  userAgent   String?
+  externalId  String // external_id del SubmitApplication (el del Contact si califica)
+  contactId   String? // Contact creado por /api/land/track (solo los que califican)
+  notifiedAt  DateTime? // cuándo salió el aviso por WhatsApp al dueño
+  submitEvent String? // estado del SubmitApplication a Meta: sent | failed | no_pixel
+  createdAt   DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
