@@ -31,7 +31,8 @@ function getTransporter(): Transporter | null {
 }
 
 // Envía un email. Nunca lanza: las alertas no deben tumbar el flujo que las dispara.
-export async function sendMail(to: string, subject: string, text: string): Promise<boolean> {
+// `html` (opcional): versión con formato (links clickeables); el `text` queda para clientes de correo sin HTML.
+export async function sendMail(to: string, subject: string, text: string, html?: string): Promise<boolean> {
   const t = getTransporter();
   if (!t || !to) return false;
   try {
@@ -40,6 +41,7 @@ export async function sendMail(to: string, subject: string, text: string): Promi
       to,
       subject,
       text,
+      ...(html ? { html } : {}),
     });
     return true;
   } catch (e) {

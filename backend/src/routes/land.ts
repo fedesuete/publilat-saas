@@ -18,8 +18,8 @@ import { sendCapiEvent } from "../lib/meta-capi.js";
 import { resolveUserPixel, resolveContactPixel } from "../lib/pixel.js";
 import crypto from "node:crypto";
 import { decryptSecret } from "../lib/crypto.js";
-import { textoAvisoCarga, paisDeTelefono } from "../lib/landing-carga.js";
-import { enviarAvisoCarga } from "../lib/landing-carga-aviso.js";
+import { paisDeTelefono } from "../lib/landing-carga.js";
+import { avisarLeadCalificado } from "../lib/landing-carga-aviso.js";
 
 export const landRouter = Router();
 
@@ -266,10 +266,21 @@ landRouter.post("/carga", async (req, res) => {
 
     // Lo que sigue va en segundo plano: la persona ya se fue (a WhatsApp o a la pantalla de gracias).
     const marca = d.landing === "plataforma" ? "Lucky Soft" : d.landing;
-    void enviarAvisoCarga(textoAvisoCarga({
-      marca, nombre: carga.nombre, telefono: carga.telefono, respuestas: d.respuestas,
-      califica: d.califica, motivo: carga.motivo, fbclid: d.fbclid, fbc: d.fbc, utm: d.utm, creada: carga.createdAt,
-    })).then(async (ok) => { if (ok) await prisma.landingSubmission.update({ where: { id: carga.id }, data: { notifiedAt: new Date() } }); }).catch(() => undefined);
+    // Aviso SOLO del que califica (22/10, pedido del dueño): WhatsApp + correo en paralelo, independientes.
+    // Las que no califican quedan guardadas (LandingSubmission) y se consultan en el panel, sin aviso.
+    if (d.califica) {
+      void avisarLeadCalificado({
+        marca, nombre: carga.nombre, telefono: carga.telefono, respuestas: d.respuestas,
+        califica: true, fbclid: d.fbclid, fbc: d.fbc, utm: d.utm, creada: carga.createdAt,
+      }).then(async (r) => {
+        if (r.whatsapp || r.correo) {
+          await prisma.landingSubmission.update({
+            where: { id: carga.id },
+            data: { ...(r.whatsapp ? { notifiedAt: new Date() } : {}), ...(r.correo ? { emailedAt: new Date() } : {}) },
+          });
+        }
+      }).catch(() => undefined);
+    }
 
     // SubmitApplication a Meta: mismo pixel y mismas claves de coincidencia que el Lead, event_id propio.
     void (async () => {

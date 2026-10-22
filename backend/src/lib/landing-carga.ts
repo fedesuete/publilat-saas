@@ -59,23 +59,45 @@ export interface DatosAviso {
   nota?: string; // línea extra (ej. "carga anterior, reenviada")
 }
 
-/** Texto del aviso de WhatsApp al dueño. El link wa.me es lo principal: un toque y le escribe. */
-export function textoAvisoCarga(d: DatosAviso): string {
+function filas(d: DatosAviso): [string, string][] {
   const tel = (d.telefono ?? "").replace(/\D/g, "");
   const r = d.respuestas;
   const plan = r.que === "Plataforma" ? INV[r.inv ?? ""] ?? "—" : "No aplica";
   return [
-    `🎯 *Nueva carga — ${d.marca}*`,
-    ...(d.nota ? [`_${d.nota}_`] : []),
-    `Nombre: ${d.nombre?.trim() || "—"}`,
-    `Teléfono: ${tel ? "+" + tel : "—"}`,
-    `Escribirle: ${tel ? "https://wa.me/" + tel : "— (no dejó un número válido)"}`,
-    `País: ${paisDeTelefono(tel)}`,
-    `Tipo de negocio: ${RUBRO[r.rubro ?? ""] ?? "—"}${r.que ? " · " + (QUE[r.que] ?? r.que) : ""}`,
-    `¿Cuándo arranca?: ${CUANDO[r.cuando ?? ""] ?? "—"}`,
-    `Plan: ${plan}`,
-    `CALIFICA: ${d.califica ? "SÍ" : `NO — ${d.motivo?.trim() || "sin motivo"}`}`,
-    `Vino de: ${origenCarga(d)}`,
-    `Cargado: ${horaParaguay(d.creada)} (hora Paraguay)`,
-  ].join("\n");
+    ["Nombre", d.nombre?.trim() || "—"],
+    ["Teléfono", tel ? "+" + tel : "—"],
+    ["Escribirle", tel ? "https://wa.me/" + tel : "— (no dejó un número válido)"],
+    ["País", paisDeTelefono(tel)],
+    ["Tipo de negocio", `${RUBRO[r.rubro ?? ""] ?? "—"}${r.que ? " · " + (QUE[r.que] ?? r.que) : ""}`],
+    ["¿Cuándo arranca?", CUANDO[r.cuando ?? ""] ?? "—"],
+    ["Plan", plan],
+    ...(d.califica ? [] : [["CALIFICA", `NO — ${d.motivo?.trim() || "sin motivo"}`] as [string, string]]),
+    ["Vino de", origenCarga(d)],
+    ["Cargado", `${horaParaguay(d.creada)} (hora Paraguay)`],
+  ];
+}
+
+export const tituloAviso = (d: Pick<DatosAviso, "marca" | "califica">) => `🎯 ${d.califica ? "Lead calificado" : "Nueva carga"} — ${d.marca}`;
+
+/** Texto del aviso (WhatsApp y versión texto del correo). El link wa.me es lo principal: un toque y le escribe. */
+export function textoAvisoCarga(d: DatosAviso): string {
+  return [`*${tituloAviso(d)}*`, ...(d.nota ? [`_${d.nota}_`] : []), ...filas(d).map(([k, v]) => `${k}: ${v}`)].join("\n");
+}
+
+const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+/** Versión HTML del correo: el wa.me es un link (y un botón) clickeable, no texto pelado. */
+export function htmlAvisoCarga(d: DatosAviso): string {
+  const tel = (d.telefono ?? "").replace(/\D/g, "");
+  const wa = tel ? `https://wa.me/${tel}` : "";
+  const rows = filas(d).map(([k, v]) => {
+    const val = k === "Escribirle" && wa ? `<a href="${wa}" style="color:#128c4b;font-weight:700">${esc(wa)}</a>` : esc(v);
+    return `<tr><td style="padding:6px 12px 6px 0;color:#5b6472;white-space:nowrap;vertical-align:top">${esc(k)}</td><td style="padding:6px 0;color:#111827">${val}</td></tr>`;
+  }).join("");
+  return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;padding:20px;color:#111827">
+<h2 style="margin:0 0 6px;font-size:20px">${esc(tituloAviso(d))}</h2>
+${d.nota ? `<p style="margin:0 0 10px;color:#5b6472;font-style:italic">${esc(d.nota)}</p>` : ""}
+${wa ? `<p style="margin:14px 0 18px"><a href="${wa}" style="display:inline-block;background:#25d366;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:999px">💬 Escribirle por WhatsApp</a></p>` : ""}
+<table style="border-collapse:collapse;font-size:15px">${rows}</table>
+</div>`;
 }

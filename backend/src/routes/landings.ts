@@ -76,6 +76,30 @@ async function buildHtml(userId: string, userSlug: string, cfg: Cfg): Promise<st
   return injectInAppEscape(renderTrackedLanding(full));
 }
 
+// GET /api/landings/cargas — TODAS las cargas del formulario de las landings B2B (califiquen o no), para ver
+// cuántas no califican y por qué (22/10). Las calificadas además avisan por WhatsApp + correo (ver land.ts /carga).
+landingsRouter.get("/cargas", async (req, res) => {
+  const cargas = await prisma.landingSubmission.findMany({
+    where: { userId: req.userId! },
+    orderBy: { createdAt: "desc" },
+    take: 300,
+    select: { id: true, createdAt: true, landing: true, nombre: true, telefono: true, pais: true, respuestas: true, califica: true, motivo: true, fbclid: true, fbc: true, utm: true, notifiedAt: true, emailedAt: true },
+  });
+  const porMotivo: Record<string, number> = {};
+  for (const c of cargas) if (!c.califica) porMotivo[c.motivo || "sin motivo"] = (porMotivo[c.motivo || "sin motivo"] ?? 0) + 1;
+  const desde7 = Date.now() - 7 * 864e5;
+  return res.json({
+    resumen: {
+      total: cargas.length,
+      califican: cargas.filter((c) => c.califica).length,
+      noCalifican: cargas.filter((c) => !c.califica).length,
+      ultimos7: cargas.filter((c) => c.createdAt.getTime() >= desde7).length,
+      porMotivo,
+    },
+    cargas: cargas.map((c) => ({ ...c, anuncio: !!(c.fbclid || c.fbc), fbclid: undefined, fbc: undefined })),
+  });
+});
+
 // GET /api/landings — lista las landings del usuario.
 landingsRouter.get("/", async (req, res) => {
   const landings = await prisma.landing.findMany({

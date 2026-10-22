@@ -1107,6 +1107,7 @@ model LandingSubmission {
   externalId  String // external_id del SubmitApplication (el del Contact si califica)
   contactId   String? // Contact creado por /api/land/track (solo los que califican)
   notifiedAt  DateTime? // cuándo salió el aviso por WhatsApp al dueño
+  emailedAt   DateTime? // cuándo salió el aviso por correo al dueño (independiente del WhatsApp)
   submitEvent String? // estado del SubmitApplication a Meta: sent | failed | no_pixel
   createdAt   DateTime  @default(now())
 

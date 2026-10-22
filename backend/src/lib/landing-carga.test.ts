@@ -13,7 +13,8 @@ describe("aviso de carga de la landing", () => {
     expect(t).toContain("Teléfono: +595981123456");
     expect(t).toContain("País: Paraguay");
     expect(t).toContain("Plan: Plan Simple USD 200/mes");
-    expect(t).toContain("CALIFICA: SÍ");
+    expect(t).toContain("Lead calificado — Lucky Soft");
+    expect(t).not.toContain("CALIFICA");
     expect(t).toContain("Vino de: anuncio (Meta)");
     expect(t).toContain("Cargado: 18/10/2026 18:46 (hora Paraguay)");
   });
@@ -48,5 +49,16 @@ describe("helpers", () => {
   });
   it("origen: utm sin fbclid", () => {
     expect(origenCarga({ utm: "meta/b2b" })).toBe("campaña (meta/b2b)");
+  });
+});
+
+describe("correo del aviso", async () => {
+  const { htmlAvisoCarga } = await import("./landing-carga.js");
+  it("el wa.me es un link clickeable y se escapa el HTML del nombre", () => {
+    const h = htmlAvisoCarga({ marca: "Lucky Soft", nombre: "<b>Jose</b>", telefono: "595981123456", califica: true, respuestas: { que: "CRM" }, creada: new Date("2026-10-14T17:04:00Z") });
+    expect(h).toContain('<a href="https://wa.me/595981123456"');
+    expect(h).toContain("&lt;b&gt;Jose&lt;/b&gt;");
+    expect(h).toContain("Lead calificado — Lucky Soft");
+    expect(h).toContain("14/10/2026 14:04 (hora Paraguay)");
   });
 });

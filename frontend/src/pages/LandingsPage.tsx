@@ -5,6 +5,7 @@ import { API_BASE } from "../lib/config";
 import { useAuth } from "../lib/auth";
 import { Button, Input, Card, ErrorMsg } from "../components/ui";
 import OnboardingTour, { type TourStep } from "../components/OnboardingTour";
+import CargasLanding from "../components/CargasLanding"; // cargas del formulario de las landings B2B
 
 const CHAT_PWA_URL = (import.meta.env.VITE_CHAT_PWA_URL as string | undefined) ?? "https://chat.publi.lat";
 
@@ -528,6 +529,8 @@ export default function LandingsPage() {
       </div>
 
       {error && <div className="mb-4"><ErrorMsg>{error}</ErrorMsg></div>}
+
+      <CargasLanding />
 
       <div id="lp-guide"><LandingGuide slug={slug} goBase={API_BASE} /></div>
 
