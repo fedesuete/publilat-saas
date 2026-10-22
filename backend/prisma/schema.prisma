@@ -999,6 +999,10 @@ model SupportThread {
   contactId String?   @unique // hilo 1 a 1 (chat directo con el número de soporte)
   groupJid  String?   @unique // hilo de un GRUPO de cliente (…@g.us): ahí viven los comprobantes
   groupName String? // nombre del grupo al momento de crearlo (para leerlo en el grupo de soporte)
+  // Ticket del PORTAL de clientes de Lucky Soft (softlucky.com/portal, 2026-10-23): el hilo entra a SOPORTE igual
+  // que un grupo y el "B-" responde en el ticket (el portal manda el correo al cliente, publi.lat NO).
+  portalTicketId String? @unique
+  portalEmail    String?
   code      String    @unique // código corto que identifica al cliente en el grupo (ej. K7M)
   lastAckAt DateTime? // último "estamos procesando tu consulta" enviado
   createdAt DateTime  @default(now())

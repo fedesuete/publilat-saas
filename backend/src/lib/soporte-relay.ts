@@ -26,6 +26,7 @@ import { prisma } from "./prisma.js";
 import { getEngine } from "./wa-engine.js";
 import { sendToContact } from "./wa-send.js";
 import { downloadWahaMedia } from "./waha.js";
+import { responderEnPortal } from "./soporte-portal.js";
 
 /** Cada cuánto se le puede repetir el acuse al MISMO cliente (1 a 1). Si escribe 5 veces, recibe uno. */
 const ACK_MS = Number(process.env.SOPORTE_ACK_HORAS ?? "6") * 3600_000;
@@ -91,6 +92,24 @@ export async function hiloDeGrupo(userId: string, groupJid: string, groupName: s
     }
   }
   throw new Error("no se pudo crear el hilo del grupo");
+}
+
+/** El hilo de un TICKET del portal de Lucky Soft. Mismo código para todos los mensajes de ese ticket. */
+export async function hiloDePortal(userId: string, ticketId: string, email: string): Promise<Hilo> {
+  const existente = await prisma.supportThread.findUnique({ where: { portalTicketId: ticketId }, select: HILO });
+  if (existente) return existente;
+  for (let i = 0; i < 12; i++) {
+    try {
+      return await prisma.supportThread.create({
+        data: { userId, portalTicketId: ticketId, portalEmail: email || null, groupName: `Portal · Ticket ${ticketId}`, code: codigoNuevo() },
+        select: HILO,
+      });
+    } catch {
+      const yaEsta = await prisma.supportThread.findUnique({ where: { portalTicketId: ticketId }, select: HILO });
+      if (yaEsta) return yaEsta;
+    }
+  }
+  throw new Error("no se pudo crear el hilo del ticket");
 }
 
 /** Teléfono legible para que en el grupo se pueda copiar y llamar. */
@@ -202,7 +221,7 @@ async function enviarImagen(session: string, chatId: string, base64: string, mim
 }
 
 /** Texto a un chat/grupo, opcionalmente CITANDO un mensaje (reply_to). */
-async function enviarTexto(session: string, chatId: string, text: string, replyTo?: string): Promise<string | undefined> {
+export async function enviarTexto(session: string, chatId: string, text: string, replyTo?: string): Promise<string | undefined> {
   if (!replyTo) {
     const r = await getEngine().sendText(session, chatId, text);
     return r?.key?.id ?? sentId(r);
@@ -409,10 +428,20 @@ export async function onEventoDeGrupo(session: string, p: Record<string, any>): 
     if (!orden) return; // charla interna del equipo: no se guarda ni se mira
     const citado = idCitado(p);
     const relay = citado ? await prisma.supportRelayMsg.findFirst({ where: { groupMsgId: { contains: citado } }, select: { threadId: true } }) : null;
-    const hilo = relay ? await prisma.supportThread.findUnique({ where: { id: relay.threadId }, select: { groupJid: true, contactId: true, code: true } }) : null;
+    const hilo = relay ? await prisma.supportThread.findUnique({ where: { id: relay.threadId }, select: { groupJid: true, contactId: true, code: true, portalTicketId: true } }) : null;
     if (!hilo) {
       // Sin cita (o citaron otra cosa): antes que mandarle a cualquiera, se pide en el grupo.
       await enviarTexto(session, cuenta.supportGroupId, "⚠️ No sé a quién va. Respondé CITANDO el mensaje del cliente (el que empieza con 🆕) y empezá con B-.", idMsg || undefined).catch(() => undefined);
+      return;
+    }
+    // Ticket del PORTAL: la respuesta va al ticket (el portal guarda el mensaje y le manda el correo al cliente).
+    if (hilo.portalTicketId) {
+      const r = await responderEnPortal({ ticketId: hilo.portalTicketId, mensaje: orden, eventoId: `publilat-${idMsg || Date.now()}` });
+      const aviso = r.ok
+        ? `✅ Respondido en el portal #${hilo.code} (ticket ${hilo.portalTicketId}). El portal le manda el correo al cliente.`
+        : `❌ No llegó al portal #${hilo.code} (ticket ${hilo.portalTicketId}): ${r.error}. Probá de nuevo en un rato.`;
+      if (!r.ok) console.error("[soporte] respuesta al portal falló:", r.error);
+      await enviarTexto(session, cuenta.supportGroupId, aviso, idMsg || undefined).catch(() => undefined);
       return;
     }
     try {
