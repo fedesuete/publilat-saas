@@ -77,6 +77,8 @@ export interface FlowStep {
   minutes?: number;       // delay: espera fija, o MÍNIMO si viene minutesTo
   minutesTo?: number;     // delay: con minutes arma un RANGO y se elige al azar dentro (ver abajo)
   options?: FlowOption[]; // menu
+  menuRaw?: boolean;      // menu: manda el `text` TAL CUAL (el dueño escribe las opciones a su manera) en vez de
+                          // armar la lista numerada; la elección por número/label/keyword funciona igual
   url?: string;           // link: destino real
   urlLabel?: string;      // link: texto del "botón"
   stage?: string;         // set_stage: NUEVO | CONTACTADO | INTERESADO | PERDIDO
@@ -149,6 +151,7 @@ const cursorWith = (cursor: string, index: number): string => {
 
 // Texto del menú: encabezado + opciones numeradas + ayuda.
 function renderMenu(step: FlowStep): string {
+  if (step.menuRaw && step.text?.trim()) return step.text;
   const opts = (step.options ?? []).slice(0, 9);
   const lines = opts.map((o, i) => `${NUM_EMOJI[i] ?? `${i + 1}.`} ${o.label}`);
   return [step.text ?? "Elegí una opción:", "", ...lines, "", "Respondé con el número de la opción 👆"].join("\n");
@@ -328,7 +331,7 @@ export async function onInboundFlow(userId: string, contactId: string, text: str
       console.error("[qr-welcome] error:", e instanceof Error ? e.message : String(e)));
     // 1) ¿Esperando la elección de un menú?
     const waitingOpt = await prisma.flowRun.findFirst({
-      where: { contactId, status: "waiting_option" },
+      where: { contactId, status: { in: ["waiting_option", "waiting_option_r"] } },
       orderBy: { updatedAt: "desc" },
       include: { flow: true },
     });
@@ -339,8 +342,15 @@ export async function onInboundFlow(userId: string, contactId: string, text: str
       if (step?.type === "menu") {
         const chosen = matchOption(step, text);
         if (chosen == null) {
-          // No entendimos: reenviamos el menú una vez y seguimos esperando.
+          // No entendimos: reenviamos el menú UNA sola vez ("waiting_option_r" = ya se reenvió). Si vuelve a
+          // escribir otra cosa, el flujo se cierra en silencio y sigue la persona: antes el menú se reenviaba
+          // con CADA mensaje y pisaba la charla manual del operador (22/10).
+          if (waitingOpt.status === "waiting_option_r") {
+            await prisma.flowRun.update({ where: { id: waitingOpt.id }, data: { status: "done" } });
+            return;
+          }
           await sendToContact(userId, contactId, renderMenu(step));
+          await prisma.flowRun.update({ where: { id: waitingOpt.id }, data: { status: "waiting_option_r" } });
           return;
         }
         // Desciende a la rama elegida: cursor = "<pasoMenu>:<opción>:0"
