@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Publi.lat — Probá 5 días gratis</title>
+<meta name="description" content="Que una línea caída no te haga perder ni un cliente más. CRM para WhatsApp con app propia y métricas conectadas a tus anuncios. 5 días gratis, sin tarjeta." />
+<meta property="og:title" content="Publi.lat — Probá 5 días gratis" />
+<meta property="og:description" content="Que una línea caída no te haga perder ni un cliente más. 5 días gratis, sin tarjeta." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800;900&display=swap" rel="stylesheet" />
+<script>
+// Meta Pixel de publi.lat. El ID sale de la config pública del backend: el navegador y la Conversions API
+// usan SIEMPRE el mismo pixel (si no, el CompleteRegistration no se deduplica).
+var API = "https://app.publi.lat";
+!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+fetch(API + "/api/public/config").then(function(r){return r.json();}).then(function(c){
+  if(c && c.mktPixelId){ fbq('init', c.mktPixelId); fbq('track','PageView'); window.__pixelOk = true; }
+}).catch(function(){});
+</script>
+<style>
+  :root{
+    --bg:#f6f8fb; --card:#ffffff; --ink:#0f1b2d; --muted:#5b6b80; --line:#e3e8ef;
+    --brand:#16a34a; --brand2:#0f8a3c; --soft:#e9f8ef; --accent:#0ea5e9;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--ink);font-family:'Montserrat',system-ui,sans-serif;line-height:1.55;overflow-x:hidden}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:620px;margin:0 auto;padding:0 18px}
+  .brand{font-weight:900;font-size:22px;letter-spacing:-.3px}
+  .brand b{color:var(--brand)}
+  header{padding:22px 0 0}
+  .hero{padding:34px 0 10px;text-align:center}
+  .pill{display:inline-block;background:var(--soft);color:var(--brand2);font-weight:800;font-size:12.5px;padding:7px 14px;border-radius:999px;letter-spacing:.02em}
+  h1{font-size:clamp(28px,7.4vw,42px);line-height:1.12;font-weight:900;letter-spacing:-.6px;margin:16px 0 12px}
+  h1 span{color:var(--brand)}
+  .sub{color:var(--muted);font-size:16.5px;max-width:520px;margin:0 auto}
+  .cta{display:block;width:100%;max-width:420px;margin:24px auto 0;background:linear-gradient(100deg,var(--brand),var(--brand2));color:#fff;
+    font-family:inherit;font-weight:800;font-size:18px;text-align:center;padding:17px 20px;border:0;border-radius:14px;cursor:pointer;
+    box-shadow:0 10px 26px rgba(22,163,74,.28);transition:transform .12s}
+  .cta:hover{transform:translateY(-1px)}
+  .cta:disabled{opacity:.7;cursor:wait}
+  .fine{color:var(--muted);font-size:12.5px;text-align:center;margin-top:10px}
+  section{padding:30px 0 4px}
+  h2{font-size:22px;font-weight:900;letter-spacing:-.3px;margin-bottom:14px;text-align:center}
+  .cards{display:grid;gap:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 18px}
+  .card .ic{font-size:24px}
+  .card h3{font-size:16.5px;font-weight:800;margin:6px 0 4px}
+  .card p{color:var(--muted);font-size:14.5px}
+  .steps{display:grid;gap:10px;counter-reset:s}
+  .step{display:flex;gap:14px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+  .step::before{counter-increment:s;content:counter(s);flex:0 0 32px;height:32px;border-radius:50%;background:var(--brand);color:#fff;font-weight:900;display:flex;align-items:center;justify-content:center}
+  .step b{display:block;font-size:15.5px}
+  .step span{color:var(--muted);font-size:14px}
+  .form-card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:24px 20px;box-shadow:0 16px 40px rgba(15,27,45,.08);margin-top:6px}
+  .form-card h2{margin-bottom:4px}
+  .form-card .st{color:var(--muted);text-align:center;font-size:14px;margin-bottom:18px}
+  .field{margin-bottom:12px}
+  .field label{display:block;font-size:13px;font-weight:700;margin-bottom:6px}
+  .field input,.field select{width:100%;background:#fbfcfe;border:1px solid var(--line);border-radius:11px;color:var(--ink);font-size:16px;font-family:inherit;padding:13px 14px;outline:none}
+  .field input:focus,.field select:focus{border-color:var(--brand)}
+  .tel{display:flex;gap:8px}
+  .tel select{flex:0 0 118px}
+  .err{display:none;background:#fdecec;border:1px solid #f5b5b5;color:#9b1c1c;font-size:14px;border-radius:10px;padding:11px 13px;margin-bottom:12px}
+  .faq details{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:10px}
+  .faq summary{font-weight:800;cursor:pointer;font-size:15px}
+  .faq p{color:var(--muted);font-size:14.5px;margin-top:8px}
+  footer{color:var(--muted);font-size:12px;text-align:center;padding:30px 0 36px}
+  /* Pantalla de prueba activa */
+  #ok{display:none;text-align:center;padding:40px 0 20px}
+  #ok .big{font-size:54px}
+  #ok h1{margin-top:6px}
+  .cred{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin:18px auto 0;max-width:420px;text-align:left;font-size:15px}
+  .cred div{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed var(--line)}
+  .cred div:last-child{border-bottom:0}
+  .cred b{font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all;text-align:right}
+  .ghost{display:block;width:100%;max-width:420px;margin:12px auto 0;background:#fff;color:var(--ink);border:1px solid var(--line);font-weight:800;font-size:16px;padding:15px;border-radius:14px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap" id="main">
+  <header><div class="brand">publi<b>.lat</b></div></header>
+
+  <div class="hero">
+    <span class="pill">5 DÍAS GRATIS · SIN TARJETA</span>
+    <h1>Que una línea caída no te haga perder <span>ni un cliente más.</span></h1>
+    <p class="sub">Probá publi.lat 5 días gratis: tus contactos de WhatsApp ordenados en un CRM, una app propia para no perderlos y métricas que te dicen qué anuncio trae cada venta.</p>
+    <button class="cta" onclick="irAlForm()">Empezar mis 5 días gratis</button>
+    <p class="fine">Te registrás en 1 minuto. No pedimos tarjeta.</p>
+  </div>
+
+  <section>
+    <h2>Lo que vas a tener desde hoy</h2>
+    <div class="cards">
+      <div class="card"><div class="ic">📱</div><h3>Tu app propia, aunque caiga la línea</h3><p>Tus clientes siguen conectados con vos en tu propia app. Si se cae o te bloquean un número, no perdés la conversación ni el contacto.</p></div>
+      <div class="card"><div class="ic">📊</div><h3>Métrica real de cada anuncio</h3><p>Landing pages listas en minutos para filtrar curiosos, y cada contacto queda marcado con el anuncio que lo trajo. Ves qué campaña vende de verdad.</p></div>
+      <div class="card"><div class="ic">⚡</div><h3>Automatización sin riesgo de spam</h3><p>Respuestas automáticas y notificaciones directas a tus clientes, con envíos cuidados para no quemar tus números.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Cómo funciona</h2>
+    <div class="steps">
+      <div class="step"><div><b>Te registrás</b><span>Nombre, WhatsApp, email y rubro. Listo.</span></div></div>
+      <div class="step"><div><b>Conectás tu número</b><span>Escaneás un QR, igual que en WhatsApp Web.</span></div></div>
+      <div class="step"><div><b>Recibís tus contactos y ves qué anuncio los trajo</b><span>Todo ordenado en el CRM, con la métrica de cada campaña.</span></div></div>
+    </div>
+  </section>
+
+  <section id="registro">
+    <form class="form-card" id="form" novalidate>
+      <h2>Activá tus 5 días gratis</h2>
+      <p class="st">Sin tarjeta. Te mandamos el acceso por email.</p>
+      <div class="err" id="err"></div>
+      <div class="field"><label for="f-name">Nombre</label><input id="f-name" type="text" autocomplete="name" placeholder="Tu nombre" required /></div>
+      <div class="field"><label for="f-phone">WhatsApp</label>
+        <div class="tel">
+          <select id="f-cc" aria-label="Código de país">
+            <option value="54">🇦🇷 +54</option><option value="595">🇵🇾 +595</option><option value="598">🇺🇾 +598</option>
+            <option value="56">🇨🇱 +56</option><option value="591">🇧🇴 +591</option><option value="51">🇵🇪 +51</option>
+            <option value="57">🇨🇴 +57</option><option value="52">🇲🇽 +52</option><option value="593">🇪🇨 +593</option>
+            <option value="58">🇻🇪 +58</option><option value="506">🇨🇷 +506</option><option value="507">🇵🇦 +507</option>
+            <option value="1">🇺🇸 +1</option><option value="34">🇪🇸 +34</option><option value="55">🇧🇷 +55</option>
+          </select>
+          <input id="f-phone" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="Número sin el 0" required />
+        </div>
+      </div>
+      <div class="field"><label for="f-email">Email</label><input id="f-email" type="email" autocomplete="email" placeholder="tucorreo@mail.com" required /></div>
+      <div class="field"><label for="f-rubro">Rubro</label>
+        <select id="f-rubro" required>
+          <option value="">Elegí tu rubro</option>
+          <option>Tienda / comercio</option><option>Servicios profesionales</option><option>Inmobiliaria</option>
+          <option>Salud y estética</option><option>Educación / cursos</option><option>Agencia de marketing</option>
+          <option>Turismo</option><option>Automotor</option><option>Otro</option>
+        </select>
+      </div>
+      <button class="cta" id="btn" type="submit">Empezar mis 5 días gratis</button>
+      <p class="fine">Al registrarte aceptás que te contactemos por WhatsApp y email para ayudarte a arrancar.</p>
+    </form>
+  </section>
+
+  <section class="faq">
+    <h2>Preguntas frecuentes</h2>
+    <details><summary>¿Qué pasa al terminar los 5 días?</summary><p>El servicio se pausa hasta que actives tus días. No se cobra nada automáticamente y tus contactos quedan guardados.</p></details>
+    <details><summary>¿Pide tarjeta?</summary><p>No. Te registrás sin tarjeta y la prueba arranca al instante.</p></details>
+    <details><summary>¿Sirve si ya uso otro CRM?</summary><p>Sí. Podés probarlo en paralelo con tu número y comparar: en 5 días ves qué anuncio te trae cada contacto.</p></details>
+    <details><summary>¿Cuánto cuesta después?</summary><p>US$2 por día por número conectado. También hay planes: Semana US$14 y Mes US$60. Pagás con tarjeta o cripto.</p></details>
+  </section>
+
+  <footer>publi.lat · CRM para WhatsApp con métricas de tus anuncios</footer>
+</div>
+
+<div class="wrap" id="ok">
+  <div class="big">✅</div>
+  <h1>Tu prueba de 5 días <span>está activa</span></h1>
+  <p class="sub" id="ok-sub">Ya podés entrar al CRM y conectar tu número.</p>
+  <div class="cred">
+    <div><span>Usuario</span><b id="ok-user"></b></div>
+    <div><span>Clave</span><b id="ok-pass"></b></div>
+    <div><span>Vence</span><b id="ok-fin"></b></div>
+  </div>
+  <p class="fine">Guardá tu clave: también te la mandamos por email.</p>
+  <a class="cta" id="ok-entrar" href="https://app.publi.lat/login">Entrar al CRM</a>
+  <a class="ghost" id="ok-ayuda" target="_blank" rel="noopener">💬 Necesito ayuda por WhatsApp</a>
+</div>
+
+<script>
+  // Número de WhatsApp para pedir ayuda desde la pantalla de prueba activa.
+  var WA_AYUDA = "595975112248";
+  function irAlForm(){ document.getElementById('registro').scrollIntoView({behavior:'smooth'}); setTimeout(function(){document.getElementById('f-name').focus();},450); }
+  function ck(n){var m=('; '+document.cookie).split('; '+n+'=');return m.length===2?decodeURIComponent(m.pop().split(';').shift()):'';}
+  function eid(){try{return crypto.randomUUID();}catch(e){return 'e'+Date.now()+Math.round(Math.random()*1e9);}}
+  var qs = new URLSearchParams(location.search);
+  var fbclid = qs.get('fbclid') || '';
+  // fbc a partir del fbclid si la cookie todavía no existe (primer clic).
+  function fbcVal(){ var c = ck('_fbc'); if(c) return c; return fbclid ? 'fb.1.' + Date.now() + '.' + fbclid : ''; }
+  var utm = ['utm_source','utm_medium','utm_campaign','utm_content','utm_term'].map(function(k){var v=qs.get(k);return v?k.replace('utm_','')+'='+v:'';}).filter(Boolean).join(' · ');
+
+  var form = document.getElementById('form'), btn = document.getElementById('btn'), errBox = document.getElementById('err');
+  function error(t){ errBox.textContent = t; errBox.style.display = 'block'; errBox.scrollIntoView({behavior:'smooth',block:'center'}); }
+  var enviado = false;
+  form.addEventListener('submit', async function(e){
+    e.preventDefault();
+    if (enviado) return;
+    errBox.style.display = 'none';
+    var name = document.getElementById('f-name').value.trim();
+    var email = document.getElementById('f-email').value.trim();
+    var cc = document.getElementById('f-cc').value;
+    var num = document.getElementById('f-phone').value.replace(/\D/g,'').replace(/^0+/,'');
+    var rubro = document.getElementById('f-rubro').value;
+    if(!name || !email || !num || !rubro) return error('Completá nombre, WhatsApp, email y rubro.');
+    if(num.indexOf(cc) === 0 && num.length > 10) num = num.slice(cc.length); // ya escribió el código de país
+    if(num.length < 6) return error('Revisá el número de WhatsApp.');
+    var typo = email.match(/@(gmail|hotmail|outlook|yahoo|icloud)\.(con|cm|co|vom|cmo|comm)$/i);
+    if(typo) return error('Revisá el email: ¿quisiste escribir @' + typo[1].toLowerCase() + '.com?');
+    var regEid = eid();
+    btn.disabled = true; var prev = btn.textContent; btn.textContent = 'Activando tu prueba…';
+    try{
+      var r = await fetch(API + '/api/land/prueba', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ name:name, email:email, phone:cc + num, rubro:rubro, utm:utm || undefined,
+          fbp:ck('_fbp') || undefined, fbc:fbcVal() || undefined, fbclid:fbclid || undefined, eventId:regEid })
+      });
+      var d = await r.json().catch(function(){ return {}; });
+      if(!r.ok) throw new Error(d.error || 'No pudimos activar la prueba. Probá de nuevo.');
+      enviado = true;
+      // Mismo eventID que la Conversions API → Meta cuenta UN solo registro.
+      try{ fbq('track','CompleteRegistration', {content_name:'prueba_5_dias'}, {eventID: regEid}); }catch(_){}
+      document.getElementById('ok-user').textContent = d.email;
+      document.getElementById('ok-pass').textContent = d.clave;
+      try{ document.getElementById('ok-fin').textContent = new Date(d.fin).toLocaleDateString('es', {day:'numeric', month:'long'}); }catch(_){}
+      document.getElementById('ok-entrar').href = d.autologinUrl;
+      document.getElementById('ok-ayuda').href = 'https://wa.me/' + WA_AYUDA + '?text=' + encodeURIComponent('Hola! Activé mi prueba de 5 días en publi.lat y necesito ayuda para arrancar.');
+      document.getElementById('main').style.display = 'none';
+      document.getElementById('ok').style.display = 'block';
+      window.scrollTo(0,0);
+    }catch(err){
+      error(err.message || 'No pudimos activar la prueba.');
+      btn.disabled = false; btn.textContent = prev;
+    }
+  });
+</script>
+</body>
+</html>

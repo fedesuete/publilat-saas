@@ -19,7 +19,7 @@ export function publicMarketingConfig(): { mktPixelId: string | null } {
 }
 
 export interface MarketingEvent {
-  eventName: "Lead" | "CompleteRegistration" | "Purchase";
+  eventName: "Lead" | "CompleteRegistration" | "StartTrial" | "Purchase";
   externalId: string;   // el MISMO en registro y compra (user.id) → matchea Registro↔Purchase
   email?: string | null;
   fbp?: string | null;

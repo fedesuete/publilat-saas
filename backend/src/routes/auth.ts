@@ -124,6 +124,8 @@ authRouter.get("/autologin", (req, res) => {
   try { ok = !!(t && verifyToken(t)); } catch { ok = false; }
   if (!ok) return res.redirect(`${panel}/login`);
   setAuthCookie(res, t);
+  // Prueba gratis (landing 5 días): ya tiene días, va a "Empezá acá" a conectar su número.
+  if (req.query.a === "empezar") return res.redirect(`${panel}/empezar`);
   // Va DIRECTO a /billing a pagar/activar sus días — el embudo termina en la compra.
   // ?bienvenida=1: dispara el tour de bienvenida (plan Prueba US$4 → WhatsApp de soporte) UNA vez.
   return res.redirect(`${panel}/billing?bienvenida=1`);

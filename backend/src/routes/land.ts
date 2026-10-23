@@ -18,7 +18,8 @@ import { sendCapiEvent } from "../lib/meta-capi.js";
 import { resolveUserPixel, resolveContactPixel } from "../lib/pixel.js";
 import crypto from "node:crypto";
 import { decryptSecret } from "../lib/crypto.js";
-import { paisDeTelefono } from "../lib/landing-carga.js";
+import { paisDeTelefono, origenCarga } from "../lib/landing-carga.js";
+import { PRUEBA_DIAS, claveInicial, correoBienvenidaPrueba } from "../lib/prueba-gratis.js";
 import { avisarLeadCalificado } from "../lib/landing-carga-aviso.js";
 
 export const landRouter = Router();
@@ -78,6 +79,94 @@ landRouter.post("/signup", async (req, res) => {
       return res.status(409).json({ error: "Ese email ya tiene una cuenta. Iniciá sesión en el panel." });
     }
     console.error("[land/signup] error:", e instanceof Error ? e.message : String(e));
+    return res.status(500).json({ error: "No pudimos crear la cuenta. Probá de nuevo en un momento." });
+  }
+});
+
+// ---- POST /api/land/prueba — landing de publi.lat "5 días gratis" (2026-10-22) -------------------------
+// Formulario corto (nombre, WhatsApp, email, rubro; sin clave): crea la cuenta, le carga 5 días al crédito
+// (UNA prueba por número), dispara CompleteRegistration (dedup con el navegador por eventId) + StartTrial al
+// pixel de marketing, avisa al equipo y le manda el acceso por correo. La clave se genera y se devuelve para
+// mostrarla en la pantalla de "prueba activa".
+const pruebaSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  email: z.string().trim().toLowerCase().email().max(200),
+  phone: z.string().trim().min(5).max(40),
+  rubro: z.string().trim().min(2).max(80),
+  utm: z.string().trim().max(300).optional(),
+  ref: z.string().optional(),
+  fbp: z.string().max(255).optional(),
+  fbc: z.string().max(600).optional(),
+  fbclid: z.string().max(600).optional(),
+  eventId: z.string().max(120).optional(),
+});
+
+// Freno simple anti-abuso: 4 pruebas por IP por hora (en memoria; alcanza para un formulario público).
+const pruebasPorIp = new Map<string, number[]>();
+function frenoIp(ip: string): boolean {
+  const ahora = Date.now();
+  const v = (pruebasPorIp.get(ip) ?? []).filter((t) => ahora - t < 3600e3);
+  if (v.length >= 4) { pruebasPorIp.set(ip, v); return true; }
+  v.push(ahora);
+  pruebasPorIp.set(ip, v);
+  return false;
+}
+
+landRouter.post("/prueba", async (req, res) => {
+  const parsed = pruebaSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Completá nombre, WhatsApp, email y rubro." });
+  const { name, email, phone, rubro, utm, ref, fbp, fbc, fbclid, eventId } = parsed.data;
+  const digitos = phone.replace(/\D/g, "");
+  if (digitos.length < 8 || digitos.length > 15) return res.status(400).json({ error: "Revisá el WhatsApp: código de país + número." });
+  if (frenoIp(req.ip ?? "?")) return res.status(429).json({ error: "Demasiados registros desde esta conexión. Probá en un rato." });
+
+  // Una prueba por número (y no a quien ya es cliente con ese número).
+  const yaEsta = await prisma.user.findFirst({ where: { OR: [{ trialPhone: digitos }, { phone: digitos }] }, select: { id: true } });
+  if (yaEsta) return res.status(409).json({ error: "Ese WhatsApp ya tiene una cuenta en Publi.lat. Iniciá sesión en el panel.", login: true });
+
+  const clave = claveInicial();
+  const inicio = new Date();
+  const fin = new Date(inicio.getTime() + PRUEBA_DIAS * 864e5);
+  try {
+    const slug = await uniqueSlug(name || email.split("@")[0]);
+    const referredById = ref ? await resolveReferrerByCode(ref) : null;
+    const user = await prisma.user.create({
+      data: {
+        email, slug, name, phone: digitos, rubro,
+        password: await hashPassword(clave),
+        source: referredById ? "referido" : "prueba-landing",
+        signupUtm: utm || null,
+        fbp: fbp ?? null, fbc: fbc ?? null, fbclid: fbclid ?? null,
+        trialPhone: digitos, trialStartedAt: inicio, trialEndsAt: fin,
+        credit: { create: { days: PRUEBA_DIAS, ledger: { create: { delta: PRUEBA_DIAS, reason: `prueba gratis ${PRUEBA_DIAS} días (landing)` } } } },
+        ...(referredById ? { referredById } : {}),
+      },
+      select: { id: true, email: true, tokenVersion: true },
+    });
+
+    const ctx = { clientIp: req.ip, userAgent: req.get("user-agent") ?? undefined };
+    void fireMarketingEvent({ eventName: "CompleteRegistration", externalId: user.id, email, phone: digitos, firstName: name, fbp, fbc, eventId, ...ctx })
+      .then(() => fireMarketingEvent({ eventName: "StartTrial", externalId: user.id, email, phone: digitos, firstName: name, fbp, fbc, eventId: `st-${user.id}`, ...ctx }));
+
+    void notifyNewSignup({ name, email, phone: digitos, rubro, prueba: true, origen: origenCarga({ fbclid, fbc, utm }) });
+    void sendRegistrationOutreach({ name, email, phone: digitos });
+    void correoBienvenidaPrueba({ email, name, clave, fin });
+
+    const token = signToken({ userId: user.id, tv: user.tokenVersion });
+    const base = (process.env.APP_BASE_URL ?? "https://app.publi.lat").replace(/\/$/, "");
+    return res.status(201).json({
+      ok: true, email: user.email, clave, fin: fin.toISOString(),
+      autologinUrl: `${base}/api/auth/autologin?t=${encodeURIComponent(token)}&a=empezar`,
+    });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      const campo = String((e.meta as { target?: unknown } | undefined)?.target ?? "");
+      return res.status(409).json({
+        error: campo.includes("email") ? "Ese email ya tiene una cuenta. Iniciá sesión en el panel." : "Ese WhatsApp ya tiene una cuenta en Publi.lat. Iniciá sesión en el panel.",
+        login: true,
+      });
+    }
+    console.error("[land/prueba] error:", e instanceof Error ? e.message : String(e));
     return res.status(500).json({ error: "No pudimos crear la cuenta. Probá de nuevo en un momento." });
   }
 });

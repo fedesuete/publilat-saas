@@ -4,17 +4,28 @@
 import { prisma } from "./prisma.js";
 import { getEngine } from "./wa-engine.js";
 import { sendMail } from "./mailer.js";
+import { horaParaguay } from "./landing-carga.js";
 
 const NOTIFY_PHONE = (process.env.SIGNUP_NOTIFY_PHONE ?? "595975112248").replace(/\D/g, "");
 const NOTIFY_EMAIL = process.env.SIGNUP_NOTIFY_EMAIL ?? "federicobogado1997@gmail.com";
 
-export async function notifyNewSignup(u: { name?: string | null; email: string; phone?: string | null; interests?: string[] }): Promise<void> {
+export async function notifyNewSignup(u: {
+  name?: string | null; email: string; phone?: string | null; interests?: string[];
+  rubro?: string | null; origen?: string | null; prueba?: boolean; // landing de prueba gratis (5 días)
+}): Promise<void> {
   const interesa = u.interests && u.interests.length ? `\n🔎 Le interesa: ${u.interests.join(" · ")}` : "";
+  const digitos = (u.phone ?? "").replace(/\D/g, "");
+  const extra =
+    (digitos.length >= 8 ? `\n💬 https://wa.me/${digitos}` : "") +
+    (u.rubro ? `\n🏷️ Rubro: ${u.rubro}` : "") +
+    (u.origen ? `\n📍 Vino de: ${u.origen}` : "") +
+    (u.prueba ? `\n🕒 ${horaParaguay(new Date())} (hora Paraguay)` : "");
   const text =
-    `🆕 *Nuevo cliente en Publi.lat*\n\n` +
+    `🆕 *Nuevo cliente en Publi.lat*${u.prueba ? " · 🎁 prueba 5 días" : ""}\n\n` +
     `👤 ${u.name?.trim() || "(sin nombre)"}\n` +
     `✉️ ${u.email}\n` +
     `📱 ${u.phone?.trim() || "(sin teléfono)"}` +
+    extra +
     interesa +
     `\n\nContactalo para ayudarlo a arrancar 🚀`;
 

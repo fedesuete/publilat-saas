@@ -45,6 +45,14 @@ model User {
   fbp                      String?
   fbc                      String?
   fbclid                   String?
+  // --- Prueba gratis de 5 días (landing de publi.lat, 2026-10-22). Una prueba por número de WhatsApp.
+  rubro                    String? // rubro que declaró al registrarse
+  signupUtm                String? // utm_* con que llegó (para el aviso y para medir campañas)
+  trialStartedAt           DateTime?
+  trialEndsAt              DateTime?
+  trialPhone               String?   @unique // teléfono (solo dígitos) que usó la prueba
+  trialStage               Int       @default(0) // mensajes de la prueba ya enviados: 1=día 1, 2=día 3, 3=día 5
+  trialUnpaidAt            DateTime? // terminó la prueba sin pagar → público de remarketing en Meta
   lastLoginAt              DateTime?
   // --- Referidos: 10% de la PRIMERA compra del referido, pagado en USDT a mano por el admin.
   // Solo clientes existentes (con ≥1 compra aprobada) pueden referir. Ver lib/referrals.ts. ---
