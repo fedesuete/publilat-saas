@@ -13,7 +13,7 @@ import { uniqueSlug } from "./auth.js";
 import { resolveReferrerByCode } from "../lib/referrals.js";
 import { notifyNewSignup } from "../lib/signup-notify.js";
 import { sendRegistrationOutreach } from "../lib/signup-outreach.js";
-import { fireMarketingEvent } from "../lib/marketing-capi.js";
+import { fireMarketingEvent, publicMarketingConfig } from "../lib/marketing-capi.js";
 import { sendCapiEvent } from "../lib/meta-capi.js";
 import { resolveUserPixel, resolveContactPixel } from "../lib/pixel.js";
 import crypto from "node:crypto";
@@ -81,6 +81,13 @@ landRouter.post("/signup", async (req, res) => {
     console.error("[land/signup] error:", e instanceof Error ? e.message : String(e));
     return res.status(500).json({ error: "No pudimos crear la cuenta. Probá de nuevo en un momento." });
   }
+});
+
+// GET /api/land/config — el pixel de marketing para las landings externas (CORS abierto; /api/public/config no
+// lo tiene). Así el navegador y la Conversions API usan el MISMO pixel y el CompleteRegistration se deduplica.
+landRouter.get("/config", (_req, res) => {
+  res.set("Cache-Control", "public, max-age=300");
+  res.json(publicMarketingConfig());
 });
 
 // ---- POST /api/land/prueba — landing de publi.lat "5 días gratis" (2026-10-22) -------------------------
