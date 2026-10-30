@@ -1031,6 +1031,34 @@ model SupportRelayMsg {
   @@index([groupMsgId])
 }
 
+// Pedidos "C-" del grupo SOPORTE para Claude (2026-10-30, pedido del dueño): el equipo pide por WhatsApp, un worker
+// en el server del casino corre Claude y contesta en el grupo. Los cambios esperan "ok N" de un aprobador. Aditivo:
+// sin CLAUDE_OPS_SECRET ni CLAUDE_OPS_PEDIDOS no se crea ni se toma ninguno. Ver lib/claude-ops.ts.
+model ClaudeJob {
+  id               String    @id @default(cuid())
+  numero           Int       @unique @default(autoincrement()) // el "#47" que se usa en el grupo
+  userId           String
+  session          String // sesión de WAHA del número de soporte (por donde se contesta)
+  groupJid         String
+  msgId            String // id del mensaje "C-" original (para citarlo)
+  autor            String // teléfono (o "soporte") de quien pidió
+  autorNombre      String?
+  texto            String
+  imagenes         Json? // [{ mimetype, base64 }] capturas de todo el pedido, en orden
+  imagenesEnviadas Int       @default(0) // cuántas ya se le pasaron al worker
+  estado           String    @default("nuevo") // nuevo | trabajando | esperando_ok | aprobado | ejecutando | hecho | rechazado | error
+  pendiente        String? // texto nuevo para la próxima vuelta: seguimiento "C- #N …" o ajuste del "ok N …"
+  claudeSession    String? // sesión de Claude para retomar el mismo hilo
+  plan             String?
+  resultado        String?
+  aprobadoPor      String?
+  tomadoAt         DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([estado])
+}
+
 // Tipo de cliente marcado A MANO en el Inbox ("este es de Fichas"). Define a qué pixel van SUS eventos
 // (Lead al marcar + Purchase al comprar), para no entrenar un solo pixel con perfiles distintos
 // (2026-10-09, pedido del dueño). Tabla aparte a propósito: Contact está en la lista de NO TOCAR (§9.6).

@@ -42,6 +42,7 @@ import { chatRouter, chatPublicRouter } from "./routes/chat.js";
 import { wheelOperatorRouter, wheelPlayerRouter } from "./routes/chat-wheel.js"; // ruleta de premios del Chat App
 import { botRelayRouter } from "./routes/bot-relay.js"; // puente cajero de socio (token propio)
 import { soporteWaRouter } from "./routes/soporte-wa.js";
+import { claudeOpsRouter } from "./routes/claude-ops.js"; // pedidos "C-" del grupo SOPORTE → worker de Claude
 import { soportePortalRouter } from "./routes/soporte-portal.js"; // tickets del portal de Lucky Soft → grupo SOPORTE // 2do webhook de WAHA: grupos del número de soporte
 import { tutorialsRouter, tutorialsAdminRouter, tutorialVideoRouter } from "./routes/tutorials.js";
 import { requireAdmin } from "./middleware/requireAdmin.js";
@@ -165,6 +166,7 @@ app.use("/api/integrations/inbound", webhookLimiter, inboundIntegrationsRouter);
 app.use("/api/webhooks/leadgen", webhookLimiter, leadgenRouter); // Meta Lead Ads (formularios) → captura del lead
 app.use("/api/bot-relay", webhookLimiter, botRelayRouter); // puente cajero de socio (x-bot-token propio; off sin env)
 app.use("/api/soporte/wa", webhookLimiter, soporteWaRouter); // relay de soporte por grupo (mismo token que el webhook; off sin cuenta configurada)
+app.use("/api/soporte/claude", webhookLimiter, claudeOpsRouter); // worker de Claude ⇄ pedidos "C-" del grupo SOPORTE (Bearer CLAUDE_OPS_SECRET; 503 sin él)
 app.use("/api/soporte/portal", webhookLimiter, soportePortalRouter); // tickets del portal Lucky Soft, firmado con HMAC (PORTAL_RELAY_SECRET)
 app.use("/api/billing/webhook/usdt", webhookLimiter, usdtWebhookRouter); // NOWPayments (USDT)
 app.use("/api/billing/webhook/pagopar", webhookLimiter, pagoparWebhookRouter); // Pagopar (Paraguay)

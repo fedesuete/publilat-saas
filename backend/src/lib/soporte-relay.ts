@@ -27,6 +27,7 @@ import { getEngine } from "./wa-engine.js";
 import { sendToContact } from "./wa-send.js";
 import { downloadWahaMedia } from "./waha.js";
 import { responderEnPortal } from "./soporte-portal.js";
+import { atenderClaude } from "./claude-ops.js";
 
 /** Cada cuánto se le puede repetir el acuse al MISMO cliente (1 a 1). Si escribe 5 veces, recibe uno. */
 const ACK_MS = Number(process.env.SOPORTE_ACK_HORAS ?? "6") * 3600_000;
@@ -424,6 +425,11 @@ export async function onEventoDeGrupo(session: string, p: Record<string, any>): 
 
   // ---- El grupo SOPORTE: es el canal de órdenes. Todo lo que no empiece con B- se ignora. ----
   if (chat === cuenta.supportGroupId) {
+    // 2026-10-30: "C- …", "ok N" y "no N" son para Claude (lib/claude-ops.ts); apagado sin CLAUDE_OPS_*.
+    if (await atenderClaude(session, cuenta, p, texto, idMsg, remitenteDe(p)).catch((e) => {
+      console.error("[soporte] pedido para Claude:", e instanceof Error ? e.message : String(e));
+      return false;
+    })) return;
     const orden = parseComando(texto);
     if (!orden) return; // charla interna del equipo: no se guarda ni se mira
     const citado = idCitado(p);
