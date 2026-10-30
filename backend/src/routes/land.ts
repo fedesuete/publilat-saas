@@ -99,7 +99,7 @@ const pruebaSchema = z.object({
   name: z.string().trim().min(1).max(120),
   email: z.string().trim().toLowerCase().email().max(200),
   phone: z.string().trim().min(5).max(40),
-  rubro: z.string().trim().min(2).max(80),
+  rubro: z.string().trim().max(80).optional(),
   utm: z.string().trim().max(300).optional(),
   ref: z.string().optional(),
   fbp: z.string().max(255).optional(),
@@ -121,7 +121,7 @@ function frenoIp(ip: string): boolean {
 
 landRouter.post("/prueba", async (req, res) => {
   const parsed = pruebaSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: "Completá nombre, WhatsApp, email y rubro." });
+  if (!parsed.success) return res.status(400).json({ error: "Completá nombre, WhatsApp y email." });
   const { name, email, phone, rubro, utm, ref, fbp, fbc, fbclid, eventId } = parsed.data;
   const digitos = phone.replace(/\D/g, "");
   if (digitos.length < 8 || digitos.length > 15) return res.status(400).json({ error: "Revisá el WhatsApp: código de país + número." });

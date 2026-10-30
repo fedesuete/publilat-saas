@@ -104,7 +104,7 @@ fetch(API + "/api/land/config").then(function(r){return r.json();}).then(functio
   <section>
     <h2>Cómo funciona</h2>
     <div class="steps">
-      <div class="step"><div><b>Te registrás</b><span>Nombre, WhatsApp, email y rubro. Listo.</span></div></div>
+      <div class="step"><div><b>Te registrás</b><span>Nombre, WhatsApp y email. Listo.</span></div></div>
       <div class="step"><div><b>Conectás tu número</b><span>Escaneás un QR, igual que en WhatsApp Web.</span></div></div>
       <div class="step"><div><b>Recibís tus contactos y ves qué anuncio los trajo</b><span>Todo ordenado en el CRM, con la métrica de cada campaña.</span></div></div>
     </div>
@@ -129,14 +129,6 @@ fetch(API + "/api/land/config").then(function(r){return r.json();}).then(functio
         </div>
       </div>
       <div class="field"><label for="f-email">Email</label><input id="f-email" type="email" autocomplete="email" placeholder="tucorreo@mail.com" required /></div>
-      <div class="field"><label for="f-rubro">Rubro</label>
-        <select id="f-rubro" required>
-          <option value="">Elegí tu rubro</option>
-          <option>Tienda / comercio</option><option>Servicios profesionales</option><option>Inmobiliaria</option>
-          <option>Salud y estética</option><option>Educación / cursos</option><option>Agencia de marketing</option>
-          <option>Turismo</option><option>Automotor</option><option>Otro</option>
-        </select>
-      </div>
       <button class="cta" id="btn" type="submit">Empezar mis 5 días gratis</button>
       <p class="fine">Al registrarte aceptás que te contactemos por WhatsApp y email para ayudarte a arrancar.</p>
     </form>
@@ -190,8 +182,7 @@ fetch(API + "/api/land/config").then(function(r){return r.json();}).then(functio
     var email = document.getElementById('f-email').value.trim();
     var cc = document.getElementById('f-cc').value;
     var num = document.getElementById('f-phone').value.replace(/\D/g,'').replace(/^0+/,'');
-    var rubro = document.getElementById('f-rubro').value;
-    if(!name || !email || !num || !rubro) return error('Completá nombre, WhatsApp, email y rubro.');
+    if(!name || !email || !num) return error('Completá nombre, WhatsApp y email.');
     if(num.indexOf(cc) === 0 && num.length > 10) num = num.slice(cc.length); // ya escribió el código de país
     if(num.length < 6) return error('Revisá el número de WhatsApp.');
     var typo = email.match(/@(gmail|hotmail|outlook|yahoo|icloud)\.(con|cm|co|vom|cmo|comm)$/i);
@@ -201,7 +192,7 @@ fetch(API + "/api/land/config").then(function(r){return r.json();}).then(functio
     try{
       var r = await fetch(API + '/api/land/prueba', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ name:name, email:email, phone:cc + num, rubro:rubro, utm:utm || undefined,
+        body: JSON.stringify({ name:name, email:email, phone:cc + num, utm:utm || undefined,
           fbp:ck('_fbp') || undefined, fbc:fbcVal() || undefined, fbclid:fbclid || undefined, eventId:regEid })
       });
       var d = await r.json().catch(function(){ return {}; });
