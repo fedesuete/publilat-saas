@@ -253,6 +253,22 @@ export async function atenderClaude(
   return true;
 }
 
+// ============================ Avisos del server del casino ============================
+
+/**
+ * 2026-10-30 (Federico: "que nos llegue en el grupo de soporte que se cargaron fichas"): texto suelto al grupo SOPORTE desde el
+ * número de soporte (la cuenta con el relay prendido y su línea activa). Lo usa el vigilante de cargas de soporte247 del server
+ * del casino. Devuelve false si no hay grupo/línea configurados.
+ */
+export async function avisarAlGrupo(texto: string): Promise<boolean> {
+  const cuenta = await prisma.user.findFirst({ where: { supportRelayEnabled: true, supportGroupId: { not: null } }, select: { id: true, supportGroupId: true } });
+  if (!cuenta?.supportGroupId) return false;
+  const linea = await prisma.waLine.findFirst({ where: { userId: cuenta.id, provider: "baileys", status: "active" }, select: { id: true, sessionId: true } });
+  if (!linea) return false;
+  await waha().post("/api/sendText", { session: linea.sessionId ?? `line_${linea.id}`, chatId: cuenta.supportGroupId, text: recortar(texto) });
+  return true;
+}
+
 // ============================ Lado del worker ============================
 
 export type Tarea = {

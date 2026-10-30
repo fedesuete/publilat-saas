@@ -3,7 +3,7 @@
 import { Router } from "express";
 import crypto from "node:crypto";
 import { z } from "zod";
-import { tomarTarea, cerrarVuelta } from "../lib/claude-ops.js";
+import { tomarTarea, cerrarVuelta, avisarAlGrupo } from "../lib/claude-ops.js";
 
 export const claudeOpsRouter = Router();
 
@@ -28,6 +28,21 @@ claudeOpsRouter.post("/tomar", async (_req, res) => {
   } catch (e) {
     console.error("[claude-ops] tomar:", e instanceof Error ? e.message : String(e));
     res.status(500).json({ error: "no se pudo tomar" });
+  }
+});
+
+// 2026-10-30: avisos sueltos del server del casino al grupo SOPORTE (cargas y retiros de soporte247).
+const Aviso = z.object({ texto: z.string().min(1).max(4000) });
+
+claudeOpsRouter.post("/aviso", async (req, res) => {
+  const b = Aviso.safeParse(req.body);
+  if (!b.success) return res.status(400).json({ error: "datos inválidos" });
+  try {
+    const ok = await avisarAlGrupo(b.data.texto);
+    res.status(ok ? 200 : 503).json({ ok });
+  } catch (e) {
+    console.error("[claude-ops] aviso:", e instanceof Error ? e.message : String(e));
+    res.status(502).json({ error: "no salió el aviso" });
   }
 });
 
