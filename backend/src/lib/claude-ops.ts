@@ -11,6 +11,9 @@
 //   4. "C- #N <algo más>" (con o sin captura) sigue el mismo pedido, en la misma sesión de Claude.
 // Lo que escribe el número de soporte desde su propio teléfono llega como fromMe: cuenta como "soporte" (ponerlo en las
 // listas si debe poder pedir/aprobar). Los mensajes del bot empiezan con 🟠 y nunca matchean "C-" ni "ok N".
+// 2026-10-31 (lo que se vio el primer día): "C- ok N" también aprueba (Federico lo escribió así y no contó), "C- #N ok" aprueba
+// solo si el #N está esperando ok (si Claude preguntó algo, es la respuesta), y una respuesta que termina preguntando NO es
+// un plan: queda como necesita_info aunque Claude la haya cerrado con esperando_ok (el #2 quedó trabado así).
 import axios from "axios";
 import { prisma } from "./prisma.js";
 import { downloadWahaMedia } from "./waha.js";
@@ -42,6 +45,29 @@ export function parseAprobacion(texto: string | null | undefined): { accion: "ok
   if (!m) return null;
   const palabra = m[1].toLowerCase();
   return { accion: palabra === "no" ? "no" : "ok", numero: Number(m[2]), nota: m[3].trim() };
+}
+
+export type Lectura =
+  | { tipo: "pedido"; numero: number | null; texto: string }
+  /** `seguimiento` viene solo en "C- #N ok …": si el #N no está esperando ok, ese texto es un seguimiento, no una aprobación. */
+  | { tipo: "aprobacion"; accion: "ok" | "no"; numero: number; nota: string; seguimiento?: string };
+
+/** Lo que llegó al grupo, interpretado: pedido ("C- …"), aprobación ("ok N", "C- ok N", "C- #N ok …") o nada. */
+export function interpretar(texto: string | null | undefined): Lectura | null {
+  const pedido = parsePedido(texto);
+  if (!pedido) {
+    const a = parseAprobacion(texto);
+    return a ? { tipo: "aprobacion", ...a } : null;
+  }
+  if (pedido.numero == null) {
+    const a = parseAprobacion(pedido.texto); // "C- ok 2", "C- no 2 ya no hace falta"
+    if (a) return { tipo: "aprobacion", ...a };
+  } else {
+    const m = /^(ok|okey|dale|si|sí)\b[\s,.:!-]*([\s\S]*)$/i.exec(pedido.texto); // "C- #2 ok", "C- #2 dale, con el 549…"
+    if (m) return { tipo: "aprobacion", accion: "ok", numero: pedido.numero, nota: m[2].trim(), seguimiento: pedido.texto };
+    if (/^no[\s.,!]*$/i.test(pedido.texto)) return { tipo: "aprobacion", accion: "no", numero: pedido.numero, nota: "", seguimiento: pedido.texto };
+  }
+  return { tipo: "pedido", ...pedido };
 }
 
 /** Lista de teléfonos de una variable (solo dígitos) + la palabra "soporte" (lo que se tipea desde el número de soporte). */
@@ -82,6 +108,17 @@ export function textoRespuesta(numero: number, estado: string, cuerpo: string): 
     default:
       return `${ICONO}✅ *#${numero}*\n\n${c}`;
   }
+}
+
+/**
+ * Una PREGUNTA no es un plan. Si Claude cerró con esperando_ok pero lo que escribió termina preguntando y no dice cómo se
+ * revierte (el #2 del 30/10: "¿qué querés cambiar?"), queda como necesita_info: se contesta con "C- #N …", no con "ok N".
+ */
+export function clasificarEstado(estado: string, cuerpo: string): string {
+  if (estado !== "esperando_ok") return estado;
+  const lineas = cuerpo.split("\n").map((l) => l.trim()).filter(Boolean);
+  const ultima = lineas[lineas.length - 1] ?? "";
+  return /\?\s*$/.test(ultima) && !/reviert|revertir|rollback/i.test(cuerpo) ? "necesita_info" : estado;
 }
 
 // ============================ Quién escribió (teléfono) ============================
@@ -173,9 +210,18 @@ export async function atenderClaude(
   remitente: string[],
 ): Promise<boolean> {
   if (!activo()) return false;
-  const pedido = parsePedido(texto);
-  const aprob = pedido ? null : parseAprobacion(texto);
-  if (!pedido && !aprob) return false;
+  const lectura = interpretar(texto);
+  if (!lectura) return false;
+  let pedido = lectura.tipo === "pedido" ? { numero: lectura.numero, texto: lectura.texto } : null;
+  let aprob = lectura.tipo === "aprobacion" ? lectura : null;
+  // "C- #N ok …" solo es aprobación si el #N está esperando ok; si no (Claude preguntó algo), es la respuesta a esa pregunta.
+  if (aprob?.seguimiento != null) {
+    const j = await prisma.claudeJob.findUnique({ where: { numero: aprob.numero }, select: { estado: true } });
+    if (j?.estado !== "esperando_ok") {
+      pedido = { numero: aprob.numero, texto: aprob.seguimiento };
+      aprob = null;
+    }
+  }
 
   const grupo = cuenta.supportGroupId;
   const ids = idsDe(p, idCola);
@@ -305,7 +351,8 @@ export async function cerrarVuelta(id: string, fase: "consulta" | "ejecucion", e
   const job = await prisma.claudeJob.findUnique({ where: { id } });
   if (!job) return false;
   const valido = fase === "consulta" ? ["esperando_ok", "hecho", "necesita_info", "error"] : ["hecho", "error"];
-  const est = valido.includes(estado) ? estado : "error";
+  const pedidoPorClaude = clasificarEstado(estado, cuerpo);
+  const est = valido.includes(pedidoPorClaude) ? pedidoPorClaude : "error";
   // Si mientras trabajaba llegó un seguimiento ("C- #N …" dejó estado=nuevo), no se pisa: el seguimiento se toma después.
   const nuevoEstado = est === "necesita_info" ? "hecho" : est;
   await prisma.claudeJob.updateMany({

@@ -28,6 +28,7 @@ import { sendToContact } from "./wa-send.js";
 import { downloadWahaMedia } from "./waha.js";
 import { responderEnPortal } from "./soporte-portal.js";
 import { atenderClaude } from "./claude-ops.js";
+import { marcarMensajeCliente, marcarRespuestaEquipo } from "./soporte-resumen.js";
 
 /** Cada cuánto se le puede repetir el acuse al MISMO cliente (1 a 1). Si escribe 5 veces, recibe uno. */
 const ACK_MS = Number(process.env.SOPORTE_ACK_HORAS ?? "6") * 3600_000;
@@ -45,6 +46,11 @@ const MAX_POR_VUELTA = Number(process.env.SOPORTE_RELAY_MAX ?? "20");
 export const ACK_POR_DEFECTO = "👋 ¡Hola! Recibimos tu consulta y ya la estamos viendo. En un momento te responde alguien del equipo.";
 export const ACK_CARGA = "✅ Recibido. Estamos procesando tu carga, en un momento te confirmamos.";
 export const ACK_CONSULTA = "👋 Recibido. Estamos procesando tu consulta, en un momento te respondemos.";
+
+/** ¿Es uno de nuestros acuses automáticos? Un acuse del robot NO cuenta como respuesta del equipo. */
+export function esAcuse(texto: string | null | undefined): boolean {
+  return [ACK_POR_DEFECTO, ACK_CARGA, ACK_CONSULTA].includes((texto ?? "").trim());
+}
 
 const WAHA_BASE = (process.env.WAHA_BASE_URL ?? "http://localhost:3001").replace(/\/$/, "");
 const WAHA_KEY = process.env.WAHA_API_KEY ?? "";
@@ -293,6 +299,8 @@ export async function relayConsultas(): Promise<number> {
         const groupMsgId = await enviarTexto(sesion, cuenta.supportGroupId!, texto);
         if (groupMsgId) await prisma.supportRelayMsg.update({ where: { messageId: m.id }, data: { groupMsgId } });
         movidas++;
+        // 2026-10-31: arranca (o sigue) la espera del cliente; la respuesta 1 a 1 se detecta por Message (lib/soporte-resumen.ts).
+        await marcarMensajeCliente(hilo.id, m.contact.name ?? telefonoLegible(m.contact.phone), m.body ?? (m.mediaType ? "(imagen)" : "")).catch(() => undefined);
       } catch (e) {
         // No pudo entrar al grupo: soltamos el candado para reintentar en la próxima vuelta.
         await prisma.supportRelayMsg.deleteMany({ where: { messageId: m.id } });
@@ -468,10 +476,18 @@ export async function onEventoDeGrupo(session: string, p: Record<string, any>): 
   }
 
   // ---- Un grupo de CLIENTE: se reenvía a SOPORTE y se le contesta al toque. ----
-  if (p?.fromMe) return; // lo nuestro (acuses, respuestas B-, o lo que se tipee desde el teléfono de soporte)
   if (grupoIgnorado(cuenta, chat)) return;
+  // 2026-10-31: lo que escribe el EQUIPO en el grupo del cliente (B- desde SOPORTE, o desde su propio teléfono) da por
+  // contestada la consulta pendiente (lib/soporte-resumen.ts: aviso a las 2 h + resumen de la noche). El acuse del robot no cuenta.
+  if (p?.fromMe) { // lo nuestro (acuses, respuestas B-, o lo que se tipee desde el teléfono de soporte)
+    if (!esAcuse(texto)) await marcarRespuestaEquipo(chat).catch(() => undefined);
+    return;
+  }
   // Solo el CLIENTE: si escribió alguien del equipo desde su propio teléfono, ni se reenvía ni se le contesta.
-  if (esDelEquipo(remitenteDe(p), await equipoDe(session, cuenta))) return;
+  if (esDelEquipo(remitenteDe(p), await equipoDe(session, cuenta))) {
+    await marcarRespuestaEquipo(chat).catch(() => undefined);
+    return;
+  }
   if (!idMsg) return;
 
   const hilo = await hiloDeGrupo(cuenta.id, chat, await nombreDeGrupo(session, chat, p));
@@ -501,6 +517,8 @@ export async function onEventoDeGrupo(session: string, p: Record<string, any>): 
       groupMsgId = await enviarTexto(session, cuenta.supportGroupId, cuerpo);
     }
     if (groupMsgId) await prisma.supportRelayMsg.update({ where: { messageId }, data: { groupMsgId } });
+    // 2026-10-31: arranca (o sigue) la espera del cliente en este grupo.
+    await marcarMensajeCliente(hilo.id, quienEscribio(p), texto || (esImagen ? "(imagen)" : "")).catch(() => undefined);
   } catch (e) {
     await prisma.supportRelayMsg.deleteMany({ where: { messageId } }); // que el reintento de WAHA lo vuelva a traer
     console.error("[soporte] no se pudo reenviar del grupo del cliente:", e instanceof Error ? e.message : String(e));

@@ -1013,6 +1013,14 @@ model SupportThread {
   portalEmail    String?
   code      String    @unique // código corto que identifica al cliente en el grupo (ej. K7M)
   lastAckAt DateTime? // último "estamos procesando tu consulta" enviado
+  // 2026-10-31 (Federico: resumen de la noche + aviso a las 2 h): la consulta del cliente que sigue sin respuesta del
+  // equipo. Lo lleva lib/soporte-resumen.ts; pendingSinceAt null = contestado. Aditivo.
+  pendingSinceAt DateTime? // primer mensaje del cliente sin contestar (desde ahí se mide la espera)
+  lastClientAt   DateTime?
+  lastClientWho  String?
+  lastClientText String?
+  lastTeamAt     DateTime?
+  alertedAt      DateTime? // cuándo se avisó en SOPORTE por esta espera (una vez por consulta)
   createdAt DateTime  @default(now())
 
   @@index([userId])

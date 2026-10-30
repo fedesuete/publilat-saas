@@ -913,6 +913,18 @@ export async function initQueues(): Promise<void> {
         // 30 días). De paso esto RESCATA los pagos que entraron y cuyo aviso nunca nos llegó.
         // Relay de soporte: las consultas de WhatsApp van a UN grupo del equipo. Lee los mensajes
         // que el webhook YA guardó (no se engancha a él: §9.6, no se toca el camino de WhatsApp).
+        // 2026-10-31 (Federico: "sí, los 3"): aviso en SOPORTE cuando un cliente lleva 2 h sin respuesta en su grupo, y el
+        // resumen del día a las 23:00 AR (pedidos a Claude, clientes esperando, movimiento). No-op sin cuenta con relay.
+        if (job.name === "soporte-alerta") {
+          const { alertarSinRespuesta } = await import("./soporte-resumen.js");
+          const n = await alertarSinRespuesta();
+          if (n) console.log(`[soporte] ${n} cliente(s) sin respuesta avisados en el grupo`);
+          return;
+        }
+        if (job.name === "soporte-resumen") {
+          const { mandarResumenDiario } = await import("./soporte-resumen.js");
+          return mandarResumenDiario();
+        }
         if (job.name === "soporte-relay") {
           const { relayConsultas } = await import("./soporte-relay.js");
           const n = await relayConsultas();
@@ -977,6 +989,13 @@ export async function initQueues(): Promise<void> {
     // Cada 15 s: una consulta de soporte no puede quedar esperando minutos para llegar al grupo.
     await queue.add("soporte-relay", {}, { repeat: { every: 15_000 }, jobId: "soporte-relay-repeat", removeOnComplete: true, removeOnFail: 20 });
     await queue.add("soporte-webhook", {}, { repeat: { every: 600_000 }, jobId: "soporte-webhook-repeat", removeOnComplete: true, removeOnFail: 20 });
+    // Clientes sin respuesta (cada 10 min) y resumen del día en SOPORTE (SOPORTE_RESUMEN_HORA, 23:00 AR). Si se cambia la
+    // hora, el repetitivo viejo queda en Redis (ver proxy-report-3h): removerlo a mano con su patrón anterior.
+    await queue.add("soporte-alerta", {}, { repeat: { every: 600_000 }, jobId: "soporte-alerta-repeat", removeOnComplete: true, removeOnFail: 20 });
+    {
+      const { patronResumen } = await import("./soporte-resumen.js");
+      await queue.add("soporte-resumen", {}, { repeat: { pattern: patronResumen(), tz: "America/Argentina/Buenos_Aires" }, jobId: "soporte-resumen-repeat", removeOnComplete: true, removeOnFail: 20 });
+    }
     // Recordatorio de carga abandonada (Chat App): cada 5 min avisa a los jugadores que empezaron una carga y no la terminaron.
     await queue.add("carga-reminder", {}, { repeat: { every: 300_000 }, jobId: "carga-reminder-repeat", removeOnComplete: true, removeOnFail: 50 });
     // Reporte diario de proxies IPRoyal a las 08:00 ART (no-op si no hay líneas de prueba ni SMTP).

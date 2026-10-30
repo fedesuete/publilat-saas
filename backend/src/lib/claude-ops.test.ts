@@ -1,6 +1,45 @@
 // Pedidos "C-" del grupo SOPORTE para Claude: qué cuenta como pedido, como aprobación, y qué se contesta.
 import { describe, it, expect } from "vitest";
-import { parsePedido, parseAprobacion, listaDe, activo, recortar, textoRespuesta, ICONO } from "./claude-ops.js";
+import { parsePedido, parseAprobacion, interpretar, clasificarEstado, listaDe, activo, recortar, textoRespuesta, ICONO } from "./claude-ops.js";
+
+describe("interpretar (lo que se vio el primer día, 30/10)", () => {
+  it("C- ok N / C- no N aprueban como ok N (Federico escribió 'C- ok 2' y no contó)", () => {
+    expect(interpretar("C- ok 2")).toEqual({ tipo: "aprobacion", accion: "ok", numero: 2, nota: "" });
+    expect(interpretar("c- OK #2 con el 549")).toEqual({ tipo: "aprobacion", accion: "ok", numero: 2, nota: "con el 549" });
+    expect(interpretar("C- no 2 ya no hace falta")).toEqual({ tipo: "aprobacion", accion: "no", numero: 2, nota: "ya no hace falta" });
+  });
+  it("C- #N ok … es aprobación con el texto guardado por si el #N no estaba esperando ok", () => {
+    expect(interpretar("C- #2 ok")).toEqual({ tipo: "aprobacion", accion: "ok", numero: 2, nota: "", seguimiento: "ok" });
+    expect(interpretar("C- #2 dale, con el 549")).toEqual({ tipo: "aprobacion", accion: "ok", numero: 2, nota: "con el 549", seguimiento: "dale, con el 549" });
+    expect(interpretar("C- #2 no")).toEqual({ tipo: "aprobacion", accion: "no", numero: 2, nota: "", seguimiento: "no" });
+  });
+  it("C- #N no funciona… es un seguimiento, no un rechazo", () => {
+    expect(interpretar("C- #2 no funciona el botón")).toEqual({ tipo: "pedido", numero: 2, texto: "no funciona el botón" });
+    expect(interpretar("C- #2 el número es 549111")).toEqual({ tipo: "pedido", numero: 2, texto: "el número es 549111" });
+  });
+  it("pedidos y aprobaciones de siempre, y lo que no es nada", () => {
+    expect(interpretar("C- cambiá el número")).toEqual({ tipo: "pedido", numero: null, texto: "cambiá el número" });
+    expect(interpretar("C- si podés mirá el log")).toEqual({ tipo: "pedido", numero: null, texto: "si podés mirá el log" });
+    expect(interpretar("ok 47")).toEqual({ tipo: "aprobacion", accion: "ok", numero: 47, nota: "" });
+    expect(interpretar("B- hola")).toBeNull();
+    expect(interpretar("ok gracias")).toBeNull();
+  });
+});
+
+describe("clasificarEstado: una pregunta no es un plan", () => {
+  it("esperando_ok que termina preguntando → necesita_info", () => {
+    expect(clasificarEstado("esperando_ok", "No me queda claro qué hay que cambiar.\n\n¿Qué querés cambiar de Eurofortuna?")).toBe("necesita_info");
+    expect(clasificarEstado("esperando_ok", "¿Qué número?  ")).toBe("necesita_info");
+  });
+  it("un plan de verdad (dice cómo se revierte, o no termina preguntando) sigue esperando ok", () => {
+    expect(clasificarEstado("esperando_ok", "Plan: cambio el número en Personalizar.\nSe revierte poniendo el anterior.\n¿Avanzo?")).toBe("esperando_ok");
+    expect(clasificarEstado("esperando_ok", "Plan: cambio el número en Personalizar. Verifico en el sitio.")).toBe("esperando_ok");
+  });
+  it("los otros estados no se tocan", () => {
+    expect(clasificarEstado("hecho", "¿Algo más?")).toBe("hecho");
+    expect(clasificarEstado("error", "¿?")).toBe("error");
+  });
+});
 
 describe("parsePedido", () => {
   it("C- con variantes de guion y espacios", () => {
