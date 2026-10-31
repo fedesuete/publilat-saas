@@ -1039,6 +1039,18 @@ model SupportRelayMsg {
   @@index([groupMsgId])
 }
 
+// Envíos SALIENTES que pide el portal de Lucky Soft (facturas) desde el número de soporte (2026-10-31).
+// eventoId único = candado de idempotencia: el mismo envío sale UNA sola vez aunque el portal reintente.
+model PortalEnvio {
+  id        String   @id @default(cuid())
+  eventoId  String   @unique
+  estado    String   @default("enviando") // enviando | enviado | incierto (pasó el timeout y sigue en curso)
+  destino   String? // jid del grupo, o "…" + últimos 4 dígitos del 1 a 1 (nunca el teléfono completo)
+  waMsgId   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 // Pedidos "C-" del grupo SOPORTE para Claude (2026-10-30, pedido del dueño): el equipo pide por WhatsApp, un worker
 // en el server del casino corre Claude y contesta en el grupo. Los cambios esperan "ok N" de un aprobador. Aditivo:
 // sin CLAUDE_OPS_SECRET ni CLAUDE_OPS_PEDIDOS no se crea ni se toma ninguno. Ver lib/claude-ops.ts.

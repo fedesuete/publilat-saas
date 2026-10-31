@@ -51,6 +51,31 @@ export function textoDesdePortal(m: MensajePortal): string {
   ].join("\n");
 }
 
+// ============================ Envíos salientes (facturas) ============================
+
+export type DestinoPortal =
+  | { ok: true; chatId: string; log: string }
+  | { ok: false; status: number; error: string };
+
+/**
+ * Adónde manda el portal: el grupo (por JID, o por nombre EXACTO sin espacios a los costados e ignorando
+ * mayúsculas, entre los grupos del número de soporte) o, sin grupo, el 1 a 1 de `to`. Nunca adivina:
+ * sin coincidencia o con más de una devuelve 404.
+ */
+export function resolverDestino(grupo: string, to: string, grupos: { jid: string; nombre: string }[]): DestinoPortal {
+  const g = grupo.trim();
+  if (g) {
+    if (/^[\d-]+@g\.us$/i.test(g)) return { ok: true, chatId: g, log: g };
+    const buscado = g.toLowerCase();
+    const hits = grupos.filter((x) => x.nombre.trim().toLowerCase() === buscado);
+    if (hits.length === 1) return { ok: true, chatId: hits[0].jid, log: hits[0].jid };
+    return { ok: false, status: 404, error: hits.length ? "grupo ambiguo" : "grupo no encontrado" };
+  }
+  const t = to.trim();
+  if (!/^\d{8,15}$/.test(t)) return { ok: false, status: 422, error: "to inválido (solo dígitos con código de país)" };
+  return { ok: true, chatId: `${t}@c.us`, log: `…${t.slice(-4)}` };
+}
+
 /**
  * Manda la respuesta "B-" al ticket del portal. Reintenta 3 veces ante error de red o 5xx (el portal es
  * idempotente por eventoId: un reintento no duplica). Devuelve el estado que deja el portal o el error.

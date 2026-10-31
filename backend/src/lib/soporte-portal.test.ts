@@ -1,5 +1,29 @@
 import { describe, it, expect } from "vitest";
-import { firmar, firmaValida, textoDesdePortal } from "./soporte-portal.js";
+import { firmar, firmaValida, textoDesdePortal, resolverDestino } from "./soporte-portal.js";
+
+describe("destino de un envío del portal", () => {
+  const grupos = [
+    { jid: "111@g.us", nombre: "Casino Millonarios - LuckySoft" },
+    { jid: "222@g.us", nombre: "Casino Millonarios" },
+    { jid: "333@g.us", nombre: "Repetido" },
+    { jid: "444@g.us", nombre: "repetido " },
+  ];
+  it("grupo por nombre exacto, sin espacios a los costados e ignorando mayúsculas", () => {
+    expect(resolverDestino("  casino millonarios - luckysoft ", "", grupos)).toEqual({ ok: true, chatId: "111@g.us", log: "111@g.us" });
+  });
+  it("no adivina: parecido = no encontrado; dos iguales = ambiguo", () => {
+    expect(resolverDestino("Casino Millonarios LuckySoft", "", grupos)).toMatchObject({ ok: false, status: 404, error: "grupo no encontrado" });
+    expect(resolverDestino("Repetido", "", grupos)).toMatchObject({ ok: false, status: 404, error: "grupo ambiguo" });
+  });
+  it("un JID se usa tal cual", () => {
+    expect(resolverDestino("120363012345678901@g.us", "", [])).toMatchObject({ ok: true, chatId: "120363012345678901@g.us" });
+  });
+  it("sin grupo va al 1 a 1 y solo loguea los últimos 4 dígitos", () => {
+    expect(resolverDestino("", "595981234567", grupos)).toEqual({ ok: true, chatId: "595981234567@c.us", log: "…4567" });
+    expect(resolverDestino("", "+595 981", grupos)).toMatchObject({ ok: false, status: 422 });
+    expect(resolverDestino("", "", grupos)).toMatchObject({ ok: false, status: 422 });
+  });
+});
 
 const S = "secreto-de-prueba-0123456789abcdef";
 

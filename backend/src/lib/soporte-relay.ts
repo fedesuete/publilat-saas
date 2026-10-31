@@ -237,6 +237,24 @@ export async function enviarTexto(session: string, chatId: string, text: string,
   return sentId(data);
 }
 
+const gruposCache = new Map<string, { at: number; grupos: { jid: string; nombre: string }[] }>();
+
+/** Grupos donde participa la sesión (jid + nombre). Caché 60 s: la lista completa de WAHA es lenta con muchos grupos. */
+export async function gruposDeSesion(session: string): Promise<{ jid: string; nombre: string }[]> {
+  const c = gruposCache.get(session);
+  if (c && Date.now() - c.at < 60_000) return c.grupos;
+  const { data } = await waha().get(`/api/${encodeURIComponent(session)}/groups`, { timeout: 10_000 });
+  const lista: any[] = Array.isArray(data) ? data : Object.values(data ?? {});
+  const grupos = lista
+    .map((g) => ({
+      jid: typeof g?.id === "string" ? g.id : g?.id?._serialized ?? g?.JID ?? "",
+      nombre: [g?.subject, g?.name, g?.Name, g?.groupMetadata?.subject].find((n) => typeof n === "string" && n.trim()) ?? "",
+    }))
+    .filter((g) => typeof g.jid === "string" && g.jid.endsWith("@g.us"));
+  gruposCache.set(session, { at: Date.now(), grupos });
+  return grupos;
+}
+
 // ============================ 1 a 1: chats directos con el número de soporte ============================
 
 /**
