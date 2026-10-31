@@ -1,0 +1,44 @@
+name: Uptime casino (externo)
+# 2026-10-31 (plan de infraestructura, fase 0): monitoreo EXTERNO de los sitios del casino desde la infra de GitHub, igual que
+# uptime.yml de publi.lat. Detecta cuando casino-server queda inalcanzable desde afuera (DNS, Cloudflare, caída del droplet), que es
+# justo lo que los monitores de adentro del servidor no pueden ver. Si algún sitio no responde 200, el job FALLA → email de GitHub;
+# con los secrets TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID avisa por Telegram. Pide /api/health (JSON de la API) por cada dominio:
+# cubre nginx + API + base. User-Agent de navegador para que Cloudflare no lo tome por bot.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Chequear sitios del casino
+        id: check
+        run: |
+          set +e
+          SITES="https://bet17.live/api/health https://combatwin.net/api/health https://ganaencasavip.xyz/api/health https://ganamos.bid/api/health https://ganamosvip.gold/api/health https://millonariosok.com/api/health https://eurofortuna.com/api/health https://ganamos365vip.com/api/health https://ganamos.co.com/api/health"
+          UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36 uptime-luckysoft"
+          DOWN=""
+          for url in $SITES; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -A "$UA" --max-time 25 --retry 3 --retry-delay 10 --retry-all-errors "$url")
+            echo "$url -> $code"
+            if [ "$code" != "200" ]; then DOWN="$DOWN $url($code)"; fi
+          done
+          if [ -n "$DOWN" ]; then
+            echo "down=$DOWN" >> "$GITHUB_OUTPUT"
+            echo "::error::CAÍDO:$DOWN"
+          fi
+      - name: Avisar por Telegram (si está configurado)
+        if: steps.check.outputs.down != '' && env.TG_TOKEN != ''
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d chat_id="${TG_CHAT}" \
+            -d text="🔴 CASINO caído desde afuera:${{ steps.check.outputs.down }} — revisar casino-server (104.131.162.44) y Cloudflare." >/dev/null || true
+      - name: Fallar el job si hay algo caído (dispara el email de GitHub)
+        if: steps.check.outputs.down != ''
+        run: |
+          echo "Sitios caídos:${{ steps.check.outputs.down }}"
+          exit 1
