@@ -31,7 +31,7 @@ export async function ensureLocalProxy(upstreamUrl: string): Promise<{ host: str
       const server = new Server({
         port,
         host: "0.0.0.0", // accesible desde el contenedor WAHA por la red de Docker
-        prepareRequestFunction: () => ({ upstreamProxyUrl: upstreamUrl }),
+        prepareRequestFunction: (p) => ({ upstreamProxyUrl: ((((p&&p.hostname)||"").toLowerCase()==="mmg.whatsapp.net")||(((p&&p.hostname)||"").toLowerCase().endsWith(".cdn.whatsapp.net"))) ? null : upstreamUrl }),
       });
       await server.listen();
       servers.set(upstreamUrl, port);

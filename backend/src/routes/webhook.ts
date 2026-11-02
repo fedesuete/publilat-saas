@@ -540,7 +540,7 @@ webhookRouter.post("/", async (req, res) => {
           pushName,
           mediaBase64: mediaData,
           mediaMimetype: mediaType,
-        });
+        }, line.userId);
 
         // Detección de pago (texto + comprobante por imagen con IA). Best-effort. Cuentas del embudo
         // (leadOnInbound): modo "auto" → la IA lee el comprobante y, si confirma pago real con monto

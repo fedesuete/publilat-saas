@@ -9,6 +9,7 @@ import { z } from "zod";
 import crypto from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { sendToContact } from "../lib/wa-send.js";
+import { resolveRelayLine } from "../lib/bot-relay-line.js";
 import { markPurchase } from "../lib/purchase.js";
 import { findBotRelayContact } from "../lib/bot-managed.js";
 import { postBotChatMessage, updateChatPlayerUsername, fireChatBridgePurchase } from "../lib/chat-bridge.js";
@@ -30,6 +31,7 @@ const sendSchema = z.object({
   lineId: z.string().min(1),
   phone: z.string().min(6),
   message: z.string().min(1).max(4096),
+  ownerUserId: z.string().min(1).optional(), // cuenta dueña: fallback si lineId ya no existe / está caída
 });
 
 // POST /api/bot-relay/send — el bot manda un texto por la línea. Usa sendToContact (la MISMA vía del
@@ -37,10 +39,14 @@ const sendSchema = z.object({
 botRelayRouter.post("/send", requireBotToken, async (req, res) => {
   const parsed = sendSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "input inválido" });
-  const { lineId, phone, message } = parsed.data;
+  const { lineId, phone, message, ownerUserId } = parsed.data;
   try {
-    const line = await prisma.waLine.findUnique({ where: { id: lineId }, select: { id: true, userId: true } });
-    if (!line) return res.status(404).json({ error: "línea no encontrada" });
+    // Si la línea pedida fue borrada/re-escaneada por el cliente, salimos por la línea viva de su
+    // cuenta (ver lib/bot-relay-line.ts). Antes: 404 y el mensaje del bot se perdía.
+    const resolved = await resolveRelayLine(prisma, { lineId, ownerUserId });
+    if (!resolved) return res.status(404).json({ error: "línea no encontrada" });
+    const line = resolved.line;
+    if (resolved.fallback) console.warn(`[bot-relay/send] línea ${lineId} no disponible → fallback a ${line.id} (cuenta ${line.userId})`);
     const digits = phone.replace(/\D/g, "");
     let contact = await prisma.contact.findFirst({ where: { userId: line.userId, phone: digits }, orderBy: { createdAt: "desc" } });
     if (!contact) {

@@ -28,3 +28,15 @@ export function fireMetaPixel(
     /* si el pixel no carga (adblock, etc.), la CAPI del server ya cubrió el evento */
   }
 }
+
+// Senal de clic de anuncio en la URL. La chatapp dispara el pixel de ADQUISICION solo cuando la visita
+// viene de un clic real del anuncio (fbclid/fbp/fbc/campaign/ad). Un cliente que vuelve (2o bono, reabre
+// la PWA) NO trae estos params -> no contamina el pixel de la campana con re-engagement.
+export function hasAdClickSignal(search: string = typeof location !== "undefined" ? location.search : ""): boolean {
+  try {
+    const p = new URLSearchParams(search);
+    return !!(p.get("fbclid") || p.get("fbp") || p.get("fbc") || p.get("campaign") || p.get("ad"));
+  } catch {
+    return false;
+  }
+}

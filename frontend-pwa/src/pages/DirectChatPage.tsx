@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, apiError, getToken, setToken, saveBranding, applyBranding, type Branding } from "../lib/api";
-import { fireMetaPixel } from "../lib/pixel";
+import { fireMetaPixel, hasAdClickSignal } from "../lib/pixel";
 
 // Recuerda a qué cuenta (slug) pertenece la sesión (mismo criterio que Onboarding).
 const SESSION_SLUG_KEY = "publilat_session_slug";
@@ -37,7 +37,7 @@ export default function DirectChatPage() {
         setAccountSlug(pub.data.accountSlug);
         // PageView al ABRIR el gate (esta página ES la landing del anuncio): Meta ve TODAS las
         // visitas — con esto se mide visitas vs "Empezar a chatear" y el pixel siembra _fbp acá.
-        if (pub.data.pixelId) fireMetaPixel(pub.data.pixelId, "PageView", {});
+        if (pub.data.pixelId && hasAdClickSignal()) fireMetaPixel(pub.data.pixelId, "PageView", {});
         if (!pub.data.active) {
           setError("El chat no está disponible en este momento. Probá más tarde.");
           return;
@@ -85,7 +85,7 @@ export default function DirectChatPage() {
       if (brand) { applyBranding(brand); saveBranding(accSlug, brand); }
       // Pixel del navegador (además de la CAPI del server), deduplicado por eventId. Best-effort.
       // (El PageView ya se disparó al abrir el gate — acá solo el registro.)
-      if (data.pixel) fireMetaPixel(data.pixel, "CompleteRegistration", { eventId: data.eventId, externalId: data.username });
+      if (data.pixel && hasAdClickSignal()) fireMetaPixel(data.pixel, "CompleteRegistration", { eventId: data.eventId, externalId: data.username });
       navigate("/chat", { replace: true });
     } catch (e) {
       const code = (e as { response?: { data?: { code?: string } } })?.response?.data?.code;
