@@ -57,6 +57,20 @@ export default function LeadsPage() {
     } catch (e) { setError(apiError(e)); }
   };
 
+  // Agenda para el celular (.vcf): se abre en el teléfono o se importa en Google Contactos y quedan
+  // todos agendados de una. Respeta "solo clientes reales" y la etapa elegida.
+  const [vcfStage, setVcfStage] = useState("");
+  const exportVcf = async () => {
+    try {
+      const qs = new URLSearchParams({ format: "vcf", ...(onlyReal ? { real: "1" } : {}), ...(vcfStage ? { stage: vcfStage } : {}) });
+      const { data } = await api.get(`/api/leads/export?${qs}`, { responseType: "blob" });
+      const url = URL.createObjectURL(data as Blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `contactos-${new Date().toISOString().slice(0, 10)}.vcf`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { setError(apiError(e)); }
+  };
+
   return (
     <div className="p-6">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -69,6 +83,19 @@ export default function LeadsPage() {
           <Button variant="secondary" onClick={() => void exportCsv()}>
             Exportar CSV
           </Button>
+          <div className="flex items-center gap-1" title="Archivo .vcf: abrilo en el celular o importalo en Google Contactos y quedan todos agendados">
+            <select value={vcfStage} onChange={(e) => setVcfStage(e.target.value)} className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-slate-300">
+              <option value="">Todas las etapas</option>
+              <option value="NUEVO">Nuevo</option>
+              <option value="CONTACTADO">Contactado</option>
+              <option value="INTERESADO">Interesado</option>
+              <option value="COMPRO">Compró</option>
+              <option value="PERDIDO">Perdido</option>
+            </select>
+            <Button variant="secondary" onClick={() => void exportVcf()}>
+              Agendar en el celular
+            </Button>
+          </div>
           <Button variant="secondary" onClick={() => void load(onlyReal)}>
             Actualizar
           </Button>

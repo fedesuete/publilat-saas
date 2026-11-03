@@ -6,6 +6,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { markPurchase, accountCurrency } from "../lib/purchase.js";
 import { markRegistration } from "../lib/meta-events.js";
+import { armarVcf } from "../lib/vcard.js";
 
 export const leadsRouter = Router();
 
@@ -84,6 +85,22 @@ leadsRouter.get("/export", async (req, res) => {
   if (q) and.push({ OR: [{ name: { contains: q, mode: "insensitive" } }, { phone: { contains: q } }, { code: { contains: q, mode: "insensitive" } }] });
   if (onlyReal) and.push({ OR: [{ messages: { some: { direction: "in" } } }, { stage: { not: "NUEVO" } }] });
   if (and.length) where.AND = and;
+
+  // ?format=vcf → agenda para el celular (una tarjeta por número). &stage= filtra por etapa del CRM.
+  if (req.query.format === "vcf") {
+    const stage = z.enum(["NUEVO", "CONTACTADO", "INTERESADO", "COMPRO", "PERDIDO"]).safeParse(req.query.stage);
+    if (stage.success) where.stage = stage.data;
+    const cs = await prisma.contact.findMany({
+      where: { ...where, phone: { not: null } },
+      orderBy: { createdAt: "desc" },
+      take: 20000,
+      select: { name: true, phone: true, stage: true },
+    });
+    const { vcf } = armarVcf(cs);
+    res.setHeader("Content-Type", "text/vcard; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="contactos-${new Date().toISOString().slice(0, 10)}.vcf"`);
+    return res.send(vcf);
+  }
 
   const rows = await prisma.contact.findMany({
     where,
