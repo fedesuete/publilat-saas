@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Menú de la bienvenida (22/10): el cliente responde 1/2/3 y sigue la rama. Si escribe otra cosa, el menú se
-// reenvía UNA sola vez; a la segunda el flujo se cierra (antes se reenviaba con cada mensaje y pisaba la charla).
+// Menú de la bienvenida: el cliente responde 1/2/3 y sigue la rama. Si escribe otra cosa, el flujo se cierra
+// sin reenviar el menú (04/11: el menú sale una sola vez por contacto).
 const prismaMock = vi.hoisted(() => ({
   flowRun: { findUnique: vi.fn(), updateMany: vi.fn(async () => ({ count: 1 })), update: vi.fn(async () => ({})), findFirst: vi.fn(), create: vi.fn() },
   flow: { findFirst: vi.fn(), findMany: vi.fn(async () => []) },
@@ -30,22 +30,22 @@ const run = (status: string) => ({ id: "r1", status, cursor: "0", contactId: "c1
 beforeEach(() => vi.clearAllMocks());
 
 describe("menú de la bienvenida", () => {
-  it("respuesta que no es una opción: reenvía el texto TAL CUAL una vez y marca el reenvío", async () => {
+  it("respuesta que no es una opción: NO reenvía el menú y cierra el flujo", async () => {
     prismaMock.flowRun.findFirst.mockResolvedValueOnce(run("waiting_option") as never);
     await onInboundFlow("u1", "c1", "hola, cómo es?");
-    expect(sendToContact).toHaveBeenCalledWith("u1", "c1", menu.text);
-    expect(prismaMock.flowRun.update).toHaveBeenCalledWith({ where: { id: "r1" }, data: { status: "waiting_option_r" } });
+    expect(sendToContact).not.toHaveBeenCalled();
+    expect(prismaMock.flowRun.update).toHaveBeenCalledWith({ where: { id: "r1" }, data: { status: "done" } });
   });
 
-  it("segunda respuesta que no es una opción: NO reenvía y cierra el flujo", async () => {
+  it("run viejo ya reenviado: tampoco reenvía y cierra el flujo", async () => {
     prismaMock.flowRun.findFirst.mockResolvedValueOnce(run("waiting_option_r") as never);
     await onInboundFlow("u1", "c1", "¿cuánto sale?");
     expect(sendToContact).not.toHaveBeenCalled();
     expect(prismaMock.flowRun.update).toHaveBeenCalledWith({ where: { id: "r1" }, data: { status: "done" } });
   });
 
-  it("después del reenvío, un '2' todavía elige la opción 2", async () => {
-    prismaMock.flowRun.findFirst.mockResolvedValueOnce(run("waiting_option_r") as never);
+  it("un '2' elige la opción 2", async () => {
+    prismaMock.flowRun.findFirst.mockResolvedValueOnce(run("waiting_option") as never);
     prismaMock.flowRun.findUnique.mockResolvedValue(null as never);
     await onInboundFlow("u1", "c1", "2");
     expect(prismaMock.flowRun.update).toHaveBeenCalledWith({ where: { id: "r1" }, data: { cursor: "0:1:0", status: "running" } });

@@ -342,15 +342,10 @@ export async function onInboundFlow(userId: string, contactId: string, text: str
       if (step?.type === "menu") {
         const chosen = matchOption(step, text);
         if (chosen == null) {
-          // No entendimos: reenviamos el menú UNA sola vez ("waiting_option_r" = ya se reenvió). Si vuelve a
-          // escribir otra cosa, el flujo se cierra en silencio y sigue la persona: antes el menú se reenviaba
-          // con CADA mensaje y pisaba la charla manual del operador (22/10).
-          if (waitingOpt.status === "waiting_option_r") {
-            await prisma.flowRun.update({ where: { id: waitingOpt.id }, data: { status: "done" } });
-            return;
-          }
-          await sendToContact(userId, contactId, renderMenu(step));
-          await prisma.flowRun.update({ where: { id: waitingOpt.id }, data: { status: "waiting_option_r" } });
+          // No es una opción: el flujo se cierra en silencio y sigue la persona. El menú sale UNA sola vez y
+          // nunca se reenvía: el reenvío le mandaba el menú dos veces seguidas a quien escribía otra cosa
+          // (04/11, "si se manda una vez ya no se mande más"). "waiting_option_r" queda por runs viejos.
+          await prisma.flowRun.update({ where: { id: waitingOpt.id }, data: { status: "done" } });
           return;
         }
         // Desciende a la rama elegida: cursor = "<pasoMenu>:<opción>:0"
