@@ -6,6 +6,7 @@
 // no existe un User con id = playerId).
 import type { Request, Response, NextFunction } from "express";
 import { verifyToken, signToken } from "../lib/auth.js";
+import { jugadorBloqueado, BLOCKED_MSG } from "../lib/chat-block.js";
 
 // Cookie httpOnly con el token del jugador (se setea en /register, /login, /start, /direct, /session).
 export const CHAT_CLIENT_COOKIE = "publilat_chat_token";
@@ -50,5 +51,8 @@ export function requireChatClient(req: Request, res: Response, next: NextFunctio
   }
   req.chatPlayerId = payload.playerId;
   req.accountId = payload.accountId;
-  return next();
+  // Jugador bloqueado por el operador: corta todo (mensajes, cargas, retiros). Si la base falla, deja pasar.
+  jugadorBloqueado(payload.playerId)
+    .then((b) => (b ? res.status(403).json({ error: BLOCKED_MSG, code: "blocked" }) : next()))
+    .catch(() => next());
 }

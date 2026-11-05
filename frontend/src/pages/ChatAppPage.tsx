@@ -23,7 +23,7 @@ const CHATAPP_TOUR: TourStep[] = [
   { targetId: "ca-tab-brand", title: "4. Tu marca", body: "En “Marca” le ponés tu logo, tus colores y el nombre de la app. Queda 100% con tu identidad." },
 ];
 
-interface Conv { id: string; playerId: string; player: string; alias: string | null; marca: string | null; username: string; status: string; unread: number; preview: string; lastAt: string }
+interface Conv { id: string; playerId: string; player: string; alias: string | null; marca: string | null; username: string; blocked?: boolean; status: string; unread: number; preview: string; lastAt: string }
 interface Msg { id: string; senderType: "player" | "operator" | "system"; body: string | null; metadata?: Record<string, unknown>; createdAt: string }
 
 // Agrega un mensaje evitando duplicados por id (optimistic add + echo del socket).
@@ -243,6 +243,23 @@ export default function ChatAppPage() {
       await loadConvs(); // refresca la lista con el display resuelto por el server (alias→nombre→user)
     } catch (e) { setError(apiError(e)); }
   };
+  // Bloquear al jugador (ej. manda comprobantes truchos): no puede entrar ni escribir. Con "también su IP"
+  // tampoco puede crearse una cuenta nueva desde la misma conexión. Se puede desbloquear cuando quieras.
+  const toggleBlock = async (conv: Conv) => {
+    let body: { blocked: boolean; ip?: boolean };
+    if (conv.blocked) {
+      if (!window.confirm(`¿Desbloquear a ${conv.player}? Va a poder entrar y escribirte de nuevo.`)) return;
+      body = { blocked: false };
+    } else {
+      if (!window.confirm(`¿Bloquear a ${conv.player}? No va a poder entrar al chat, escribirte ni pedir cargas o retiros.`)) return;
+      const ip = window.confirm("¿Bloquear también su conexión (IP)?\n\nAceptar = no puede crearse una cuenta nueva desde esa conexión.\nCancelar = bloquear solo esta cuenta.\n\nOjo: con datos móviles varias personas pueden compartir la misma IP.");
+      body = { blocked: true, ip };
+    }
+    try {
+      await api.post(`/api/chat/players/${conv.playerId}/block`, body);
+      await loadConvs();
+    } catch (e) { setError(apiError(e)); }
+  };
   const openConv = async (id: string) => {
     setSelected(id); setError(null);
     try {
@@ -417,6 +434,7 @@ export default function ChatAppPage() {
                         {/* El usuario al lado del nombre: varios jugadores ponen el MISMO nombre ("Ya
                             transferí" x2, pedido de mrc/Gg) y sin esto no se distinguen sin abrir. */}
                         {c.player !== c.username && <span className="text-xs font-normal text-slate-500"> · {c.username}</span>}
+                        {c.blocked && <span className="ml-1 rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-red-300">🚫 Bloqueado</span>}
                         {/* Skin de marca por la que entró (solo si la cuenta tiene skins): el operador
                             sabe qué marca espera ver ese jugador antes de contestarle. */}
                         {c.marca && <span className="ml-1 rounded bg-slate-700/70 px-1.5 py-0.5 text-[10px] font-semibold text-slate-300">{c.marca}</span>}
@@ -444,6 +462,13 @@ export default function ChatAppPage() {
                       className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white"
                       title="Ponerle nombre (solo lo ves vos)"
                     >✏️</button>
+                  )}
+                  {current && (
+                    <button
+                      onClick={() => void toggleBlock(current)}
+                      className={`ml-auto rounded px-2 py-1 text-xs font-medium ${current.blocked ? "border border-red-500 bg-red-500/15 text-red-300" : "border border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-red-300"}`}
+                      title={current.blocked ? "Desbloquear al jugador" : "Bloquear al jugador (ej. comprobantes truchos)"}
+                    >{current.blocked ? "🚫 Bloqueado · Desbloquear" : "🚫 Bloquear"}</button>
                   )}
                 </div>
                 <div className="flex-1 space-y-2 overflow-y-auto p-4">

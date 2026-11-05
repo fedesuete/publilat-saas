@@ -8,6 +8,7 @@ import { Prisma } from "@prisma/client";
 import { chatReadiness } from "../lib/chat-readiness.js";
 import { prisma } from "../lib/prisma.js";
 import { signChatClientToken, requireChatClient, CHAT_CLIENT_COOKIE, extractChatClientToken } from "../middleware/requireChatClient.js";
+import { estaBloqueado, ipBloqueada, olvidarBloqueo, BLOCKED_MSG } from "../lib/chat-block.js";
 import { hashPassword, verifyPassword, verifyToken } from "../lib/auth.js";
 import { sendCapiEvent } from "../lib/meta-capi.js"; // reuso el CAPI existente, NO reimplemento
 import { resolveUserPixel } from "../lib/pixel.js";
@@ -64,6 +65,12 @@ function chatAttribution(
     clientIp: fwd.split(",")[0].trim() || req.socket.remoteAddress || null,
     userAgent: typeof req.headers["user-agent"] === "string" ? (req.headers["user-agent"] as string).slice(0, 400) : null,
   };
+}
+
+// Registro NUEVO desde una IP que el operador bloqueó (estatus "blocked_ip"): el que manda comprobantes
+// truchos no puede volver a crearse una cuenta con un toque. Ver lib/chat-block.ts.
+async function registroBloqueado(req: Parameters<typeof chatAttribution>[0], accountId: string): Promise<boolean> {
+  return ipBloqueada(accountId, chatAttribution(req, {}).clientIp).catch(() => false);
 }
 
 // Cookie httpOnly de larga duración con el token del jugador, ADEMÁS del Bearer en localStorage. Es lo
@@ -372,7 +379,7 @@ chatRouter.get("/conversations", async (req, res) => {
     take: 1000,
     select: {
       id: true, playerId: true, status: true, unreadOperator: true, lastMessagePreview: true, lastMessageAt: true, createdAt: true,
-      player: { select: { casinoUsername: true, nombre: true, alias: true, skin: { select: { brandName: true, slug: true } } } },
+      player: { select: { casinoUsername: true, nombre: true, alias: true, estatus: true, skin: { select: { brandName: true, slug: true } } } },
     },
   });
   return res.json({
@@ -385,6 +392,7 @@ chatRouter.get("/conversations", async (req, res) => {
       // Skin de marca por la que entró (null = principal): el operador ve qué marca espera el jugador.
       marca: c.player.skin ? (c.player.skin.brandName ?? c.player.skin.slug) : null,
       username: c.player.casinoUsername,
+      blocked: estaBloqueado(c.player.estatus),
       status: c.status,
       unread: c.unreadOperator,
       preview: c.lastMessagePreview ?? "",
@@ -474,6 +482,20 @@ chatRouter.patch("/players/:id/alias", async (req, res) => {
   const alias = parsed.data.alias?.trim() || null;
   await prisma.chatPlayer.update({ where: { id: player.id }, data: { alias } });
   return res.json({ ok: true, alias });
+});
+
+// POST /api/chat/players/:id/block — el operador bloquea (o desbloquea) a un jugador, ej. el que manda
+// comprobantes truchos. ip=true además impide crear cuentas nuevas desde su IP en esta cuenta. No borra nada.
+const playerBlockSchema = z.object({ blocked: z.boolean(), ip: z.boolean().optional() });
+chatRouter.post("/players/:id/block", async (req, res) => {
+  const parsed = playerBlockSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Input inválido" });
+  const player = await prisma.chatPlayer.findFirst({ where: { id: req.params.id, userId: req.userId! }, select: { id: true } });
+  if (!player) return res.status(404).json({ error: "Jugador no encontrado" });
+  const estatus = parsed.data.blocked ? (parsed.data.ip ? "blocked_ip" : "blocked") : "active";
+  await prisma.chatPlayer.update({ where: { id: player.id }, data: { estatus } });
+  olvidarBloqueo(player.id);
+  return res.json({ ok: true, estatus });
 });
 
 // GET /api/chat/conversations/:id/messages — historial (operador). Marca leído.
@@ -1296,6 +1318,7 @@ chatPublicRouter.post("/register", async (req, res) => {
     // Link inexistente o YA USADO (single-use). El 2º registro con el mismo link cae acá -> 404.
     return res.status(404).json({ error: "Este link ya no está disponible. Pedí uno nuevo o iniciá sesión." });
   }
+  if (await registroBloqueado(req, invite.userId)) return res.status(403).json({ error: BLOCKED_MSG, code: "blocked" });
 
   // Crear el jugador PRIMERO (así, si el usuario está tomado, el link NO se cierra y puede
   // reintentar). El unique (userId, casinoUsername) + P2002 cubre la carrera.
@@ -1422,7 +1445,7 @@ chatPublicRouter.post("/login", async (req, res) => {
   const username = parsed.data.username.trim();
   const slug = parsed.data.accountSlug?.trim();
 
-  let player: { id: string; casinoUsername: string; password: string | null; userId: string; skin?: { slug: string } | null } | null = null;
+  let player: { id: string; casinoUsername: string; password: string | null; userId: string; estatus?: string; skin?: { slug: string } | null } | null = null;
   let accId: string | null = null;
 
   if (slug) {
@@ -1432,7 +1455,7 @@ chatPublicRouter.post("/login", async (req, res) => {
     accId = entry.accountId;
     player = await prisma.chatPlayer.findUnique({
       where: { userId_casinoUsername: { userId: entry.accountId, casinoUsername: username } },
-      select: { id: true, casinoUsername: true, password: true, userId: true, skin: { select: { slug: true } } },
+      select: { id: true, casinoUsername: true, password: true, userId: true, estatus: true, skin: { select: { slug: true } } },
     });
     // Si no es el usuario interno, probamos el ALIAS que le puso el cajero (ver lib/chat-alias.ts).
     if (!player) player = await jugadorPorAlias(username, entry.accountId);
@@ -1440,7 +1463,7 @@ chatPublicRouter.post("/login", async (req, res) => {
     // Sin slug: resolvemos por usuario (jugadores con clave = accesos nuevos).
     const matches = await prisma.chatPlayer.findMany({
       where: { casinoUsername: username, password: { not: null } },
-      select: { id: true, casinoUsername: true, password: true, userId: true, skin: { select: { slug: true } } },
+      select: { id: true, casinoUsername: true, password: true, userId: true, estatus: true, skin: { select: { slug: true } } },
       take: 5,
     });
     if (matches.length === 1) { player = matches[0]; accId = matches[0].userId; }
@@ -1460,6 +1483,9 @@ chatPublicRouter.post("/login", async (req, res) => {
     const ok = parsed.data.password ? await verifyPassword(parsed.data.password, player.password) : false;
     if (!ok) return res.status(401).json({ error: "Usuario o clave incorrectos." });
   }
+  // El jugador encontrado por ALIAS no trae estatus: lo leemos aparte.
+  const estatusLogin = player.estatus ?? (await prisma.chatPlayer.findUnique({ where: { id: player.id }, select: { estatus: true } }))?.estatus;
+  if (estaBloqueado(estatusLogin)) return res.status(403).json({ error: BLOCKED_MSG, code: "blocked" });
   // Candado de días: sin día de WhatsApp vigente el chat está apagado.
   if (!(await canOperateChat(accId))) {
     return res.status(403).json({ error: "El chat no está disponible en este momento. Probá más tarde.", code: "line_required" });
@@ -1547,6 +1573,7 @@ chatPublicRouter.post("/start", async (req, res) => {
   // --- Modo un-tap (landing del Chat App): el server genera usuario + clave y crea SIEMPRE un
   //     jugador nuevo. Reusa la misma lógica que /register autogenerate + CompleteRegistration. ---
   if (autogenerate) {
+    if (await registroBloqueado(req, acc.id)) return res.status(403).json({ error: BLOCKED_MSG, code: "blocked" });
     const base = nickSlug(parsed.data.nickname ?? "") || "user";
     const nombre = (parsed.data.nickname ?? "").trim() || null;
     const plainPassword = await playerPasswordFor(acc.id);
@@ -1586,9 +1613,9 @@ chatPublicRouter.post("/start", async (req, res) => {
   // --- Modo clásico (username explícito): retoma si existe, o crea si es nuevo. ---
   const username = (parsed.data.username ?? "").trim();
   if (username.length < 2) return res.status(400).json({ error: "Falta el usuario." });
-  let player: { id: string; casinoUsername: string } | null = await prisma.chatPlayer.findUnique({
+  let player: { id: string; casinoUsername: string; estatus?: string } | null = await prisma.chatPlayer.findUnique({
     where: { userId_casinoUsername: { userId: acc.id, casinoUsername: username.trim() } },
-    select: { id: true, casinoUsername: true },
+    select: { id: true, casinoUsername: true, estatus: true },
   });
   // Por ALIAS (el usuario del casino con el que lo agendó el cajero): retoma SU chat con el historial,
   // en vez de crearle uno nuevo que el cajero no reconoce. Lo usa "¿No recordás tu clave?" del login.
@@ -1599,9 +1626,12 @@ chatPublicRouter.post("/start", async (req, res) => {
   let conversationId: string | null = null;
 
   if (player) {
+    const est = player.estatus ?? (await prisma.chatPlayer.findUnique({ where: { id: player.id }, select: { estatus: true } }))?.estatus;
+    if (estaBloqueado(est)) return res.status(403).json({ error: BLOCKED_MSG, code: "blocked" });
     const conv = await prisma.chatConversation.findFirst({ where: { userId: acc.id, playerId: player.id }, select: { id: true } });
     conversationId = conv?.id ?? null;
   } else {
+    if (await registroBloqueado(req, acc.id)) return res.status(403).json({ error: BLOCKED_MSG, code: "blocked" });
     player = await prisma.chatPlayer.create({
       data: { userId: acc.id, skinId: skin?.id ?? null, casinoUsername: username.trim(), estatus: "active" },
       select: { id: true, casinoUsername: true },
@@ -1666,6 +1696,8 @@ chatPublicRouter.post("/direct", async (req, res) => {
   if (!(await canOperateChat(acc.id))) {
     return res.status(403).json({ error: "El chat no está disponible en este momento. Probá más tarde.", code: "line_required" });
   }
+
+  if (await registroBloqueado(req, acc.id)) return res.status(403).json({ error: BLOCKED_MSG, code: "blocked" });
 
   const plainPassword = await playerPasswordFor(acc.id);
   const hash = await hashPassword(plainPassword);
@@ -1764,12 +1796,13 @@ chatPublicRouter.get("/session", async (req, res) => {
   // El jugador y la cuenta tienen que seguir existiendo (si se borraron, no recuperamos).
   const player = await prisma.chatPlayer.findFirst({
     where: { id: payload.playerId, userId: payload.accountId },
-    select: { id: true, casinoUsername: true, skin: { select: { slug: true } } },
+    select: { id: true, casinoUsername: true, estatus: true, skin: { select: { slug: true } } },
   });
   if (!player) {
     res.clearCookie(CHAT_CLIENT_COOKIE, { path: "/" });
     return res.status(401).json({ error: "sesión inválida" });
   }
+  if (estaBloqueado(player.estatus)) return res.status(403).json({ error: BLOCKED_MSG, code: "blocked" });
   const acc = await prisma.user.findUnique({ where: { id: payload.accountId }, select: { slug: true } });
   const conv = await prisma.chatConversation.findFirst({ where: { userId: payload.accountId, playerId: player.id }, select: { id: true } });
   const fresh = signChatClientToken(payload.accountId, player.id); // rolling: renueva la sesión completa en cada apertura
