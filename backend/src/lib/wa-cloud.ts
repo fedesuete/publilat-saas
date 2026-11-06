@@ -339,6 +339,13 @@ export async function registerCloudNumber(
   }
 }
 
+// Mientras se prueba, la coexistencia solo se habilita a las cuentas de COEXISTENCIA_USERS (ids por coma).
+export function coexistenciaHabilitada(userId: string | undefined): boolean {
+  if (!userId) return false;
+  const ids = (process.env.COEXISTENCIA_USERS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  return ids.includes(userId);
+}
+
 // Activa el número recién conectado por Embedded Signup.
 // - Alta normal: /register con PIN (saca la línea de "Pendiente").
 // - Coexistencia (el número sigue en la app WhatsApp Business del celular): el número ya está registrado

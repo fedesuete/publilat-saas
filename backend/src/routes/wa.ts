@@ -23,6 +23,7 @@ import {
   getSubscribedApps,
   registerCloudNumber,
   activarNumeroCloud,
+  coexistenciaHabilitada,
   getWabaPhoneNumbers,
   debugToken,
 } from "../lib/wa-cloud.js";
@@ -260,11 +261,12 @@ waRouter.post("/lines", async (req, res) => {
 
 // GET /api/wa/cloud/config — datos públicos para lanzar el Embedded Signup en el front.
 // (Nunca incluye el app secret.)
-waRouter.get("/cloud/config", (_req, res) => {
+waRouter.get("/cloud/config", (req, res) => {
   res.json({
     appId: process.env.META_APP_ID ?? null,
     configId: process.env.META_ES_CONFIG_ID ?? null,
     graphVersion: GRAPH_VERSION,
+    coexistencia: coexistenciaHabilitada(req.userId),
   });
 });
 
@@ -337,6 +339,9 @@ waRouter.post("/cloud/connect", async (req, res) => {
     return res.status(400).json({ error: "Input inválido", details: parsed.error.flatten() });
   }
   const { code, label } = parsed.data;
+  if (parsed.data.coexistencia && !coexistenciaHabilitada(req.userId)) {
+    return res.status(403).json({ error: "Esta opción todavía no está disponible para tu cuenta." });
+  }
   let wabaId = parsed.data.wabaId;
   let phoneNumberId = parsed.data.phoneNumberId;
   let phone = parsed.data.phone;

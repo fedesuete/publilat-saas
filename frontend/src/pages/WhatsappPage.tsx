@@ -22,6 +22,7 @@ interface EsConfig {
   appId: string | null;
   configId: string | null;
   graphVersion: string;
+  coexistencia?: boolean;
 }
 
 // Saludo automático con botones para chats de anuncio (CTWA / Cloud API). Replica el "saludo
@@ -844,6 +845,8 @@ export default function WhatsappPage() {
                     Se abre un popup de Meta para elegir/crear tu cuenta de WhatsApp Business y
                     autorizar a Publi. No tenés que copiar ningún token.
                   </p>
+                  {esConfig.coexistencia && (
+                  <>
                   <Button
                     type="button"
                     variant="secondary"
@@ -858,6 +861,8 @@ export default function WhatsappPage() {
                     conectar tu app existente y escaneá el código QR desde la app. Seguís respondiendo desde
                     el celular.
                   </p>
+                  </>
+                  )}
                 </>
               ) : (
                 <p className="rounded-md border border-amber-800 bg-amber-900/30 px-3 py-2 text-xs text-amber-200">

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import axios from "axios";
-import { activarNumeroCloud } from "./wa-cloud.js";
+import { activarNumeroCloud, coexistenciaHabilitada } from "./wa-cloud.js";
 
 // 06/11: coexistencia = el número sigue en la app WhatsApp Business del celular y además entra a la
 // Cloud API (Embedded Signup con featureType whatsapp_business_app_onboarding). Ese número YA está
@@ -43,5 +43,24 @@ describe("activarNumeroCloud", () => {
     const r = await activarNumeroCloud({ phoneNumberId: "333", token: "tk", pin: "123456", coexistencia: true });
     expect(r.ok).toBe(true);
     expect(r.error).toMatch(/sync fuera de ventana/);
+  });
+});
+
+// Mientras se prueba, la coexistencia solo se habilita a las cuentas de COEXISTENCIA_USERS (ids separados por coma).
+describe("coexistenciaHabilitada", () => {
+  afterEach(() => {
+    delete process.env.COEXISTENCIA_USERS;
+  });
+
+  it("sin la variable → nadie la tiene", () => {
+    expect(coexistenciaHabilitada("userA")).toBe(false);
+  });
+
+  it("solo las cuentas listadas (con espacios tolerados)", () => {
+    process.env.COEXISTENCIA_USERS = "userA, userB";
+    expect(coexistenciaHabilitada("userA")).toBe(true);
+    expect(coexistenciaHabilitada("userB")).toBe(true);
+    expect(coexistenciaHabilitada("userC")).toBe(false);
+    expect(coexistenciaHabilitada(undefined)).toBe(false);
   });
 });
