@@ -22,6 +22,7 @@ import {
   subscribeWaba,
   getSubscribedApps,
   registerCloudNumber,
+  activarNumeroCloud,
   getWabaPhoneNumbers,
   debugToken,
 } from "../lib/wa-cloud.js";
@@ -322,6 +323,8 @@ const connectSchema = z.object({
   wabaId: z.string().min(3).max(40).optional(),
   label: z.string().max(60).optional(),
   phone: z.string().max(20).optional(),
+  // true = coexistencia: el número sigue en la app WhatsApp Business del celular (no se registra con PIN).
+  coexistencia: z.boolean().optional(),
 });
 
 // POST /api/wa/cloud/connect — cierra el Embedded Signup usando SOLO el `code`:
@@ -423,9 +426,10 @@ waRouter.post("/cloud/connect", async (req, res) => {
     // e) Arranca el contador: consume 1 día / 24h (igual que las demás altas de línea).
     await consumeDayAndActivate(req.userId!, line.id, line.label);
 
-    // f) Registrar el número en la Cloud API (saca la línea de "Pendiente").
+    // f) Registrar el número en la Cloud API (saca la línea de "Pendiente"); en coexistencia no se
+    //    registra (ya lo está por la app) y se pide la sync de contactos/historial.
     //    Best-effort: si falla (ej. falta método de pago en la WABA) se reintenta desde el panel.
-    const reg = await registerCloudNumber(phoneNumberId, token, pin);
+    const reg = await activarNumeroCloud({ phoneNumberId, token, pin, coexistencia: parsed.data.coexistencia === true });
     if (reg.ok) await prisma.waLine.update({ where: { id: line.id }, data: { registered: true } });
     const fresh = await prisma.waLine.findUnique({ where: { id: line.id } });
     return res.status(201).json({ line: toPublicLine(fresh ?? line), registered: reg.ok, registerError: reg.error });

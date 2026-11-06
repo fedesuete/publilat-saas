@@ -256,7 +256,7 @@ export default function WhatsappPage() {
   const [showAntiBan, setShowAntiBan] = useState<Record<string, boolean>>({});
   const [engine, setEngine] = useState<string>("evolution");
   const esSessionRef = useRef<{ phoneNumberId?: string; wabaId?: string }>({});
-  const lastAttemptRef = useRef<{ code: string; phoneNumberId?: string; wabaId?: string } | null>(null);
+  const lastAttemptRef = useRef<{ code: string; phoneNumberId?: string; wabaId?: string; coexistencia?: boolean } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -335,9 +335,9 @@ export default function WhatsappPage() {
     return () => window.removeEventListener("message", handler);
   }, []);
 
-  const finishConnect = async (code: string, phoneNumberId?: string, wabaId?: string) => {
+  const finishConnect = async (code: string, phoneNumberId?: string, wabaId?: string, coexistencia?: boolean) => {
     // Guardamos el último intento para poder reintentar el MISMO code (caso 409).
-    lastAttemptRef.current = { code, phoneNumberId, wabaId };
+    lastAttemptRef.current = { code, phoneNumberId, wabaId, coexistencia };
     setConnecting(true);
     setError(null);
     setNeedsRetry(false);
@@ -348,6 +348,7 @@ export default function WhatsappPage() {
         phoneNumberId: phoneNumberId || undefined,
         wabaId: wabaId || undefined,
         label: label || undefined,
+        coexistencia: coexistencia || undefined,
       });
       await load(); // refresca la lista desde el server (aparece sí o sí)
       setLabel("");
@@ -364,7 +365,7 @@ export default function WhatsappPage() {
 
   const retryConnect = () => {
     const a = lastAttemptRef.current;
-    if (a) void finishConnect(a.code, a.phoneNumberId, a.wabaId);
+    if (a) void finishConnect(a.code, a.phoneNumberId, a.wabaId, a.coexistencia);
   };
 
   // Reintenta el registro del número de una línea Cloud en la Cloud API (saca de "Pendiente").
@@ -405,7 +406,8 @@ export default function WhatsappPage() {
     }
   };
 
-  const launchSignup = () => {
+  // coexistencia = el número sigue usándose en la app WhatsApp Business del celular.
+  const launchSignup = (coexistencia = false) => {
     if (!window.FB || !esConfig?.configId) {
       setError("Embedded Signup no está disponible todavía.");
       return;
@@ -420,7 +422,7 @@ export default function WhatsappPage() {
         // Con el `code` alcanza: el backend resuelve la WABA y el número.
         // phoneNumberId/wabaId del postMessage son best-effort (si llegaron, los mandamos).
         if (code) {
-          void finishConnect(code, sess.phoneNumberId, sess.wabaId);
+          void finishConnect(code, sess.phoneNumberId, sess.wabaId, coexistencia);
         } else {
           setError("No se completó la conexión (Meta no devolvió el código de autorización).");
         }
@@ -429,7 +431,7 @@ export default function WhatsappPage() {
         config_id: esConfig.configId,
         response_type: "code",
         override_default_response_type: true,
-        extras: { setup: {}, featureType: "", sessionInfoVersion: "3" },
+        extras: { setup: {}, featureType: coexistencia ? "whatsapp_business_app_onboarding" : "", sessionInfoVersion: "3" },
       },
     );
   };
@@ -835,12 +837,26 @@ export default function WhatsappPage() {
             <div className="space-y-3">
               {esConfig?.appId && esConfig?.configId ? (
                 <>
-                  <Button type="button" onClick={launchSignup} disabled={!fbReady || connecting} className="w-full">
+                  <Button type="button" onClick={() => launchSignup()} disabled={!fbReady || connecting} className="w-full">
                     {connecting ? "Conectando…" : fbReady ? "Conectar WhatsApp (oficial)" : "Cargando…"}
                   </Button>
                   <p className="text-xs text-slate-500">
                     Se abre un popup de Meta para elegir/crear tu cuenta de WhatsApp Business y
                     autorizar a Publi. No tenés que copiar ningún token.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => launchSignup(true)}
+                    disabled={!fbReady || connecting}
+                    className="w-full"
+                  >
+                    Conectar mi WhatsApp Business existente (sigo usando la app)
+                  </Button>
+                  <p className="text-xs text-slate-500">
+                    Para un número que ya está en la app WhatsApp Business del celular: en el popup elegí
+                    conectar tu app existente y escaneá el código QR desde la app. Seguís respondiendo desde
+                    el celular.
                   </p>
                 </>
               ) : (

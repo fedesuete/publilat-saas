@@ -339,6 +339,34 @@ export async function registerCloudNumber(
   }
 }
 
+// Activa el número recién conectado por Embedded Signup.
+// - Alta normal: /register con PIN (saca la línea de "Pendiente").
+// - Coexistencia (el número sigue en la app WhatsApp Business del celular): el número ya está registrado
+//   por la app, así que NO se hace /register; se pide la sync de contactos y después la de historial
+//   (/smb_app_data, solo vale dentro de las 24 h del alta). Si la sync falla la línea igual queda activa.
+export async function activarNumeroCloud(opts: {
+  phoneNumberId: string;
+  token: string;
+  pin: string;
+  coexistencia: boolean;
+}): Promise<{ ok: boolean; error?: string }> {
+  if (!opts.coexistencia) return registerCloudNumber(opts.phoneNumberId, opts.token, opts.pin);
+  try {
+    for (const sync_type of ["smb_app_state_sync", "history"]) {
+      await axios.post(
+        `${GRAPH}/${opts.phoneNumberId}/smb_app_data`,
+        { messaging_product: "whatsapp", sync_type },
+        { headers: { Authorization: `Bearer ${opts.token}` }, timeout: 15000 },
+      );
+    }
+    return { ok: true };
+  } catch (e) {
+    const msg = graphErrorMessage(e);
+    console.warn("[wa-cloud] activarNumeroCloud sync coexistencia (best-effort):", msg);
+    return { ok: true, error: msg };
+  }
+}
+
 // Baja un media entrante (imagen/documento) por su id -> base64. Para leer comprobantes.
 export async function getCloudMediaBase64(
   line: CloudLine,
