@@ -17,6 +17,7 @@ import { publicConfigRouter } from "./routes/public-config.js";
 import { landRouter } from "./routes/land.js";
 import { leadsRouter } from "./routes/leads.js";
 import { bulkRouter } from "./routes/bulk.js";
+import { seguimientoRouter } from "./routes/seguimiento.js";
 import { waRouter } from "./routes/wa.js";
 import { webhookRouter } from "./routes/webhook.js";
 import { cloudWebhookRouter } from "./routes/wa-cloud.js";
@@ -195,6 +196,7 @@ app.post("/api/data-deletion", webhookLimiter, (req, res) => {
 // Rutas protegidas: Bearer token + rate-limit de API.
 app.use("/api/leads", apiLimiter, requireAuth, leadsRouter);
 app.use("/api/bulk", apiLimiter, requireAuth, bulkRouter); // envíos masivos (gate por email, ver routes/bulk.ts)
+app.use("/api/seguimiento", apiLimiter, requireAuth, seguimientoRouter); // seguimiento automático (mismo gate)
 app.use("/api/wa", apiLimiter, requireAuth, waRouter);
 app.use("/api/subaccounts", apiLimiter, requireAuth, subAccountsRouter); // sub-cuentas del cliente
 // Decidir una revisión de soporte desde el MAIL. Sin login a propósito: el permiso lo da la firma

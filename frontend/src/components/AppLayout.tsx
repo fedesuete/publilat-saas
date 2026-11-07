@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   Users,
   Send,
+  Repeat,
   CalendarDays,
   KanbanSquare,
   MessageCircle,
@@ -143,6 +144,7 @@ const NAV: Array<{ to: string; label: string; icon: LucideIcon | typeof WhatsApp
   { to: "/chat", label: "Chat App", icon: MessagesSquare },
   // Envíos masivos: en prueba, solo para las cuentas de BULK_EMAILS (el backend también lo gatea).
   { to: "/envios", label: "Envíos masivos", icon: Send, onlyFor: "bulk" },
+  { to: "/seguimiento", label: "Seguimiento automático", icon: Repeat, onlyFor: "bulk" },
   { to: "/automatizaciones", label: "Automatizaciones", icon: Workflow },
   { to: "/whatsapp", label: "WhatsApp", icon: MessageCircle },
   { to: "/billing", label: "Créditos", icon: Coins },

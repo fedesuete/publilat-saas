@@ -718,6 +718,42 @@ model BulkCampaign {
   updatedAt  DateTime  @updatedAt
 }
 
+// SEGUIMIENTO AUTOMÁTICO (07/11): recontacta solo a los leads que se enfriaron (nosotros mandamos el
+// último mensaje y no contestaron) y le escribe de a poco a una lista importada. Una config por cuenta.
+// steps = [{ afterDays, variants: [{kind:"text",body} | {kind:"audio",clipId}] }]: afterDays se cuenta
+// desde NUESTRO último mensaje. listVariants = primer mensaje a los contactos importados (source "lista").
+model FollowUpConfig {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  enabled      Boolean  @default(false)
+  steps        Json     @default("[]")
+  listVariants Json     @default("[]")
+  dailyCap     Int      @default(30) // tope de envíos por día (seguimientos + lista)
+  hourFrom     Int      @default(9) // ventana horaria (hora local de tz)
+  hourTo       Int      @default(21)
+  tz           String   @default("America/Asuncion")
+  minGapMin    Int      @default(8) // minutos mínimos entre dos envíos (se le suma un azar)
+  maxAgeDays   Int      @default(30) // no despierta charlas con el último mensaje más viejo que esto
+  lineId       String? // línea desde la que sale (null = la del contacto o la activa menos usada)
+  lastError    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// Cada envío del seguimiento: idempotencia (un paso por contacto, una sola vez) + tope diario + historial.
+model FollowUpTouch {
+  id        String   @id @default(cuid())
+  userId    String
+  contactId String
+  kind      String // seguimiento | lista
+  step      Int // seguimiento: índice del paso (0..); lista: 0
+  ok        Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@unique([contactId, kind, step])
+  @@index([userId, createdAt])
+}
+
 model LeadForm {
   id        String   @id @default(cuid())
   userId    String

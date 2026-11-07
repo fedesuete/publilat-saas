@@ -937,6 +937,10 @@ export async function initQueues(): Promise<void> {
           const { asegurarWebhookSoporte } = await import("./soporte-relay.js");
           return asegurarWebhookSoporte();
         }
+        if (job.name === "seguimiento") {
+          const { correrSeguimiento } = await import("./seguimiento.js");
+          return correrSeguimiento();
+        }
         if (job.name === "prueba-gratis") {
           const { correrPrueba } = await import("./prueba-gratis.js");
           return correrPrueba();
@@ -984,6 +988,8 @@ export async function initQueues(): Promise<void> {
     // Saldo IPRoyal: chequeo cada 1h → avisa (email + campanita) si quedan pocos GB. No-op sin IPROYAL_API_TOKEN.
     await queue.add("iproyal-balance", {}, { repeat: { every: 3_600_000 }, jobId: "iproyal-balance-repeat", removeOnComplete: true, removeOnFail: 20 });
     await queue.add("soporte-sin-responder", {}, { repeat: { every: 1_800_000 }, jobId: "soporte-colgado-repeat", removeOnComplete: true, removeOnFail: 20 });
+    // Seguimiento automático: como mucho un envío por cuenta cada 5 min (ver lib/seguimiento.ts).
+    await queue.add("seguimiento", {}, { repeat: { every: 300_000 }, jobId: "seguimiento-repeat", removeOnComplete: true, removeOnFail: 20 });
     await queue.add("prueba-gratis", {}, { repeat: { every: 900_000 }, jobId: "prueba-gratis-repeat", removeOnComplete: true, removeOnFail: 20 });
     await queue.add("pagos-colgados", {}, { repeat: { every: 900_000 }, jobId: "pagos-colgados-repeat", removeOnComplete: true, removeOnFail: 20 });
     // Cada 15 s: una consulta de soporte no puede quedar esperando minutos para llegar al grupo.

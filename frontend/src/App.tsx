@@ -6,6 +6,7 @@ import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import LeadsPage from "./pages/LeadsPage";
 import BulkPage from "./pages/BulkPage";
+import SeguimientoPage from "./pages/SeguimientoPage";
 import KanbanPage from "./pages/KanbanPage";
 import InboxPage from "./pages/InboxPage";
 import ChatAppPage from "./pages/ChatAppPage";
@@ -59,6 +60,7 @@ export default function App() {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/leads" element={<LeadsPage />} />
             <Route path="/envios" element={<BulkPage />} />
+            <Route path="/seguimiento" element={<SeguimientoPage />} />
             <Route path="/agenda" element={<AgendaPage />} />
             <Route path="/kanban" element={<KanbanPage />} />
             <Route path="/inbox" element={<InboxPage />} />
