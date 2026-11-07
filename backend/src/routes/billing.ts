@@ -10,7 +10,7 @@ import {
   mpEnabled, createPreference, getMpPayment, mpWebhookSecretSet, verifyMpWebhook,
   stripeEnabled, createStripeSession, constructStripeEvent,
   usdtEnabled, createUsdtInvoice, verifyUsdtSignature,
-  nowpaymentsEnabled, usdtDirectEnabled, usdtAddress, verifyUsdtPayment,
+  nowpaymentsEnabled, usdtDirectEnabled, usdtAddress, verifyUsdtPayment, usdtCubre,
   pagoparEnabled, createPagoparOrder, verifyPagoparWebhook, getPagoparOrder,
 } from "../lib/payments.js";
 // Acreditación (días + ledger + Purchase al pixel de marketing + CRM + referidos + aviso) vive en
@@ -202,25 +202,46 @@ const verifySchema = z.object({
 billingRouter.post("/usdt/verify", async (req, res) => {
   const parsed = verifySchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ ok: false, error: "Input inválido" });
-  const { paymentId, txid } = parsed.data;
+  const { paymentId } = parsed.data;
+  // Se acepta el TXID pelado o pegado dentro del link de Tronscan / con espacios: nos quedamos con el hash.
+  const txid = (parsed.data.txid.match(/[a-fA-F0-9]{64}/)?.[0] ?? parsed.data.txid).toLowerCase();
 
   const payment = await prisma.payment.findFirst({
     where: { id: paymentId, userId: req.userId!, provider: "usdt" },
   });
   if (!payment) return res.status(404).json({ ok: false, error: "Pago no encontrado" });
-  if (payment.status === "approved") return res.json({ ok: true, alreadyApproved: true });
 
   // Anti-reuso: un mismo TXID no puede acreditar dos pagos.
-  const dup = await prisma.payment.findFirst({ where: { externalId: txid, status: "approved" } });
+  const dup = await prisma.payment.findFirst({ where: { externalId: { equals: txid, mode: "insensitive" }, status: "approved" } });
   if (dup) return res.status(409).json({ ok: false, error: "Ese TXID ya fue usado para otro pago." });
 
-  const expectedUsdt = (payment.amount ?? 0) / 100;
-  const result = await verifyUsdtPayment(txid, expectedUsdt);
-  if (!result.ok) return res.status(400).json({ ok: false, error: result.reason });
+  // Primero leemos cuánto llegó (sin exigir monto) y DESPUÉS elegimos qué pago cubre. Antes se validaba solo
+  // contra el pago abierto en pantalla: si el cliente tocaba otro paquete después de transferir (se crea un
+  // pago nuevo por clic), el monto no coincidía y la plata quedaba sin acreditar (07/11, 3 pagos de un cliente).
+  const result = await verifyUsdtPayment(txid, 0);
+  if (!result.ok || result.valueUsdt == null) {
+    console.warn(`[billing/usdt] verificación fallida pago ${payment.id}: ${result.reason ?? "sin valor"}`);
+    return res.status(400).json({ ok: false, error: result.reason });
+  }
+  const valor = result.valueUsdt;
+  let target = payment.status !== "approved" && usdtCubre(valor, (payment.amount ?? 0) / 100) ? payment : null;
+  if (!target) {
+    // Otro pago USDT pendiente del mismo cliente (últimos 14 días) que ese monto cubra: el más caro que alcance.
+    const pendientes = await prisma.payment.findMany({
+      where: { userId: req.userId!, provider: "usdt", status: "pending", createdAt: { gte: new Date(Date.now() - 14 * 24 * 3600 * 1000) } },
+      orderBy: [{ amount: "desc" }, { createdAt: "desc" }],
+    });
+    target = pendientes.find((p) => usdtCubre(valor, (p.amount ?? 0) / 100)) ?? null;
+  }
+  if (!target) {
+    if (payment.status === "approved") return res.json({ ok: true, alreadyApproved: true });
+    console.warn(`[billing/usdt] monto no cubre ningún pago pendiente (pago ${payment.id})`);
+    return res.status(400).json({ ok: false, error: `El monto recibido (${valor} USDT) es menor al del paquete elegido (${(payment.amount ?? 0) / 100} USDT). Escribinos a soporte y lo acreditamos.` });
+  }
 
-  await prisma.payment.update({ where: { id: payment.id }, data: { externalId: txid } });
-  await approvePayment(payment.id, "USDT");
-  return res.json({ ok: true, valueUsdt: result.valueUsdt, days: payment.days });
+  await prisma.payment.update({ where: { id: target.id }, data: { externalId: txid } });
+  await approvePayment(target.id, "USDT");
+  return res.json({ ok: true, valueUsdt: valor, days: target.days });
 });
 
 // --- Webhook MercadoPago ---

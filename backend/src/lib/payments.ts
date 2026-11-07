@@ -168,6 +168,14 @@ const USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"; // contrato USDT en 
 export const usdtAddress = () => USDT_ADDRESS;
 export const usdtDirectEnabled = () => Boolean(USDT_ADDRESS);
 
+// ¿El monto recibido cubre lo esperado? Tolerancia por comisiones: el exchange/la red le suelen comer 2-4%
+// al cliente, y exigir el monto exacto rebotaba pagos REALES (2026-09-04: 77 USDT enviados por un pago
+// de 80 → rechazado → soporte manual). Aceptamos hasta un 5% menos (override por .env).
+export function usdtCubre(valueUsdt: number, expectedUsdt: number): boolean {
+  const tolPct = Number(process.env.USDT_UNDERPAY_TOLERANCE_PCT ?? 5);
+  return valueUsdt >= expectedUsdt * (1 - tolPct / 100) - 0.01;
+}
+
 // Verifica una transacción USDT-TRC20 on-chain: que exista, sea hacia nuestra dirección
 // y por un monto >= al esperado. Devuelve ok + el valor recibido.
 export async function verifyUsdtPayment(
@@ -190,12 +198,7 @@ export async function verifyUsdtPayment(
     if (String(tx.to) !== USDT_ADDRESS) return { ok: false, reason: "La transacción no es hacia tu dirección." };
     const decimals = Number(tx.token_info?.decimals ?? 6);
     const valueUsdt = Number(tx.value) / Math.pow(10, decimals);
-    // Tolerancia por comisiones: el exchange/la red le suelen comer 2-4% al cliente, y exigir el
-    // monto exacto rebotaba pagos REALES (2026-09-04: 77 USDT enviados por un pago de 80 →
-    // rechazado → soporte manual). Aceptamos hasta un 5% menos (override por .env).
-    const tolPct = Number(process.env.USDT_UNDERPAY_TOLERANCE_PCT ?? 5);
-    const minAccepted = expectedUsdt * (1 - tolPct / 100) - 0.01;
-    if (valueUsdt < minAccepted) {
+    if (!usdtCubre(valueUsdt, expectedUsdt)) {
       return {
         ok: false,
         reason: `El monto recibido (${valueUsdt} USDT) es menor al esperado (${expectedUsdt} USDT).`,
